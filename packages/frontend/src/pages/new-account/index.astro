@@ -254,7 +254,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
             args: [
               Address.fromString(keypair.publicKey()).toScVal(),
               xdr.ScVal.scvBytes(Buffer.from(passkeyPublicKey)),
-              nativeToScVal(1_000_000_0 * 9998, { type: "i128" }),
+              nativeToScVal(1_000_000_0 * 9990, { type: "i128" }),
             ],
           })
         )
