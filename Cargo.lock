@@ -686,6 +686,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "g2c-name-registry"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "soroban-sdk-tools",
+]
+
+[[package]]
 name = "g2c-smart-account"
 version = "0.1.0"
 dependencies = [
