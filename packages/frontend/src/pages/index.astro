@@ -9,10 +9,12 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
     </a>
   </div>
-  <p class="info">
-    Create a Stellar smart account secured by your device's passkey (fingerprint, face, or security key).
-    No seed phrases or private keys to manage — your passkey <em>is</em> your wallet.
-  </p>
+
+  <div class="hero-tagline">
+    <span class="tagline-prefix">&gt;</span> Passkey-secured smart accounts on Stellar.
+    <br/>
+    <span class="tagline-sub">No seed phrases. No private keys. Your passkey <em>is</em> your wallet.</span>
+  </div>
 
   <div id="error-box" class="error" style="display:none"></div>
 
@@ -22,7 +24,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   </section>
 
   <section>
-    <h2>Create New Account</h2>
+    <h2>Initialize</h2>
     <p class="info">
       Prepares a new smart account on Stellar testnet. You'll register a passkey in the next step to secure it.
     </p>
@@ -45,14 +47,11 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 </BaseLayout>
 
 <style>
-  body {
-    background: #1a1a2e;
-  }
-
   .page-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    margin-bottom: 0.5rem;
   }
 
   .page-header h1 {
@@ -60,44 +59,95 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   }
 
   .github-link {
-    color: #8899aa;
-    transition: color 0.15s;
+    color: var(--text-muted);
+    transition: all 0.25s ease;
+    padding: 0.3rem;
+    border-radius: 6px;
   }
 
   .github-link:hover {
-    color: #e0e0e0;
+    color: var(--cyan);
+    filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.4));
   }
 
+  /* Hero tagline with terminal feel */
+  .hero-tagline {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    padding: 1rem 1.2rem;
+    margin: 0.75rem 0 0.5rem 0;
+    background: rgba(16, 16, 26, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    position: relative;
+    line-height: 1.7;
+  }
+
+  .hero-tagline::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 12px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.3), transparent 50%, rgba(191, 0, 255, 0.3));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .tagline-prefix {
+    color: var(--cyan);
+    font-weight: 700;
+    animation: neonPulse 2s ease-in-out infinite;
+  }
+
+  .tagline-sub {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+
+  .tagline-sub em {
+    color: var(--cyan);
+    font-style: normal;
+    font-weight: 600;
+    text-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+  }
+
+  /* Button link with neon green glow */
   .button-link {
     display: inline-block;
-    background: #1a6b3a;
-    color: #e0e0e0;
-    border: 1px solid #1a8b4a;
-    padding: 0.5rem 1.2rem;
-    border-radius: 4px;
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.12), rgba(0, 240, 255, 0.12));
+    color: var(--green);
+    border: 1px solid rgba(0, 255, 136, 0.35);
+    padding: 0.6rem 1.4rem;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
     text-decoration: none;
+    letter-spacing: 0.03em;
+    transition: all 0.25s ease;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
   }
 
   .button-link:hover {
-    background: #1a8b4a;
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.22), rgba(0, 240, 255, 0.22));
+    border-color: var(--green);
+    box-shadow: 0 0 25px rgba(0, 255, 136, 0.15), inset 0 0 20px rgba(0, 255, 136, 0.05);
+    color: var(--green);
+    transform: translateY(-1px);
   }
 
-  .progress {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 4px;
-    padding: 0.5rem 0.75rem;
-    margin-top: 0.5rem;
-    font-size: 0.85rem;
-    color: #8899aa;
-  }
-
+  /* Account list */
   #accounts-list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.6rem;
     margin: 0.75rem 0;
   }
 
@@ -105,17 +155,38 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 6px;
-    padding: 0.6rem 0.85rem;
+    background: rgba(16, 16, 26, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
     text-decoration: none;
-    transition: border-color 0.15s, background 0.15s;
+    transition: all 0.25s ease;
+    position: relative;
+  }
+
+  .account-row::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 10px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), transparent 60%, rgba(191, 0, 255, 0.15));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    transition: all 0.25s ease;
   }
 
   .account-row:hover {
-    background: #0d2850;
-    border-color: #2a5090;
+    background: rgba(0, 240, 255, 0.05);
+    transform: translateX(4px);
+  }
+
+  .account-row:hover::before {
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.35), transparent 60%, rgba(191, 0, 255, 0.35));
   }
 
   .account-info {
@@ -130,16 +201,23 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   }
 
   .account-address {
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 0.72rem;
-    color: #8899aa;
+    color: var(--text);
+    flex: 1;
     min-width: 0;
   }
 
   .account-arrow {
-    color: #5bc0de;
+    color: var(--cyan);
     font-size: 1rem;
     flex-shrink: 0;
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+    transition: transform 0.25s ease;
+  }
+
+  .account-row:hover .account-arrow {
+    transform: translateX(3px);
   }
 </style>
 

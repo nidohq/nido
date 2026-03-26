@@ -10,7 +10,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   </p>
 
   <div id="status-bar">
-    <div>Account: <code id="contract-id"></code></div>
+    <span class="status-label">Account</span>
+    <code id="contract-id"></code>
   </div>
 
   <div id="error-box" class="error" style="display:none"></div>
@@ -38,7 +39,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
   <section id="done-section" class="hidden">
     <h2>Account Ready</h2>
-    <p class="info">Your smart account is live. Use your passkey to sign transactions.</p>
+    <p class="info">Your smart account is live on-chain. Use your passkey to sign transactions.</p>
     <div class="field">
       <a id="account-link" class="button-link">Go to Account</a>
     </div>
@@ -46,53 +47,95 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 </BaseLayout>
 
 <style>
-  body {
-    background: #1a1a2e;
-  }
-
+  /* Deploy button — neon green pulse */
   button.primary {
-    background: #1a6b3a;
-    border-color: #1a8b4a;
-    font-size: 1.1rem;
-    padding: 0.7rem 2rem;
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.15), rgba(0, 240, 255, 0.1));
+    color: var(--green);
+    border: 1px solid rgba(0, 255, 136, 0.4);
+    font-size: 1.05rem;
+    padding: 0.75rem 2rem;
+    text-shadow: 0 0 12px rgba(0, 255, 136, 0.4);
   }
 
   button.primary:hover {
-    background: #1a8b4a;
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.25), rgba(0, 240, 255, 0.18));
+    border-color: var(--green);
+    box-shadow: 0 0 25px rgba(0, 255, 136, 0.2), inset 0 0 20px rgba(0, 255, 136, 0.05);
   }
 
+  /* Status bar — glassmorphism terminal */
   #status-bar {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 4px;
-    padding: 0.5rem 0.75rem;
+    background: rgba(16, 16, 26, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 0.7rem 1rem;
     margin: 1rem 0;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
+    font-family: var(--font-mono);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: relative;
   }
 
+  #status-bar::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 10px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), transparent 60%, rgba(191, 0, 255, 0.2));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .status-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.75rem;
+  }
+
+  /* Button link — neon green */
   .button-link {
     display: inline-block;
-    background: #1a6b3a;
-    color: #e0e0e0;
-    border: 1px solid #1a8b4a;
-    padding: 0.5rem 1.2rem;
-    border-radius: 4px;
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.12), rgba(0, 240, 255, 0.12));
+    color: var(--green);
+    border: 1px solid rgba(0, 255, 136, 0.35);
+    padding: 0.6rem 1.4rem;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
     text-decoration: none;
+    letter-spacing: 0.03em;
+    transition: all 0.25s ease;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
   }
 
   .button-link:hover {
-    background: #1a8b4a;
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.22), rgba(0, 240, 255, 0.22));
+    border-color: var(--green);
+    box-shadow: 0 0 25px rgba(0, 255, 136, 0.15), inset 0 0 20px rgba(0, 255, 136, 0.05);
+    color: var(--green);
+    transform: translateY(-1px);
   }
 
+  /* Deploy result links */
   #deploy-result a {
-    color: #5bc0de;
+    color: var(--cyan);
     text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   #deploy-result a:hover {
-    color: #7dd4ed;
+    color: var(--purple);
+    text-shadow: 0 0 8px rgba(191, 0, 255, 0.3);
   }
 </style>
 
