@@ -3,24 +3,18 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 ---
 
 <BaseLayout title="G2C — Set Up Passkey">
-  <h1>Set Up Your Account</h1>
-  <p class="info">
-    Register a passkey to secure your smart account, then deploy it on-chain.
-    Your passkey (fingerprint, face, or security key) will be the only way to authorize transactions.
-  </p>
+  <h1>Set Up Account</h1>
+  <p class="info">Register a passkey. Deploy on-chain. Your passkey is the only key. No recovery. No compromise.</p>
 
   <div id="status-bar">
-    <div>Account: <code id="contract-id"></code></div>
+    <span class="status-label">CONTRACT:</span> <code id="contract-id"></code>
   </div>
 
   <div id="error-box" class="error" style="display:none"></div>
 
   <section>
-    <h2>1. Register Passkey</h2>
-    <p class="info">
-      Your browser will prompt you to create a passkey.
-      This passkey is bound to your account and will be used to sign all future transactions.
-    </p>
+    <h2>01 // Register Passkey</h2>
+    <p class="info">Your browser will prompt you to create a passkey bound to your account.</p>
     <div class="field">
       <button id="register-btn">Register Passkey</button>
     </div>
@@ -28,7 +22,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   </section>
 
   <section id="deploy-section" class="hidden">
-    <h2>2. Deploy Account</h2>
+    <h2>02 // Deploy Account</h2>
     <p class="info">Publish your passkey-secured smart account to the Stellar network.</p>
     <div class="field">
       <button id="deploy-btn" class="primary">Deploy Account</button>
@@ -37,63 +31,24 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   </section>
 
   <section id="done-section" class="hidden">
-    <h2>Account Ready</h2>
-    <p class="info">Your smart account is live. Use your passkey to sign transactions.</p>
+    <h2>// Account Live</h2>
+    <p class="info">Your smart account is deployed. Use your passkey to sign transactions.</p>
     <div class="field">
-      <a id="account-link" class="button-link">Go to Account</a>
+      <a id="account-link" class="button-link">Go to Account &rarr;</a>
     </div>
   </section>
 </BaseLayout>
 
 <style>
-  body {
-    background: #1a1a2e;
-  }
-
-  button.primary {
-    background: #1a6b3a;
-    border-color: #1a8b4a;
-    font-size: 1.1rem;
-    padding: 0.7rem 2rem;
-  }
-
-  button.primary:hover {
-    background: #1a8b4a;
-  }
-
-  #status-bar {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 4px;
-    padding: 0.5rem 0.75rem;
-    margin: 1rem 0;
-    font-size: 0.85rem;
-  }
-
-  .button-link {
-    display: inline-block;
-    background: #1a6b3a;
-    color: #e0e0e0;
-    border: 1px solid #1a8b4a;
-    padding: 0.5rem 1.2rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.95rem;
-    text-decoration: none;
-  }
-
-  .button-link:hover {
-    background: #1a8b4a;
-  }
-
-  #deploy-result a {
-    color: #5bc0de;
-    text-decoration: underline;
-  }
-
-  #deploy-result a:hover {
-    color: #7dd4ed;
-  }
+  button.primary { background: #ffff00; color: #000000; border: 3px solid #000000; font-size: 1rem; padding: 0.85rem 2rem; }
+  button.primary:hover { background: #000000; color: #ffff00; }
+  #status-bar { background: #000000; color: #ffffff; border: 3px solid #000000; padding: 0.75rem 1rem; margin: 1.5rem 0; font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.75rem; word-break: break-all; }
+  .status-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+  #status-bar code { background: transparent; color: #ffff00; padding: 0; font-size: 0.75rem; }
+  .button-link { display: inline-block; font-family: 'Space Mono', 'Courier New', monospace; background: #ffff00; color: #000000; border: 3px solid #000000; padding: 0.75rem 1.5rem; cursor: pointer; font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; text-decoration: none; border-radius: 0; }
+  .button-link:hover { background: #000000; color: #ffff00; }
+  #deploy-result a { color: #000000; text-decoration: underline; text-decoration-thickness: 2px; font-weight: 700; }
+  #deploy-result a:hover { background: #ffff00; }
 </style>
 
 <script>
@@ -111,8 +66,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   const FACTORY_CONTRACT_ID = "CDDMELYHOSD6M2T53F5DUYCXDS3VVOQ72E4KZMMZP37GQWII2WRKM2CC";
   const RPC_URL = "https://soroban-testnet.stellar.org";
 
-  // --- State ---
-
   const hostname = window.location.hostname;
   const contractId = contractIdFromHostname(hostname);
   const rpId = hostname;
@@ -122,8 +75,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
   let passkeyPublicKey: Uint8Array | null = null;
   let credentialIdBytes: Uint8Array | null = null;
-
-  // --- UI refs ---
 
   const $contractIdEl = document.getElementById("contract-id")!;
   const $errorBox = document.getElementById("error-box")!;
@@ -135,8 +86,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   const $doneSection = document.getElementById("done-section")!;
   const $accountLink = document.getElementById("account-link") as HTMLAnchorElement;
 
-  // --- UI helpers ---
-
   function showError(msg: string) {
     $errorBox.textContent = msg;
     $errorBox.style.display = "block";
@@ -145,8 +94,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   function clearError() {
     $errorBox.style.display = "none";
   }
-
-  // --- Init status bar ---
 
   $contractIdEl.textContent = contractId || "(unknown)";
 
@@ -157,8 +104,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   if (!secretKey) {
     showError("Missing setup data. Please start from the home page.");
   }
-
-  // --- Register Passkey ---
 
   $registerBtn.addEventListener("click", async () => {
     clearError();
@@ -223,8 +168,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     }
   });
 
-  // --- Deploy Account ---
-
   $deployBtn.addEventListener("click", async () => {
     clearError();
     if (!passkeyPublicKey || !secretKey) {
@@ -274,7 +217,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         throw new Error(`Transaction submission failed: ${sendResponse.status}`);
       }
 
-      // Poll for completion
       let getResponse = await server.getTransaction(sendResponse.hash);
       while (getResponse.status === "NOT_FOUND") {
         await new Promise((r) => setTimeout(r, 1000));
@@ -290,7 +232,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       $deployResult.style.display = "block";
       $deployResult.innerHTML = `Account deployed!\n<a href="https://stellar.expert/explorer/testnet/contract/${contractId}" target="_blank" rel="noopener">View on Stellar Expert</a>`;
 
-      // Show link to account page
       const protocol = window.location.protocol;
       const host = window.location.host;
       $accountLink.href = `${protocol}//${host}/account/`;

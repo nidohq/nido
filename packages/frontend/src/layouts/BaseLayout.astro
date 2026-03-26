@@ -11,12 +11,15 @@ const { title } = Astro.props;
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <title>{title}</title>
   </head>
   <body>
     <a id="preview-banner" style="display:none" target="_blank" rel="noopener"></a>
     <div id="webview-warning" style="display:none">
-      <p>Passkeys are not supported in in-app browsers.</p>
+      <p>PASSKEYS NOT SUPPORTED IN IN-APP BROWSERS.</p>
       <p>Tap the menu (<strong>&middot;&middot;&middot;</strong>) and choose <strong>"Open in Safari"</strong> or <strong>"Open in Browser"</strong>.</p>
     </div>
     <slot />
@@ -26,44 +29,12 @@ const { title } = Astro.props;
 <style is:global>
   @import "../styles/global.css";
 
-  #preview-banner {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    display: none;
-    background: #e11d48;
-    color: #fff;
-    font-size: 0.95rem;
-    font-weight: 700;
-    padding: 0.5rem 1rem;
-    text-align: center;
-    text-decoration: none;
-    z-index: 9999;
-  }
+  #preview-banner { position: fixed; top: 0; left: 0; right: 0; display: none; background: #ff0000; color: #ffffff; font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.85rem; font-weight: 700; padding: 0.5rem 1rem; text-align: center; text-decoration: none; text-transform: uppercase; letter-spacing: 0.1em; z-index: 9999; border-bottom: 3px solid #000000; }
+  #preview-banner:hover { background: #000000; color: #ffff00; }
+  body:has(#preview-banner[style*="display: block"]) { padding-top: 2.5rem; }
 
-  #preview-banner:hover {
-    background: #be123c;
-  }
-
-  body:has(#preview-banner[style*="display: block"]) {
-    padding-top: 2.2rem;
-  }
-
-  #webview-warning {
-    background: #78350f;
-    border: 1px solid #a16207;
-    border-radius: 6px;
-    color: #fef3c7;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    font-size: 0.9rem;
-    line-height: 1.5;
-  }
-
-  #webview-warning p {
-    margin: 0.25rem 0;
-  }
+  #webview-warning { background: #ffff00; border: 3px solid #000000; color: #000000; padding: 1rem; margin-bottom: 1.5rem; font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.8rem; font-weight: 700; line-height: 1.6; text-transform: uppercase; }
+  #webview-warning p { margin: 0.25rem 0; }
 </style>
 
 <script>
@@ -79,8 +50,6 @@ const { title } = Astro.props;
   }
 
   // In-app WebView detection
-  // Real Safari / SFSafariViewController always include both "Safari" and "Version/" in the UA.
-  // WKWebViews (Twitter, Instagram, etc.) omit "Version/" even if they add "Safari".
   const ua = navigator.userAgent;
   const isIOS = /iPhone|iPad|iPod/.test(ua);
   const isInAppBrowser = (isIOS && (!/Safari/.test(ua) || !/Version\//.test(ua)))
