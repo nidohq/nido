@@ -3,96 +3,228 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 ---
 
 <BaseLayout title="G2C — Set Up Passkey">
-  <h1>Set Up Your Account</h1>
-  <p class="info">
-    Register a passkey to secure your smart account, then deploy it on-chain.
-    Your passkey (fingerprint, face, or security key) will be the only way to authorize transactions.
-  </p>
+  <div class="setup-header">
+    <div class="setup-icon">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--terracotta)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    </div>
+    <h1>Set Up Your Account</h1>
+    <p class="info">
+      Register a passkey to secure your smart account, then deploy it on-chain.
+      Your passkey (fingerprint, face, or security key) will be the only way to authorize transactions.
+    </p>
+  </div>
 
   <div id="status-bar">
-    <div>Account: <code id="contract-id"></code></div>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <span>Account: <code id="contract-id"></code></span>
   </div>
 
   <div id="error-box" class="error" style="display:none"></div>
 
-  <section>
-    <h2>1. Register Passkey</h2>
-    <p class="info">
-      Your browser will prompt you to create a passkey.
-      This passkey is bound to your account and will be used to sign all future transactions.
-    </p>
-    <div class="field">
-      <button id="register-btn">Register Passkey</button>
+  <!-- Step 1 -->
+  <section class="step-section">
+    <div class="step-indicator">
+      <div class="step-number">1</div>
+      <div class="step-line"></div>
     </div>
-    <pre id="register-result" style="display:none"></pre>
+    <div class="step-content">
+      <h2>Register Passkey</h2>
+      <p class="info">
+        Your browser will prompt you to create a passkey.
+        This passkey is bound to your account and will be used to sign all future transactions.
+      </p>
+      <div class="field">
+        <button id="register-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Register Passkey
+        </button>
+      </div>
+      <pre id="register-result" style="display:none"></pre>
+    </div>
   </section>
 
+  <!-- Step 2 -->
   <section id="deploy-section" class="hidden">
-    <h2>2. Deploy Account</h2>
-    <p class="info">Publish your passkey-secured smart account to the Stellar network.</p>
-    <div class="field">
-      <button id="deploy-btn" class="primary">Deploy Account</button>
+    <div class="step-section">
+      <div class="step-indicator">
+        <div class="step-number">2</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-content">
+        <h2>Deploy Account</h2>
+        <p class="info">Publish your passkey-secured smart account to the Stellar network.</p>
+        <div class="field">
+          <button id="deploy-btn" class="primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+            Deploy Account
+          </button>
+        </div>
+        <pre id="deploy-result" style="display:none"></pre>
+      </div>
     </div>
-    <pre id="deploy-result" style="display:none"></pre>
   </section>
 
+  <!-- Done -->
   <section id="done-section" class="hidden">
-    <h2>Account Ready</h2>
-    <p class="info">Your smart account is live. Use your passkey to sign transactions.</p>
-    <div class="field">
-      <a id="account-link" class="button-link">Go to Account</a>
+    <div class="done-card">
+      <div class="done-icon">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <h2>Account Ready</h2>
+      <p class="info">Your smart account is live on the Stellar network. Use your passkey to sign transactions.</p>
+      <div class="field">
+        <a id="account-link" class="button-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Go to Account
+        </a>
+      </div>
     </div>
   </section>
 </BaseLayout>
 
 <style>
-  body {
-    background: #1a1a2e;
+  .setup-header {
+    text-align: center;
+    margin-bottom: 0.5rem;
   }
 
-  button.primary {
-    background: #1a6b3a;
-    border-color: #1a8b4a;
-    font-size: 1.1rem;
-    padding: 0.7rem 2rem;
+  .setup-icon {
+    margin-bottom: 0.75rem;
   }
 
-  button.primary:hover {
-    background: #1a8b4a;
+  .setup-header h1 {
+    margin-bottom: 0.35rem;
+  }
+
+  .setup-header .info {
+    max-width: 50ch;
+    margin: 0 auto;
   }
 
   #status-bar {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 4px;
-    padding: 0.5rem 0.75rem;
-    margin: 1rem 0;
+    background: var(--cream);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.85rem;
+    margin: 1.25rem 0;
     font-size: 0.85rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .step-section {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    padding-top: 0.1rem;
+  }
+
+  .step-number {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--terracotta);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .step-line {
+    width: 2px;
+    flex: 1;
+    background: var(--border-light);
+    min-height: 2rem;
+    margin-top: 0.35rem;
+  }
+
+  .step-content {
+    flex: 1;
+    padding-bottom: 1rem;
+  }
+
+  .step-content h2 {
+    margin-bottom: 0.25rem;
+  }
+
+  button.primary {
+    background: var(--sage);
+    font-size: 1rem;
+    padding: 0.7rem 1.6rem;
+  }
+
+  button.primary:hover {
+    background: var(--sage-light);
+    box-shadow: 0 4px 12px rgba(107, 143, 113, 0.25);
   }
 
   .button-link {
-    display: inline-block;
-    background: #1a6b3a;
-    color: #e0e0e0;
-    border: 1px solid #1a8b4a;
-    padding: 0.5rem 1.2rem;
-    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--sage);
+    color: #fff;
+    border: none;
+    padding: 0.65rem 1.4rem;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 0.95rem;
+    font-weight: 500;
     text-decoration: none;
+    transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
   }
 
   .button-link:hover {
-    background: #1a8b4a;
+    background: var(--sage-light);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(107, 143, 113, 0.25);
+  }
+
+  .done-card {
+    background: var(--cream);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    padding: 2rem 1.5rem;
+    text-align: center;
+  }
+
+  .done-icon {
+    margin-bottom: 0.75rem;
+  }
+
+  .done-card h2 {
+    margin-bottom: 0.25rem;
+    color: var(--sage-dark);
+  }
+
+  .done-card .info {
+    margin-bottom: 1rem;
+  }
+
+  .done-card .field {
+    display: flex;
+    justify-content: center;
   }
 
   #deploy-result a {
-    color: #5bc0de;
+    color: var(--terracotta);
     text-decoration: underline;
   }
 
   #deploy-result a:hover {
-    color: #7dd4ed;
+    color: var(--terracotta-light);
   }
 </style>
 

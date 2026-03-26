@@ -4,8 +4,14 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
 <BaseLayout title="Contract Account Wallet">
   <div class="page-header">
-    <h1>Contract Account Wallet</h1>
-    <a id="home-link" class="home-btn">Home</a>
+    <h1>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--terracotta)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -3px; margin-right: 0.3rem;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Account Wallet
+    </h1>
+    <a id="home-link" class="home-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Home
+    </a>
   </div>
 
   <div id="error-box" class="error" style="display:none"></div>
@@ -13,9 +19,18 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   <!-- Signing mode UI -->
   <div id="signing-mode" class="hidden">
     <div class="signing-request">
-      <h2>Signature Request</h2>
-      <div>From: <span class="origin" id="sign-origin"></span></div>
-      <div class="hash">Hash: <code id="sign-hash"></code></div>
+      <div class="signing-header">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--golden)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <h2>Signature Request</h2>
+      </div>
+      <div class="signing-detail">
+        <span class="signing-label">From</span>
+        <span class="origin" id="sign-origin"></span>
+      </div>
+      <div class="signing-detail">
+        <span class="signing-label">Hash</span>
+        <code id="sign-hash"></code>
+      </div>
     </div>
 
     <div id="sign-needs-register">
@@ -26,9 +41,12 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     </div>
 
     <div id="sign-ready" class="hidden">
-      <div class="field">
-        <button id="approve-btn" class="primary">Approve & Sign</button>
-        <button id="deny-btn" style="margin-left:0.5rem">Deny</button>
+      <div class="field sign-actions">
+        <button id="approve-btn" class="primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Approve &amp; Sign
+        </button>
+        <button id="deny-btn" class="deny-btn">Deny</button>
       </div>
     </div>
 
@@ -38,13 +56,16 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   <!-- Home mode UI -->
   <div id="home-mode" class="hidden">
     <section id="account-section">
-      <h2>Account</h2>
+      <h2>Account Details</h2>
       <div class="account-card">
         <div class="account-field">
           <span class="account-label">Address</span>
           <div class="address-row">
             <code id="contract-id" class="account-address"></code>
-            <button id="copy-btn" class="copy-btn" title="Copy address">Copy</button>
+            <button id="copy-btn" class="copy-btn" title="Copy address">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy
+            </button>
           </div>
         </div>
         <div class="account-field">
@@ -52,7 +73,10 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           <span id="xlm-balance" class="balance-value">loading...</span>
         </div>
         <div class="account-links">
-          <a id="explorer-link" class="explorer-link" target="_blank" rel="noopener" style="display:none">View on Stellar Expert</a>
+          <a id="explorer-link" class="explorer-link" target="_blank" rel="noopener" style="display:none">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            View on Stellar Expert
+          </a>
         </div>
       </div>
     </section>
@@ -87,9 +111,15 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
     <!-- Shown when a passkey is already registered -->
     <section id="passkey-info-section" class="hidden">
-      <h2>Passkey</h2>
+      <h2>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -3px; margin-right: 0.3rem;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Passkey
+      </h2>
       <div class="passkey-details">
-        <div class="passkey-status">Registered</div>
+        <div class="passkey-status">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Registered
+        </div>
         <div class="passkey-field">
           <span class="passkey-label">Public Key</span>
           <code id="passkey-pubkey" class="passkey-value"></code>
@@ -115,13 +145,16 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       <h2>Register Passkey</h2>
       <p class="info">Creates a new passkey bound to this contract's subdomain.</p>
       <div class="field">
-        <button id="register-btn">Register Passkey</button>
+        <button id="register-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Register Passkey
+        </button>
       </div>
       <pre id="no-key-register-result" style="display:none"></pre>
     </section>
 
     <section id="sign-section">
-      <h2>Try It out</h2>
+      <h2>Try It Out</h2>
       <p class="info">Want to see how it works?
           Eventually, other stellar dApps will redirect to this domain when you need to sign a transaction.
           For now you can invoke a contract or sign arbitrary data below.
@@ -129,7 +162,10 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       <h3>Invoke a contract</h3>
       <p class="info">Set a status message on-chain via your smart account.</p>
       <div class="field">
-        <a id="status-message-link" class="button-link">Status Message</a>
+        <a id="status-message-link" class="button-link">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Status Message
+        </a>
       </div>
       <h3>Sign a Hash</h3>
       <p class="info">Authenticate with your passkey to sign a 32-byte hash (e.g. a transaction hash).</p>
@@ -137,9 +173,12 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         <label for="hash-input">Hash to sign (64 hex chars)</label>
         <input id="hash-input" placeholder="e.g. a1b2c3d...64 hex characters" maxlength="64" />
       </div>
-      <div class="field" style="margin-top:0.5rem">
-        <button id="sign-btn" disabled>Sign</button>
-        <button id="random-hash-btn" style="margin-left:0.5rem; font-size:0.8rem">Random hash</button>
+      <div class="field sign-hash-actions">
+        <button id="sign-btn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Sign
+        </button>
+        <button id="random-hash-btn" class="secondary-btn">Random hash</button>
       </div>
       <pre id="sign-result" style="display:none"></pre>
     </section>
@@ -147,33 +186,55 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 </BaseLayout>
 
 <style>
-  body {
-    background: #1a1a2e;
-  }
-
   .page-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
 
+  .page-header h1 {
+    font-size: 1.4rem;
+  }
 
   button.primary {
-    background: #1a6b3a;
-    border-color: #1a8b4a;
-    font-size: 1.1rem;
-    padding: 0.7rem 2rem;
+    background: var(--sage);
+    font-size: 1rem;
+    padding: 0.7rem 1.6rem;
   }
 
   button.primary:hover {
-    background: #1a8b4a;
+    background: var(--sage-light);
+    box-shadow: 0 4px 12px rgba(107, 143, 113, 0.25);
+  }
+
+  .deny-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-light);
+    font-size: 0.9rem;
+    padding: 0.65rem 1.2rem;
+  }
+
+  .deny-btn:hover {
+    background: var(--error-bg);
+    color: var(--error-text);
+    border-color: var(--error-border);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .sign-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
   }
 
   .account-card {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 6px;
-    padding: 1rem;
+    background: var(--cream);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    box-shadow: var(--shadow-soft);
   }
 
   .account-field {
@@ -185,10 +246,13 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   }
 
   .account-label {
-    color: #8899aa;
+    color: var(--text-muted);
     display: block;
     font-size: 0.8rem;
     margin-bottom: 0.25rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .address-row {
@@ -198,32 +262,39 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   }
 
   .account-address {
-    color: #c0d0e0;
+    color: var(--charcoal);
     word-break: break-all;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
   }
 
   .copy-btn {
-    background: #1a3060;
-    color: #8899aa;
-    border: 1px solid #2a4070;
-    padding: 0.2rem 0.5rem;
-    border-radius: 3px;
+    background: var(--warm-white);
+    color: var(--text-muted);
+    border: 1px solid var(--border-light);
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 0.75rem;
     white-space: nowrap;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
 
   .copy-btn:hover {
-    background: #2a4070;
-    color: #c0d0e0;
+    background: var(--cream-hover);
+    color: var(--terracotta);
+    border-color: var(--border-medium);
+    transform: none;
+    box-shadow: none;
   }
 
   .balance-value {
-    font-family: monospace;
-    font-size: 1.3rem;
-    color: #e0e0e0;
+    font-family: var(--font-mono);
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: var(--charcoal);
   }
 
   .account-links {
@@ -231,86 +302,168 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   }
 
   .explorer-link {
-    color: #5bc0de;
-    text-decoration: underline;
+    color: var(--terracotta);
+    text-decoration: none;
     font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0;
+    transition: color var(--transition);
   }
 
   .explorer-link:hover {
-    color: #7dd4ed;
+    color: var(--terracotta-light);
   }
 
   .signing-request {
-    background: #1a2a1a;
-    border: 1px solid #2a4a2a;
-    border-radius: 6px;
-    padding: 1rem;
+    background: var(--cream);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
     margin: 1rem 0;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .signing-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .signing-header h2 {
+    margin-bottom: 0;
+  }
+
+  .signing-detail {
+    margin: 0.5rem 0;
+  }
+
+  .signing-label {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.15rem;
   }
 
   .signing-request .origin {
-    color: #80b0e0;
+    color: var(--terracotta);
     font-size: 0.9rem;
+    font-weight: 500;
   }
 
-  .signing-request .hash {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: #c0c0c0;
-    margin: 0.75rem 0;
+  .signing-request .hash code {
+    font-size: 0.78rem;
     word-break: break-all;
   }
 
   .passkey-details {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
+    background: var(--cream);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    box-shadow: var(--shadow-soft);
   }
 
   .passkey-status {
-    color: #6fcf97;
+    color: var(--sage);
     font-weight: 600;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.65rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.9rem;
   }
 
   .passkey-field {
-    margin: 0.4rem 0;
+    margin: 0.5rem 0;
     font-size: 0.85rem;
   }
 
   .passkey-label {
-    color: #8899aa;
+    color: var(--text-muted);
     display: block;
     margin-bottom: 0.15rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .passkey-value {
-    color: #c0d0e0;
+    color: var(--charcoal);
     word-break: break-all;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
   }
 
   .rp-explainer {
-    margin-top: 0.75rem;
+    margin-top: 0.85rem;
     margin-bottom: 0;
     font-size: 0.8rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid var(--border-light);
   }
 
   .button-link {
-    display: inline-block;
-    background: #4a1a6b;
-    color: #e0e0e0;
-    border: 1px solid #6a2a8b;
-    padding: 0.5rem 1.2rem;
-    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--golden);
+    color: #fff;
+    border: none;
+    padding: 0.55rem 1.2rem;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    font-weight: 500;
     text-decoration: none;
+    transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
   }
 
   .button-link:hover {
-    background: #5a2a7b;
+    background: var(--golden-light);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(212, 168, 83, 0.25);
+  }
+
+  .secondary-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-light);
+    font-size: 0.82rem;
+    padding: 0.55rem 0.85rem;
+  }
+
+  .secondary-btn:hover {
+    background: var(--cream);
+    border-color: var(--border-medium);
+    color: var(--charcoal);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .sign-hash-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.5rem;
+  }
+
+  .name-link {
+    color: var(--terracotta);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    word-break: break-all;
+    text-decoration: underline;
+  }
+
+  .name-link:hover {
+    color: var(--terracotta-light);
   }
 
   .name-link {
@@ -786,7 +939,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       document.getElementById("xlm-balance")!.textContent = "unavailable";
     });
   } else {
-    document.getElementById("xlm-balance")!.textContent = "—";
+    document.getElementById("xlm-balance")!.textContent = "\u2014";
   }
 
   // --- Name section ---

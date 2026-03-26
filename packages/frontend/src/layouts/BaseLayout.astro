@@ -11,20 +11,56 @@ const { title } = Astro.props;
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#fdf8f0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>{title}</title>
   </head>
   <body>
     <a id="preview-banner" style="display:none" target="_blank" rel="noopener"></a>
     <div id="webview-warning" style="display:none">
-      <p>Passkeys are not supported in in-app browsers.</p>
-      <p>Tap the menu (<strong>&middot;&middot;&middot;</strong>) and choose <strong>"Open in Safari"</strong> or <strong>"Open in Browser"</strong>.</p>
+      <div class="webview-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div>
+        <p><strong>Passkeys are not supported in in-app browsers.</strong></p>
+        <p>Tap the menu (<strong>&middot;&middot;&middot;</strong>) and choose <strong>"Open in Safari"</strong> or <strong>"Open in Browser"</strong>.</p>
+      </div>
     </div>
     <slot />
+    <footer class="site-footer">
+      <p>
+        Built on <a href="https://stellar.org" target="_blank" rel="noopener">Stellar</a> &middot; Passkey-secured smart accounts
+      </p>
+    </footer>
   </body>
 </html>
 
 <style is:global>
   @import "../styles/global.css";
+
+  .site-footer {
+    margin-top: 3rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border-light);
+    text-align: center;
+  }
+
+  .site-footer p {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .site-footer a {
+    color: var(--text-muted);
+    text-decoration: underline;
+  }
+
+  .site-footer a:hover {
+    color: var(--terracotta);
+  }
 
   #preview-banner {
     position: fixed;
@@ -32,18 +68,19 @@ const { title } = Astro.props;
     left: 0;
     right: 0;
     display: none;
-    background: #e11d48;
+    background: var(--terracotta);
     color: #fff;
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: 0.9rem;
+    font-weight: 600;
     padding: 0.5rem 1rem;
     text-align: center;
     text-decoration: none;
     z-index: 9999;
+    letter-spacing: 0.01em;
   }
 
   #preview-banner:hover {
-    background: #be123c;
+    background: var(--terracotta-dark);
   }
 
   body:has(#preview-banner[style*="display: block"]) {
@@ -51,18 +88,32 @@ const { title } = Astro.props;
   }
 
   #webview-warning {
-    background: #78350f;
-    border: 1px solid #a16207;
-    border-radius: 6px;
-    color: #fef3c7;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-md);
+    color: var(--warning-text);
+    padding: 0.85rem 1rem;
+    margin-bottom: 1.25rem;
     font-size: 0.9rem;
     line-height: 1.5;
+    display: none;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+
+  #webview-warning[style*="display: block"],
+  #webview-warning[style*="display:block"] {
+    display: flex !important;
+  }
+
+  .webview-icon {
+    flex-shrink: 0;
+    color: var(--golden-dark);
+    margin-top: 0.1rem;
   }
 
   #webview-warning p {
-    margin: 0.25rem 0;
+    margin: 0.15rem 0;
   }
 </style>
 
