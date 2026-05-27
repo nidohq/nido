@@ -39,7 +39,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "04dc0fc5b3d28373c2ebed8071a21e571eef64f734dfd3646f5855aab99aa8179601227d26df3787f5059883f820fb86757e2c27693fe9b83f92b432aa9e83697d"
+                          "bytes": "0426599006343468593571484e418be9c40db4ffaf60ff9d98e6ccb13aec950ce2b70cd20e293909a6f1c380ab2cbad6c527c552c6aa7b7a664722df08fda26b8f"
                         }
                       ]
                     }
@@ -163,7 +163,7 @@
                     "symbol": "Fingerprint"
                   },
                   {
-                    "bytes": "9f2a74a95e712c1c63e1e424d647d406ab7ab5e7c4e318693853643e29310971"
+                    "bytes": "e8716e77eb0f26fa73a0a3a5435194cb8ad55acac4058a3194b389467bd7e4b7"
                   }
                 ]
               },
@@ -356,7 +356,7 @@
                         "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                       },
                       {
-                        "bytes": "04edf723c4472e75346bcdae59f2cd81701c1fb4991c0b02361deaed196cd9012bc167df372455f5898065c2554701b40f6026bf77abf15f0bd70b042809157080"
+                        "bytes": "044083a64afb4b630ce7683674a6cdcebc7007aef7cb08f10b2cd491b6ce24ca1204f88bd2a2068e27591f1c5cfbd4fddf9a51f7b2360d784ee1e8fbec8f7476a6"
                       }
                     ]
                   }

@@ -41,7 +41,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "04a4fd48f349db4569318c0857d0b9ab48505f1d67b0784e459fcecbd57f25ee2b4dc4172cfe88415ca435088a32e9b975cd6ae87d47f971bede506e5d67fb875c"
+                          "bytes": "0426599006343468593571484e418be9c40db4ffaf60ff9d98e6ccb13aec950ce2b70cd20e293909a6f1c380ab2cbad6c527c552c6aa7b7a664722df08fda26b8f"
                         }
                       ]
                     }
@@ -145,7 +145,7 @@
                     "symbol": "Fingerprint"
                   },
                   {
-                    "bytes": "49f9363f5c6116d96aa7697197a4b054174050e90efd5db789b6eb989451a276"
+                    "bytes": "e8716e77eb0f26fa73a0a3a5435194cb8ad55acac4058a3194b389467bd7e4b7"
                   }
                 ]
               },
@@ -172,7 +172,7 @@
                     "symbol": "Fingerprint"
                   },
                   {
-                    "bytes": "94aa292d3a7669b5f742e9792f23cecb23f128b34818ff64e8bad81b5aeddc6d"
+                    "bytes": "fe5157bf2b975deb535479bc4fcf1babc83019d370509d463925455128ce408a"
                   }
                 ]
               },
@@ -455,7 +455,7 @@
                         "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                       },
                       {
-                        "bytes": "04167ebeaa25443c687b26064ffb023c76128286d91d80e85d59720cfb71eb8fbe4ee82f398b8e12022f584e63a49d1311d11d7b709557f0be3b38fd495540a668"
+                        "bytes": "044083a64afb4b630ce7683674a6cdcebc7007aef7cb08f10b2cd491b6ce24ca1204f88bd2a2068e27591f1c5cfbd4fddf9a51f7b2360d784ee1e8fbec8f7476a6"
                       }
                     ]
                   }
@@ -496,7 +496,7 @@
                         "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                       },
                       {
-                        "bytes": "04a4fd48f349db4569318c0857d0b9ab48505f1d67b0784e459fcecbd57f25ee2b4dc4172cfe88415ca435088a32e9b975cd6ae87d47f971bede506e5d67fb875c"
+                        "bytes": "0426599006343468593571484e418be9c40db4ffaf60ff9d98e6ccb13aec950ce2b70cd20e293909a6f1c380ab2cbad6c527c552c6aa7b7a664722df08fda26b8f"
                       }
                     ]
                   }

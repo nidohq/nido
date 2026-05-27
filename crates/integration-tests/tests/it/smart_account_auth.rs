@@ -1,5 +1,4 @@
-use g2c_integration_tests::{build_contract_assertion, deploy_smart_account};
-use p256::ecdsa::SigningKey;
+use g2c_integration_tests::{build_contract_assertion, deploy_smart_account, test_key};
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::xdr::ToXdr;
@@ -58,8 +57,8 @@ fn smart_account_check_auth_rejects_wrong_key() {
     let env = Env::default();
     let (_client, account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
 
-    // Sign with a DIFFERENT key than the one registered
-    let wrong_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    // Sign with a DIFFERENT key than the one registered (deploy uses seed 1)
+    let wrong_key = test_key(99);
 
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0xEF; 32]));
     let assertion = build_contract_assertion(&wrong_key, &env, &hash.to_array());

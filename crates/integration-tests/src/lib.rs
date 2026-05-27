@@ -2,7 +2,25 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::ecdsa::{Signature, SigningKey};
+use sha2::{Digest, Sha256};
 use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
+
+/// Deterministically derive a P-256 signing key from a numeric seed.
+///
+/// Test keys are pinned so recorded `test_snapshots/` stay reproducible:
+/// p256 ECDSA signing is deterministic (RFC 6979), so a fixed key yields fixed
+/// signatures. Use distinct seeds where a test needs distinct keys; reserve
+/// `SigningKey::random` for property/fuzz tests that assert invariants rather
+/// than record ledger state.
+///
+/// # Panics
+/// Panics if the derived bytes are not a valid P-256 scalar (cryptographically
+/// negligible for `SHA-256` output).
+#[must_use]
+pub fn test_key(seed: u64) -> SigningKey {
+    let digest = Sha256::digest(seed.to_le_bytes());
+    SigningKey::from_slice(&digest).expect("SHA-256 output is a valid P-256 scalar")
+}
 
 pub const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/g2c_smart_account.wasm");
@@ -112,8 +130,8 @@ pub fn deploy_smart_account(
     // Deploy the stateless WebAuthn verifier
     let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, ());
 
-    // Generate a passkey (P-256 keypair)
-    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    // Pinned passkey (P-256 keypair) for reproducible snapshots
+    let signing_key = test_key(1);
     let pubkey_sec1 = signing_key.verifying_key().to_sec1_bytes();
 
     // Construct the External signer: (verifier_address, public_key_bytes)

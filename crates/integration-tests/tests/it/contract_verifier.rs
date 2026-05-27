@@ -1,5 +1,4 @@
-use g2c_integration_tests::{build_contract_assertion, WEBAUTHN_VERIFIER_WASM};
-use p256::ecdsa::SigningKey;
+use g2c_integration_tests::{build_contract_assertion, test_key, WEBAUTHN_VERIFIER_WASM};
 use soroban_sdk::Env;
 use stellar_accounts::verifiers::webauthn::{self, WebAuthnSigData};
 
@@ -10,8 +9,8 @@ fn verify_webauthn_assertion_on_chain() {
     // Register the verifier contract
     let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, ());
 
-    // Generate a passkey (P-256 keypair)
-    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    // Pinned passkey (P-256 keypair)
+    let signing_key = test_key(10);
 
     // Simulate a 32-byte signature payload (the transaction hash the auth
     // framework would produce)
@@ -53,7 +52,7 @@ fn reject_wrong_challenge_on_chain() {
 
     let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, ());
 
-    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    let signing_key = test_key(11);
 
     // Build assertion for one payload but verify with a different one
     let payload_bytes: [u8; 32] = [1u8; 32];
@@ -91,8 +90,8 @@ fn reject_wrong_key_on_chain() {
 
     let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, ());
 
-    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
-    let wrong_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    let signing_key = test_key(12);
+    let wrong_key = test_key(13);
 
     let payload_bytes: [u8; 32] = [3u8; 32];
     let assertion = build_contract_assertion(&signing_key, &env, &payload_bytes);

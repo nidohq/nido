@@ -6,7 +6,7 @@
 //! adding a scoped rule, authorizing only within scope, time-based expiry via
 //! `valid_until`, and revocation via `remove_context_rule`.
 
-use g2c_integration_tests::{build_contract_assertion, deploy_smart_account};
+use g2c_integration_tests::{build_contract_assertion, deploy_smart_account, test_key};
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::crypto::Hash;
@@ -16,9 +16,10 @@ use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, Map, String};
 use stellar_accounts::smart_account::{do_check_auth, ContextRuleType, Signatures, Signer};
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 
-/// Build a fresh P-256 "session key" and its `External` signer for `verifier`.
+/// Build a pinned P-256 "session key" and its `External` signer for `verifier`.
+/// Seed 2 is distinct from the deployed passkey (seed 1).
 fn session_signer(env: &Env, verifier: &Address) -> (SigningKey, Signer) {
-    let key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    let key = test_key(2);
     let pubkey_sec1 = key.verifying_key().to_sec1_bytes();
     let key_data = Bytes::from_slice(env, &pubkey_sec1);
     let signer = Signer::External(verifier.clone(), key_data);
