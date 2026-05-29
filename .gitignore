@@ -18,6 +18,10 @@ node_modules/
 packages/frontend/dist/
 packages/frontend/.astro/
 
+# Brainstorming visual-companion transient session files
+# (committed specs live under docs/superpowers/)
+.superpowers/
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
