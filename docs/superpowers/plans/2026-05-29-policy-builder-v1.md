@@ -65,15 +65,13 @@ pub use contract::MultisigPolicy;
 - [ ] **Step 3: Create `contracts/multisig-policy/src/contract.rs` (stub that fails to compile until Task 2)**
 
 ```rust
-use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
-use stellar_accounts::policies::simple_threshold::{self, SimpleThresholdAccountParams};
-use stellar_accounts::policies::Policy;
-use stellar_accounts::smart_account::{ContextRule, Signer};
-use soroban_sdk::auth::Context;
+use soroban_sdk::contract;
 
 #[contract]
 pub struct MultisigPolicy;
 ```
+
+Strictly what's needed to compile clean. Task 2 replaces the file with the full `Policy` trait impl and brings in the additional imports at that point. (Pulling imports ahead of their use fires real `unused_imports` warnings — `#![allow(dead_code)]` does *not* suppress those — and is YAGNI besides.)
 
 - [ ] **Step 4: Verify the crate is picked up by the workspace and builds the skeleton**
 
@@ -104,7 +102,7 @@ mod test {
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::Env;
-    use stellar_accounts::smart_account::ContextRuleType;
+    use stellar_accounts::smart_account::{ContextRuleType, Signer};
     use soroban_sdk::String;
 
     #[test]
@@ -118,11 +116,17 @@ mod test {
         env.mock_all_auths();
 
         // Synthesize a ContextRule (the smart account would pass one in real use).
+        // `simple_threshold::install` validates `threshold <= signers.len()`, so
+        // the rule needs at least `threshold` signers attached.
+        let mut signers = Vec::new(&env);
+        signers.push_back(Signer::Delegated(Address::generate(&env)));
+        signers.push_back(Signer::Delegated(Address::generate(&env)));
+        signers.push_back(Signer::Delegated(Address::generate(&env)));
         let rule = ContextRule {
             id: rule_id,
             context_type: ContextRuleType::Default,
             name: String::from_str(&env, "test"),
-            signers: Vec::new(&env),
+            signers,
             policies: Vec::new(&env),
             valid_until: None,
         };
@@ -252,58 +256,85 @@ git commit -m "feat(multisig-policy): implement Policy trait via OZ simple_thres
 
 **Files:**
 - Modify: `contracts/factory/src/contract.rs`
-- Test: `contracts/factory/src/contract.rs` (unit tests at bottom)
+- Test: `contracts/factory/src/contract.rs` (new unit-test module at bottom)
 
-- [ ] **Step 1: Read `contracts/factory/src/contract.rs` to confirm the verifier-singleton pattern**
+**Pre-read:** The factory's contract struct is named `Contract` (not `Factory`). `verifier_address` currently *inlines* the lazy-deploy pattern and is **private**. This task (a) factors that pattern into a shared `singleton_at` helper, (b) makes `verifier_address` `pub` so the SDK can simulate-read it, and (c) adds `multisig_policy_address` in parallel.
 
-The factory already has `verifier_address(e)` that lazy-deploys the verifier using a hash constant. We will add an exact parallel `multisig_policy_address(e)` using a new hash constant.
+- [ ] **Step 1: Add a failing test at the bottom of `contracts/factory/src/contract.rs`**
 
-- [ ] **Step 2: Add a failing test at the bottom of `contracts/factory/src/contract.rs`**
-
-Inside the existing `#[cfg(test)] mod test { ... }` block (or create one if none exists, following the test pattern in `contracts/multisig-policy/src/contract.rs`):
+The factory has no existing `#[cfg(test)]` module, so create one. Append to the file:
 
 ```rust
-#[test]
-fn multisig_policy_address_is_deterministic_and_idempotent() {
-    let env = Env::default();
-    let factory_addr = env.register(Factory, ());
-    let first = env.as_contract(&factory_addr, || Factory::multisig_policy_address(&env));
-    let second = env.as_contract(&factory_addr, || Factory::multisig_policy_address(&env));
-    assert_eq!(first, second);
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::Env;
+
+    #[test]
+    fn multisig_policy_address_is_deterministic_and_idempotent() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let factory_addr = env.register(Contract, ());
+        // MULTISIG_POLICY is [0u8; 32] (placeholder until Task 4 publishes the
+        // real wasm). SHA-256 of any actual bytes will never equal all-zeros,
+        // so we cannot deploy a contract from the placeholder hash directly.
+        //
+        // Instead we test `singleton_at` with a hash from a real uploaded wasm.
+        // The idempotency invariant under test is independent of which wasm
+        // hash is used: first call deploys, second call detects the executable
+        // and returns the same address. Requires `just build-contracts` first.
+        const FACTORY_WASM: &[u8] =
+            include_bytes!("../../../target/wasm32v1-none/contract/g2c_factory.wasm");
+        let hash = env
+            .deployer()
+            .upload_contract_wasm(soroban_sdk::Bytes::from_slice(&env, FACTORY_WASM));
+        let first = env.as_contract(&factory_addr, || {
+            Contract::singleton_at(&env, &hash.to_array())
+        });
+        let second = env.as_contract(&factory_addr, || {
+            Contract::singleton_at(&env, &hash.to_array())
+        });
+        assert_eq!(first, second);
+    }
 }
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+After Task 4 fills in the real `MULTISIG_POLICY` hash, this test can be expanded (or replaced) with a direct call to `Contract::multisig_policy_address(&env)`. Tests in the integration crate (Phase 3) exercise the real public API.
+
+- [ ] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p g2c-factory multisig_policy_address_is_deterministic_and_idempotent`
-Expected: FAIL with "no method named `multisig_policy_address` found".
+Expected: FAIL with "no function or associated item named `multisig_policy_address` found".
 
-- [ ] **Step 4: Add the hash constant and method to `contracts/factory/src/contract.rs`**
+- [ ] **Step 3: Add the `MULTISIG_POLICY` hash constant**
 
-Near the existing `VERIFIER` hash constant, add:
+Just below the existing `VERIFIER` constant in `contracts/factory/src/contract.rs`:
 
 ```rust
-/// Wasm hash of `g2c_multisig_policy.wasm` (filled in after `just build-contracts`
-/// in Task 4).
-const MULTISIG_POLICY: [u8; 32] = [
-    0u8; 32 // placeholder; Task 4 replaces this with the real hash
-];
+/// Wasm hash of `g2c_multisig_policy.wasm`. Filled in by Task 4 once the
+/// policy wasm has been published via `stellar registry publish`.
+const MULTISIG_POLICY: &[u8; 32] = &[0u8; 32];
 ```
 
-Inside the existing `impl Factory` block (next to `verifier_address`), add:
+(Match the shape of the existing `VERIFIER: &[u8; 32]` declaration — same `&[u8; 32]` reference type, byte-literal style.)
+
+- [ ] **Step 4: Factor out the inlined verifier deploy into a `singleton_at` helper, refactor `verifier_address` to use it, and add `multisig_policy_address`**
+
+Inside `impl Contract`:
 
 ```rust
+/// Lazy-deploy and return the WebAuthn verifier singleton.
+pub fn verifier_address(e: &Env) -> Address {
+    Self::singleton_at(e, VERIFIER)
+}
+
 /// Lazy-deploy and return the shared multisig policy singleton.
 pub fn multisig_policy_address(e: &Env) -> Address {
     Self::singleton_at(e, MULTISIG_POLICY)
 }
-```
 
-If the existing `verifier_address` does not use a `singleton_at` helper but instead inlines the pattern, mirror that style instead. The shape currently used by the verifier is:
-
-```rust
-fn singleton_at(e: &Env, hash: [u8; 32]) -> Address {
-    let bytes: BytesN<32> = BytesN::from_array(e, &hash);
+fn singleton_at(e: &Env, hash: &[u8; 32]) -> Address {
+    let bytes: BytesN<32> = BytesN::from_array(e, hash);
     let deployer = e.deployer().with_current_contract(bytes.clone());
     let address = deployer.deployed_address();
     if address.executable().is_none() {
@@ -314,7 +345,7 @@ fn singleton_at(e: &Env, hash: [u8; 32]) -> Address {
 }
 ```
 
-If `verifier_address` inlines this without a helper, factor it out as `singleton_at` in this task so both callers share the code.
+Delete the previous `fn verifier_address(...)` definition that inlined the lazy-deploy logic. The new `pub fn verifier_address` returning `Self::singleton_at(e, VERIFIER)` replaces it. Existing internal callers (`deploy_account_contract`) continue to work because the function name and signature are preserved; the visibility just widens to `pub`.
 
 - [ ] **Step 5: Run the test to verify it passes**
 
@@ -930,41 +961,13 @@ git commit -m "test(integration): scoped session-key flow (scope, expiry, revoke
 
 ### Task 8: Delete the synthetic `smart_account_scoping.rs` tests
 
-**Files:**
-- Delete: `crates/integration-tests/tests/it/smart_account_scoping.rs`
-- Delete: `crates/integration-tests/test_snapshots/smart_account_scoping/`
-- Modify: `crates/integration-tests/tests/it/main.rs`
+**Branch state note:** `smart_account_scoping.rs` was introduced by an *unmerged* PR (#23) on a sibling branch. The Policy Builder branch was cut from `main` *before* #23 landed, so the file never existed here. **On this branch, Task 8 is a no-op.**
 
-- [ ] **Step 1: Remove the module registration from `main.rs`**
+If PR #23 merges to `main` *before* this branch does, that conflict will reintroduce the file. Resolve by deleting it (and its snapshots directory) at merge time — Tasks 6 and 7 subsume its coverage.
 
-```rust
-mod contract_verifier;
-mod multisig_recovery;
-mod name_registry;
-mod scoped_session_key;
-mod smart_account_auth;
-mod smart_account_setup;
-```
+If PR #23 is closed/superseded, nothing further is needed.
 
-- [ ] **Step 2: Delete the files**
-
-Run:
-```bash
-git rm crates/integration-tests/tests/it/smart_account_scoping.rs
-git rm -r crates/integration-tests/test_snapshots/smart_account_scoping
-```
-
-- [ ] **Step 3: Run the full integration test suite**
-
-Run: `cargo test -p g2c-integration-tests`
-Expected: all tests PASS, no compile errors.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add -A crates/integration-tests
-git commit -m "test(integration): remove synthetic scoping tests (subsumed by recovery + session-key)"
-```
+No commit is required for this task on this branch.
 
 ---
 
