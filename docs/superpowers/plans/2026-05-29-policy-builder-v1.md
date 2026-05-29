@@ -330,36 +330,111 @@ git commit -m "feat(factory): add multisig_policy_address singleton (placeholder
 
 ---
 
-### Task 4: Set the real `MULTISIG_POLICY` wasm hash
+### Task 4: Publish multisig-policy via stellar-registry-cli, fill factory hash constant
+
+The factory holds the multisig-policy wasm hash as a constant and lazy-deploys via that hash. For the deployed-on-testnet factory to lazy-deploy the *correct* wasm, the bytes must already be installed on the network and the constant must match. We use `stellar registry publish` to install the wasm (which assigns a canonical hash) and then put that hash into the source.
+
+**Prerequisites:** The engineer has `stellar` CLI configured with an account alias (`--source <alias>`) authorized to publish to the registry on testnet (e.g., `--source default-account` per project convention). If unsure, check `~/.config/stellar/identity/` or run `stellar keys ls`.
 
 **Files:**
 - Modify: `contracts/factory/src/contract.rs`
 
-- [ ] **Step 1: Compute the wasm hash**
+- [ ] **Step 1: Publish the multisig-policy wasm to the testnet registry**
 
-Run: `sha256sum target/wasm32v1-none/contract/g2c_multisig_policy.wasm`
-Note the 64-hex-char output.
+Run:
+```bash
+stellar registry publish \
+  --wasm target/wasm32v1-none/contract/g2c_multisig_policy.wasm \
+  --name multisig-policy --version 0.1.0 \
+  --network testnet --source <your-alias>
+```
+Expected: outputs the published package's wasm hash (64 hex chars). Save it.
 
-- [ ] **Step 2: Replace the placeholder `MULTISIG_POLICY` constant with the real hash bytes**
+- [ ] **Step 2: Confirm the hash via the registry**
 
-Convert the hex to a `[u8; 32]` literal. Example transformation for hex `bb43ad…01`:
+Run:
+```bash
+stellar registry fetch-hash --name multisig-policy --version 0.1.0 --network testnet
+```
+Expected: same 64-hex-char hash as Step 1. Note it as `<HASH>`.
+
+- [ ] **Step 3: Replace the placeholder `MULTISIG_POLICY` constant in `contracts/factory/src/contract.rs`**
+
+Convert `<HASH>` (e.g., `bb43ad3545306f0c2fd0539c0785104e946121e2a1147326ca3a4ff95cc77c01`) to a `[u8; 32]` literal:
 
 ```rust
 const MULTISIG_POLICY: [u8; 32] = [
-    0xbb, 0x43, 0xad, 0x35, /* … 28 more bytes … */
+    0xbb, 0x43, 0xad, 0x35, 0x45, 0x30, 0x6f, 0x0c,
+    0x2f, 0xd0, 0x53, 0x9c, 0x07, 0x85, 0x10, 0x4e,
+    0x94, 0x61, 0x21, 0xe2, 0xa1, 0x14, 0x73, 0x26,
+    0xca, 0x3a, 0x4f, 0xf9, 0x5c, 0xc7, 0x7c, 0x01,
 ];
 ```
+(Replace each byte from your actual hash. A quick way: `python3 -c "h='<HASH>'; print(', '.join(f'0x{h[i:i+2]}' for i in range(0,64,2)))"`.)
 
-- [ ] **Step 3: Rebuild and re-run all factory tests**
+- [ ] **Step 4: Rebuild and re-run factory tests**
 
 Run: `just build-contracts && cargo test -p g2c-factory`
-Expected: all tests pass.
+Expected: all tests PASS.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add contracts/factory/src/contract.rs
 git commit -m "feat(factory): set real multisig-policy wasm hash"
+```
+
+---
+
+### Task 4b: Publish new factory wasm and upgrade the deployed factory
+
+The deployed factory at `CDDMELYHOSD6M2T53F5DUYCXDS3VVOQ72E4KZMMZP37GQWII2WRKM2CC` runs the *old* factory wasm (no `multisig_policy_address`). The new factory wasm (built in Task 4) needs to be published and the deployed instance upgraded. Both steps go through stellar-registry-cli.
+
+**Files:** none new (this task only runs CLI commands).
+
+- [ ] **Step 1: Publish the new factory wasm**
+
+Run:
+```bash
+stellar registry publish \
+  --wasm target/wasm32v1-none/contract/g2c_factory.wasm \
+  --name factory --version 0.2.0 \
+  --network testnet --source <your-alias>
+```
+Expected: outputs the new factory wasm hash. The version bump from 0.1.0 → 0.2.0 reflects the added method.
+
+- [ ] **Step 2: Upgrade the deployed factory to the new wasm**
+
+Run:
+```bash
+stellar registry upgrade \
+  --name factory --version 0.2.0 \
+  --network testnet --source <your-alias>
+```
+Expected: upgrade transaction confirmed; deployed factory contract address `CDDMEL…M2CC` is unchanged, but its wasm now exposes `multisig_policy_address`.
+
+- [ ] **Step 3: Verify the new method works on-chain**
+
+Run:
+```bash
+stellar contract invoke \
+  --id CDDMELYHOSD6M2T53F5DUYCXDS3VVOQ72E4KZMMZP37GQWII2WRKM2CC \
+  --network testnet --source <your-alias> \
+  -- multisig_policy_address
+```
+Expected: returns the lazy-deployed multisig policy contract address (a C-address). The first invocation may take longer because it triggers the lazy-deploy; subsequent calls are pure reads.
+
+- [ ] **Step 4: Record the multisig policy contract address for the frontend reference**
+
+Capture the address output by Step 3. The frontend reads it dynamically via `factory.multisig_policy_address()` (in `recoveryActions.ts`'s `fetchFactorySingleton`), so no hardcoded constant is needed in the source. But note the value in this task's commit message for future reference.
+
+- [ ] **Step 5: Commit (annotation only — no source changes)**
+
+```bash
+git commit --allow-empty -m "deploy(factory): publish v0.2.0 via stellar-registry-cli, upgrade testnet deployment
+
+Published multisig-policy v0.1.0 wasm hash: <HASH>
+Multisig policy deployed contract: <C-ADDRESS>"
 ```
 
 ---
@@ -3351,7 +3426,8 @@ EOF
 
 Spec coverage spot-check:
 
-- Architecture / modular policies ↔ Tasks 1–4.
+- Architecture / modular policies ↔ Tasks 1–4 + 4b.
+- Deployment via `stellar-registry-cli` ↔ Task 4 (publish multisig-policy), Task 4b (publish + upgrade factory).
 - Storage tiers (chain authoritative, local complement) ↔ Tasks 11 + 20 (chain fetch) + 22 (write material before chain).
 - PolicyBlock model + module interface ↔ Task 9.
 - `resolveFriendInput` ↔ Task 10.
