@@ -18,6 +18,9 @@
     "build": "tsc",
     "test": "vitest run"
   },
+  "dependencies": {
+    "smart-account": "*"
+  },
   "peerDependencies": {
     "@stellar/stellar-sdk": ">=11.3.0"
   },

@@ -23,3 +23,4 @@ export function allPolicyBlockKinds(): PolicyBlock['kind'][] {
 }
 
 export * from './loadBlocks.js';
+export * from './multisigRecovery.js';
