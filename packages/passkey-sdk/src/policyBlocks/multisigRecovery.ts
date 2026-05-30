@@ -1,5 +1,6 @@
 import { Client as SmartAccountClient } from 'smart-account';
 import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
+import { Operation, xdr } from '@stellar/stellar-sdk';
 import type {
   ChainRule, LocalOverlay, MultisigRecoveryBlock,
   PolicyBlockModule, PolicyState, TxBuild,
@@ -101,16 +102,33 @@ export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = 
   },
 };
 
-/** Pull the Soroban Operation[] out of an AssembledTransaction.
- *  The exact property path depends on the SDK version; adjust if needed. */
-function extractOperations(tx: AssembledTransaction<unknown>): import('@stellar/stellar-sdk').Operation[] {
-  // Common shapes across @stellar/stellar-sdk 12-14:
-  //   tx.built.operations
-  const built = (tx as unknown as { built?: { operations?: unknown[] } }).built;
+/** Pull XDR Soroban Operation[] out of an AssembledTransaction.
+ *
+ *  `tx.built` is a high-level Transaction whose `operations` field holds JS
+ *  Operation POJOs (`{type, func, auth, source?}`). Downstream code feeds
+ *  these to `TransactionBuilder.addOperation`, which during `build()` runs
+ *  `Operation.fromXDRObject` over them — that call expects an XDR object
+ *  with a `.sourceAccount()` accessor and crashes with `e.sourceAccount is
+ *  not a function` when handed a POJO. Re-encode each one via the matching
+ *  `Operation.<type>(opts)` static, which takes the POJO shape and returns
+ *  a proper `xdr.Operation` ready for `addOperation`. */
+function extractOperations(tx: AssembledTransaction<unknown>): xdr.Operation[] {
+  const built = (tx as unknown as { built?: { operations?: ReadonlyArray<{
+    type: string; func?: xdr.HostFunction; auth?: xdr.SorobanAuthorizationEntry[]; source?: string;
+  }> } }).built;
   if (!built || !built.operations) {
     throw new Error('multisig-recovery: could not extract operations from AssembledTransaction');
   }
-  return Array.from(built.operations) as import('@stellar/stellar-sdk').Operation[];
+  return built.operations.map((op) => {
+    if (op.type !== 'invokeHostFunction' || !op.func) {
+      throw new Error(`multisig-recovery: unexpected op type ${op.type}`);
+    }
+    return Operation.invokeHostFunction({
+      func: op.func,
+      auth: op.auth ?? [],
+      source: op.source,
+    });
+  });
 }
 
 registerPolicyBlockModule(multisigRecoveryModule);

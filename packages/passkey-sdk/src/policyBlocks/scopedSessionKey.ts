@@ -1,6 +1,7 @@
 import { Buffer } from 'buffer';
 import { Client as SmartAccountClient } from 'smart-account';
 import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
+import { Operation, xdr } from '@stellar/stellar-sdk';
 import type {
   ChainRule, LocalOverlay, PolicyBlockModule, PolicyState,
   ScopedSessionKeyBlock, TxBuild,
@@ -90,14 +91,25 @@ export const scopedSessionKeyModule: PolicyBlockModule<ScopedSessionKeyBlock> = 
   },
 };
 
-/** Pull the Soroban Operation[] out of an AssembledTransaction.
- *  Mirrors the same helper in multisigRecovery.ts. */
-function extractOperations(tx: AssembledTransaction<unknown>): import('@stellar/stellar-sdk').Operation[] {
-  const built = (tx as unknown as { built?: { operations?: unknown[] } }).built;
+/** Pull XDR Soroban Operation[] out of an AssembledTransaction. See the
+ *  detailed comment on the identical helper in multisigRecovery.ts. */
+function extractOperations(tx: AssembledTransaction<unknown>): xdr.Operation[] {
+  const built = (tx as unknown as { built?: { operations?: ReadonlyArray<{
+    type: string; func?: xdr.HostFunction; auth?: xdr.SorobanAuthorizationEntry[]; source?: string;
+  }> } }).built;
   if (!built || !built.operations) {
     throw new Error('scoped-session-key: could not extract operations from AssembledTransaction');
   }
-  return Array.from(built.operations) as import('@stellar/stellar-sdk').Operation[];
+  return built.operations.map((op) => {
+    if (op.type !== 'invokeHostFunction' || !op.func) {
+      throw new Error(`scoped-session-key: unexpected op type ${op.type}`);
+    }
+    return Operation.invokeHostFunction({
+      func: op.func,
+      auth: op.auth ?? [],
+      source: op.source,
+    });
+  });
 }
 
 registerPolicyBlockModule(scopedSessionKeyModule);

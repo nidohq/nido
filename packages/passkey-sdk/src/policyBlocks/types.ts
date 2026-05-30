@@ -1,4 +1,4 @@
-import type { Operation } from '@stellar/stellar-sdk';
+import type { xdr } from '@stellar/stellar-sdk';
 
 export interface Friend {
   /** Resolved C-address or G-address; authoritative. */
@@ -66,10 +66,14 @@ export interface LocalOverlay {
   blockLabels: Record<number, string>;              // by ruleId
 }
 
-/** Result of a buildInstall / buildRevoke — operations the caller composes
- *  into a transaction. The caller signs with the primary passkey. */
+/** Result of a buildInstall / buildRevoke — XDR Soroban operations the
+ *  caller composes into a transaction. We return XDR (not the high-level
+ *  JS `Operation`) because `TransactionBuilder.addOperation` stores its
+ *  argument verbatim and later constructs `Transaction(envelope)`, which
+ *  invokes `Operation.fromXDRObject` on each — that step calls
+ *  `op.sourceAccount()` and only XDR operations have that accessor. */
 export interface TxBuild {
-  operations: Operation[];
+  operations: xdr.Operation[];
   /** Brief description used in the signing UI. */
   description: string;
 }
