@@ -30,7 +30,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 </BaseLayout>
 
 <script>
-  import { contractIdFromHostname } from '@g2c/passkey-sdk';
+  import {
+    contractIdFromHostname,
+    loadPolicyBlocks,
+    loadFriendNicknames,
+    loadBlockLabels,
+    loadSessionKeyMaterial,
+  } from '@g2c/passkey-sdk';
+  import { fetchAllChainRules, fetchPolicyState } from '../../lib/policyChainFetch.js';
+  import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
+  import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
   import { mountRecoveryForm } from '../../lib/recoveryForm.js';
   import { mountDelegationForm } from '../../lib/delegationForm.js';
 
@@ -38,14 +47,61 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   const recoveryList = document.getElementById('recovery-list')!;
   const delegationList = document.getElementById('delegation-list')!;
 
-  // Phase-7 placeholder until Task 20 (policyChainFetch) and Tasks 19/21/22
-  // wire real loading.
   if (!account) {
-    recoveryList.innerHTML = '<p class="muted">No account selected. Open this page from an account subdomain.</p>';
+    recoveryList.innerHTML =
+      '<p class="muted">No account selected. Open this page from an account subdomain.</p>';
     delegationList.innerHTML = '';
   } else {
-    recoveryList.innerHTML = '<p class="muted">No recovery rule yet.</p>';
-    delegationList.innerHTML = '<p class="muted">No session keys yet.</p>';
+    recoveryList.innerHTML = '<p class="muted">Loading…</p>';
+    delegationList.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      const overlay = {
+        friendNicknames: loadFriendNicknames(account),
+        blockLabels: loadBlockLabels(account),
+        sessionKeyMaterial: collectSessionKeyMaterial(account),
+      };
+      const rules = await fetchAllChainRules(account);
+      const blocks = await loadPolicyBlocks({
+        rules,
+        fetchPolicyState: (rule) => fetchPolicyState(account, rule),
+        overlay,
+      });
+
+      recoveryList.innerHTML = '';
+      delegationList.innerHTML = '';
+      for (const block of blocks) {
+        if (block.kind === 'multisig-recovery') {
+          recoveryList.appendChild(renderRecoveryCard(block));
+        } else if (block.kind === 'scoped-session-key') {
+          delegationList.appendChild(renderSessionKeyCard(block));
+        }
+      }
+      if (!recoveryList.children.length) {
+        recoveryList.innerHTML = '<p class="muted">No recovery rule yet.</p>';
+      }
+      if (!delegationList.children.length) {
+        delegationList.innerHTML = '<p class="muted">No session keys yet.</p>';
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      recoveryList.innerHTML = `<p class="muted">Failed to load rules: ${msg}</p>`;
+      delegationList.innerHTML = '';
+    }
+  }
+
+  /** Walk localStorage for any session-key material this account holds. */
+  function collectSessionKeyMaterial(acc: string) {
+    const out: Record<string, NonNullable<ReturnType<typeof loadSessionKeyMaterial>>> = {};
+    const prefix = `g2c.${acc}.session-key.`;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)!;
+      if (key.startsWith(prefix)) {
+        const target = key.slice(prefix.length);
+        const m = loadSessionKeyMaterial(acc, target);
+        if (m) out[target] = m;
+      }
+    }
+    return out;
   }
 
   document.getElementById('add-recovery')!.addEventListener('click', () => {
