@@ -7,12 +7,6 @@ if (typeof window !== "undefined") {
     //@ts-ignore Buffer exists
     window.Buffer = window.Buffer || Buffer;
 }
-export const networks = {
-    testnet: {
-        networkPassphrase: "Test SDF Network ; September 2015",
-        contractId: "CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV",
-    },
-};
 export class Client extends ContractClient {
     options;
     static async deploy(
@@ -21,14 +15,12 @@ export class Client extends ContractClient {
         return ContractClient.deploy(null, options);
     }
     constructor(options) {
-        super(new ContractSpec([
-            "AAAAAAAAAAAAAAAOdWRwYXRlX21lc3NhZ2UAAAAAAAIAAAAAAAAAB21lc3NhZ2UAAAAAEAAAAAAAAAAGYXV0aG9yAAAAAAATAAAAAA==",
-            "AAAAAAAAAAAAAAALZ2V0X21lc3NhZ2UAAAAAAQAAAAAAAAAGYXV0aG9yAAAAAAATAAAAAQAAA+gAAAAQ",
-        ]), options);
+        super(new ContractSpec(["AAAAAAAAAAAAAAALZ2V0X21lc3NhZ2UAAAAAAQAAAAAAAAAGYXV0aG9yAAAAAAATAAAAAQAAA+gAAAAQ",
+            "AAAAAAAAAAAAAAAOdWRwYXRlX21lc3NhZ2UAAAAAAAIAAAAAAAAAB21lc3NhZ2UAAAAAEAAAAAAAAAAGYXV0aG9yAAAAAAATAAAAAA=="]), options);
         this.options = options;
     }
     fromJSON = {
-        udpate_message: (this.txFromJSON),
         get_message: (this.txFromJSON),
+        udpate_message: (this.txFromJSON)
     };
 }

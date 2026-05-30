@@ -2,13 +2,13 @@
 //! invocation `scopedSessionKey.buildInstall` produces in the SDK and
 //! verifies the in-scope / out-of-scope / expired / revoked paths.
 
-use g2c_integration_tests::{build_contract_assertion, deploy_smart_account, test_key};
+use g2c_integration_tests::{build_contract_assertion, compute_auth_digest, deploy_smart_account, test_key};
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, Map, String};
-use stellar_accounts::smart_account::{do_check_auth, ContextRuleType, Signatures, Signer};
+use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRuleType, Signer};
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 
 fn session_signer(env: &Env, verifier: &Address) -> (SigningKey, Signer) {
@@ -17,13 +17,17 @@ fn session_signer(env: &Env, verifier: &Address) -> (SigningKey, Signer) {
     (key, Signer::External(verifier.clone(), Bytes::from_slice(env, &pubkey)))
 }
 
+/// Sign the auth digest (sha256(payload || context_rule_ids.to_xdr())) with the
+/// session key. All four tests use rule id 1 (default=0, session-key=1).
 fn one_sig(
     env: &Env,
     signer: &Signer,
     key: &SigningKey,
     payload: &soroban_sdk::crypto::Hash<32>,
-) -> Signatures {
-    let a = build_contract_assertion(key, env, &payload.to_array());
+) -> AuthPayload {
+    let context_rule_ids = vec![env, 1u32];
+    let auth_digest = compute_auth_digest(env, payload, &context_rule_ids);
+    let a = build_contract_assertion(key, env, &auth_digest);
     let sd = WebAuthnSigData {
         signature: a.signature,
         authenticator_data: a.authenticator_data,
@@ -31,7 +35,7 @@ fn one_sig(
     };
     let mut m: Map<Signer, Bytes> = Map::new(env);
     m.set(signer.clone(), sd.to_xdr(env));
-    Signatures(m)
+    AuthPayload { signers: m, context_rule_ids }
 }
 
 fn context_for(env: &Env, contract: &Address) -> Context {

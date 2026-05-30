@@ -171,3 +171,23 @@ pub fn multisig_install_map(
     m.set(multisig_policy_addr.clone(), params.into_val(env));
     m
 }
+
+/// Compute the auth digest the smart account's `do_check_auth` will pass to
+/// the verifier, given the original signature payload and the chosen
+/// context-rule IDs. In OZ v0.7+:
+///
+///     auth_digest = SHA-256(signature_payload || context_rule_ids.to_xdr())
+///
+/// Binds the signed message to the rule the caller selected (preventing
+/// rule-substitution replay). Use the returned 32 bytes as the
+/// `signature_payload` arg to `build_contract_assertion`.
+pub fn compute_auth_digest(
+    env: &soroban_sdk::Env,
+    signature_payload: &soroban_sdk::crypto::Hash<32>,
+    context_rule_ids: &soroban_sdk::Vec<u32>,
+) -> [u8; 32] {
+    use soroban_sdk::xdr::ToXdr;
+    let mut preimage = soroban_sdk::Bytes::from_array(env, &signature_payload.to_array());
+    preimage.append(&context_rule_ids.clone().to_xdr(env));
+    env.crypto().sha256(&preimage).to_array()
+}

@@ -25,22 +25,8 @@ impl MultisigPolicy {
 impl Policy for MultisigPolicy {
     type AccountParams = SimpleThresholdAccountParams;
 
-    fn can_enforce(
-        e: &Env,
-        context: Context,
-        authenticated_signers: Vec<Signer>,
-        context_rule: ContextRule,
-        smart_account: Address,
-    ) -> bool {
-        simple_threshold::can_enforce(
-            e,
-            &context,
-            &authenticated_signers,
-            &context_rule,
-            &smart_account,
-        )
-    }
-
+    // OZ v0.7+ removed `can_enforce` from the Policy trait; `enforce` is now
+    // the only validation step (it panics on threshold-not-met).
     fn enforce(
         e: &Env,
         context: Context,
@@ -95,12 +81,20 @@ mod test {
         signers.push_back(Signer::Delegated(Address::generate(&env)));
         signers.push_back(Signer::Delegated(Address::generate(&env)));
         signers.push_back(Signer::Delegated(Address::generate(&env)));
+        // OZ v0.7 added signer_ids/policy_ids vectors aligned by index with
+        // signers/policies. Synthetic IDs are fine — install doesn't read them.
+        let mut signer_ids = Vec::new(&env);
+        signer_ids.push_back(0u32);
+        signer_ids.push_back(1u32);
+        signer_ids.push_back(2u32);
         let rule = ContextRule {
             id: rule_id,
             context_type: ContextRuleType::Default,
             name: String::from_str(&env, "test"),
             signers,
+            signer_ids,
             policies: Vec::new(&env),
+            policy_ids: Vec::new(&env),
             valid_until: None,
         };
 

@@ -4,13 +4,13 @@ import type { Option } from "@stellar/stellar-sdk/contract";
 export * from "@stellar/stellar-sdk";
 export * as contract from "@stellar/stellar-sdk/contract";
 export * as rpc from "@stellar/stellar-sdk/rpc";
-export declare const networks: {
-    readonly testnet: {
-        readonly networkPassphrase: "Test SDF Network ; September 2015";
-        readonly contractId: "CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV";
-    };
-};
 export interface Client {
+    /**
+     * Construct and simulate a get_message transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_message: ({ author }: {
+        author: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>;
     /**
      * Construct and simulate a udpate_message transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -18,12 +18,6 @@ export interface Client {
         message: string;
         author: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
-    /**
-     * Construct and simulate a get_message transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    get_message: ({ author }: {
-        author: string;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>;
 }
 export declare class Client extends ContractClient {
     readonly options: ContractClientOptions;
@@ -39,7 +33,7 @@ export declare class Client extends ContractClient {
     }): Promise<AssembledTransaction<T>>;
     constructor(options: ContractClientOptions);
     readonly fromJSON: {
-        udpate_message: (json: string) => AssembledTransaction<null>;
         get_message: (json: string) => AssembledTransaction<Option<string>>;
+        udpate_message: (json: string) => AssembledTransaction<null>;
     };
 }

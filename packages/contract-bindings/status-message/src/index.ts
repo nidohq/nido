@@ -30,29 +30,21 @@ if (typeof window !== "undefined") {
   window.Buffer = window.Buffer || Buffer;
 }
 
-export const networks = {
-  testnet: {
-    networkPassphrase: "Test SDF Network ; September 2015",
-    contractId: "CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV",
-  },
-} as const;
+
+
+
 
 export interface Client {
   /**
-   * Construct and simulate a udpate_message transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   */
-  udpate_message: (
-    { message, author }: { message: string; author: string },
-    options?: MethodOptions,
-  ) => Promise<AssembledTransaction<null>>;
-
-  /**
    * Construct and simulate a get_message transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  get_message: (
-    { author }: { author: string },
-    options?: MethodOptions,
-  ) => Promise<AssembledTransaction<Option<string>>>;
+  get_message: ({author}: {author: string}, options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>
+
+  /**
+   * Construct and simulate a udpate_message transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  udpate_message: ({message, author}: {message: string, author: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
@@ -65,21 +57,19 @@ export class Client extends ContractClient {
         salt?: Buffer | Uint8Array;
         /** The format used to decode `wasmHash`, if it's provided as a string. */
         format?: "hex" | "base64";
-      },
+      }
   ): Promise<AssembledTransaction<T>> {
-    return ContractClient.deploy(null, options);
+    return ContractClient.deploy(null, options)
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([
-        "AAAAAAAAAAAAAAAOdWRwYXRlX21lc3NhZ2UAAAAAAAIAAAAAAAAAB21lc3NhZ2UAAAAAEAAAAAAAAAAGYXV0aG9yAAAAAAATAAAAAA==",
-        "AAAAAAAAAAAAAAALZ2V0X21lc3NhZ2UAAAAAAQAAAAAAAAAGYXV0aG9yAAAAAAATAAAAAQAAA+gAAAAQ",
-      ]),
-      options,
-    );
+      new ContractSpec([ "AAAAAAAAAAAAAAALZ2V0X21lc3NhZ2UAAAAAAQAAAAAAAAAGYXV0aG9yAAAAAAATAAAAAQAAA+gAAAAQ",
+        "AAAAAAAAAAAAAAAOdWRwYXRlX21lc3NhZ2UAAAAAAAIAAAAAAAAAB21lc3NhZ2UAAAAAEAAAAAAAAAAGYXV0aG9yAAAAAAATAAAAAA==" ]),
+      options
+    )
   }
   public readonly fromJSON = {
-    udpate_message: this.txFromJSON<null>,
     get_message: this.txFromJSON<Option<string>>,
-  };
+        udpate_message: this.txFromJSON<null>
+  }
 }

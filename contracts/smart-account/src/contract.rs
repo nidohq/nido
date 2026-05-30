@@ -10,10 +10,10 @@ use soroban_sdk::{
 };
 use stellar_accounts::policies::simple_threshold::SimpleThresholdAccountParams;
 use stellar_accounts::smart_account::{
-    add_context_rule, add_policy, add_signer, do_check_auth, get_context_rule, get_context_rules,
+    add_context_rule, add_policy, add_signer, do_check_auth, get_context_rule,
     get_context_rules_count, remove_context_rule, remove_policy, remove_signer,
-    update_context_rule_name, update_context_rule_valid_until, ContextRule, ContextRuleType,
-    ExecutionEntryPoint, Signatures, Signer, SmartAccount, SmartAccountError,
+    update_context_rule_name, update_context_rule_valid_until, AuthPayload, ContextRule,
+    ContextRuleType, ExecutionEntryPoint, Signer, SmartAccount, SmartAccountError,
 };
 
 #[contract]
@@ -88,12 +88,14 @@ impl G2CSmartAccount {
 #[contractimpl]
 impl CustomAccountInterface for G2CSmartAccount {
     type Error = SmartAccountError;
-    type Signature = Signatures;
+    // OZ v0.7+ replaced the `Signatures` struct with `AuthPayload`
+    // (which adds `context_rule_ids` aligned by index with `auth_contexts`).
+    type Signature = AuthPayload;
 
     fn __check_auth(
         e: Env,
         signature_payload: Hash<32>,
-        signatures: Signatures,
+        signatures: AuthPayload,
         auth_contexts: Vec<Context>,
     ) -> Result<(), Self::Error> {
         do_check_auth(&e, &signature_payload, &signatures, &auth_contexts)
@@ -104,10 +106,6 @@ impl CustomAccountInterface for G2CSmartAccount {
 impl SmartAccount for G2CSmartAccount {
     fn get_context_rule(e: &Env, context_rule_id: u32) -> ContextRule {
         get_context_rule(e, context_rule_id)
-    }
-
-    fn get_context_rules(e: &Env, context_rule_type: ContextRuleType) -> Vec<ContextRule> {
-        get_context_rules(e, &context_rule_type)
     }
 
     fn get_context_rules_count(e: &Env) -> u32 {
@@ -145,24 +143,24 @@ impl SmartAccount for G2CSmartAccount {
         remove_context_rule(e, context_rule_id);
     }
 
-    fn add_signer(e: &Env, context_rule_id: u32, signer: Signer) {
+    fn add_signer(e: &Env, context_rule_id: u32, signer: Signer) -> u32 {
         e.current_contract_address().require_auth();
-        add_signer(e, context_rule_id, &signer);
+        add_signer(e, context_rule_id, &signer)
     }
 
-    fn remove_signer(e: &Env, context_rule_id: u32, signer: Signer) {
+    fn remove_signer(e: &Env, context_rule_id: u32, signer_id: u32) {
         e.current_contract_address().require_auth();
-        remove_signer(e, context_rule_id, &signer);
+        remove_signer(e, context_rule_id, signer_id);
     }
 
-    fn add_policy(e: &Env, context_rule_id: u32, policy: Address, install_param: Val) {
+    fn add_policy(e: &Env, context_rule_id: u32, policy: Address, install_param: Val) -> u32 {
         e.current_contract_address().require_auth();
-        add_policy(e, context_rule_id, &policy, install_param);
+        add_policy(e, context_rule_id, &policy, install_param)
     }
 
-    fn remove_policy(e: &Env, context_rule_id: u32, policy: Address) {
+    fn remove_policy(e: &Env, context_rule_id: u32, policy_id: u32) {
         e.current_contract_address().require_auth();
-        remove_policy(e, context_rule_id, &policy);
+        remove_policy(e, context_rule_id, policy_id);
     }
 }
 

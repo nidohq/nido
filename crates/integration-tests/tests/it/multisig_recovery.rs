@@ -7,15 +7,15 @@
 //!   - scope enforcement: same M signatures cannot move funds.
 
 use g2c_integration_tests::{
-    build_contract_assertion, deploy_multisig_policy, deploy_smart_account, multisig_install_map,
-    test_key,
+    build_contract_assertion, compute_auth_digest, deploy_multisig_policy, deploy_smart_account,
+    multisig_install_map, test_key,
 };
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, Map, String, Symbol};
-use stellar_accounts::smart_account::{do_check_auth, ContextRuleType, Signatures, Signer};
+use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRuleType, Signer};
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 
 fn external_signer(env: &Env, verifier: &Address, key: &SigningKey) -> Signer {
@@ -23,13 +23,15 @@ fn external_signer(env: &Env, verifier: &Address, key: &SigningKey) -> Signer {
     Signer::External(verifier.clone(), Bytes::from_slice(env, &pubkey))
 }
 
+/// Build a (signer, sig_data) pair signing the given pre-computed auth digest.
+/// Use `compute_auth_digest(env, hash, &context_rule_ids)` to get the digest.
 fn signature_for(
     env: &Env,
     signer: &Signer,
     key: &SigningKey,
-    payload: &soroban_sdk::crypto::Hash<32>,
+    auth_digest: &[u8; 32],
 ) -> (Signer, Bytes) {
-    let a = build_contract_assertion(key, env, &payload.to_array());
+    let a = build_contract_assertion(key, env, auth_digest);
     let sd = WebAuthnSigData {
         signature: a.signature,
         authenticator_data: a.authenticator_data,
@@ -77,11 +79,13 @@ fn one_friend_signature_is_rejected() {
     );
 
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0xA1; 32]));
+    let context_rule_ids = vec![&env, 1u32];
+    let auth_digest = compute_auth_digest(&env, &hash, &context_rule_ids);
     // Only one friend signs; threshold is 2.
     let mut sig_map: Map<Signer, Bytes> = Map::new(&env);
-    let (signer, sig) = signature_for(&env, &s1, &f1, &hash);
+    let (signer, sig) = signature_for(&env, &s1, &f1, &auth_digest);
     sig_map.set(signer, sig);
-    let signatures = Signatures(sig_map);
+    let signatures = AuthPayload { signers: sig_map, context_rule_ids };
 
     // Auth context: call self (the recovery scope).
     let context = Context::Contract(ContractContext {
@@ -117,12 +121,14 @@ fn two_friend_signatures_pass_for_self_scope() {
     );
 
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0xB2; 32]));
+    let context_rule_ids = vec![&env, 1u32];
+    let auth_digest = compute_auth_digest(&env, &hash, &context_rule_ids);
     let mut sig_map: Map<Signer, Bytes> = Map::new(&env);
-    let (signer1, sig1) = signature_for(&env, &s1, &f1, &hash);
-    let (signer2, sig2) = signature_for(&env, &s2, &f2, &hash);
+    let (signer1, sig1) = signature_for(&env, &s1, &f1, &auth_digest);
+    let (signer2, sig2) = signature_for(&env, &s2, &f2, &auth_digest);
     sig_map.set(signer1, sig1);
     sig_map.set(signer2, sig2);
-    let signatures = Signatures(sig_map);
+    let signatures = AuthPayload { signers: sig_map, context_rule_ids };
 
     let context = Context::Contract(ContractContext {
         contract: account_addr.clone(),
@@ -151,12 +157,14 @@ fn two_friend_signatures_rejected_for_other_contract() {
     );
 
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0xC3; 32]));
+    let context_rule_ids = vec![&env, 1u32];
+    let auth_digest = compute_auth_digest(&env, &hash, &context_rule_ids);
     let mut sig_map: Map<Signer, Bytes> = Map::new(&env);
-    let (signer1, sig1) = signature_for(&env, &s1, &f1, &hash);
-    let (signer2, sig2) = signature_for(&env, &s2, &f2, &hash);
+    let (signer1, sig1) = signature_for(&env, &s1, &f1, &auth_digest);
+    let (signer2, sig2) = signature_for(&env, &s2, &f2, &auth_digest);
     sig_map.set(signer1, sig1);
     sig_map.set(signer2, sig2);
-    let signatures = Signatures(sig_map);
+    let signatures = AuthPayload { signers: sig_map, context_rule_ids };
 
     // Auth context: call a DIFFERENT contract (a synthetic token transfer).
     let other = Address::generate(&env);

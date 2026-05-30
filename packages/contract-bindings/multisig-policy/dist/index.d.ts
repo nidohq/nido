@@ -1,110 +1,10 @@
 import { Buffer } from "buffer";
 import { AssembledTransaction, Client as ContractClient, ClientOptions as ContractClientOptions, MethodOptions } from "@stellar/stellar-sdk/contract";
-import type { u32, i128, Option } from "@stellar/stellar-sdk/contract";
+import type { u32, Option } from "@stellar/stellar-sdk/contract";
 type Context = unknown;
 export * from "@stellar/stellar-sdk";
 export * as contract from "@stellar/stellar-sdk/contract";
 export * as rpc from "@stellar/stellar-sdk/rpc";
-/**
- * Error codes for smart account operations.
- */
-export declare const SmartAccountError: {
-    /**
-     * The specified context rule does not exist.
-     */
-    3000: {
-        message: string;
-    };
-    /**
-     * A duplicate context rule already exists.
-     */
-    3001: {
-        message: string;
-    };
-    /**
-     * The provided context cannot be validated against any rule.
-     */
-    3002: {
-        message: string;
-    };
-    /**
-     * External signature verification failed.
-     */
-    3003: {
-        message: string;
-    };
-    /**
-     * Context rule must have at least one signer or policy.
-     */
-    3004: {
-        message: string;
-    };
-    /**
-     * The valid_until timestamp is in the past.
-     */
-    3005: {
-        message: string;
-    };
-    /**
-     * The specified signer was not found.
-     */
-    3006: {
-        message: string;
-    };
-    /**
-     * The signer already exists in the context rule.
-     */
-    3007: {
-        message: string;
-    };
-    /**
-     * The specified policy was not found.
-     */
-    3008: {
-        message: string;
-    };
-    /**
-     * The policy already exists in the context rule.
-     */
-    3009: {
-        message: string;
-    };
-    /**
-     * Too many signers in the context rule.
-     */
-    3010: {
-        message: string;
-    };
-    /**
-     * Too many policies in the context rule.
-     */
-    3011: {
-        message: string;
-    };
-    /**
-     * Too many context rules in the smart account.
-     */
-    3012: {
-        message: string;
-    };
-};
-/**
- * Metadata for a context rule.
- */
-export interface Meta {
-    /**
-   * The type of context this rule applies to.
-   */
-    context_type: ContextRuleType;
-    /**
-   * Human-readable name for the context rule.
-   */
-    name: string;
-    /**
-   * Optional expiration ledger sequence for the rule.
-   */
-    valid_until: Option<u32>;
-}
 /**
  * Represents different types of signers in the smart account system.
  */
@@ -115,10 +15,6 @@ export type Signer = {
     tag: "External";
     values: readonly [string, Buffer];
 };
-/**
- * A collection of signatures mapped to their respective signers.
- */
-export type Signatures = readonly [Map<Signer, Buffer>];
 /**
  * A complete context rule defining authorization requirements.
  */
@@ -139,6 +35,16 @@ export interface ContextRule {
    * List of policy contracts that must be satisfied.
    */
     policies: Array<string>;
+    /**
+   * Global registry IDs for each policy, positionally aligned with
+   * `policies`.
+   */
+    policy_ids: Array<u32>;
+    /**
+   * Global registry IDs for each signer, positionally aligned with
+   * `signers`.
+   */
+    signer_ids: Array<u32>;
     /**
    * List of signers authorized by this rule.
    */
@@ -161,127 +67,6 @@ export type ContextRuleType = {
     tag: "CreateContract";
     values: readonly [Buffer];
 };
-/**
- * Storage keys for smart account data.
- */
-export type SmartAccountStorageKey = {
-    tag: "Signers";
-    values: readonly [u32];
-} | {
-    tag: "Policies";
-    values: readonly [u32];
-} | {
-    tag: "Ids";
-    values: readonly [ContextRuleType];
-} | {
-    tag: "Meta";
-    values: readonly [u32];
-} | {
-    tag: "NextId";
-    values: void;
-} | {
-    tag: "Fingerprint";
-    values: readonly [Buffer];
-} | {
-    tag: "Count";
-    values: void;
-};
-/**
- * Individual spending entry for tracking purposes.
- */
-export interface SpendingEntry {
-    /**
-   * The amount spent in this transaction.
-   */
-    amount: i128;
-    /**
-   * The ledger sequence when this transaction occurred.
-   */
-    ledger_sequence: u32;
-}
-/**
- * Internal storage structure for spending limit tracking.
- */
-export interface SpendingLimitData {
-    /**
-   * Cached total of all amounts in spending_history.
-   */
-    cached_total_spent: i128;
-    /**
-   * The period in ledgers over which the spending limit applies.
-   */
-    period_ledgers: u32;
-    /**
-   * History of spending transactions with their ledger sequences.
-   */
-    spending_history: Array<SpendingEntry>;
-    /**
-   * The spending limit for the period.
-   */
-    spending_limit: i128;
-}
-/**
- * Error codes for spending limit policy operations.
- */
-export declare const SpendingLimitError: {
-    /**
-     * The smart account does not have a spending limit policy installed.
-     */
-    3220: {
-        message: string;
-    };
-    /**
-     * The spending limit has been exceeded.
-     */
-    3221: {
-        message: string;
-    };
-    /**
-     * The spending limit or period is invalid.
-     */
-    3222: {
-        message: string;
-    };
-    /**
-     * The transaction is not allowed by this policy.
-     */
-    3223: {
-        message: string;
-    };
-    /**
-     * The spending history has reached maximum capacity.
-     */
-    3224: {
-        message: string;
-    };
-    /**
-     * The context rule for the smart account has been already installed.
-     */
-    3225: {
-        message: string;
-    };
-};
-/**
- * Storage keys for spending limit policy data.
- */
-export type SpendingLimitStorageKey = {
-    tag: "AccountContext";
-    values: readonly [string, u32];
-};
-/**
- * Installation parameters for the spending limit policy.
- */
-export interface SpendingLimitAccountParams {
-    /**
-   * The period in ledgers over which the spending limit applies.
-   */
-    period_ledgers: u32;
-    /**
-   * The maximum amount that can be spent within the specified period (in
-   * stroops).
-   */
-    spending_limit: i128;
-}
 /**
  * Error codes for simple threshold policy operations.
  */
@@ -312,13 +97,6 @@ export declare const SimpleThresholdError: {
     };
 };
 /**
- * Storage keys for simple threshold policy data.
- */
-export type SimpleThresholdStorageKey = {
-    tag: "AccountContext";
-    values: readonly [string, u32];
-};
-/**
  * Installation parameters for the simple threshold policy.
  */
 export interface SimpleThresholdAccountParams {
@@ -326,141 +104,6 @@ export interface SimpleThresholdAccountParams {
    * The minimum number of signers required for authorization.
    */
     threshold: u32;
-}
-/**
- * Error codes for weighted threshold policy operations.
- */
-export declare const WeightedThresholdError: {
-    /**
-     * The smart account does not have a weighted threshold policy installed.
-     */
-    3210: {
-        message: string;
-    };
-    /**
-     * The threshold value is invalid.
-     */
-    3211: {
-        message: string;
-    };
-    /**
-     * A mathematical operation would overflow.
-     */
-    3212: {
-        message: string;
-    };
-    /**
-     * The transaction is not allowed by this policy.
-     */
-    3213: {
-        message: string;
-    };
-    /**
-     * The context rule for the smart account has been already installed.
-     */
-    3214: {
-        message: string;
-    };
-};
-/**
- * Storage keys for weighted threshold policy data.
- */
-export type WeightedThresholdStorageKey = {
-    tag: "AccountContext";
-    values: readonly [string, u32];
-};
-/**
- * Installation parameters for the weighted threshold policy.
- */
-export interface WeightedThresholdAccountParams {
-    /**
-   * Mapping of signers to their respective weights.
-   */
-    signer_weights: Map<Signer, u32>;
-    /**
-   * The minimum total weight required for authorization.
-   */
-    threshold: u32;
-}
-/**
- * Error types for WebAuthn verification operations.
- */
-export declare const WebAuthnError: {
-    /**
-     * The signature payload is invalid or has incorrect format.
-     */
-    3110: {
-        message: string;
-    };
-    /**
-     * The client data exceeds the maximum allowed length.
-     */
-    3111: {
-        message: string;
-    };
-    /**
-     * Failed to parse JSON from client data.
-     */
-    3112: {
-        message: string;
-    };
-    /**
-     * The type field in client data is not "webauthn.get".
-     */
-    3113: {
-        message: string;
-    };
-    /**
-     * The challenge in client data does not match expected value.
-     */
-    3114: {
-        message: string;
-    };
-    /**
-     * The authenticator data format is invalid or too short.
-     */
-    3115: {
-        message: string;
-    };
-    /**
-     * The User Present (UP) bit is not set in authenticator flags.
-     */
-    3116: {
-        message: string;
-    };
-    /**
-     * The User Verified (UV) bit is not set in authenticator flags.
-     */
-    3117: {
-        message: string;
-    };
-    /**
-     * Invalid relationship between Backup Eligibility and State bits.
-     */
-    3118: {
-        message: string;
-    };
-};
-/**
- * WebAuthn signature data structure containing all components needed for
- * verification.
- *
- * This structure encapsulates the signature and associated data generated
- * during a WebAuthn authentication ceremony.
- */
-export interface WebAuthnSigData {
-    /**
-   * Raw authenticator data from the WebAuthn response.
-   */
-    authenticator_data: Buffer;
-    /**
-   * Raw client data JSON from the WebAuthn response.
-   */
-    client_data: Buffer;
-    /**
-   * The cryptographic signature (64 bytes for secp256r1).
-   */
-    signature: Buffer;
 }
 export interface Client {
     /**
@@ -488,15 +131,6 @@ export interface Client {
         smart_account: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
-     * Construct and simulate a can_enforce transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    can_enforce: ({ context, authenticated_signers, context_rule, smart_account }: {
-        context: Context;
-        authenticated_signers: Array<Signer>;
-        context_rule: ContextRule;
-        smart_account: string;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<boolean>>;
-    /**
      * Construct and simulate a get_threshold transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      * Read the installed M-of-N threshold for a given account + rule.
      * Returns 0 if not installed.
@@ -523,7 +157,6 @@ export declare class Client extends ContractClient {
         enforce: (json: string) => AssembledTransaction<null>;
         install: (json: string) => AssembledTransaction<null>;
         uninstall: (json: string) => AssembledTransaction<null>;
-        can_enforce: (json: string) => AssembledTransaction<boolean>;
         get_threshold: (json: string) => AssembledTransaction<number>;
     };
 }
