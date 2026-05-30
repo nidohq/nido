@@ -222,12 +222,41 @@ else
     skip "$FACTORY_NAME already registered as $registered_factory"
 fi
 
-stellar registry upgrade \
+# `--version` is JSON-parsed by the registry CLI, so bare `0.2.0` fails as
+# "trailing characters" (0.2 is a valid JSON number, then `.0` errors). Quote
+# it as a JSON string.
+if stellar registry upgrade \
     --contract-name "$FACTORY_NAME" \
     --wasm-name "$FACTORY_NAME" \
-    --version "$FACTORY_VERSION" \
-    --source-account "$ALIAS"
-ok "upgraded $FACTORY_NAME to $FACTORY_VERSION"
+    --version "\"$FACTORY_VERSION\"" \
+    --source-account "$ALIAS" 2>/tmp/upgrade.err
+then
+    ok "upgraded $FACTORY_NAME to $FACTORY_VERSION"
+else
+    rc=$?
+    if grep -q "non-existent contract function.*upgrade\|non-existent contract function.*admin" /tmp/upgrade.err; then
+        warn "factory upgrade SKIPPED: the deployed contract at"
+        warn "  $FACTORY_CONTRACT_ID"
+        warn "doesn't implement the admin()/upgrade(hash) methods that"
+        warn "stellar-registry's 'upgrade' flow requires. The factory wasn't"
+        warn "designed with upgrade machinery; in-place upgrade isn't possible."
+        warn ""
+        warn "This isn't a blocker for the policy-builder v1 flows: the SDK"
+        warn "and /security UI talk to smart accounts directly (not the"
+        warn "factory). Multisig-policy + verifier are deployed and"
+        warn "registered, so add_context_rule + the registry lookups work."
+        warn ""
+        warn "If you want NEW accounts to use the registered verifier (rather"
+        warn "than the old lazy-deployed hash-based one), deploy a fresh"
+        warn "factory at a NEW address and update the frontend's"
+        warn "FACTORY_CONTRACT_ID — a follow-up task, not required for v1."
+    else
+        warn "factory upgrade failed (rc=$rc):"
+        sed 's/^/    /' /tmp/upgrade.err >&2
+        exit "$rc"
+    fi
+fi
+rm -f /tmp/upgrade.err
 
 # --- Summary ---------------------------------------------------------
 
@@ -237,27 +266,26 @@ cat <<EOF
 Summary:
   $POLICY_NAME@$POLICY_VERSION   $policy_addr
   $VERIFIER_NAME (registered)     $verifier_addr
-  $FACTORY_NAME@$FACTORY_VERSION  $registered_factory (upgraded in place)
+  $FACTORY_NAME                   $registered_factory (registered by name)
 
-The frontend's hardcoded FACTORY_CONTRACT_ID is unchanged; the upgrade swaps
-the deployed wasm at that address. The factory's resolve() will now look up
-'verifier' and 'multisig-policy' by name via the registry on first use per
-name, and cache results in its instance storage.
+The multisig-policy contract and the WebAuthn verifier are now deployed and
+registered. The policy-builder UI on /security can be used against any
+existing account to set up recovery rules or delegate session keys —
+add_context_rule + the registry resolution happen at the SDK layer, no
+factory involvement needed.
 
-NOTE on registry prefix: the factory source calls fetch_contract_id with
-BARE names ('verifier', 'multisig-policy'). If your registry resolves those
-bare names to the entries we just registered as '${REGISTRY_PREFIX}…', you're
-good. If not (e.g. the registry contract requires exact-match including
-prefix), you'll need to either:
-  - rebuild factory wasm with full prefixed names in the resolve() calls, or
-  - set REGISTRY_PREFIX="" and re-run this script if you have curation
-    rights to publish bare names in the verified registry.
+Notes:
+- The existing factory at $FACTORY_CONTRACT_ID could not be upgraded in
+  place (it doesn't implement admin()/upgrade()). If the warning above
+  surfaced, the factory continues to lazy-deploy the OLD hash-based
+  verifier for newly-created accounts. To switch newly-created accounts to
+  the registered '$VERIFIER_NAME' contract, deploy a fresh factory and
+  update the frontend FACTORY_CONTRACT_ID — separate follow-up.
+- Both the multisig-policy and the registered verifier are reachable by
+  name via 'stellar registry fetch-contract-id <name> --source-account
+  <alias>'. The SDK's policyChainFetch.fetchRegistryAddress(name) does the
+  same simulate-only lookup at runtime.
 
-If you registered a NEW verifier address above (because the prior deployment
-was hash-based and unregistered), only accounts created AFTER this upgrade
-will use it. Pre-existing accounts continue to reference their old verifier;
-they remain functional.
-
-Next: the policy-builder UI on /security is now operational end-to-end.
-Use the inline forms to set up a recovery rule or delegate a session key.
+Next: the policy-builder UI on /security is operational. Use the inline
+forms to set up a recovery rule or delegate a session key on any account.
 EOF
