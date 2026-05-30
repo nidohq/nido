@@ -12,6 +12,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <h2>Account Recovery</h2>
       <div id="recovery-list"></div>
       <button id="add-recovery">+ Set up recovery</button>
+      <div id="recovery-form" hidden></div>
     </section>
 
     <section id="delegations-section">
@@ -29,6 +30,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <script>
   import { contractIdFromHostname } from '@g2c/passkey-sdk';
+  import { mountRecoveryForm } from '../../lib/recoveryForm.js';
 
   const account = contractIdFromHostname(window.location.hostname);
   const recoveryList = document.getElementById('recovery-list')!;
@@ -45,7 +47,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   }
 
   document.getElementById('add-recovery')!.addEventListener('click', () => {
-    alert('Recovery setup form lands in Task 21.');
+    if (!account) { alert('No account selected.'); return; }
+    const formContainer = document.getElementById('recovery-form')!;
+    mountRecoveryForm(formContainer, account);
   });
   document.getElementById('add-delegation')!.addEventListener('click', () => {
     alert('Session-key delegate form lands in Task 22.');
