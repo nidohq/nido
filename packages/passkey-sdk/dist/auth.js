@@ -73,11 +73,21 @@ export function parseAssertionResponse(assertionResponse) {
  *                        smart account and authorizes self-modification.
  */
 export function injectPasskeySignature(transaction, passkeySignature, verifierAddress, publicKey, lastLedger, expirationLedgerOffset = DEFAULT_EXPIRATION_OFFSET, contextRuleIds = [0]) {
+    // Mutate via clone-and-replace, not in-place. The canonical
+    // `authorizeEntry` helper in stellar-base does the same — and for good
+    // reason: through `assembleTransaction(...).build()`, `op.auth[i]` is
+    // referenced from BOTH the JS-side parsed Operation and the inner XDR
+    // Transaction's serialization buffer, and the two don't reliably stay in
+    // sync under in-place mutation. Round-tripping via XDR produces a fresh
+    // entry that becomes the new array element — guaranteeing the signed
+    // payload reaches the wire.
     const op = transaction.operations[0];
-    const creds = op.auth?.[0]?.credentials().address();
-    if (!creds) {
-        throw new Error("No address credentials found in transaction auth");
+    if (!op.auth || op.auth.length === 0) {
+        throw new Error("No authorization entries in transaction");
     }
+    const original = op.auth[0];
+    const signedEntry = xdr.SorobanAuthorizationEntry.fromXDR(original.toXDR());
+    const creds = signedEntry.credentials().address();
     creds.signatureExpirationLedger(lastLedger + expirationLedgerOffset);
     // WebAuthnSigData struct (field names must match the contract type).
     // Soroban struct → ScMap with Symbol keys in alphabetical order.
@@ -124,5 +134,12 @@ export function injectPasskeySignature(transaction, passkeySignature, verifierAd
             val: signersMap,
         }),
     ]));
+    // Replace the original auth entry with the freshly-constructed signed
+    // entry. `op.auth` is the same array referenced by the inner XDR
+    // transaction's operations (verified empirically: stellar-base's
+    // `Operation.fromXDRObject` returns `attrs.auth()` directly, so
+    // `op.auth === innerTx.operations()[0].body().invokeHostFunctionOp().auth()`),
+    // so swapping the [0] slot here updates what gets serialized.
+    op.auth[0] = signedEntry;
 }
 //# sourceMappingURL=auth.js.map
