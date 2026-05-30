@@ -109,11 +109,13 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     hex2buf,
     buf2hex,
     accountUrl,
+    stripSubdomain,
     computeAccountAddress,
     loadSessionKeyMaterial,
     forgetSessionKeyMaterial,
     buildSyntheticAssertion,
   } from "@g2c/passkey-sdk";
+  import { openDelegationPopup } from "../../lib/delegationHandover.js";
   import { p256 } from "@noble/curves/p256";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc } from "@stellar/stellar-sdk";
 
@@ -207,8 +209,34 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       $status.innerHTML = `
         <p style="font-size:0.9em;color:#888;margin:0.5rem 0">
           No delegation yet — signing redirects to the wallet.
-          <a href="/" style="margin-left:0.5rem">Set up delegation →</a>
+          <a id="delegate-link" href="/" style="margin-left:0.5rem;cursor:pointer">Set up delegation →</a>
         </p>`;
+      const delegateLink = document.getElementById("delegate-link");
+      if (delegateLink) {
+        delegateLink.removeAttribute("href");
+        delegateLink.addEventListener("click", async (e) => {
+          e.preventDefault();
+          const acc = $contractInput.value.trim();
+          if (!acc) {
+            alert("Enter your smart account address first.");
+            return;
+          }
+          // Build the wallet origin: https://<account>.<base>
+          const base = stripSubdomain(window.location.hostname);
+          const walletOrigin = `${window.location.protocol}//${acc.toLowerCase()}.${base}`;
+          try {
+            await openDelegationPopup({
+              walletOrigin,
+              targetContract: STATUS_CONTRACT,
+              duration: "24h",
+            });
+            location.reload();
+          } catch (err: any) {
+            const msg = err instanceof Error ? err.message : String(err);
+            alert(`Delegation failed: ${msg}`);
+          }
+        });
+      }
     }
   }
 

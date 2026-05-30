@@ -1,0 +1,126 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Delegate session key">
+  <main class="delegate">
+    <h1>Delegate a session key</h1>
+    <p id="from">From: <code id="origin-text"></code></p>
+    <p>Target contract: <code id="target-text"></code></p>
+    <p>Duration: <strong id="duration-text"></strong></p>
+    <p class="muted">Your wallet will generate a fresh P-256 session key,
+       register it on-chain scoped to this contract, and hand the private bytes
+       to the dApp on the origin shown above. The dApp can then sign for that
+       contract without prompting your passkey, until the key expires or you
+       revoke it from <a href="/security/">/security</a>.</p>
+    <div class="actions">
+      <button id="approve" type="button">Approve &amp; sign</button>
+      <button id="deny" type="button">Cancel</button>
+    </div>
+    <p id="status" class="muted"></p>
+  </main>
+</BaseLayout>
+
+<script>
+  import { contractIdFromHostname, generateSessionKey } from '@g2c/passkey-sdk';
+  import { delegateSessionKey } from '../../../lib/sessionKeyActions.js';
+  import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
+
+  const params = new URLSearchParams(window.location.search);
+  const origin = params.get('origin') ?? '';
+  const target = params.get('target') ?? '';
+  const duration = params.get('duration') ?? '24h';
+  const account = contractIdFromHostname(window.location.hostname);
+
+  document.getElementById('origin-text')!.textContent = origin || '(missing)';
+  document.getElementById('target-text')!.textContent = target || '(missing)';
+  document.getElementById('duration-text')!.textContent = duration;
+
+  const denyBtn = document.getElementById('deny')!;
+  const approveBtn = document.getElementById('approve') as HTMLButtonElement;
+  const status = document.getElementById('status')!;
+
+  denyBtn.addEventListener('click', () => {
+    if (window.opener) {
+      window.opener.postMessage(
+        { type: 'g2c-session-key-error', error: 'cancelled' },
+        origin || '*',
+      );
+    }
+    window.close();
+  });
+
+  if (!account) {
+    status.textContent = 'This page must be opened on an account subdomain.';
+    approveBtn.disabled = true;
+  } else if (!origin || !target) {
+    status.textContent = 'Missing required parameters (origin and target).';
+    approveBtn.disabled = true;
+  }
+
+  const DURATIONS: Record<string, number | null> = {
+    '24h': 17280,
+    '7d': 17280 * 7,
+    '30d': 17280 * 30,
+    'none': null,
+  };
+
+  approveBtn.addEventListener('click', async () => {
+    approveBtn.disabled = true;
+    try {
+      status.textContent = 'Generating session key...';
+      const k = await generateSessionKey();
+
+      status.textContent = 'Signing with your passkey...';
+      // delegateSessionKey internally calls signAndSubmit (WebAuthn prompt).
+      await delegateSessionKey({
+        account: account!,
+        target,
+        sessionPubkey: k.publicKey,
+        validUntilOffset: DURATIONS[duration] ?? 17280,
+      });
+
+      status.textContent = 'Handing off to dApp...';
+
+      // The dApp needs verifier address + session pubkey for in-page injection.
+      const verifierAddr = await fetchVerifierAddress(account!);
+
+      if (window.opener) {
+        window.opener.postMessage(
+          {
+            type: 'g2c-session-key',
+            payload: {
+              account: account!,
+              target,
+              ruleId: null, // Unknown without an extra fetch; dApp re-loads /security to discover it. Acceptable v1 limitation.
+              origin,
+              verifier: verifierAddr,
+              sessionPubkey: Array.from(k.publicKey),
+              privateKey: Array.from(k.privateKey),
+              credentialId: k.credentialId,
+            },
+          },
+          origin,
+        );
+      }
+      status.textContent = 'Done — you can close this window.';
+      setTimeout(() => window.close(), 800);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      status.textContent = `Failed: ${msg}`;
+      approveBtn.disabled = false;
+      if (window.opener) {
+        window.opener.postMessage(
+          { type: 'g2c-session-key-error', error: msg },
+          origin || '*',
+        );
+      }
+    }
+  });
+</script>
+
+<style>
+  .delegate { max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+  .muted { color: #666; font-size: 0.9em; }
+  .actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+  code { background: #f4f4f4; padding: 1px 4px; border-radius: 2px; }
+</style>
