@@ -21,3 +21,5 @@ export function getPolicyBlockModule<B extends PolicyBlock>(
 export function allPolicyBlockKinds(): PolicyBlock['kind'][] {
   return [...modules.keys()];
 }
+
+export * from './loadBlocks.js';
