@@ -73,8 +73,8 @@ if [ -f "$ms" ]; then
 import sys, re
 path = sys.argv[1]
 src = open(path).read()
-shim = (
-    "\n// Generated bindings reference `Context` but did not import it; we never\n"
+shim_body = (
+    "// Generated bindings reference `Context` but did not import it; we never\n"
     "// call enforce/can_enforce from JS, so an alias to `unknown` suffices.\n"
     "type Context = unknown;\n"
 )
@@ -85,7 +85,12 @@ matches = list(re.finditer(r'^(?:import[^;]*;|}\s*from\s+["\'][^"\']+["\'];)\s*$
 if not matches:
     raise SystemExit(f"could not find imports in {path}")
 end = matches[-1].end()
-new = src[:end] + "\n" + shim + src[end:]
+# Normalize whitespace so the result is: imports + blank line + shim +
+# blank line + remainder, exactly once, regardless of what the
+# generator put between the import block and the next statement.
+head = src[:end].rstrip() + '\n'
+tail = src[end:].lstrip('\n')
+new = head + '\n' + shim_body + '\n' + tail
 open(path, 'w').write(new)
 print(f"  {path}: inserted Context shim")
 PY
