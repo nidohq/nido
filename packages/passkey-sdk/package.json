@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/curves": "1.9.7",
     "smart-account": "*"
   },
   "peerDependencies": {

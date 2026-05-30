@@ -70,3 +70,5 @@ export * from './policyBlocks/index.js';
 export * from './resolveFriendInput.js';
 
 export * from './sessionKey.js';
+
+export * from './syntheticAssertion.js';
