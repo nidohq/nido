@@ -19,15 +19,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@noble/curves": "1.9.7",
+    "@noble/curves": "^2.2.0",
     "smart-account": "*",
     "multisig-policy": "*"
   },
   "peerDependencies": {
-    "@stellar/stellar-sdk": ">=11.3.0"
+    "@stellar/stellar-sdk": "^15.1.0"
   },
   "devDependencies": {
-    "@stellar/stellar-sdk": "^14.5.0",
+    "@stellar/stellar-sdk": "^15.1.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.7"

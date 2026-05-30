@@ -1,4 +1,4 @@
-import { p256 } from '@noble/curves/p256';
+import { p256 } from '@noble/curves/nist.js';
 export async function buildSyntheticAssertion(privateKeyD, payload32) {
     if (payload32.byteLength !== 32) {
         throw new Error('buildSyntheticAssertion: payload must be 32 bytes');
@@ -15,9 +15,10 @@ export async function buildSyntheticAssertion(privateKeyD, payload32) {
     msg.set(cdHash, authenticatorData.byteLength);
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', msg));
     // RFC-6979 prehash sign with low-S enforcement.
-    // In @noble/curves v1.x, p256.sign() returns a Signature object;
-    // .toCompactRawBytes() gives 64 bytes (r||s).
-    const signature = p256.sign(digest, privateKeyD, { lowS: true }).toCompactRawBytes();
+    // @noble/curves v2 returns a 64-byte Uint8Array (r||s) directly. The
+    // `prehash: false` is critical: the input IS already the message digest;
+    // without it noble would hash again.
+    const signature = p256.sign(digest, privateKeyD, { prehash: false, lowS: true });
     return { authenticatorData, clientDataJSON, signature };
 }
 function bytesToB64u(b) {

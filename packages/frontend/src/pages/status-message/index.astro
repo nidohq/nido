@@ -116,7 +116,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     buildSyntheticAssertion,
   } from "@g2c/passkey-sdk";
   import { startDelegation, readDelegationReturn } from "../../lib/delegationHandover.js";
-  import { p256 } from "@noble/curves/p256";
+  import { p256 } from "@noble/curves/nist.js";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc } from "@stellar/stellar-sdk";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";

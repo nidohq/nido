@@ -1,4 +1,4 @@
-import { p256 } from '@noble/curves/p256';
+import { p256 } from '@noble/curves/nist.js';
 
 /** Build a WebAuthn-shaped assertion the on-chain verifier accepts, using a
  *  raw P-256 private key (no authenticator involvement).
@@ -43,9 +43,10 @@ export async function buildSyntheticAssertion(
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', msg));
 
   // RFC-6979 prehash sign with low-S enforcement.
-  // In @noble/curves v1.x, p256.sign() returns a Signature object;
-  // .toCompactRawBytes() gives 64 bytes (r||s).
-  const signature = p256.sign(digest, privateKeyD, { lowS: true }).toCompactRawBytes();
+  // @noble/curves v2 returns a 64-byte Uint8Array (r||s) directly. The
+  // `prehash: false` is critical: the input IS already the message digest;
+  // without it noble would hash again.
+  const signature = p256.sign(digest, privateKeyD, { prehash: false, lowS: true });
 
   return { authenticatorData, clientDataJSON, signature };
 }
