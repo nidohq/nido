@@ -43,7 +43,7 @@ export {
 
 export { resolveName, resolveNameCached } from "./resolve.js";
 
-export type { PendingAccount } from "./storage.js";
+export type { PendingAccount, SessionKeyMaterial } from "./storage.js";
 
 export {
   saveCredential,
@@ -56,6 +56,13 @@ export {
   activateAccount,
   saveAccountName,
   loadAccountName,
+  saveFriendNickname,
+  loadFriendNicknames,
+  saveSessionKeyMaterial,
+  loadSessionKeyMaterial,
+  forgetSessionKeyMaterial,
+  saveBlockLabel,
+  loadBlockLabels,
 } from "./storage.js";
 
 export * from './policyBlocks/index.js';
