@@ -68,3 +68,5 @@ export {
 export * from './policyBlocks/index.js';
 
 export * from './resolveFriendInput.js';
+
+export * from './sessionKey.js';
