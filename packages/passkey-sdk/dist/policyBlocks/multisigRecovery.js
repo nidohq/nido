@@ -1,5 +1,5 @@
 import { Client as SmartAccountClient } from 'smart-account';
-import { Operation } from '@stellar/stellar-sdk';
+import { extractXdrOperations } from '../assembledTx.js';
 import { registerPolicyBlockModule } from './registry.js';
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 export const multisigRecoveryModule = {
@@ -40,7 +40,7 @@ export const multisigRecoveryModule = {
                 `  friends: ${args.block.friends.length}`);
         }
         return {
-            operations: extractOperations(tx),
+            operations: extractXdrOperations(tx, 'multisig-recovery'),
             description: `Set up ${args.block.threshold}-of-${args.block.friends.length} recovery`,
         };
     },
@@ -52,7 +52,7 @@ export const multisigRecoveryModule = {
         });
         const tx = await client.remove_context_rule({ context_rule_id: args.ruleId });
         return {
-            operations: extractOperations(tx),
+            operations: extractXdrOperations(tx, 'multisig-recovery'),
             description: 'Remove recovery rule',
         };
     },
@@ -88,31 +88,5 @@ export const multisigRecoveryModule = {
         return { kind: 'multisig-recovery', threshold: 2, friends: [], label: 'Recovery' };
     },
 };
-/** Pull XDR Soroban Operation[] out of an AssembledTransaction.
- *
- *  `tx.built` is a high-level Transaction whose `operations` field holds JS
- *  Operation POJOs (`{type, func, auth, source?}`). Downstream code feeds
- *  these to `TransactionBuilder.addOperation`, which during `build()` runs
- *  `Operation.fromXDRObject` over them — that call expects an XDR object
- *  with a `.sourceAccount()` accessor and crashes with `e.sourceAccount is
- *  not a function` when handed a POJO. Re-encode each one via the matching
- *  `Operation.<type>(opts)` static, which takes the POJO shape and returns
- *  a proper `xdr.Operation` ready for `addOperation`. */
-function extractOperations(tx) {
-    const built = tx.built;
-    if (!built || !built.operations) {
-        throw new Error('multisig-recovery: could not extract operations from AssembledTransaction');
-    }
-    return built.operations.map((op) => {
-        if (op.type !== 'invokeHostFunction' || !op.func) {
-            throw new Error(`multisig-recovery: unexpected op type ${op.type}`);
-        }
-        return Operation.invokeHostFunction({
-            func: op.func,
-            auth: op.auth ?? [],
-            source: op.source,
-        });
-    });
-}
 registerPolicyBlockModule(multisigRecoveryModule);
 //# sourceMappingURL=multisigRecovery.js.map

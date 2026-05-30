@@ -149,6 +149,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   import {
     accountUrl,
     contractIdFromHostname,
+    dappPathFromHostname,
     isContractId,
     nameFromHostname,
     resolveNameCached,
@@ -165,9 +166,21 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   const FRIENDBOT_URL = "https://friendbot.stellar.org";
   const NAME_REGISTRY_ID = "CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX";
 
-  // --- Name resolution redirect (if visiting via name subdomain) ---
+  // --- Reserved dApp subdomain redirect ---
+  // status-message.<base> (and any future entry in
+  // RESERVED_DAPP_SUBDOMAINS) is served the same static bundle as the
+  // wallet, but the root page routes to the dApp's path. We do this
+  // BEFORE name-resolution so a reserved name never burns a registry
+  // round-trip.
 
   const hostname = window.location.hostname;
+  const dappPath = dappPathFromHostname(hostname);
+  if (dappPath) {
+    window.location.replace(dappPath);
+  }
+
+  // --- Name resolution redirect (if visiting via name subdomain) ---
+
   const detectedName = nameFromHostname(hostname);
 
   if (detectedName && !isContractId(detectedName)) {

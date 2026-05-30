@@ -39,6 +39,8 @@ export {
   nameFromHostname,
   accountUrl,
   stripSubdomain,
+  dappPathFromHostname,
+  RESERVED_DAPP_SUBDOMAINS,
 } from "./url.js";
 
 export { resolveName, resolveNameCached } from "./resolve.js";
@@ -64,6 +66,8 @@ export {
   saveBlockLabel,
   loadBlockLabels,
 } from "./storage.js";
+
+export { extractXdrOperations } from './assembledTx.js';
 
 export * from './policyBlocks/index.js';
 

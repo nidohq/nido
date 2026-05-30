@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import { Client as SmartAccountClient } from 'smart-account';
-import { Operation } from '@stellar/stellar-sdk';
+import { extractXdrOperations } from '../assembledTx.js';
 import { registerPolicyBlockModule } from './registry.js';
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 export const scopedSessionKeyModule = {
@@ -26,7 +26,7 @@ export const scopedSessionKeyModule = {
             policies: new Map(),
         });
         return {
-            operations: extractOperations(tx),
+            operations: extractXdrOperations(tx, 'scoped-session-key'),
             description: `Delegate session key to ${args.block.targetContract}`,
         };
     },
@@ -38,7 +38,7 @@ export const scopedSessionKeyModule = {
         });
         const tx = await client.remove_context_rule({ context_rule_id: args.ruleId });
         return {
-            operations: extractOperations(tx),
+            operations: extractXdrOperations(tx, 'scoped-session-key'),
             description: 'Revoke session key',
         };
     },
@@ -77,23 +77,5 @@ export const scopedSessionKeyModule = {
         };
     },
 };
-/** Pull XDR Soroban Operation[] out of an AssembledTransaction. See the
- *  detailed comment on the identical helper in multisigRecovery.ts. */
-function extractOperations(tx) {
-    const built = tx.built;
-    if (!built || !built.operations) {
-        throw new Error('scoped-session-key: could not extract operations from AssembledTransaction');
-    }
-    return built.operations.map((op) => {
-        if (op.type !== 'invokeHostFunction' || !op.func) {
-            throw new Error(`scoped-session-key: unexpected op type ${op.type}`);
-        }
-        return Operation.invokeHostFunction({
-            func: op.func,
-            auth: op.auth ?? [],
-            source: op.source,
-        });
-    });
-}
 registerPolicyBlockModule(scopedSessionKeyModule);
 //# sourceMappingURL=scopedSessionKey.js.map

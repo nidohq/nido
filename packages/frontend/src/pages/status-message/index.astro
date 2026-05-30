@@ -205,39 +205,50 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     const $status = document.getElementById("delegation-status")!;
     if (!account) {
       $status.innerHTML = `
-        <p style="font-size:0.9em;color:#888;margin:0.5rem 0">
-          Enter a smart account address above to check delegation status.
-        </p>`;
+        <div style="background:#f7f7fa;border:1px solid #ddd;border-radius:6px;padding:0.75rem;margin:0.5rem 0">
+          <p style="margin:0 0 0.5rem 0;font-size:0.9em;color:#666">
+            Type your smart account address above, then delegate this dApp
+            so signing stays in-page (no wallet round-trip per message).
+          </p>
+          <button id="delegate-button" disabled
+                  style="font-size:0.95em;padding:0.4rem 0.8rem;opacity:0.6;cursor:not-allowed">
+            Delegate this dApp →
+          </button>
+        </div>`;
       return;
     }
     const material = loadSessionKeyMaterial(account, STATUS_CONTRACT);
+    const delegatedBanner = material
+      ? `<p style="margin:0 0 0.5rem 0;font-size:0.9em;color:#9ac">
+           <strong>Delegated</strong> — signing in-page (no wallet prompt).
+           <button id="forget-delegation" style="margin-left:0.5rem;font-size:0.85em">Forget delegation</button>
+         </p>
+         <p style="margin:0 0 0.5rem 0;font-size:0.85em;color:#666">
+           Re-delegating overwrites the existing session key with a fresh one.
+         </p>`
+      : `<p style="margin:0 0 0.5rem 0;font-size:0.9em">
+           <strong>Not delegated.</strong> Every action will redirect to your
+           wallet for a passkey prompt.
+         </p>
+         <p style="margin:0 0 0.5rem 0;font-size:0.85em;color:#666">
+           Delegate this dApp to skip the round-trip: your wallet generates
+           a session key scoped to the status-message contract, and signing
+           stays in this page until you revoke or it expires.
+         </p>`;
+    $status.innerHTML = `
+      <div style="background:#f7f7fa;border:1px solid #ddd;border-radius:6px;padding:0.75rem;margin:0.5rem 0">
+        ${delegatedBanner}
+        <button id="delegate-button" style="font-size:0.95em;padding:0.4rem 0.8rem">
+          ${material ? "Re-delegate this dApp →" : "Delegate this dApp →"}
+        </button>
+      </div>`;
     if (material) {
-      $status.innerHTML = `
-        <p style="font-size:0.9em;color:#9ac;margin:0.5rem 0">
-          <strong>Delegated</strong> — signing in-page (no wallet prompt).
-          <button id="forget-delegation" style="margin-left:0.5rem;font-size:0.85em">Forget delegation</button>
-        </p>`;
       document.getElementById("forget-delegation")!.addEventListener("click", () => {
         forgetSessionKeyMaterial(account, STATUS_CONTRACT);
         location.reload();
       });
-    } else {
-      $status.innerHTML = `
-        <div style="background:#f7f7fa;border:1px solid #ddd;border-radius:6px;padding:0.75rem;margin:0.5rem 0">
-          <p style="margin:0 0 0.5rem 0;font-size:0.9em">
-            <strong>Not delegated.</strong> Every action will redirect to your
-            wallet for a passkey prompt.
-          </p>
-          <p style="margin:0 0 0.5rem 0;font-size:0.85em;color:#666">
-            Delegate this dApp to skip the round-trip: your wallet generates
-            a session key scoped to the status-message contract, and signing
-            stays in this page until you revoke or it expires.
-          </p>
-          <button id="delegate-button" style="font-size:0.95em;padding:0.4rem 0.8rem">
-            Delegate this dApp →
-          </button>
-        </div>`;
-      document.getElementById("delegate-button")!.addEventListener("click", async () => {
+    }
+    document.getElementById("delegate-button")!.addEventListener("click", async () => {
         const acc = $contractInput.value.trim();
         if (!acc) {
           alert("Enter your smart account address first.");
@@ -268,7 +279,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           alert(`Delegation failed: ${msg}`);
         }
       });
-    }
   }
 
   // Show banner for initial account value (from URL param or empty)

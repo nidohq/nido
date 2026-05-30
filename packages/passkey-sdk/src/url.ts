@@ -1,6 +1,29 @@
 const PREVIEW_SEP = "--pr-";
 
 /**
+ * Reserved subdomains that map to a built-in dApp path on this site.
+ * `status-message.<base>` is served the same static bundle as the wallet,
+ * but the root page redirects to the listed path. Keep keys lowercase.
+ */
+export const RESERVED_DAPP_SUBDOMAINS: Record<string, string> = {
+  'status-message': '/status-message/',
+};
+
+/**
+ * If `host` is a reserved dApp subdomain, return the path the root should
+ * redirect to. Strips any `--pr-N` preview suffix before matching, so
+ * `status-message--pr-24.<base>` resolves the same as production.
+ */
+export function dappPathFromHostname(host: string): string | null {
+  const parts = host.split(".");
+  if (parts.length <= 1) return null;
+  const sub = parts[0];
+  const sepIndex = sub.indexOf(PREVIEW_SEP);
+  const raw = (sepIndex !== -1 ? sub.slice(0, sepIndex) : sub).toLowerCase();
+  return RESERVED_DAPP_SUBDOMAINS[raw] ?? null;
+}
+
+/**
  * Check if a subdomain string looks like a Stellar contract ID.
  * Contract IDs are exactly 56 characters starting with C.
  */
@@ -44,6 +67,7 @@ export function nameFromHostname(hostname: string): string | null {
   if (!raw) return null;
   if (isContractId(raw)) return null;
   if (/^pr-\d+$/.test(sub)) return null;
+  if (RESERVED_DAPP_SUBDOMAINS[raw.toLowerCase()]) return null;
 
   return raw.toLowerCase();
 }

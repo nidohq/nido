@@ -1,7 +1,6 @@
 import { Buffer } from 'buffer';
 import { Client as SmartAccountClient } from 'smart-account';
-import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
-import { Operation, xdr } from '@stellar/stellar-sdk';
+import { extractXdrOperations } from '../assembledTx.js';
 import type {
   ChainRule, LocalOverlay, PolicyBlockModule, PolicyState,
   ScopedSessionKeyBlock, TxBuild,
@@ -37,7 +36,7 @@ export const scopedSessionKeyModule: PolicyBlockModule<ScopedSessionKeyBlock> = 
     });
 
     return {
-      operations: extractOperations(tx),
+      operations: extractXdrOperations(tx, 'scoped-session-key'),
       description: `Delegate session key to ${args.block.targetContract}`,
     };
   },
@@ -50,7 +49,7 @@ export const scopedSessionKeyModule: PolicyBlockModule<ScopedSessionKeyBlock> = 
     });
     const tx = await client.remove_context_rule({ context_rule_id: args.ruleId });
     return {
-      operations: extractOperations(tx),
+      operations: extractXdrOperations(tx, 'scoped-session-key'),
       description: 'Revoke session key',
     };
   },
@@ -90,26 +89,5 @@ export const scopedSessionKeyModule: PolicyBlockModule<ScopedSessionKeyBlock> = 
     };
   },
 };
-
-/** Pull XDR Soroban Operation[] out of an AssembledTransaction. See the
- *  detailed comment on the identical helper in multisigRecovery.ts. */
-function extractOperations(tx: AssembledTransaction<unknown>): xdr.Operation[] {
-  const built = (tx as unknown as { built?: { operations?: ReadonlyArray<{
-    type: string; func?: xdr.HostFunction; auth?: xdr.SorobanAuthorizationEntry[]; source?: string;
-  }> } }).built;
-  if (!built || !built.operations) {
-    throw new Error('scoped-session-key: could not extract operations from AssembledTransaction');
-  }
-  return built.operations.map((op) => {
-    if (op.type !== 'invokeHostFunction' || !op.func) {
-      throw new Error(`scoped-session-key: unexpected op type ${op.type}`);
-    }
-    return Operation.invokeHostFunction({
-      func: op.func,
-      auth: op.auth ?? [],
-      source: op.source,
-    });
-  });
-}
 
 registerPolicyBlockModule(scopedSessionKeyModule);

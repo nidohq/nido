@@ -1,1 +1,1 @@
-{"version":3,"file":"multisigRecovery.d.ts","sourceRoot":"","sources":["../../src/policyBlocks/multisigRecovery.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EACe,qBAAqB,EAC9C,iBAAiB,EAClB,MAAM,YAAY,CAAC;AAKpB,eAAO,MAAM,sBAAsB,EAAE,iBAAiB,CAAC,qBAAqB,CA2F3E,CAAC"}
+{"version":3,"file":"multisigRecovery.d.ts","sourceRoot":"","sources":["../../src/policyBlocks/multisigRecovery.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EACe,qBAAqB,EAC9C,iBAAiB,EAClB,MAAM,YAAY,CAAC;AAKpB,eAAO,MAAM,sBAAsB,EAAE,iBAAiB,CAAC,qBAAqB,CA2F3E,CAAC"}

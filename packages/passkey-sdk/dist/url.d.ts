@@ -1,4 +1,16 @@
 /**
+ * Reserved subdomains that map to a built-in dApp path on this site.
+ * `status-message.<base>` is served the same static bundle as the wallet,
+ * but the root page redirects to the listed path. Keep keys lowercase.
+ */
+export declare const RESERVED_DAPP_SUBDOMAINS: Record<string, string>;
+/**
+ * If `host` is a reserved dApp subdomain, return the path the root should
+ * redirect to. Strips any `--pr-N` preview suffix before matching, so
+ * `status-message--pr-24.<base>` resolves the same as production.
+ */
+export declare function dappPathFromHostname(host: string): string | null;
+/**
  * Check if a subdomain string looks like a Stellar contract ID.
  * Contract IDs are exactly 56 characters starting with C.
  */

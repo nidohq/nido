@@ -27,7 +27,7 @@ import BaseLayout from '../../../layouts/BaseLayout.astro';
 </BaseLayout>
 
 <script>
-  import { contractIdFromHostname, hex2buf } from '@g2c/passkey-sdk';
+  import { contractIdFromHostname, extractXdrOperations, hex2buf } from '@g2c/passkey-sdk';
   import { Client as SmartAccountClient } from 'smart-account';
   import { Networks } from '@stellar/stellar-sdk';
   import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
@@ -138,12 +138,11 @@ import BaseLayout from '../../../layouts/BaseLayout.astro';
         policies: new Map(), // empty — session keys have no install params
       });
 
-      // Pull the prepared operation out of the AssembledTransaction.
-      const built = (tx as unknown as { built?: { operations?: unknown[] } }).built;
-      if (!built?.operations?.length) {
-        throw new Error('AssembledTransaction had no operations');
-      }
-      const operation = built.operations[0] as Parameters<typeof signAndSubmit>[0]['operation'];
+      // Re-encode the AssembledTransaction's operations into proper XDR
+      // operations. See `extractXdrOperations` docs for the why
+      // (TransactionBuilder.addOperation requires XDR, not the JS POJO
+      // shape `tx.built.operations` returns).
+      const [operation] = extractXdrOperations(tx, 'delegate');
 
       status.textContent = 'Signing with your passkey…';
       await signAndSubmit({
