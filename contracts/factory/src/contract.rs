@@ -9,11 +9,16 @@ use crate::xlm;
 
 const ACCOUNT_HASH: &[u8; 32] = b"\xb9\x4b\x29\x9f\x8c\x53\x04\xf1\x63\xdf\x15\x2e\x0d\xcf\x1a\xb8\x06\x63\xed\x03\x7c\xa1\xa3\x85\xd4\xec\x7b\xee\x7f\x3e\xcc\xf3";
 
-/// Stellar Registry "unverified" testnet contract. Used to resolve canonical
-/// contract addresses by name (verifier, multisig-policy, etc.). For a mainnet
-/// or alternate-registry build, rebuild the factory wasm with a different
-/// constant here and `stellar registry upgrade`.
-const REGISTRY: &str = "CAMLHKQHNZO2IOIBFUF5BGZ2V62BMS5QCWFFGRCB4NOB3G5OMDA7SGZN";
+/// Stellar Registry "unverified" testnet contract — the one that holds
+/// bare-name → contract-id mappings. The verified registry's address is
+/// `CAMLHKQHNZO2IOIBFUF5BGZ2V62BMS5QCWFFGRCB4NOB3G5OMDA7SGZN`; it doesn't
+/// dispatch prefixed names natively (the CLI does that client-side). Calling
+/// `fetch_contract_id("verifier")` directly on the unverified registry
+/// returns the registered contract id; that's what `resolve` below relies on.
+///
+/// For mainnet or an alternate registry build, change this constant and
+/// redeploy the factory.
+const REGISTRY: &str = "CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S";
 
 mod registry {
     use soroban_sdk::*;

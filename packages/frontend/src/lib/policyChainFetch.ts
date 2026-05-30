@@ -15,7 +15,11 @@ import type { ChainRule, ChainSigner, PolicyState } from '@g2c/passkey-sdk';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = Networks.TESTNET;
-const REGISTRY_ADDRESS = 'CAMLHKQHNZO2IOIBFUF5BGZ2V62BMS5QCWFFGRCB4NOB3G5OMDA7SGZN';
+// Unverified registry on testnet — the one that holds bare-name → contract-id
+// mappings. The verified registry (CAMLHK…) doesn't dispatch prefixed names
+// natively; the CLI does that client-side. We target unverified directly so
+// `fetch_contract_id("verifier")` resolves without a prefix.
+const REGISTRY_ADDRESS = 'CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S';
 
 /** Simulate-only invocation of a contract view method. Returns the result ScVal. */
 export async function simulateView(
