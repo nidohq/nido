@@ -23,18 +23,59 @@ export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = 
       rpcUrl: args.rpcUrl,
     });
 
-    const tx = await client.add_context_rule({
-      context_type: { tag: 'CallContract', values: [args.account] as readonly [string] },
+    // Encode the install_param explicitly as a typed ScVal so Stellar SDK's
+    // generic object→ScVal conversion doesn't pick the wrong integer width
+    // (SimpleThresholdAccountParams.threshold is u32, but auto-conversion of
+    // a plain { threshold: 2 } often defaults to a larger int type).
+    const { nativeToScVal } = await import('@stellar/stellar-sdk');
+    const installParam = nativeToScVal(
+      { threshold: args.block.threshold },
+      { type: { threshold: ['symbol', 'u32'] } as { threshold: ['symbol', 'u32'] } },
+    );
+
+    const callArgs = {
+      context_type: { tag: 'CallContract' as const, values: [args.account] as readonly [string] },
       name: args.block.label ?? 'recovery',
       valid_until: undefined,
       signers: args.block.friends.map((f) => ({
         tag: 'Delegated' as const,
         values: [f.address] as readonly [string],
       })),
-      policies: new Map([
-        [policyAddr, { threshold: args.block.threshold }],
-      ]),
+      // Bindings type is Map<string, any>; the value is the install_param the
+      // policy's `install` will receive. Pre-encoded ScVal so the contract
+      // sees exactly { threshold: u32 } and FromVal can decode it.
+      policies: new Map<string, unknown>([[policyAddr, installParam]]),
+    };
+
+    // Log the structured args so a runtime spec-mismatch ("Received object …
+    // did not match the provided type …") is diagnosable. Stellar SDK's
+    // error stringifies both sides as [object Object]; this gives the actual
+    // values.
+    // eslint-disable-next-line no-console
+    console.debug('[multisig-recovery] add_context_rule args:', {
+      account: args.account,
+      policyAddr,
+      callArgs: JSON.parse(JSON.stringify(callArgs, (_k, v) =>
+        v instanceof Map ? Object.fromEntries(v) : v,
+      )),
+      installParamScVal: installParam.toXDR('base64'),
     });
+
+    let tx;
+    try {
+      tx = await client.add_context_rule(callArgs);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Re-throw with context so the form's catch shows something useful
+      // rather than just "Received object [object Object] …".
+      throw new Error(
+        `multisig-recovery.buildInstall failed: ${msg}\n` +
+          `  account: ${args.account}\n` +
+          `  policy: ${policyAddr}\n` +
+          `  signers: ${callArgs.signers.length} friend(s)\n` +
+          `  See browser console for the full encoded args.`,
+      );
+    }
 
     return {
       operations: extractOperations(tx),
