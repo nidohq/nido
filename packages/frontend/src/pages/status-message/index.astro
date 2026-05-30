@@ -14,6 +14,9 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
   <div id="error-box" class="error" style="display:none"></div>
 
+  <!-- Delegation status banner -->
+  <div id="delegation-status"></div>
+
   <!-- Read current message -->
   <section>
     <h2>1. Read Message</h2>
@@ -107,7 +110,11 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     buf2hex,
     accountUrl,
     computeAccountAddress,
+    loadSessionKeyMaterial,
+    forgetSessionKeyMaterial,
+    buildSyntheticAssertion,
   } from "@g2c/passkey-sdk";
+  import { p256 } from "@noble/curves/p256";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc } from "@stellar/stellar-sdk";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
@@ -173,6 +180,45 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   if (contractParam) {
     $contractInput.value = contractParam;
   }
+
+  // --- Delegation status banner ---
+
+  function updateDelegationBanner(account: string) {
+    const $status = document.getElementById("delegation-status")!;
+    if (!account) {
+      $status.innerHTML = `
+        <p style="font-size:0.9em;color:#888;margin:0.5rem 0">
+          Enter a smart account address above to check delegation status.
+        </p>`;
+      return;
+    }
+    const material = loadSessionKeyMaterial(account, STATUS_CONTRACT);
+    if (material) {
+      $status.innerHTML = `
+        <p style="font-size:0.9em;color:#9ac;margin:0.5rem 0">
+          <strong>Delegated</strong> — signing in-page (no wallet prompt).
+          <button id="forget-delegation" style="margin-left:0.5rem;font-size:0.85em">Forget delegation</button>
+        </p>`;
+      document.getElementById("forget-delegation")!.addEventListener("click", () => {
+        forgetSessionKeyMaterial(account, STATUS_CONTRACT);
+        location.reload();
+      });
+    } else {
+      $status.innerHTML = `
+        <p style="font-size:0.9em;color:#888;margin:0.5rem 0">
+          No delegation yet — signing redirects to the wallet.
+          <a href="/" style="margin-left:0.5rem">Set up delegation →</a>
+        </p>`;
+    }
+  }
+
+  // Show banner for initial account value (from URL param or empty)
+  updateDelegationBanner($contractInput.value.trim());
+
+  // Update banner whenever the account input changes
+  $contractInput.addEventListener("input", () => {
+    updateDelegationBanner($contractInput.value.trim());
+  });
 
   // --- Load message ---
 
@@ -246,6 +292,79 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       const authEntry = getAuthEntry(sim);
       const lastLedger = sim.latestLedger;
       const authHash = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
+
+      // --- Session-key in-page signing path ---
+      const material = loadSessionKeyMaterial(contract, STATUS_CONTRACT);
+      if (material) {
+        $setForm.textContent = "Signing in-page...";
+
+        // Build a synthetic WebAuthn assertion using the delegated session key.
+        const assertion = await buildSyntheticAssertion(
+          material.privateKey,
+          new Uint8Array(authHash),
+        );
+
+        // Derive the uncompressed (65-byte) public key from the private key.
+        // p256.getPublicKey(d, false) returns 0x04 || x || y.
+        const sessionPubkey = p256.getPublicKey(material.privateKey, false);
+
+        // Assemble the transaction (bakes auth entry into XDR).
+        const authTxn = rpc.assembleTransaction(tx.built!, sim).build();
+
+        // Inject the session-key signature into the assembled transaction.
+        injectPasskeySignature(
+          authTxn,
+          {
+            authenticatorData: assertion.authenticatorData,
+            clientDataJson: assertion.clientDataJSON,
+            signature: assertion.signature,
+          },
+          VERIFIER_ADDRESS,
+          sessionPubkey,
+          lastLedger,
+        );
+
+        $setForm.textContent = "Submitting...";
+
+        // Re-simulate with the real signature for accurate resource estimates.
+        const server = new rpc.Server(RPC_URL);
+        const sim2 = await server.simulateTransaction(authTxn);
+        if (rpc.Api.isSimulationError(sim2) || rpc.Api.isSimulationRestore(sim2)) {
+          throw new Error(`Re-simulation failed: ${"error" in sim2 ? sim2.error : "restore needed"}`);
+        }
+        const finalTx = rpc.assembleTransaction(authTxn, sim2).build();
+        finalTx.sign(keypair);
+
+        $resultSection.classList.remove("hidden");
+        $statusValue.textContent = "Submitting transaction...";
+
+        const sendResult = await server.sendTransaction(finalTx);
+        if (sendResult.status === "ERROR") {
+          throw new Error(`Transaction rejected: ${sendResult.errorResult?.toXDR("base64") ?? "unknown"}`);
+        }
+
+        $statusValue.textContent = "Waiting for confirmation...";
+        let getResult = await server.getTransaction(sendResult.hash);
+        while (getResult.status === "NOT_FOUND") {
+          await new Promise((r) => setTimeout(r, 1500));
+          getResult = await server.getTransaction(sendResult.hash);
+        }
+
+        if (getResult.status === "SUCCESS") {
+          $statusValue.textContent = "Message updated successfully!";
+          $txLink.href = `https://stellar.expert/explorer/testnet/tx/${sendResult.hash}`;
+          $txLink.style.display = "inline";
+          try { await loadMessage(contract); } catch (_) { /* non-critical */ }
+        } else {
+          throw new Error(`Transaction failed: ${getResult.status}`);
+        }
+
+        $setForm.disabled = false;
+        $setForm.textContent = "Set Message";
+        return;
+      }
+
+      // --- Fallback: redirect to wallet for passkey signing ---
       const authHashHex = buf2hex(authHash);
 
       // Store transaction data for after redirect
