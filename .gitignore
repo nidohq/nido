@@ -28,6 +28,12 @@ packages/frontend/.astro/
 # Playwright test artifacts
 test-results/
 
+# Local secrets — wrangler, env files. Never commit.
+.env
+.env.local
+.env.*.local
+.dev.vars
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
