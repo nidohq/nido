@@ -1,85 +1,74 @@
-import { saveSessionKeyMaterial } from '@g2c/passkey-sdk';
+/**
+ * dApp-side delegation flow.
+ *
+ * Design: the dApp generates a fresh P-256 session key in its own origin and
+ * persists it via `saveSessionKeyMaterial` BEFORE redirecting the user to the
+ * wallet. The wallet receives only the *public* key (hex) in the URL, builds
+ * the install transaction, gets the user's primary-passkey signature, submits,
+ * and redirects back. Private bytes never cross origins.
+ *
+ * Replaces the earlier popup + postMessage handover where the wallet
+ * generated the key and posted private bytes back.
+ */
 
-export interface DelegationResult {
-  account: string;
-  target: string;
-  verifier: string;
-  ruleId: number | null;
-  sessionPubkey: Uint8Array;
-  privateKey: Uint8Array;
-  credentialId: string;
-}
+import { generateSessionKey, saveSessionKeyMaterial, buf2hex } from '@g2c/passkey-sdk';
 
-export interface OpenDelegationOptions {
-  /** Full origin of the wallet account, e.g. https://<account>.<base>. */
+export interface StartDelegationOptions {
+  /** Full origin of the wallet for this account, e.g. https://<account>.<base>. */
   walletOrigin: string;
+  /** Smart account address the session key will be installed on. */
+  account: string;
+  /** Target contract the session key authorises. */
   targetContract: string;
+  /** Session-key lifetime. */
   duration: '24h' | '7d' | '30d' | 'none';
+  /** Where the wallet should send the user back. Same-origin as window.location. */
+  returnUrl: string;
+  /** Optional human-readable label stored locally with the session-key material. */
+  label?: string;
 }
 
-/** Opens the wallet's delegate page in a popup, listens for the handover
- *  postMessage, validates origin + payload, stores the session-key material
- *  in the dApp's localStorage, and resolves with the parsed material. */
-export async function openDelegationPopup(
-  opts: OpenDelegationOptions,
-): Promise<DelegationResult> {
+/**
+ * Generate the session key, store it locally, then navigate the user to the
+ * wallet's delegate page with the public key + scope in URL params. This is a
+ * full-page redirect — no popup, no postMessage. The wallet redirects back to
+ * `returnUrl` on success or cancel.
+ */
+export async function startDelegation(opts: StartDelegationOptions): Promise<void> {
+  const k = await generateSessionKey();
+
+  // Persist the private bytes in *this origin* before navigating away. If the
+  // user cancels at the wallet, the orphaned material is harmless; the next
+  // delegation attempt overwrites it.
+  saveSessionKeyMaterial(opts.account, opts.targetContract, {
+    privateKey: k.privateKey,
+    credentialId: k.credentialId,
+    label: opts.label,
+  });
+
+  // 65-byte SEC1 uncompressed → hex (starts with "04"). The wallet validates
+  // the shape before building the install tx.
+  const pubkeyHex = buf2hex(k.publicKey);
+
   const url = new URL(`${opts.walletOrigin}/security/delegate/`);
   url.searchParams.set('origin', window.location.origin);
   url.searchParams.set('target', opts.targetContract);
+  url.searchParams.set('pubkey', pubkeyHex);
   url.searchParams.set('duration', opts.duration);
+  url.searchParams.set('return', opts.returnUrl);
 
-  const popup = window.open(url.toString(), '_blank', 'width=480,height=720');
-  if (!popup) throw new Error('Popup blocked — please allow popups for this site.');
+  // Full-page redirect: the user reviews the request at the wallet, signs,
+  // and the wallet sends them back to `returnUrl` with ?delegation=ok or
+  // ?delegation=cancelled.
+  window.location.href = url.toString();
+}
 
-  return new Promise<DelegationResult>((resolve, reject) => {
-    let settled = false;
-    function done(fn: () => void) {
-      if (settled) return;
-      settled = true;
-      window.removeEventListener('message', listener);
-      clearInterval(poll);
-      fn();
-    }
-
-    function listener(ev: MessageEvent) {
-      // Validate origin, source, payload fields.
-      if (ev.origin !== opts.walletOrigin) return;
-      if (ev.source !== popup) return;
-      const m = ev.data;
-      if (!m || typeof m !== 'object') return;
-      if (m.type === 'g2c-session-key-error') {
-        return done(() => reject(new Error(`Wallet: ${m.error ?? 'unknown error'}`)));
-      }
-      if (m.type !== 'g2c-session-key') return;
-      const p = m.payload;
-      if (p?.origin !== window.location.origin) {
-        return done(() => reject(new Error('Origin mismatch in handover.')));
-      }
-      if (p?.target !== opts.targetContract) {
-        return done(() => reject(new Error('Target mismatch in handover.')));
-      }
-      const result: DelegationResult = {
-        account: p.account,
-        target: p.target,
-        verifier: p.verifier,
-        ruleId: p.ruleId ?? null,
-        sessionPubkey: new Uint8Array(p.sessionPubkey),
-        privateKey: new Uint8Array(p.privateKey),
-        credentialId: p.credentialId,
-      };
-      saveSessionKeyMaterial(result.account, result.target, {
-        privateKey: result.privateKey,
-        credentialId: result.credentialId,
-        label: opts.targetContract,
-      });
-      done(() => resolve(result));
-    }
-    window.addEventListener('message', listener);
-
-    const poll = setInterval(() => {
-      if (popup.closed) {
-        done(() => reject(new Error('Popup closed before completing delegation.')));
-      }
-    }, 500);
-  });
+/**
+ * Inspect URL params on a page that may have just been redirected to from the
+ * wallet. Returns the status if present, null otherwise.
+ */
+export function readDelegationReturn(): 'ok' | 'cancelled' | null {
+  const v = new URLSearchParams(window.location.search).get('delegation');
+  if (v === 'ok' || v === 'cancelled') return v;
+  return null;
 }

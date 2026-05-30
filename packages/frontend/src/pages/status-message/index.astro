@@ -115,7 +115,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     forgetSessionKeyMaterial,
     buildSyntheticAssertion,
   } from "@g2c/passkey-sdk";
-  import { openDelegationPopup } from "../../lib/delegationHandover.js";
+  import { startDelegation, readDelegationReturn } from "../../lib/delegationHandover.js";
   import { p256 } from "@noble/curves/p256";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc } from "@stellar/stellar-sdk";
 
@@ -183,6 +183,23 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     $contractInput.value = contractParam;
   }
 
+  // If we just came back from the wallet's delegate flow, surface the
+  // outcome and clean the URL so reloads don't re-trigger the banner.
+  {
+    const ret = readDelegationReturn();
+    if (ret === "ok") {
+      alert("Delegation succeeded. The dApp will now sign in-page for this contract.");
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("delegation");
+      window.history.replaceState({}, "", clean.toString());
+    } else if (ret === "cancelled") {
+      alert("Delegation cancelled. Local session-key material was kept; the next attempt will overwrite it.");
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("delegation");
+      window.history.replaceState({}, "", clean.toString());
+    }
+  }
+
   // --- Delegation status banner ---
 
   function updateDelegationBanner(account: string) {
@@ -231,12 +248,17 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         const base = stripSubdomain(window.location.hostname);
         const walletOrigin = `${window.location.protocol}//${acc.toLowerCase()}.${base}`;
         try {
-          await openDelegationPopup({
+          // Generates the session key in *this* origin, persists private bytes
+          // locally, then full-page redirects to the wallet with the public
+          // key + scope in URL params. Wallet signs and redirects back.
+          await startDelegation({
             walletOrigin,
+            account: acc,
             targetContract: STATUS_CONTRACT,
             duration: "24h",
+            returnUrl: window.location.href,
+            label: "status-message",
           });
-          location.reload();
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           alert(`Delegation failed: ${msg}`);

@@ -4,14 +4,20 @@ import BaseLayout from '../../../layouts/BaseLayout.astro';
 <BaseLayout title="Delegate session key">
   <main class="delegate">
     <h1>Delegate a session key</h1>
-    <p id="from">From: <code id="origin-text"></code></p>
-    <p>Target contract: <code id="target-text"></code></p>
-    <p>Duration: <strong id="duration-text"></strong></p>
-    <p class="muted">Your wallet will generate a fresh P-256 session key,
-       register it on-chain scoped to this contract, and hand the private bytes
-       to the dApp on the origin shown above. The dApp can then sign for that
-       contract without prompting your passkey, until the key expires or you
-       revoke it from <a href="/security/">/security</a>.</p>
+    <p>The dApp at <code id="origin-text"></code> wants to install a session
+       key on this account scoped to the contract below. The key it provided
+       was generated in the dApp's own origin; your wallet only signs the
+       installation transaction.</p>
+
+    <dl class="kv">
+      <dt>Target contract</dt><dd><code id="target-text"></code></dd>
+      <dt>Session public key</dt><dd><code id="pubkey-text" class="wrap"></code></dd>
+      <dt>Expires</dt><dd id="expiry-text"></dd>
+    </dl>
+
+    <p class="muted">After signing, you'll be sent back to the dApp. To revoke
+       later, visit <a href="/security/">/security</a>.</p>
+
     <div class="actions">
       <button id="approve" type="button">Approve &amp; sign</button>
       <button id="deny" type="button">Cancel</button>
@@ -21,42 +27,13 @@ import BaseLayout from '../../../layouts/BaseLayout.astro';
 </BaseLayout>
 
 <script>
-  import { contractIdFromHostname, generateSessionKey } from '@g2c/passkey-sdk';
-  import { delegateSessionKey } from '../../../lib/sessionKeyActions.js';
+  import { contractIdFromHostname, hex2buf } from '@g2c/passkey-sdk';
+  import { Client as SmartAccountClient } from 'smart-account';
+  import { Networks } from '@stellar/stellar-sdk';
   import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
+  import { signAndSubmit } from '../../../lib/primaryPasskeySigner.js';
 
-  const params = new URLSearchParams(window.location.search);
-  const origin = params.get('origin') ?? '';
-  const target = params.get('target') ?? '';
-  const duration = params.get('duration') ?? '24h';
-  const account = contractIdFromHostname(window.location.hostname);
-
-  document.getElementById('origin-text')!.textContent = origin || '(missing)';
-  document.getElementById('target-text')!.textContent = target || '(missing)';
-  document.getElementById('duration-text')!.textContent = duration;
-
-  const denyBtn = document.getElementById('deny')!;
-  const approveBtn = document.getElementById('approve') as HTMLButtonElement;
-  const status = document.getElementById('status')!;
-
-  denyBtn.addEventListener('click', () => {
-    if (window.opener) {
-      window.opener.postMessage(
-        { type: 'g2c-session-key-error', error: 'cancelled' },
-        origin || '*',
-      );
-    }
-    window.close();
-  });
-
-  if (!account) {
-    status.textContent = 'This page must be opened on an account subdomain.';
-    approveBtn.disabled = true;
-  } else if (!origin || !target) {
-    status.textContent = 'Missing required parameters (origin and target).';
-    approveBtn.disabled = true;
-  }
-
+  const RPC_URL = 'https://soroban-testnet.stellar.org';
   const DURATIONS: Record<string, number | null> = {
     '24h': 17280,
     '7d': 17280 * 7,
@@ -64,63 +41,134 @@ import BaseLayout from '../../../layouts/BaseLayout.astro';
     'none': null,
   };
 
+  const params = new URLSearchParams(window.location.search);
+  const dappOrigin = params.get('origin') ?? '';
+  const target = params.get('target') ?? '';
+  const pubkeyHex = params.get('pubkey') ?? '';
+  const duration = params.get('duration') ?? '24h';
+  const returnUrl = params.get('return') ?? '';
+  const account = contractIdFromHostname(window.location.hostname);
+
+  // Surface the request to the user.
+  document.getElementById('origin-text')!.textContent = dappOrigin || '(missing)';
+  document.getElementById('target-text')!.textContent = target || '(missing)';
+  document.getElementById('pubkey-text')!.textContent = pubkeyHex || '(missing)';
+
+  const expirySpan = document.getElementById('expiry-text')!;
+  const expiryOffset = DURATIONS[duration] ?? 17280;
+  expirySpan.textContent =
+    expiryOffset == null
+      ? 'Never (until revoked)'
+      : `${duration} (≈ ${expiryOffset.toLocaleString()} ledgers from now)`;
+
+  const denyBtn = document.getElementById('deny')!;
+  const approveBtn = document.getElementById('approve') as HTMLButtonElement;
+  const status = document.getElementById('status')!;
+
+  // Return-URL must be the dApp origin (anti-redirect-abuse).
+  function backToDapp(qs: string) {
+    if (!returnUrl) return;
+    try {
+      const url = new URL(returnUrl);
+      if (url.origin !== dappOrigin) {
+        status.textContent = `Refusing to redirect: return URL origin (${url.origin}) does not match request origin (${dappOrigin}).`;
+        return;
+      }
+      url.search = qs;
+      window.location.href = url.toString();
+    } catch {
+      status.textContent = 'Invalid return URL; not redirecting.';
+    }
+  }
+
+  denyBtn.addEventListener('click', () => {
+    backToDapp('?delegation=cancelled');
+  });
+
+  // Sanity-check request parameters before allowing approval.
+  function validate(): string | null {
+    if (!account) return 'This page must be opened on an account subdomain.';
+    if (!dappOrigin) return 'Missing origin parameter.';
+    if (!target || !/^C[A-Z0-9]{55}$/.test(target)) return 'Invalid target contract address.';
+    if (!pubkeyHex || !/^04[0-9a-fA-F]{128}$/.test(pubkeyHex)) {
+      return 'Invalid session public key (expected 65-byte SEC1 uncompressed P-256, hex-encoded with 0x04 prefix).';
+    }
+    if (!returnUrl) return 'Missing return URL.';
+    try { new URL(returnUrl); } catch { return 'Malformed return URL.'; }
+    return null;
+  }
+
+  const err = validate();
+  if (err) {
+    status.textContent = err;
+    approveBtn.disabled = true;
+  }
+
   approveBtn.addEventListener('click', async () => {
     approveBtn.disabled = true;
     try {
-      status.textContent = 'Generating session key...';
-      const k = await generateSessionKey();
-
-      status.textContent = 'Signing with your passkey...';
-      // delegateSessionKey internally calls signAndSubmit (WebAuthn prompt).
-      await delegateSessionKey({
-        account: account!,
-        target,
-        sessionPubkey: k.publicKey,
-        validUntilOffset: DURATIONS[duration] ?? 17280,
-      });
-
-      status.textContent = 'Handing off to dApp...';
-
-      // The dApp needs verifier address + session pubkey for in-page injection.
+      status.textContent = 'Resolving verifier address…';
       const verifierAddr = await fetchVerifierAddress(account!);
 
-      if (window.opener) {
-        window.opener.postMessage(
+      status.textContent = 'Computing expiry…';
+      const { rpc } = await import('@stellar/stellar-sdk');
+      const server = new rpc.Server(RPC_URL);
+      const latest = await server.getLatestLedger();
+      const validUntil =
+        expiryOffset == null ? undefined : latest.sequence + expiryOffset;
+
+      status.textContent = 'Building install transaction…';
+      const client = new SmartAccountClient({
+        contractId: account!,
+        networkPassphrase: Networks.TESTNET,
+        rpcUrl: RPC_URL,
+      });
+
+      const sessionPubkey = hex2buf(pubkeyHex);
+      const tx = await client.add_context_rule({
+        context_type: { tag: 'CallContract', values: [target] as readonly [string] },
+        name: 'session-key',
+        valid_until: validUntil,
+        signers: [
           {
-            type: 'g2c-session-key',
-            payload: {
-              account: account!,
-              target,
-              ruleId: null, // Unknown without an extra fetch; dApp re-loads /security to discover it. Acceptable v1 limitation.
-              origin,
-              verifier: verifierAddr,
-              sessionPubkey: Array.from(k.publicKey),
-              privateKey: Array.from(k.privateKey),
-              credentialId: k.credentialId,
-            },
+            tag: 'External' as const,
+            values: [verifierAddr, sessionPubkey as Buffer] as readonly [string, Buffer],
           },
-          origin,
-        );
+        ],
+        policies: new Map(), // empty — session keys have no install params
+      });
+
+      // Pull the prepared operation out of the AssembledTransaction.
+      const built = (tx as unknown as { built?: { operations?: unknown[] } }).built;
+      if (!built?.operations?.length) {
+        throw new Error('AssembledTransaction had no operations');
       }
-      status.textContent = 'Done — you can close this window.';
-      setTimeout(() => window.close(), 800);
+      const operation = built.operations[0] as Parameters<typeof signAndSubmit>[0]['operation'];
+
+      status.textContent = 'Signing with your passkey…';
+      await signAndSubmit({
+        account: account!,
+        operation,
+        verifierAddress: verifierAddr,
+      });
+
+      status.textContent = 'Done — redirecting back to dApp…';
+      setTimeout(() => backToDapp('?delegation=ok'), 500);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       status.textContent = `Failed: ${msg}`;
       approveBtn.disabled = false;
-      if (window.opener) {
-        window.opener.postMessage(
-          { type: 'g2c-session-key-error', error: msg },
-          origin || '*',
-        );
-      }
     }
   });
 </script>
 
 <style>
-  .delegate { max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+  .delegate { max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
   .muted { color: #666; font-size: 0.9em; }
-  .actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+  .actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
   code { background: #f4f4f4; padding: 1px 4px; border-radius: 2px; }
+  code.wrap { word-break: break-all; }
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin: 1rem 0; }
+  dl.kv dt { color: #666; }
+  dl.kv dd { margin: 0; }
 </style>
