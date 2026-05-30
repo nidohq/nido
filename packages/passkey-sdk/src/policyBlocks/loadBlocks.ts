@@ -1,5 +1,5 @@
 import type { ChainRule, LocalOverlay, PolicyBlock, PolicyState } from './types.js';
-import { allPolicyBlockKinds, getPolicyBlockModule } from './index.js';
+import { allPolicyBlockKinds, getPolicyBlockModule } from './registry.js';
 
 export interface LoadPolicyBlocksArgs {
   rules: ChainRule[];

@@ -4,10 +4,9 @@ import type {
   ChainRule, LocalOverlay, MultisigRecoveryBlock,
   PolicyBlockModule, PolicyState, TxBuild,
 } from './types.js';
-import { registerPolicyBlockModule } from './index.js';
+import { registerPolicyBlockModule } from './registry.js';
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
-const TESTNET_RPC_URL = 'https://soroban-testnet.stellar.org';
 
 export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = {
   kind: 'multisig-recovery',
@@ -44,12 +43,10 @@ export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = 
   },
 
   async buildRevoke(args): Promise<TxBuild> {
-    // buildRevoke interface has no rpcUrl; fall back to testnet default.
-    // Callers that need mainnet should override via a higher-level wrapper.
     const client = new SmartAccountClient({
       contractId: args.account,
       networkPassphrase: TESTNET_PASSPHRASE,
-      rpcUrl: TESTNET_RPC_URL,
+      rpcUrl: args.rpcUrl,
     });
     const tx = await client.remove_context_rule({ context_rule_id: args.ruleId });
     return {

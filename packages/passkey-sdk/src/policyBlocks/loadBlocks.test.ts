@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { loadPolicyBlocks } from './loadBlocks.js';
 import type { ChainRule, LocalOverlay, PolicyBlock, PolicyBlockModule } from './types.js';
-import { registerPolicyBlockModule } from './index.js';
+import { registerPolicyBlockModule } from './registry.js';
 
 const FAKE_MULTISIG_ADDR = 'C' + 'M'.repeat(55);
 const FAKE_TARGET = 'C' + 'T'.repeat(55);

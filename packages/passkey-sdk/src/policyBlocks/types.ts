@@ -88,6 +88,7 @@ export interface PolicyBlockModule<B extends PolicyBlock> {
   buildRevoke(args: {
     account: string;
     ruleId: number;
+    rpcUrl: string;
   }): Promise<TxBuild>;
   fromChain(rule: ChainRule, policyState: PolicyState, overlay: LocalOverlay): B | null;
   summarize(block: B): string;
