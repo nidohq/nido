@@ -1594,25 +1594,46 @@ git commit -m "feat(sdk): loadPolicyBlocks dispatches rules to block modules"
 
 ## Phase 5 — SDK multisig-recovery module
 
-### Task 13: `multisigRecovery.ts` — buildInstall, buildRevoke, fromChain, summarize, defaultDraft
+### Task 13: `multisigRecovery.ts` — block module (uses generated bindings)
+
+**Direction note:** The plan originally hand-rolled `xdr.ScVal` construction in `buildInstall` and used a throwing `fetchMultisigPolicyAddress` placeholder fixed up in Task 14. Both are now superseded:
+
+- **Bindings**: `packages/contract-bindings/smart-account/` exists (workspace package named `"smart-account"`) and exposes a fully typed `Client.add_context_rule({...}) → AssembledTransaction<ContextRule>`. Use the bindings; do NOT hand-roll ScVal encoding for the rule fields.
+- **Policy address resolution (architecture C)**: there's no factory `multisig_policy_address` method anymore. The caller injects a `policyAddress(name)` fetcher that resolves names via the stellar-registry contract. `buildInstall` requires that fetcher.
+
+This task therefore folds in what was Task 14 — no separate "wire the injected fetcher" step.
 
 **Files:**
 - Create: `packages/passkey-sdk/src/policyBlocks/multisigRecovery.ts`
 - Create: `packages/passkey-sdk/src/policyBlocks/multisigRecovery.test.ts`
 - Modify: `packages/passkey-sdk/src/policyBlocks/index.ts`
+- Modify: `packages/passkey-sdk/package.json` — add `"smart-account": "*"` (workspace dep).
 
-- [ ] **Step 1: Write the failing test `multisigRecovery.test.ts`**
+**Test-fixture note:** the test fixtures below use synthetic `'C' + 'S'.repeat(55)` strings — those won't pass `StrKey` validation. Replace them in the test with `StrKey.encodeContract(new Uint8Array(32).fill(N))` (same pattern Task 10 used), since `fromChain` doesn't validate addresses but the strings still need to be plausible.
+
+- [ ] **Step 1: Add `smart-account` workspace dep**
+
+In `packages/passkey-sdk/package.json` `dependencies`, add:
+
+```json
+"smart-account": "*"
+```
+
+Run `npm install` to refresh the lockfile.
+
+- [ ] **Step 2: Write the failing test `multisigRecovery.test.ts`**
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { multisigRecoveryModule } from './multisigRecovery';
-import type { ChainRule, LocalOverlay } from './types';
+import { StrKey } from '@stellar/stellar-sdk';
+import { multisigRecoveryModule } from './multisigRecovery.js';
+import type { ChainRule, LocalOverlay } from './types.js';
 
-const SELF = 'C' + 'S'.repeat(55);
-const POLICY = 'C' + 'P'.repeat(55);
-const F1 = 'C' + '1'.repeat(55);
-const F2 = 'C' + '2'.repeat(55);
-const F3 = 'C' + '3'.repeat(55);
+const POLICY = StrKey.encodeContract(new Uint8Array(32).fill(0x42));
+const F1 = StrKey.encodeContract(new Uint8Array(32).fill(0x01));
+const F2 = StrKey.encodeContract(new Uint8Array(32).fill(0x02));
+const F3 = StrKey.encodeContract(new Uint8Array(32).fill(0x03));
+const SELF = StrKey.encodeContract(new Uint8Array(32).fill(0xAA));
 
 describe('multisigRecoveryModule', () => {
   it('claims a rule scoped to self with the multisig policy attached', () => {
@@ -1681,82 +1702,76 @@ describe('multisigRecoveryModule', () => {
 });
 ```
 
-- [ ] **Step 2: Run test → expect FAIL**
+- [ ] **Step 3: Run test → expect FAIL**
 
 Run: `cd packages/passkey-sdk && npx vitest run multisigRecovery`
+Expected: FAIL with "Cannot find module './multisigRecovery.js'".
 
-- [ ] **Step 3: Implement `multisigRecovery.ts`**
+- [ ] **Step 4: Implement `multisigRecovery.ts`** (uses generated bindings + injected policyAddress)
 
 ```ts
-import { Address, Contract, nativeToScVal, xdr } from '@stellar/stellar-sdk';
-import type { ChainRule, LocalOverlay, MultisigRecoveryBlock, PolicyBlockModule, PolicyState, TxBuild } from './types';
-import { registerPolicyBlockModule } from './index';
-
-/** Encoded as `{ threshold: u32 }` for the OZ simple_threshold install param. */
-function thresholdParams(threshold: number): xdr.ScVal {
-  return nativeToScVal({ threshold }, { type: { threshold: ['symbol', 'u32'] } });
-}
+import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
+import { Client as SmartAccountClient } from 'smart-account';
+import type { ChainRule, LocalOverlay, MultisigRecoveryBlock, PolicyBlockModule, PolicyState, TxBuild } from './types.js';
+import { registerPolicyBlockModule } from './index.js';
 
 export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = {
   kind: 'multisig-recovery',
 
-  async buildInstall({ account, block, factoryAddress, rpcUrl: _rpcUrl }) {
-    // Lazy-deploy the shared multisig-policy and capture its address.
-    // The address is deterministic and can be fetched read-only via the factory.
-    const policyAddr = await fetchMultisigPolicyAddress(factoryAddress);
+  async buildInstall(args): Promise<TxBuild> {
+    if (!args.policyAddress) {
+      throw new Error('multisig-recovery: policyAddress fetcher required');
+    }
+    const policyAddr = await args.policyAddress('multisig');
 
-    const signersVec = xdr.ScVal.scvVec(
-      block.friends.map((f) =>
-        nativeToScVal(
-          { Delegated: Address.fromString(f.address).toScVal() },
-          { type: 'enum' },
-        ),
-      ),
-    );
-    const policiesMap = xdr.ScVal.scvMap([
-      new xdr.ScMapEntry({
-        key: Address.fromString(policyAddr).toScVal(),
-        val: thresholdParams(block.threshold),
-      }),
-    ]);
+    const client = new SmartAccountClient({
+      contractId: args.account,
+      networkPassphrase: 'Test SDF Network ; September 2015', // TODO: pass via args.networkPassphrase
+      rpcUrl: args.rpcUrl,
+    });
 
-    const op = new Contract(account).call(
-      'add_context_rule',
-      // ContextRuleType::CallContract(self)
-      nativeToScVal(
-        { CallContract: Address.fromString(account).toScVal() },
-        { type: 'enum' },
-      ),
-      nativeToScVal(block.label ?? 'recovery', { type: 'string' }),
-      nativeToScVal(null), // valid_until = None
-      signersVec,
-      policiesMap,
-    );
+    const tx = await client.add_context_rule({
+      context_type: { tag: 'CallContract', values: [args.account] },
+      name: args.block.label ?? 'recovery',
+      valid_until: undefined,
+      signers: args.block.friends.map((f) => ({
+        tag: 'Delegated',
+        values: [f.address],
+      })),
+      policies: new Map([
+        [policyAddr, { threshold: args.block.threshold }],
+      ]),
+    });
 
+    // `tx` is an AssembledTransaction; extract its built Soroban Transaction.
+    const built = tx.built;
+    if (!built) throw new Error('multisig-recovery: tx not built');
     return {
-      operations: [op],
-      description: `Set up ${block.threshold}-of-${block.friends.length} recovery`,
+      operations: Array.from(built.operations),
+      description: `Set up ${args.block.threshold}-of-${args.block.friends.length} recovery`,
     };
   },
 
-  async buildRevoke({ account, ruleId }) {
-    const op = new Contract(account).call('remove_context_rule', nativeToScVal(ruleId, { type: 'u32' }));
-    return { operations: [op], description: 'Remove recovery rule' };
+  async buildRevoke(args): Promise<TxBuild> {
+    const client = new SmartAccountClient({
+      contractId: args.account,
+      networkPassphrase: 'Test SDF Network ; September 2015',
+      rpcUrl: '', // not needed for tx construction; revisit in Task 14
+    });
+    const tx = await client.remove_context_rule({ context_rule_id: args.ruleId });
+    return {
+      operations: Array.from(tx.built!.operations),
+      description: 'Remove recovery rule',
+    };
   },
 
   fromChain(rule: ChainRule, state: PolicyState, overlay: LocalOverlay): MultisigRecoveryBlock | null {
     if (rule.policies.length === 0) return null;
-    // Must be scoped to self for a recovery rule. We have no `self` address here,
-    // but a rule with the multisig policy attached and CallContract scope is the
-    // shape our builder produces; loadBlocks ensures `state` includes the policy.
     if (rule.contextType.kind !== 'call-contract') return null;
-
-    // The multisig policy address is the *only* policy on a v1 recovery rule.
     const policyAddr = rule.policies[0];
     const ps = state[policyAddr] as { threshold?: number } | undefined;
     const threshold = ps?.threshold;
     if (typeof threshold !== 'number') return null;
-
     return {
       kind: 'multisig-recovery',
       ruleId: rule.ruleId,
@@ -1782,80 +1797,37 @@ export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = 
   },
 };
 
-// --- Factory helper ---------------------------------------------------------
-
-/** Reads the multisig-policy address from the factory by simulating a call. */
-async function fetchMultisigPolicyAddress(factoryAddress: string): Promise<string> {
-  // Placeholder for the actual RPC simulate; the frontend page injects a real
-  // implementation via dependency injection. In tests, the module is consumed
-  // through buildInstall mocks.
-  throw new Error(
-    'fetchMultisigPolicyAddress: inject via buildInstall caller (see /security page)',
-  );
-}
-
 registerPolicyBlockModule(multisigRecoveryModule);
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+**Important caveats the implementer must verify in passing:**
+
+1. **`AssembledTransaction.built` shape.** The generated bindings return `AssembledTransaction<T>`. We need access to the underlying `Transaction` object's `operations` array. Check whether `tx.built` is the right property name on the version of `@stellar/stellar-sdk` this repo uses (14.x). If it's named differently (e.g. `tx.raw`, `tx.assembled.toTransaction()`), adapt.
+2. **`bindings instantiation needs network info.`** `SmartAccountClient` takes `{contractId, networkPassphrase, rpcUrl}`. The hardcoded testnet passphrase is fine for v1 since the whole stack is testnet-only; if the implementer prefers, plumb `networkPassphrase` through `args`. Either is acceptable.
+3. **Calling bindings from `buildInstall` actually performs a simulate-RPC call internally.** If we don't want the simulate side-effect (e.g. unit tests run offline), we'd need a different path. For now, `buildInstall` is used by the frontend at runtime where RPC is available; the unit tests below don't call `buildInstall`. Don't be alarmed if running `buildInstall` against an RPC fails in CI — it's not exercised there.
+
+- [ ] **Step 5: Run the test to verify it passes**
 
 Run: `cd packages/passkey-sdk && npx vitest run multisigRecovery`
-Expected: 3 PASS. (`buildInstall` is not exercised by the unit tests; it's covered by the e2e and the chain integration test that runs the equivalent Rust path.)
+Expected: 3 PASS. (Tests only exercise `fromChain` and `summarize` — no network involvement.)
 
-- [ ] **Step 5: Re-export from `index.ts`** (add `export * from './multisigRecovery';`).
+- [ ] **Step 6: Re-export from `index.ts`** (add `export * from './multisigRecovery.js';` to `packages/passkey-sdk/src/policyBlocks/index.ts`).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add packages/passkey-sdk/src/policyBlocks/multisigRecovery.ts packages/passkey-sdk/src/policyBlocks/multisigRecovery.test.ts packages/passkey-sdk/src/policyBlocks/index.ts
-git commit -m "feat(sdk): multisig-recovery block module"
+git add packages/passkey-sdk/package.json packages/passkey-sdk/package-lock.json \
+        packages/passkey-sdk/src/policyBlocks/multisigRecovery.ts \
+        packages/passkey-sdk/src/policyBlocks/multisigRecovery.test.ts \
+        packages/passkey-sdk/src/policyBlocks/index.ts
+git commit -m "feat(sdk): multisig-recovery block module via smart-account bindings"
 ```
 
 ---
 
-### Task 14: Wire factory policy-address fetch into `buildInstall`
+### Task 14: (folded into Task 13)
 
-**Files:**
-- Modify: `packages/passkey-sdk/src/policyBlocks/multisigRecovery.ts`
-- Modify: `packages/passkey-sdk/src/policyBlocks/types.ts`
-
-- [ ] **Step 1: Add `getMultisigPolicyAddress` to the `buildInstall` arg shape**
-
-In `types.ts`, change `buildInstall`'s arg type to include an injected fetcher:
-
-```ts
-buildInstall(args: {
-  account: string;
-  block: B;
-  factoryAddress: string;
-  rpcUrl: string;
-  /** Per-block-kind extras the caller may inject (e.g. policy address fetchers). */
-  policyAddress?: (kind: string) => Promise<string>;
-}): Promise<TxBuild>;
-```
-
-- [ ] **Step 2: Update `multisigRecovery.buildInstall` to use `args.policyAddress?.('multisig')` and remove the throwing stub**
-
-Replace the `fetchMultisigPolicyAddress` call:
-
-```ts
-if (!args.policyAddress) throw new Error('multisig-recovery: policyAddress fetcher required');
-const policyAddr = await args.policyAddress('multisig');
-```
-
-Delete the `fetchMultisigPolicyAddress` placeholder helper.
-
-- [ ] **Step 3: Confirm tests still pass**
-
-Run: `cd packages/passkey-sdk && npx vitest run`
-Expected: all unit tests still PASS (buildInstall is not exercised by them).
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add packages/passkey-sdk/src/policyBlocks
-git commit -m "feat(sdk): inject policy-address fetcher into buildInstall"
-```
+The original Task 14 swapped a throwing-stub policy-address fetcher for an injected one. Task 13 lands the injected design directly, so Task 14 is a **no-op on this branch**. Continue to Task 15.
 
 ---
 
@@ -3041,35 +3013,13 @@ git commit -m "feat(frontend): delegate-session-key form + actions"
 
 ## Phase 8 — Sample dApp (cross-origin delegation handover)
 
-### Task 23: Move `status-message` to its own subdomain
+### Task 23: Move `status-message` to its own subdomain — deploy-time only
 
-**Files:**
-- Modify: `packages/frontend/src/pages/status-message/index.astro`
-- Modify: subdomain routing config (Astro / Cloudflare Pages config)
+**No source change required on this branch.** The current repo has no `_routes.json`, no `wrangler.toml`, and `astro.config.mjs` is `defineConfig({})` — subdomain routing happens entirely at the Cloudflare Pages deploy layer (wildcard routing + same Astro app for all subdomains, hostname-discriminating JS in pages).
 
-- [ ] **Step 1: Identify the existing subdomain routing**
+The in-page signing code (Task 24) and the cross-origin handover code (Task 25) are written to work correctly whether status-message is on the wallet's own origin (current dev/test) or on a separate subdomain (intended production deploy). Same-origin postMessage trivially passes the origin checks; cross-origin testing in production validates the security boundary.
 
-Read `packages/frontend/wrangler.toml` (or `astro.config.mjs`, whichever holds the subdomain logic). The wallet already routes `<contractId>.<base>` to the account page. We need to add `status-message.<base>` → `pages/status-message/index.astro`.
-
-If the Cloudflare Pages routing is wildcard-based, the simplest path is:
-- Keep the file at `packages/frontend/src/pages/status-message/index.astro`.
-- Add a Pages Function or routing rule that maps `status-message.<base>` to that file.
-
-- [ ] **Step 2: Add the subdomain rule**
-
-In `packages/frontend/_routes.json` (Cloudflare Pages route config), add `"status-message.*"` to the `include` array. If the config doesn't exist, create one matching the pattern used by `<account>` subdomain handling. Refer to the existing handling for the wallet origin.
-
-- [ ] **Step 3: Verify `https://status-message.<base>` serves the page**
-
-Run: `just dev`
-Open the appropriate URL; confirm the status-message page loads from the new subdomain.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add packages/frontend
-git commit -m "feat(frontend): host status-message dApp on its own subdomain"
-```
+**Action for the operator at deploy time:** configure Cloudflare Pages so `status-message.<base>` (or whatever the project's preferred dApp subdomain is) routes to the same Astro app and matches the path `status-message/`. No code change here.
 
 ---
 
@@ -3289,6 +3239,8 @@ git commit -m "feat(handover): cross-origin postMessage flow for delegating to a
 
 ## Phase 9 — Recovery coordination page
 
+**Status: DEFERRED to follow-up PR.** The recovery setup primitive (Phases 1–8) ships in this PR; the coordination UI for friends to actually drive a rotation when the primary passkey is lost has been split out. Reasons: (a) substantial new UI without a backend service (off-chain signature accumulation, friend-side cross-origin signing flow), (b) the plan code for this task was an outline rather than complete code, (c) it's easier to design once Tasks 4 & 4b have run on testnet so we can iterate against real recovery rules.
+
 ### Task 26: `/recover/?account=` — collect M friend signatures, submit rotation
 
 **Files:**
@@ -3359,6 +3311,10 @@ git commit -m "feat(recover): coordination page for friend-driven rotation"
 ---
 
 ## Phase 10 — E2E and final verification
+
+**Status: Task 27 DEFERRED to follow-up PR.** Playwright E2E for the full flows requires (a) Tasks 4 & 4b run so testnet has the new multisig-policy + factory wasm, (b) deterministic multi-context virtual-authenticator setup for the recovery test (one primary + three friend accounts), (c) cross-origin popup interaction for the session-key handover test. Each is achievable but adds significant complexity that's better tackled once the testnet deployment is in place.
+
+Task 28 (final verification + draft PR open) was performed inline by the controller rather than via a subagent dispatch.
 
 ### Task 27: Playwright E2E — recovery + session-key flows
 
