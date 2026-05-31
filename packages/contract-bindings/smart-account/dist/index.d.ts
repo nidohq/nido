@@ -1,303 +1,9 @@
 import { Buffer } from "buffer";
 import { AssembledTransaction, Client as ContractClient, ClientOptions as ContractClientOptions, MethodOptions } from "@stellar/stellar-sdk/contract";
-import type { u32, i128, Option } from "@stellar/stellar-sdk/contract";
+import type { u32, Option } from "@stellar/stellar-sdk/contract";
 export * from "@stellar/stellar-sdk";
 export * as contract from "@stellar/stellar-sdk/contract";
 export * as rpc from "@stellar/stellar-sdk/rpc";
-/**
- * Installation parameters for the simple threshold policy.
- */
-export interface SimpleThresholdAccountParams {
-    /**
-   * The minimum number of signers required for authorization.
-   */
-    threshold: u32;
-}
-/**
- * Error codes for simple threshold policy operations.
- */
-export declare const SimpleThresholdError: {
-    /**
-     * The smart account does not have a simple threshold policy installed.
-     */
-    3200: {
-        message: string;
-    };
-    /**
-     * When threshold is 0 or exceeds the number of available signers.
-     */
-    3201: {
-        message: string;
-    };
-    /**
-     * The transaction is not allowed by this policy.
-     */
-    3202: {
-        message: string;
-    };
-    /**
-     * The context rule for the smart account has been already installed.
-     */
-    3203: {
-        message: string;
-    };
-};
-/**
- * Storage keys for simple threshold policy data.
- */
-export type SimpleThresholdStorageKey = {
-    tag: "AccountContext";
-    values: readonly [string, u32];
-};
-/**
- * Installation parameters for the spending limit policy.
- */
-export interface SpendingLimitAccountParams {
-    /**
-   * The period in ledgers over which the spending limit applies.
-   */
-    period_ledgers: u32;
-    /**
-   * The maximum amount that can be spent within the specified period (in
-   * stroops).
-   */
-    spending_limit: i128;
-}
-/**
- * Internal storage structure for spending limit tracking.
- */
-export interface SpendingLimitData {
-    /**
-   * Cached total of all amounts in spending_history.
-   */
-    cached_total_spent: i128;
-    /**
-   * The period in ledgers over which the spending limit applies.
-   */
-    period_ledgers: u32;
-    /**
-   * History of spending transactions with their ledger sequences.
-   */
-    spending_history: Array<SpendingEntry>;
-    /**
-   * The spending limit for the period.
-   */
-    spending_limit: i128;
-}
-/**
- * Individual spending entry for tracking purposes.
- */
-export interface SpendingEntry {
-    /**
-   * The amount spent in this transaction.
-   */
-    amount: i128;
-    /**
-   * The ledger sequence when this transaction occurred.
-   */
-    ledger_sequence: u32;
-}
-/**
- * Error codes for spending limit policy operations.
- */
-export declare const SpendingLimitError: {
-    /**
-     * The smart account does not have a spending limit policy installed.
-     */
-    3220: {
-        message: string;
-    };
-    /**
-     * The spending limit has been exceeded.
-     */
-    3221: {
-        message: string;
-    };
-    /**
-     * The spending limit or period is invalid.
-     */
-    3222: {
-        message: string;
-    };
-    /**
-     * The transaction is not allowed by this policy.
-     */
-    3223: {
-        message: string;
-    };
-    /**
-     * The spending history has reached maximum capacity.
-     */
-    3224: {
-        message: string;
-    };
-    /**
-     * The context rule for the smart account has been already installed.
-     */
-    3225: {
-        message: string;
-    };
-};
-/**
- * Storage keys for spending limit policy data.
- */
-export type SpendingLimitStorageKey = {
-    tag: "AccountContext";
-    values: readonly [string, u32];
-};
-/**
- * Installation parameters for the weighted threshold policy.
- */
-export interface WeightedThresholdAccountParams {
-    /**
-   * Mapping of signers to their respective weights.
-   */
-    signer_weights: Map<Signer, u32>;
-    /**
-   * The minimum total weight required for authorization.
-   */
-    threshold: u32;
-}
-/**
- * Error codes for weighted threshold policy operations.
- */
-export declare const WeightedThresholdError: {
-    /**
-     * The smart account does not have a weighted threshold policy installed.
-     */
-    3210: {
-        message: string;
-    };
-    /**
-     * The threshold value is invalid.
-     */
-    3211: {
-        message: string;
-    };
-    /**
-     * A mathematical operation would overflow.
-     */
-    3212: {
-        message: string;
-    };
-    /**
-     * The transaction is not allowed by this policy.
-     */
-    3213: {
-        message: string;
-    };
-    /**
-     * The context rule for the smart account has been already installed.
-     */
-    3214: {
-        message: string;
-    };
-};
-/**
- * Storage keys for weighted threshold policy data.
- */
-export type WeightedThresholdStorageKey = {
-    tag: "AccountContext";
-    values: readonly [string, u32];
-};
-/**
- * Storage keys for smart account data.
- */
-export type SmartAccountStorageKey = {
-    tag: "Signers";
-    values: readonly [u32];
-} | {
-    tag: "Policies";
-    values: readonly [u32];
-} | {
-    tag: "Ids";
-    values: readonly [ContextRuleType];
-} | {
-    tag: "Meta";
-    values: readonly [u32];
-} | {
-    tag: "NextId";
-    values: void;
-} | {
-    tag: "Fingerprint";
-    values: readonly [Buffer];
-} | {
-    tag: "Count";
-    values: void;
-};
-/**
- * Represents different types of signers in the smart account system.
- */
-export type Signer = {
-    tag: "Delegated";
-    values: readonly [string];
-} | {
-    tag: "External";
-    values: readonly [string, Buffer];
-};
-/**
- * A collection of signatures mapped to their respective signers.
- */
-export type Signatures = readonly [Map<Signer, Buffer>];
-/**
- * Types of contexts that can be authorized by smart account rules.
- */
-export type ContextRuleType = {
-    tag: "Default";
-    values: void;
-} | {
-    tag: "CallContract";
-    values: readonly [string];
-} | {
-    tag: "CreateContract";
-    values: readonly [Buffer];
-};
-/**
- * Metadata for a context rule.
- */
-export interface Meta {
-    /**
-   * The type of context this rule applies to.
-   */
-    context_type: ContextRuleType;
-    /**
-   * Human-readable name for the context rule.
-   */
-    name: string;
-    /**
-   * Optional expiration ledger sequence for the rule.
-   */
-    valid_until: Option<u32>;
-}
-/**
- * A complete context rule defining authorization requirements.
- */
-export interface ContextRule {
-    /**
-   * The type of context this rule applies to.
-   */
-    context_type: ContextRuleType;
-    /**
-   * Unique identifier for the context rule.
-   */
-    id: u32;
-    /**
-   * Human-readable name for the context rule.
-   */
-    name: string;
-    /**
-   * List of policy contracts that must be satisfied.
-   */
-    policies: Array<string>;
-    /**
-   * List of signers authorized by this rule.
-   */
-    signers: Array<Signer>;
-    /**
-   * Optional expiration ledger sequence for the rule.
-   */
-    valid_until: Option<u32>;
-}
 /**
  * Error codes for smart account operations.
  */
@@ -306,12 +12,6 @@ export declare const SmartAccountError: {
      * The specified context rule does not exist.
      */
     3000: {
-        message: string;
-    };
-    /**
-     * A duplicate context rule already exists.
-     */
-    3001: {
         message: string;
     };
     /**
@@ -375,109 +75,170 @@ export declare const SmartAccountError: {
         message: string;
     };
     /**
-     * Too many context rules in the smart account.
+     * An internal ID counter (context rule, signer, or policy) has reached
+     * its maximum value (`u32::MAX`) and cannot be incremented further.
      */
     3012: {
         message: string;
     };
+    /**
+     * External signer key data exceeds the maximum allowed size.
+     */
+    3013: {
+        message: string;
+    };
+    /**
+     * context_rule_ids length does not match auth_contexts length.
+     */
+    3014: {
+        message: string;
+    };
+    /**
+     * Context rule name exceeds the maximum allowed length.
+     */
+    3015: {
+        message: string;
+    };
+    /**
+     * A signer in `AuthPayload` is not part of any selected context rule.
+     */
+    3016: {
+        message: string;
+    };
 };
 /**
- * Error types for WebAuthn verification operations.
+ * Represents different types of signers in the smart account system.
  */
-export declare const WebAuthnError: {
-    /**
-     * The signature payload is invalid or has incorrect format.
-     */
-    3110: {
-        message: string;
-    };
-    /**
-     * The client data exceeds the maximum allowed length.
-     */
-    3111: {
-        message: string;
-    };
-    /**
-     * Failed to parse JSON from client data.
-     */
-    3112: {
-        message: string;
-    };
-    /**
-     * The type field in client data is not "webauthn.get".
-     */
-    3113: {
-        message: string;
-    };
-    /**
-     * The challenge in client data does not match expected value.
-     */
-    3114: {
-        message: string;
-    };
-    /**
-     * The authenticator data format is invalid or too short.
-     */
-    3115: {
-        message: string;
-    };
-    /**
-     * The User Present (UP) bit is not set in authenticator flags.
-     */
-    3116: {
-        message: string;
-    };
-    /**
-     * The User Verified (UV) bit is not set in authenticator flags.
-     */
-    3117: {
-        message: string;
-    };
-    /**
-     * Invalid relationship between Backup Eligibility and State bits.
-     */
-    3118: {
-        message: string;
-    };
+export type Signer = {
+    tag: "Delegated";
+    values: readonly [string];
+} | {
+    tag: "External";
+    values: readonly [string, Buffer];
 };
 /**
- * WebAuthn signature data structure containing all components needed for
- * verification.
+ * The authorization payload passed to `__check_auth`, bundling cryptographic
+ * proofs with context rule selection.
  *
- * This structure encapsulates the signature and associated data generated
- * during a WebAuthn authentication ceremony.
+ * This struct carries two distinct pieces of information that are both
+ * required for authorization but cannot be derived from each other:
+ *
+ * - `signers` maps each [`Signer`] to its raw signature bytes, providing
+ * cryptographic proof that the signer actually signed the transaction
+ * payload. A context rule stores which signer *identities* are authorized
+ * (via `signer_ids`), but the rule does not contain the signatures
+ * themselves — those must be supplied here.
+ *
+ * - `context_rule_ids` tells the system which rule to validate for each auth
+ * context. Because multiple rules can exist for the same context type, the
+ * caller must explicitly select one per context rather than relying on
+ * auto-discovery. Each entry is aligned by index with the `auth_contexts`
+ * passed to `__check_auth`.
+ *
+ * The length of `context_rule_ids` must equal the number of auth contexts;
+ * a mismatch is rejected with
+ * [`SmartAccountError::ContextRuleIdsLen
  */
-export interface WebAuthnSigData {
+export interface AuthPayload {
     /**
-   * Raw authenticator data from the WebAuthn response.
+   * Per-context rule IDs, aligned by index with `auth_contexts`.
    */
-    authenticator_data: Buffer;
+    context_rule_ids: Array<u32>;
     /**
-   * Raw client data JSON from the WebAuthn response.
+   * Signature data mapped to each signer.
    */
-    client_data: Buffer;
-    /**
-   * The cryptographic signature (64 bytes for secp256r1).
-   */
-    signature: Buffer;
+    signers: Map<Signer, Buffer>;
 }
+/**
+ * A complete context rule defining authorization requirements.
+ */
+export interface ContextRule {
+    /**
+   * The type of context this rule applies to.
+   */
+    context_type: ContextRuleType;
+    /**
+   * Unique identifier for the context rule.
+   */
+    id: u32;
+    /**
+   * Human-readable name for the context rule.
+   */
+    name: string;
+    /**
+   * List of policy contracts that must be satisfied.
+   */
+    policies: Array<string>;
+    /**
+   * Global registry IDs for each policy, positionally aligned with
+   * `policies`.
+   */
+    policy_ids: Array<u32>;
+    /**
+   * Global registry IDs for each signer, positionally aligned with
+   * `signers`.
+   */
+    signer_ids: Array<u32>;
+    /**
+   * List of signers authorized by this rule.
+   */
+    signers: Array<Signer>;
+    /**
+   * Optional expiration ledger sequence for the rule.
+   */
+    valid_until: Option<u32>;
+}
+/**
+ * Types of contexts that can be authorized by smart account rules.
+ */
+export type ContextRuleType = {
+    tag: "Default";
+    values: void;
+} | {
+    tag: "CallContract";
+    values: readonly [string];
+} | {
+    tag: "CreateContract";
+    values: readonly [Buffer];
+};
 export interface Client {
     /**
-     * Construct and simulate a get_context_rule transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Construct and simulate a execute transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    get_context_rule: ({ context_rule_id }: {
+    execute: ({ target, target_fn, target_args }: {
+        target: string;
+        target_fn: string;
+        target_args: Array<any>;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a add_policy transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    add_policy: ({ context_rule_id, policy, install_param }: {
         context_rule_id: u32;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<ContextRule>>;
+        policy: string;
+        install_param: any;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<u32>>;
     /**
-     * Construct and simulate a get_context_rules transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Construct and simulate a add_signer transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    get_context_rules: ({ context_rule_type }: {
-        context_rule_type: ContextRuleType;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<Array<ContextRule>>>;
+    add_signer: ({ context_rule_id, signer }: {
+        context_rule_id: u32;
+        signer: Signer;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<u32>>;
     /**
-     * Construct and simulate a get_context_rules_count transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Construct and simulate a remove_policy transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    get_context_rules_count: (options?: MethodOptions) => Promise<AssembledTransaction<u32>>;
+    remove_policy: ({ context_rule_id, policy_id }: {
+        context_rule_id: u32;
+        policy_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a remove_signer transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    remove_signer: ({ context_rule_id, signer_id }: {
+        context_rule_id: u32;
+        signer_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a add_context_rule transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -488,6 +249,51 @@ export interface Client {
         signers: Array<Signer>;
         policies: Map<string, any>;
     }, options?: MethodOptions) => Promise<AssembledTransaction<ContextRule>>;
+    /**
+     * Construct and simulate a get_context_rule transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_context_rule: ({ context_rule_id }: {
+        context_rule_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<ContextRule>>;
+    /**
+     * Construct and simulate a remove_context_rule transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    remove_context_rule: ({ context_rule_id }: {
+        context_rule_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a add_multisig_recovery transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Install a social-recovery rule scoped to calls on this account, gated
+     * by an M-of-N multisig policy.
+     *
+     * Typed wrapper around `add_context_rule` that constructs the policies
+     * map for the caller — the SDK doesn't need to wrestle with the
+     * `Map<Address, Val>` install-param encoding (the generated TS bindings
+     * would otherwise erase the install param to `any`).
+     *
+     * The rule is scoped to `CallContract(self)` so it authorises calls
+     * against the account's own methods (e.g. `add_signer`, `remove_signer`,
+     * `add_context_rule`) — not external transfers.
+     *
+     * # Arguments
+     *
+     * * `name` - Human-readable rule name.
+     * * `valid_until` - Optional expiration ledger sequence.
+     * * `friends` - The signers authorised by the recovery rule.
+     * * `multisig_policy` - Address of the deployed multisig policy contract.
+     * * `threshold` - Number of `friends` signatures required (M).
+     */
+    add_multisig_recovery: ({ name, valid_until, friends, multisig_policy, threshold }: {
+        name: string;
+        valid_until: Option<u32>;
+        friends: Array<Signer>;
+        multisig_policy: string;
+        threshold: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<ContextRule>>;
+    /**
+     * Construct and simulate a get_context_rules_count transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_context_rules_count: (options?: MethodOptions) => Promise<AssembledTransaction<u32>>;
     /**
      * Construct and simulate a update_context_rule_name transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -502,49 +308,6 @@ export interface Client {
         context_rule_id: u32;
         valid_until: Option<u32>;
     }, options?: MethodOptions) => Promise<AssembledTransaction<ContextRule>>;
-    /**
-     * Construct and simulate a remove_context_rule transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    remove_context_rule: ({ context_rule_id }: {
-        context_rule_id: u32;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
-    /**
-     * Construct and simulate a add_signer transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    add_signer: ({ context_rule_id, signer }: {
-        context_rule_id: u32;
-        signer: Signer;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
-    /**
-     * Construct and simulate a remove_signer transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    remove_signer: ({ context_rule_id, signer }: {
-        context_rule_id: u32;
-        signer: Signer;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
-    /**
-     * Construct and simulate a add_policy transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    add_policy: ({ context_rule_id, policy, install_param }: {
-        context_rule_id: u32;
-        policy: string;
-        install_param: any;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
-    /**
-     * Construct and simulate a remove_policy transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    remove_policy: ({ context_rule_id, policy }: {
-        context_rule_id: u32;
-        policy: string;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
-    /**
-     * Construct and simulate a execute transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    execute: ({ target, target_fn, target_args }: {
-        target: string;
-        target_fn: string;
-        target_args: Array<any>;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
 }
 export declare class Client extends ContractClient {
     readonly options: ContractClientOptions;
@@ -565,17 +328,17 @@ export declare class Client extends ContractClient {
     }): Promise<AssembledTransaction<T>>;
     constructor(options: ContractClientOptions);
     readonly fromJSON: {
-        get_context_rule: (json: string) => AssembledTransaction<ContextRule>;
-        get_context_rules: (json: string) => AssembledTransaction<ContextRule[]>;
-        get_context_rules_count: (json: string) => AssembledTransaction<number>;
+        execute: (json: string) => AssembledTransaction<null>;
+        add_policy: (json: string) => AssembledTransaction<number>;
+        add_signer: (json: string) => AssembledTransaction<number>;
+        remove_policy: (json: string) => AssembledTransaction<null>;
+        remove_signer: (json: string) => AssembledTransaction<null>;
         add_context_rule: (json: string) => AssembledTransaction<ContextRule>;
+        get_context_rule: (json: string) => AssembledTransaction<ContextRule>;
+        remove_context_rule: (json: string) => AssembledTransaction<null>;
+        add_multisig_recovery: (json: string) => AssembledTransaction<ContextRule>;
+        get_context_rules_count: (json: string) => AssembledTransaction<number>;
         update_context_rule_name: (json: string) => AssembledTransaction<ContextRule>;
         update_context_rule_valid_until: (json: string) => AssembledTransaction<ContextRule>;
-        remove_context_rule: (json: string) => AssembledTransaction<null>;
-        add_signer: (json: string) => AssembledTransaction<null>;
-        remove_signer: (json: string) => AssembledTransaction<null>;
-        add_policy: (json: string) => AssembledTransaction<null>;
-        remove_policy: (json: string) => AssembledTransaction<null>;
-        execute: (json: string) => AssembledTransaction<null>;
     };
 }

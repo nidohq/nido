@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, xdr::FromXdr, Bytes, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, xdr::FromXdr, Bytes, BytesN, Env, Vec};
 use stellar_accounts::verifiers::{
     utils::extract_from_bytes,
     webauthn::{self, WebAuthnSigData},
@@ -43,5 +43,17 @@ impl Verifier for WebAuthnVerifier {
             extract_from_bytes(e, &key_data, 0..65).expect("65-byte public key to be extracted");
 
         webauthn::verify(e, &signature_payload, &pub_key, &sig_struct)
+    }
+
+    /// Canonical identity for a WebAuthn key — the 65-byte SEC1 pubkey,
+    /// stripped of any trailing credential-ID metadata that varies per
+    /// browser session but doesn't change the underlying key. Required by
+    /// OZ v0.7+ for the smart account to detect duplicate signer registrations.
+    fn canonicalize_key(e: &Env, key_data: Self::KeyData) -> Bytes {
+        webauthn::canonicalize_key(e, &key_data)
+    }
+
+    fn batch_canonicalize_key(e: &Env, key_data: Vec<Self::KeyData>) -> Vec<Bytes> {
+        webauthn::batch_canonicalize_key(e, &key_data)
     }
 }

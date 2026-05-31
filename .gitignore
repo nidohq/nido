@@ -18,6 +18,23 @@ node_modules/
 packages/frontend/dist/
 packages/frontend/.astro/
 
+# Brainstorming visual-companion transient session files
+# (committed specs live under docs/superpowers/)
+.superpowers/
+
+# Claude Code local state (subagent worktrees, per-session feedback notes)
+.claude/
+
+# Playwright test artifacts
+test-results/
+.playwright-mcp/
+
+# Local secrets — wrangler, env files. Never commit.
+.env
+.env.local
+.env.*.local
+.dev.vars
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

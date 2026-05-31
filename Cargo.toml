@@ -9,9 +9,13 @@ license = "MIT"
 
 [workspace.dependencies]
 base64 = "0.22"
-soroban-sdk = "25.0.2"
-stellar-accounts = { git = "https://github.com/OpenZeppelin/stellar-contracts.git", rev = "63167bb707edf4ad25e46572df11d4332d10b68e", package = "stellar-accounts" }
-stellar-registry = "0.0.6"
+soroban-sdk = "26.0.1"
+# OZ stellar-contracts main @ 637c53a — tagged release v0.7.1 is still on
+# soroban-sdk 25; the 26 bump landed on main after the tag.
+stellar-accounts = { git = "https://github.com/OpenZeppelin/stellar-contracts.git", rev = "637c53a8c4928fd0c71d330bd866f482c3454578", package = "stellar-accounts" }
+stellar-registry = "0.0.10"
+# soroban-sdk-tools: rev cbafae3 is the soroban-sdk 26 update.
+soroban-sdk-tools = { git = "https://github.com/BlaineHeffron/soroban-sdk-tools", rev = "cbafae3439f01a4add2411c6162885edb30e7389" }
 
 [profile.contract]
 overflow-checks = true

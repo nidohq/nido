@@ -1,10 +1,10 @@
-use g2c_integration_tests::{build_contract_assertion, deploy_smart_account};
+use g2c_integration_tests::{build_contract_assertion, compute_auth_digest, deploy_smart_account};
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{symbol_short, vec, Bytes, Env, Map};
-use stellar_accounts::smart_account::{do_check_auth, Signatures, Signer};
+use stellar_accounts::smart_account::{do_check_auth, AuthPayload, Signer};
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 
 /// Full smart account `__check_auth` flow: deploy account with passkey signer,
@@ -18,9 +18,10 @@ fn smart_account_check_auth_with_passkey() {
     // (Hash<32> can only be constructed via crypto functions).
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0xCD; 32]));
 
-    // Build the assertion using the hash bytes as the challenge so the
-    // verifier's base64url(signature_payload) == challenge check passes.
-    let assertion = build_contract_assertion(&signing_key, &env, &hash.to_array());
+    // OZ v0.7+ binds context_rule_ids into the auth digest, so sign that.
+    let context_rule_ids = vec![&env, 0u32]; // Default rule
+    let auth_digest = compute_auth_digest(&env, &hash, &context_rule_ids);
+    let assertion = build_contract_assertion(&signing_key, &env, &auth_digest);
 
     // XDR-encode WebAuthnSigData for the Signatures map
     let sig_data = WebAuthnSigData {
@@ -35,10 +36,14 @@ fn smart_account_check_auth_with_passkey() {
     let key_data = soroban_sdk::Bytes::from_slice(&env, &pubkey_sec1);
     let signer = Signer::External(verifier_addr, key_data);
 
-    // Construct Signatures
+    // Construct AuthPayload. context_rule_ids is aligned by index with
+    // auth_contexts; we authorize one context via the Default rule (id 0).
     let mut sig_map: Map<Signer, Bytes> = Map::new(&env);
     sig_map.set(signer, sig_data_bytes);
-    let signatures = Signatures(sig_map);
+    let signatures = AuthPayload {
+        signers: sig_map,
+        context_rule_ids,
+    };
 
     // Auth context: arbitrary contract call (the Default rule matches everything)
     let context = Context::Contract(ContractContext {
@@ -62,7 +67,9 @@ fn smart_account_check_auth_rejects_wrong_key() {
     let wrong_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
 
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0xEF; 32]));
-    let assertion = build_contract_assertion(&wrong_key, &env, &hash.to_array());
+    let context_rule_ids = vec![&env, 0u32];
+    let auth_digest = compute_auth_digest(&env, &hash, &context_rule_ids);
+    let assertion = build_contract_assertion(&wrong_key, &env, &auth_digest);
 
     let sig_data = WebAuthnSigData {
         signature: assertion.signature,
@@ -78,7 +85,10 @@ fn smart_account_check_auth_rejects_wrong_key() {
 
     let mut sig_map: Map<Signer, Bytes> = Map::new(&env);
     sig_map.set(signer, sig_data_bytes);
-    let signatures = Signatures(sig_map);
+    let signatures = AuthPayload {
+        signers: sig_map,
+        context_rule_ids,
+    };
 
     let context = Context::Contract(ContractContext {
         contract: soroban_sdk::Address::generate(&env),

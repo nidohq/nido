@@ -1,13 +1,32 @@
 use soroban_sdk::{
-    contract, contractimpl, deploy::DeployerWithAddress, Address, Bytes, BytesN, Env,
+    contract, contractimpl, deploy::DeployerWithAddress, Address, Bytes, BytesN, Env, String,
+    Symbol,
 };
 use soroban_sdk_tools::{contractstorage, InstanceItem};
 use stellar_accounts::smart_account::Signer;
 
 use crate::xlm;
 
-const ACCOUNT_HASH: &[u8; 32] = b"\xb9\x4b\x29\x9f\x8c\x53\x04\xf1\x63\xdf\x15\x2e\x0d\xcf\x1a\xb8\x06\x63\xed\x03\x7c\xa1\xa3\x85\xd4\xec\x7b\xee\x7f\x3e\xcc\xf3";
-const VERIFIER: &[u8; 32] = b"\xb9\x39\x33\x11\xf9\x7b\x49\x8f\xbb\x89\x76\xec\x50\xdd\x85\x85\xdd\x99\xad\x44\x3b\x8f\x13\xec\x5f\x75\x19\x86\x72\x9f\x99\xbe";
+const ACCOUNT_HASH: &[u8; 32] = b"\x49\xc7\x4a\x0c\xd3\xa9\xc3\x9c\xe1\xb3\x88\x1e\xe8\x1a\x05\x57\xca\xba\x49\x92\x21\x66\xc4\xdf\x41\x93\x34\x14\xd9\x2d\x0d\xd8";
+
+/// Stellar Registry "unverified" testnet contract — the one that holds
+/// bare-name → contract-id mappings. The verified registry's address is
+/// `CAMLHKQHNZO2IOIBFUF5BGZ2V62BMS5QCWFFGRCB4NOB3G5OMDA7SGZN`; it doesn't
+/// dispatch prefixed names natively (the CLI does that client-side). Calling
+/// `fetch_contract_id("verifier")` directly on the unverified registry
+/// returns the registered contract id; that's what `resolve` below relies on.
+///
+/// For mainnet or an alternate registry build, change this constant and
+/// redeploy the factory.
+const REGISTRY: &str = "CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S";
+
+mod registry {
+    use soroban_sdk::*;
+    #[contractclient(name = "RegistryClient")]
+    pub trait RegistryInterface {
+        fn fetch_contract_id(name: String) -> Address;
+    }
+}
 
 #[contractstorage]
 pub struct Config {
@@ -43,8 +62,22 @@ impl Contract {
             .with_address(funder.clone(), BytesN::from_array(e, &[0; 32]))
     }
 
+    fn resolve(env: &Env, name: &str) -> Address {
+        let key = Symbol::new(env, name);
+        if let Some(addr) = env.storage().instance().get::<_, Address>(&key) {
+            return addr;
+        }
+        let client = registry::RegistryClient::new(
+            env,
+            &Address::from_str(env, REGISTRY),
+        );
+        let addr = client.fetch_contract_id(&String::from_str(env, name));
+        env.storage().instance().set(&key, &addr);
+        addr
+    }
+
     fn deploy_account_contract(e: &Env, funder: &Address, key: Bytes) -> Address {
-        let verifier_addr = Self::verifier_address(e);
+        let verifier_addr = Self::resolve(e, "verifier");
         let signer = Signer::External(verifier_addr, key);
         let signers = soroban_sdk::vec![e, signer];
         let policies: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val> =
@@ -52,16 +85,51 @@ impl Contract {
         Self::deployer(e, funder)
             .deploy_v2(BytesN::from_array(e, ACCOUNT_HASH), (&signers, &policies))
     }
+}
 
-    fn verifier_address(e: &Env) -> Address {
-        let bytes: BytesN<32> = BytesN::from_array(e, VERIFIER);
-        let deployer = e.deployer().with_current_contract(bytes.clone());
-        let address = deployer.deployed_address();
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{contract, contractimpl, Env};
 
-        if address.executable().is_none() {
-            deployer.deploy_v2(bytes, ())
-        } else {
-            address
+    // Minimal mock: every `fetch_contract_id` call returns a fixed address.
+    #[contract]
+    struct MockRegistry;
+
+    #[contractimpl]
+    impl MockRegistry {
+        pub fn __constructor(env: &Env, fixed: Address) {
+            env.storage()
+                .instance()
+                .set(&Symbol::new(env, "fixed"), &fixed);
         }
+        pub fn fetch_contract_id(env: &Env, _name: String) -> Address {
+            env.storage()
+                .instance()
+                .get::<_, Address>(&Symbol::new(env, "fixed"))
+                .unwrap()
+        }
+    }
+
+    #[test]
+    fn resolve_caches_after_first_lookup() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        // Deploy MockRegistry at the exact address `REGISTRY` points at so
+        // the factory's hardcoded constant resolves to the mock during the
+        // test.
+        let registry_addr = Address::from_str(&env, REGISTRY);
+        let expected = Address::generate(&env);
+        env.register_at(&registry_addr, MockRegistry, (expected.clone(),));
+
+        let factory_addr = env.register(Contract, ());
+        let first =
+            env.as_contract(&factory_addr, || Contract::resolve(&env, "verifier"));
+        let second =
+            env.as_contract(&factory_addr, || Contract::resolve(&env, "verifier"));
+        assert_eq!(first, expected);
+        assert_eq!(first, second);
     }
 }

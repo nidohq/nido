@@ -8,11 +8,17 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         <h1>Status Message</h1>
         <p class="info">Set a status message on-chain via your smart account.</p>
         </div>
-        <a href="/" class="home-btn">Home</a>
+        <div class="header-links">
+            <a id="account-link" class="home-btn hidden">Open wallet</a>
+            <a id="home-link" class="home-btn" href="/">Home</a>
+        </div>
     </div>
 
 
   <div id="error-box" class="error" style="display:none"></div>
+
+  <!-- Delegation status banner -->
+  <div id="delegation-status"></div>
 
   <!-- Read current message -->
   <section>
@@ -94,33 +100,48 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     margin-top: 0.5rem;
     display: inline-block;
   }
+
+  .header-links {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
 </style>
 
 <script>
   import { Buffer } from "buffer";
-  import { Client, networks } from "status-message";
+  import { Client } from "status-message";
   import {
     buildAuthHash,
+    computeAuthDigest,
     getAuthEntry,
     injectPasskeySignature,
     hex2buf,
     buf2hex,
     accountUrl,
-    computeAccountAddress,
+    stripSubdomain,
+    loadSessionKeyMaterial,
+    forgetSessionKeyMaterial,
+    signWithSessionPasskey,
   } from "@g2c/passkey-sdk";
-  import { Keypair, Networks, TransactionBuilder, Transaction, rpc } from "@stellar/stellar-sdk";
+  import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
+  import { startDelegation, readDelegationReturn } from "../../lib/delegationHandover.js";
+  import { Keypair, Networks, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
-  const STATUS_CONTRACT = networks.testnet.contractId;
-  const FACTORY_CONTRACT_ID = "CDDMELYHOSD6M2T53F5DUYCXDS3VVOQ72E4KZMMZP37GQWII2WRKM2CC";
+  // Hardcoded so bindings can be regenerated without --contract-id (the
+  // stellar CLI generator only emits `networks` when contract-id is
+  // passed at regen time, and bindings are regenerated frequently).
+  const STATUS_CONTRACT = "CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV";
+  const FACTORY_CONTRACT_ID = "CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXHIERNOZPPYMUNBT2JZ2SK";
 
-  // WebAuthn verifier WASM hash (from factory contract source)
-  const VERIFIER_WASM_HASH = Buffer.from([
-    0xb9,0x39,0x33,0x11,0xf9,0x7b,0x49,0x8f,0xbb,0x89,0x76,0xec,0x50,0xdd,0x85,0x85,0xdd,0x99,0xad,0x44,0x3b,0x8f,0x13,0xec,0x5f,0x75,0x19,0x86,0x72,0x9f,0x99,0xbe,
-  ]);
-  const VERIFIER_ADDRESS = computeAccountAddress(
-    FACTORY_CONTRACT_ID, VERIFIER_WASM_HASH, Networks.TESTNET
-  );
+  // WebAuthn verifier — resolved per-account from chain when signing.
+  // Was previously a deterministic derivation from FACTORY+wasm_hash,
+  // which broke once the factory stopped lazy-deploying its own
+  // verifier and instead resolved one via stellar-registry, AND once
+  // the registered verifier was redeployed (different address).
+  // Now: read it off the account's own rule so we always cite the
+  // verifier the smart account actually trusts.
 
   // --- UI refs ---
 
@@ -173,6 +194,140 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   if (contractParam) {
     $contractInput.value = contractParam;
   }
+
+  // If we just came back from the wallet's delegate flow, surface the
+  // outcome and clean the URL so reloads don't re-trigger the banner.
+  {
+    const ret = readDelegationReturn();
+    if (ret === "ok") {
+      alert("Delegation succeeded. The dApp will now sign in-page for this contract.");
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("delegation");
+      window.history.replaceState({}, "", clean.toString());
+    } else if (ret === "cancelled") {
+      alert("Delegation cancelled. Local session-key material was kept; the next attempt will overwrite it.");
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("delegation");
+      window.history.replaceState({}, "", clean.toString());
+    }
+  }
+
+  // --- Delegation status banner ---
+
+  function updateDelegationBanner(account: string) {
+    const $status = document.getElementById("delegation-status")!;
+    if (!account) {
+      $status.innerHTML = `
+        <div style="background:#f7f7fa;border:1px solid #ddd;border-radius:6px;padding:0.75rem;margin:0.5rem 0">
+          <p style="margin:0 0 0.5rem 0;font-size:0.9em;color:#666">
+            Type your smart account address above, then delegate this dApp
+            so signing stays in-page (no wallet round-trip per message).
+          </p>
+          <button id="delegate-button" disabled
+                  style="font-size:0.95em;padding:0.4rem 0.8rem;opacity:0.6;cursor:not-allowed">
+            Delegate this dApp →
+          </button>
+        </div>`;
+      return;
+    }
+    const material = loadSessionKeyMaterial(account, STATUS_CONTRACT);
+    const delegatedBanner = material
+      ? `<p style="margin:0 0 0.5rem 0;font-size:0.9em;color:#9ac">
+           <strong>Delegated</strong> — signs in-page with a dApp-scoped passkey.
+           <button id="forget-delegation" style="margin-left:0.5rem;font-size:0.85em">Forget delegation</button>
+         </p>
+         <p style="margin:0 0 0.5rem 0;font-size:0.85em;color:#666">
+           Each action prompts your authenticator (Touch ID / device unlock) at this origin;
+           no wallet round-trip. Re-delegate to replace this session passkey with a fresh one.
+         </p>`
+      : `<p style="margin:0 0 0.5rem 0;font-size:0.9em">
+           <strong>Not delegated.</strong> Every action will redirect to your
+           wallet for a passkey prompt.
+         </p>
+         <p style="margin:0 0 0.5rem 0;font-size:0.85em;color:#666">
+           Delegate this dApp to skip the round-trip: a passkey scoped to
+           the status-message contract is created at this origin. The
+           private key never leaves your authenticator — XSS at this site
+           can't sign for you. Each action still needs a biometric/device
+           unlock here, just not a full wallet detour.
+         </p>`;
+    $status.innerHTML = `
+      <div style="background:#f7f7fa;border:1px solid #ddd;border-radius:6px;padding:0.75rem;margin:0.5rem 0">
+        ${delegatedBanner}
+        <button id="delegate-button" style="font-size:0.95em;padding:0.4rem 0.8rem">
+          ${material ? "Re-delegate this dApp →" : "Delegate this dApp →"}
+        </button>
+      </div>`;
+    if (material) {
+      document.getElementById("forget-delegation")!.addEventListener("click", () => {
+        forgetSessionKeyMaterial(account, STATUS_CONTRACT);
+        location.reload();
+      });
+    }
+    document.getElementById("delegate-button")!.addEventListener("click", async () => {
+        const acc = $contractInput.value.trim();
+        if (!acc) {
+          alert("Enter your smart account address first.");
+          return;
+        }
+        // Build the wallet origin. accountUrl returns a protocol-relative
+        // URL ("//<acc>.<base>/" in prod, "//<acc>--pr-N.<base>/" in PR
+        // previews), which we feed to URL() to extract the origin. Doing it
+        // manually with `${acc}.${stripSubdomain(host)}` drops the --pr-N
+        // suffix in previews because stripSubdomain returns "pr-N.<base>"
+        // (preserves the prefix as its own segment).
+        const path = accountUrl(window.location.host, acc, "/");
+        const walletOrigin = new URL(`${window.location.protocol}${path}`).origin;
+        try {
+          // Generates the session key in *this* origin, persists private bytes
+          // locally, then full-page redirects to the wallet with the public
+          // key + scope in URL params. Wallet signs and redirects back.
+          await startDelegation({
+            walletOrigin,
+            account: acc,
+            targetContract: STATUS_CONTRACT,
+            duration: "24h",
+            returnUrl: window.location.href,
+            label: "status-message",
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          alert(`Delegation failed: ${msg}`);
+        }
+      });
+  }
+
+  // --- Header navigation links ---
+  //
+  // The page lives on `status-message[.--pr-N].mysoroban.xyz`, so a static
+  // <a href="/"> wouldn't go to the wallet — it'd stay on the dApp
+  // subdomain (the worker rewrites `/` here back to `/status-message/`).
+  // Compute the apex at runtime and route Home there. Account link
+  // appears whenever a contract is in the input.
+  const $homeLink = document.getElementById("home-link") as HTMLAnchorElement;
+  const $accountLink = document.getElementById("account-link") as HTMLAnchorElement;
+  const apexHost = stripSubdomain(window.location.host);
+  $homeLink.href = `${window.location.protocol}//${apexHost}/`;
+
+  function updateAccountLink(account: string) {
+    if (account && /^C[A-Z0-9]{55}$/.test(account)) {
+      $accountLink.href = accountUrl(window.location.host, account, "/account/");
+      $accountLink.classList.remove("hidden");
+    } else {
+      $accountLink.classList.add("hidden");
+    }
+  }
+
+  // Show banner + nav link for initial account value (from URL param or empty)
+  updateDelegationBanner($contractInput.value.trim());
+  updateAccountLink($contractInput.value.trim());
+
+  // Update banner whenever the account input changes
+  $contractInput.addEventListener("input", () => {
+    const v = $contractInput.value.trim();
+    updateDelegationBanner(v);
+    updateAccountLink(v);
+  });
 
   // --- Load message ---
 
@@ -246,6 +401,146 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       const authEntry = getAuthEntry(sim);
       const lastLedger = sim.latestLedger;
       const authHash = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
+
+      // --- Session-passkey in-page signing path ---
+      const material = loadSessionKeyMaterial(contract, STATUS_CONTRACT);
+      if (material) {
+        $setForm.textContent = "Finding session rule on chain...";
+
+        // Discover which context rule on this account contains our
+        // session-passkey signer. The wallet's add_context_rule assigned
+        // some non-zero rule id when it installed the delegation; we
+        // can't hard-code [0] (that's the default rule for the primary
+        // passkey) and can't easily plumb the id back from the wallet's
+        // redirect either. Querying every time is cheap and self-healing:
+        // if the install tx never landed, this returns null and we tear
+        // the stale localStorage entry down.
+        const ruleId = await findRuleForPubkey(contract, material.publicKey);
+        if (ruleId === null) {
+          forgetSessionKeyMaterial(contract, STATUS_CONTRACT);
+          throw new Error(
+            "Session passkey is not installed on chain (the delegation never " +
+              "actually committed). Please re-delegate this dApp."
+          );
+        }
+        const contextRuleIds = [ruleId];
+
+        // Look up the verifier the smart account actually trusts —
+        // not a hardcoded address. Once issue #26 (registry resolution)
+        // is fully wired this and `fetchVerifierAddress` collapse into
+        // a single registry call.
+        const verifierAddress = await fetchVerifierAddress(contract);
+
+        $setForm.textContent = "Touch your authenticator to sign...";
+
+        // OZ v0.7+ smart accounts verify against
+        //   auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
+        // — NOT the raw signature_payload. Sign that digest.
+        const authDigest = computeAuthDigest(
+          new Uint8Array(authHash),
+          contextRuleIds,
+        );
+        const parsed = await signWithSessionPasskey(
+          material.credentialId,
+          new Uint8Array(authDigest),
+        );
+
+        const sessionPubkey = hex2buf(material.publicKey);
+
+        // `tx.built` is ALREADY the assembled tx from the bindings'
+        // internal simulate. Re-running rpc.assembleTransaction on it
+        // hits the cross-bundle `instanceof Transaction` check and
+        // throws "expected a 'Transaction', got: [object Object]".
+        const authTxn = tx.built!;
+
+        // Inject the session-passkey signature in OZ v0.7 AuthPayload
+        // shape, threading the same contextRuleIds so the chain-side
+        // recomputed digest matches our signature.
+        injectPasskeySignature(
+          authTxn,
+          parsed,
+          verifierAddress,
+          sessionPubkey,
+          lastLedger,
+          undefined,
+          contextRuleIds,
+        );
+
+        $setForm.textContent = "Submitting...";
+
+        // Re-simulate the signed tx in enforce mode — both as a
+        // pre-submit auth sanity check AND to recompute the resource
+        // footprint so it covers __check_auth's reads. The bindings'
+        // internal simulate built tx.built with auth=[] (had to, to
+        // dodge recording-mode trapping on unsigned auth templates),
+        // so the assembled footprint covers the operation only. Apply
+        // the enforce-mode sim's transactionData via
+        // TransactionBuilder.cloneFrom (preserves auth entries) instead
+        // of rpc.assembleTransaction (which rebuilds + strips auth) —
+        // same refit pattern as primaryPasskeySigner.
+        const server = new rpc.Server(RPC_URL);
+        const sim2 = await server.simulateTransaction(authTxn, undefined, 'enforce');
+        if (rpc.Api.isSimulationError(sim2) || rpc.Api.isSimulationRestore(sim2)) {
+          throw new Error(`Re-simulation failed: ${"error" in sim2 ? sim2.error : "restore needed"}`);
+        }
+        const successSim2 = sim2 as rpc.Api.SimulateTransactionSuccessResponse;
+        const newSorobanData = successSim2.transactionData.build();
+        const newResourceFee = BigInt(newSorobanData.resourceFee().toString());
+
+        // Round-trip authTxn through XDR to materialize a Transaction in
+        // the PAGE's @stellar/stellar-sdk module instance — otherwise
+        // TransactionBuilder.cloneFrom's `instanceof Transaction` check
+        // fails because authTxn was built by the bindings' bundled SDK
+        // module copy. Same gotcha that broke the original
+        // rpc.assembleTransaction(tx.built, sim) call; same workaround.
+        // The signed auth entries are part of the XDR so they survive
+        // the round-trip intact.
+        const reparsedAuthTxn = TransactionBuilder.fromXDR(
+          authTxn.toEnvelope().toXDR('base64'),
+          Networks.TESTNET,
+        ) as Transaction;
+        const oldResourceFee = BigInt(
+          (reparsedAuthTxn.toEnvelope().v1().tx().ext().value() as xdr.SorobanTransactionData | undefined)
+            ?.resourceFee().toString() ?? '0'
+        );
+        const classicFee = BigInt(reparsedAuthTxn.fee) - oldResourceFee;
+        const finalTx = TransactionBuilder.cloneFrom(reparsedAuthTxn, {
+          fee: (classicFee + newResourceFee).toString(),
+          sorobanData: newSorobanData,
+          networkPassphrase: Networks.TESTNET,
+        }).build();
+        finalTx.sign(keypair);
+
+        $resultSection.classList.remove("hidden");
+        $statusValue.textContent = "Submitting transaction...";
+
+        const sendResult = await server.sendTransaction(finalTx);
+        if (sendResult.status === "ERROR") {
+          throw new Error(`Transaction rejected: ${sendResult.errorResult?.toXDR("base64") ?? "unknown"}`);
+        }
+
+        $statusValue.textContent = "Waiting for confirmation...";
+        let getResult = await server.getTransaction(sendResult.hash);
+        while (getResult.status === "NOT_FOUND") {
+          await new Promise((r) => setTimeout(r, 1500));
+          getResult = await server.getTransaction(sendResult.hash);
+        }
+
+        if (getResult.status === "SUCCESS") {
+          $statusValue.textContent = "Message updated successfully!";
+          $txLink.href = `https://stellar.expert/explorer/testnet/tx/${sendResult.hash}`;
+          $txLink.style.display = "inline";
+          try { await loadMessage(contract); } catch (_) { /* non-critical */ }
+        } else {
+          throw new Error(`Transaction failed: ${getResult.status}`);
+        }
+
+        $setForm.disabled = false;
+        $setForm.textContent = "Set Message";
+        return;
+      }
+
+      // --- Fallback: redirect to wallet for passkey signing ---
       const authHashHex = buf2hex(authHash);
 
       // Store transaction data for after redirect
@@ -284,8 +579,9 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           const txXdr = localStorage.getItem("sm:txXdr");
           const lastLedgerStr = localStorage.getItem("sm:lastLedger");
           const keypairSecret = localStorage.getItem("sm:keypairSecret");
+          const callbackContract = localStorage.getItem("sm:contract");
 
-          if (!txXdr || !lastLedgerStr || !keypairSecret) {
+          if (!txXdr || !lastLedgerStr || !keypairSecret || !callbackContract) {
             throw new Error("Missing stored transaction data. Please try again.");
           }
 
@@ -295,7 +591,10 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           // Reconstruct transaction from stored XDR
           const authTxn = TransactionBuilder.fromXDR(txXdr, Networks.TESTNET) as Transaction;
 
-          // Inject passkey signature into auth entry (OZ smart account format)
+          // Inject passkey signature into auth entry (OZ smart account format).
+          // Read the verifier off the account's own rule rather than a stale
+          // hardcoded derivation — same reason as the in-page session path.
+          const verifierAddress = await fetchVerifierAddress(callbackContract);
           injectPasskeySignature(
             authTxn,
             {
@@ -303,7 +602,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
               clientDataJson: hex2buf(clientDataJSON),
               signature: hex2buf(signature),
             },
-            VERIFIER_ADDRESS,
+            verifierAddress,
             hex2buf(publicKeyHex),
             lastLedger
           );

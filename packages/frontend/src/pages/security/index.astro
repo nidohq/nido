@@ -1,0 +1,133 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Security">
+  <main class="security">
+    <header>
+      <h1>Security</h1>
+      <p class="subtitle">Recovery friends, app delegations, and advanced rules for this account.</p>
+    </header>
+
+    <section id="recovery-section">
+      <h2>Account Recovery</h2>
+      <div id="recovery-list"></div>
+      <button id="add-recovery">+ Set up recovery</button>
+      <div id="recovery-form" hidden></div>
+    </section>
+
+    <section id="delegations-section">
+      <h2>App Delegations</h2>
+      <div id="delegation-list"></div>
+      <button id="add-delegation">+ Delegate to a dApp</button>
+      <div id="delegation-form" hidden></div>
+    </section>
+
+    <section id="advanced-section">
+      <h2>Advanced</h2>
+      <p class="muted">Default rule · your primary passkey on this device</p>
+    </section>
+  </main>
+</BaseLayout>
+
+<script>
+  import {
+    contractIdFromHostname,
+    loadPolicyBlocks,
+    loadFriendNicknames,
+    loadBlockLabels,
+    loadSessionKeyMaterial,
+  } from '@g2c/passkey-sdk';
+  import { fetchAllChainRules, fetchPolicyState } from '../../lib/policyChainFetch.js';
+  import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
+  import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
+  import { mountRecoveryForm } from '../../lib/recoveryForm.js';
+  import { mountDelegationForm } from '../../lib/delegationForm.js';
+
+  const account = contractIdFromHostname(window.location.hostname);
+  const recoveryList = document.getElementById('recovery-list')!;
+  const delegationList = document.getElementById('delegation-list')!;
+
+  if (!account) {
+    recoveryList.innerHTML =
+      '<p class="muted">No account selected. Open this page from an account subdomain.</p>';
+    delegationList.innerHTML = '';
+  } else {
+    recoveryList.innerHTML = '<p class="muted">Loading…</p>';
+    delegationList.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      const overlay = {
+        friendNicknames: loadFriendNicknames(account),
+        blockLabels: loadBlockLabels(account),
+        sessionKeyMaterial: collectSessionKeyMaterial(account),
+      };
+      const rules = await fetchAllChainRules(account);
+      const blocks = await loadPolicyBlocks({
+        rules,
+        fetchPolicyState: (rule) => fetchPolicyState(account, rule),
+        overlay,
+      });
+
+      recoveryList.innerHTML = '';
+      delegationList.innerHTML = '';
+      for (const block of blocks) {
+        if (block.kind === 'multisig-recovery') {
+          recoveryList.appendChild(renderRecoveryCard(block));
+        } else if (block.kind === 'scoped-session-key') {
+          delegationList.appendChild(renderSessionKeyCard(block));
+        }
+      }
+      if (!recoveryList.children.length) {
+        recoveryList.innerHTML = '<p class="muted">No recovery rule yet.</p>';
+      }
+      if (!delegationList.children.length) {
+        delegationList.innerHTML = '<p class="muted">No session keys yet.</p>';
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      recoveryList.innerHTML = `<p class="muted">Failed to load rules: ${msg}</p>`;
+      delegationList.innerHTML = '';
+    }
+  }
+
+  /** Walk localStorage for any session-key material this account holds. */
+  function collectSessionKeyMaterial(acc: string) {
+    const out: Record<string, NonNullable<ReturnType<typeof loadSessionKeyMaterial>>> = {};
+    const prefix = `g2c.${acc}.session-key.`;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)!;
+      if (key.startsWith(prefix)) {
+        const target = key.slice(prefix.length);
+        const m = loadSessionKeyMaterial(acc, target);
+        if (m) out[target] = m;
+      }
+    }
+    return out;
+  }
+
+  document.getElementById('add-recovery')!.addEventListener('click', () => {
+    if (!account) { alert('No account selected.'); return; }
+    const formContainer = document.getElementById('recovery-form')!;
+    mountRecoveryForm(formContainer, account);
+  });
+  document.getElementById('add-delegation')!.addEventListener('click', () => {
+    if (!account) { alert('No account selected.'); return; }
+    const formContainer = document.getElementById('delegation-form')!;
+    mountDelegationForm(formContainer, account);
+  });
+</script>
+
+<style>
+  .security { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  header h1 { margin-bottom: 0.25rem; }
+  header .subtitle { color: #666; margin-top: 0; }
+  section { margin-bottom: 2rem; padding-top: 1rem; }
+  section h2 {
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    color: #666;
+    letter-spacing: 0.04em;
+    margin: 0 0 0.5rem 0;
+  }
+  .muted { color: #888; font-size: 0.9rem; }
+  button { margin-top: 0.5rem; }
+</style>

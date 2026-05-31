@@ -2,7 +2,9 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::ecdsa::{Signature, SigningKey};
-use stellar_accounts::smart_account::{ContextRule, Signer};
+use sha2::{Digest, Sha256};
+use stellar_accounts::policies::simple_threshold::SimpleThresholdAccountParams;
+use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
 
 pub const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/g2c_smart_account.wasm");
@@ -10,11 +12,48 @@ pub const SMART_ACCOUNT_WASM: &[u8] =
 pub const WEBAUTHN_VERIFIER_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/g2c_webauthn_verifier.wasm");
 
+pub const MULTISIG_POLICY_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/g2c_multisig_policy.wasm");
+
 #[allow(dead_code)]
 #[soroban_sdk::contractclient(name = "SmartAccountClient")]
 trait SmartAccountInterface {
     fn get_context_rule(env: soroban_sdk::Env, context_rule_id: u32) -> ContextRule;
+    fn get_context_rules(
+        env: soroban_sdk::Env,
+        context_rule_type: ContextRuleType,
+    ) -> soroban_sdk::Vec<ContextRule>;
     fn get_context_rules_count(env: soroban_sdk::Env) -> u32;
+    fn add_context_rule(
+        env: soroban_sdk::Env,
+        context_type: ContextRuleType,
+        name: soroban_sdk::String,
+        valid_until: Option<u32>,
+        signers: soroban_sdk::Vec<Signer>,
+        policies: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val>,
+    ) -> ContextRule;
+    fn update_context_rule_valid_until(
+        env: soroban_sdk::Env,
+        context_rule_id: u32,
+        valid_until: Option<u32>,
+    ) -> ContextRule;
+    fn remove_context_rule(env: soroban_sdk::Env, context_rule_id: u32);
+    fn add_signer(env: soroban_sdk::Env, context_rule_id: u32, signer: Signer);
+    fn remove_signer(env: soroban_sdk::Env, context_rule_id: u32, signer: Signer);
+}
+
+/// Create a deterministic P-256 signing key from a `u64` seed.
+///
+/// The seed is hashed with SHA-256 to produce the 32-byte scalar. This
+/// guarantees that seeds 1, 2, 3, 4, … always yield the same key so tests
+/// are reproducible. Never reuse seed 1 for friend keys — `deploy_smart_account`
+/// internally uses a random key for the primary passkey signer.
+pub fn test_key(seed: u64) -> SigningKey {
+    let mut hasher = Sha256::new();
+    hasher.update(b"g2c-test-key:");
+    hasher.update(seed.to_le_bytes());
+    let bytes = hasher.finalize();
+    SigningKey::from_bytes(&bytes).expect("deterministic key from seed")
 }
 
 /// On-chain `WebAuthn` assertion components (soroban-sdk types) suitable for
@@ -111,4 +150,44 @@ pub fn deploy_smart_account(
 
     let client = SmartAccountClient::new(env, &account_addr);
     (client, account_addr, verifier_addr, signing_key)
+}
+
+/// Deploy the multisig policy contract and return its address.
+pub fn deploy_multisig_policy(env: &soroban_sdk::Env) -> soroban_sdk::Address {
+    env.register(MULTISIG_POLICY_WASM, ())
+}
+
+/// Build the `policies` map for `add_context_rule` containing a single
+/// multisig-policy install with the given threshold.
+pub fn multisig_install_map(
+    env: &soroban_sdk::Env,
+    multisig_policy_addr: &soroban_sdk::Address,
+    threshold: u32,
+) -> soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val> {
+    use soroban_sdk::IntoVal;
+    let params = SimpleThresholdAccountParams { threshold };
+    let mut m: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val> =
+        soroban_sdk::Map::new(env);
+    m.set(multisig_policy_addr.clone(), params.into_val(env));
+    m
+}
+
+/// Compute the auth digest the smart account's `do_check_auth` will pass to
+/// the verifier, given the original signature payload and the chosen
+/// context-rule IDs. In OZ v0.7+:
+///
+///     auth_digest = SHA-256(signature_payload || context_rule_ids.to_xdr())
+///
+/// Binds the signed message to the rule the caller selected (preventing
+/// rule-substitution replay). Use the returned 32 bytes as the
+/// `signature_payload` arg to `build_contract_assertion`.
+pub fn compute_auth_digest(
+    env: &soroban_sdk::Env,
+    signature_payload: &soroban_sdk::crypto::Hash<32>,
+    context_rule_ids: &soroban_sdk::Vec<u32>,
+) -> [u8; 32] {
+    use soroban_sdk::xdr::ToXdr;
+    let mut preimage = soroban_sdk::Bytes::from_array(env, &signature_payload.to_array());
+    preimage.append(&context_rule_ids.clone().to_xdr(env));
+    env.crypto().sha256(&preimage).to_array()
 }

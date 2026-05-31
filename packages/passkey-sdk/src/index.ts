@@ -14,6 +14,7 @@ export { derToCompact } from "./signature.js";
 
 export {
   buildAuthHash,
+  computeAuthDigest,
   getAuthEntry,
   parseAssertionResponse,
   injectPasskeySignature,
@@ -39,11 +40,14 @@ export {
   nameFromHostname,
   accountUrl,
   stripSubdomain,
+  dappPathFromHostname,
+  dappUrl,
+  RESERVED_DAPP_SUBDOMAINS,
 } from "./url.js";
 
 export { resolveName, resolveNameCached } from "./resolve.js";
 
-export type { PendingAccount } from "./storage.js";
+export type { PendingAccount, SessionKeyMaterial } from "./storage.js";
 
 export {
   saveCredential,
@@ -56,4 +60,21 @@ export {
   activateAccount,
   saveAccountName,
   loadAccountName,
+  saveFriendNickname,
+  loadFriendNicknames,
+  saveSessionKeyMaterial,
+  loadSessionKeyMaterial,
+  forgetSessionKeyMaterial,
+  saveBlockLabel,
+  loadBlockLabels,
 } from "./storage.js";
+
+export { extractXdrOperations } from './assembledTx.js';
+
+export * from './policyBlocks/index.js';
+
+export * from './resolveFriendInput.js';
+
+export * from './sessionKey.js';
+
+export * from './syntheticAssertion.js';

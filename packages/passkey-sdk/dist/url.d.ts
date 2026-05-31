@@ -1,4 +1,30 @@
 /**
+ * Reserved subdomains that map to a built-in dApp path on this site.
+ * `status-message.<base>` is served the same static bundle as the wallet,
+ * but the root page redirects to the listed path. Keep keys lowercase.
+ */
+export declare const RESERVED_DAPP_SUBDOMAINS: Record<string, string>;
+/**
+ * If `host` is a reserved dApp subdomain, return the path the root should
+ * redirect to. Strips any `--pr-N` preview suffix before matching, so
+ * `status-message--pr-24.<base>` resolves the same as production.
+ */
+export declare function dappPathFromHostname(host: string): string | null;
+/**
+ * Build a protocol-relative URL to a reserved-dApp subdomain, preserving the
+ * preview prefix if the calling page is in a PR preview. Mirrors `accountUrl`
+ * but for dApp names rather than contract IDs.
+ *
+ *   dappUrl("cabc--pr-24.mysoroban.xyz", "status-message", "/?contract=C…")
+ *     → "//status-message--pr-24.mysoroban.xyz/?contract=C…"
+ *
+ *   dappUrl("cabc.mysoroban.xyz", "status-message", "/?contract=C…")
+ *     → "//status-message.mysoroban.xyz/?contract=C…"
+ *
+ * Pass `window.location.host` (with port) as the host parameter.
+ */
+export declare function dappUrl(host: string, dappName: string, path?: string): string;
+/**
  * Check if a subdomain string looks like a Stellar contract ID.
  * Contract IDs are exactly 56 characters starting with C.
  */
