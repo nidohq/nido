@@ -33,6 +33,28 @@
 #                        "unverified/"). Set to "" to use the verified
 #                        registry (requires curation rights).
 #   SKIP_BUILD           If set, skip `just build-contracts`.
+#
+# Re-deploying a non-upgradable contract (factory / multisig-policy /
+# verifier in their current form):
+#
+# None of the policy-builder-v1 contracts have admin()/upgrade(); to
+# ship a new WASM you must deploy a fresh contract at a new address and
+# repoint the registry name. Pattern (verified, used on testnet):
+#
+#   stellar contract deploy --wasm target/.../<name>.wasm \
+#     --source-account <alias> --network <net>
+#   # captures the new C-address
+#
+#   stellar contract invoke --id <REGISTRY> --source-account <alias> \
+#     --network <net> -- update_contract_address \
+#     --contract_name <name>             # bare, no prefix \
+#     --new_address <new C-address>
+#
+# REGISTRY for testnet is CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S
+# (the unverified registry). The CLI's "registry deploy/upgrade" flow
+# assumes a contract that can self-upgrade or be re-registered; the
+# above manual pattern works when neither holds. See #25 / #26 for the
+# long-term factory rewrite.
 
 set -euo pipefail
 
