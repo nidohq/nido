@@ -116,7 +116,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   } from "@g2c/passkey-sdk";
   import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
   import { startDelegation, readDelegationReturn } from "../../lib/delegationHandover.js";
-  import { Keypair, Networks, TransactionBuilder, Transaction, rpc } from "@stellar/stellar-sdk";
+  import { Keypair, Networks, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
   // Hardcoded so bindings can be regenerated without --contract-id (the
@@ -434,19 +434,35 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
         $setForm.textContent = "Submitting...";
 
-        // Re-simulate the signed tx in enforce mode to surface auth
-        // failures (bad sig, wrong rule) BEFORE submit. Default
-        // "record" mode strips provided auth entries — same gotcha as
-        // primaryPasskeySigner. Do NOT re-assembleTransaction after
-        // this point: that would discard the signature we just
-        // injected.
+        // Re-simulate the signed tx in enforce mode — both as a
+        // pre-submit auth sanity check AND to recompute the resource
+        // footprint so it covers __check_auth's reads. The bindings'
+        // internal simulate built tx.built with auth=[] (had to, to
+        // dodge recording-mode trapping on unsigned auth templates),
+        // so the assembled footprint covers the operation only. Apply
+        // the enforce-mode sim's transactionData via
+        // TransactionBuilder.cloneFrom (preserves auth entries) instead
+        // of rpc.assembleTransaction (which rebuilds + strips auth) —
+        // same refit pattern as primaryPasskeySigner.
         const server = new rpc.Server(RPC_URL);
         const sim2 = await server.simulateTransaction(authTxn, undefined, 'enforce');
         if (rpc.Api.isSimulationError(sim2) || rpc.Api.isSimulationRestore(sim2)) {
           throw new Error(`Re-simulation failed: ${"error" in sim2 ? sim2.error : "restore needed"}`);
         }
-        authTxn.sign(keypair);
-        const finalTx = authTxn;
+        const successSim2 = sim2 as rpc.Api.SimulateTransactionSuccessResponse;
+        const newSorobanData = successSim2.transactionData.build();
+        const newResourceFee = BigInt(newSorobanData.resourceFee().toString());
+        const oldResourceFee = BigInt(
+          (authTxn.toEnvelope().v1().tx().ext().value() as xdr.SorobanTransactionData | undefined)
+            ?.resourceFee().toString() ?? '0'
+        );
+        const classicFee = BigInt(authTxn.fee) - oldResourceFee;
+        const finalTx = TransactionBuilder.cloneFrom(authTxn, {
+          fee: (classicFee + newResourceFee).toString(),
+          sorobanData: newSorobanData,
+          networkPassphrase: Networks.TESTNET,
+        }).build();
+        finalTx.sign(keypair);
 
         $resultSection.classList.remove("hidden");
         $statusValue.textContent = "Submitting transaction...";
