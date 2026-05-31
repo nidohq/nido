@@ -77,17 +77,6 @@ export function parseAssertionResponse(assertionResponse) {
 /**
  * Inject a passkey signature into a transaction's Soroban auth credentials.
  *
- * Constructs the OZ v0.7+ `AuthPayload` struct expected by `do_check_auth`:
- *
- *   AuthPayload {
- *     signers: Map<Signer, Bytes>,    // { External(verifier, pubkey): XDR(WebAuthnSigData) }
- *     context_rule_ids: Vec<u32>,     // which rule authorizes each context
- *   }
- *
- * In Soroban scval encoding, a Rust struct is a `Map` keyed by `Symbol(field_name)`
- * with entries in alphabetical order; an enum variant is a `Vec` with the variant
- * name as the first element followed by its tuple values.
- *
  * @param transaction - The assembled transaction from simulation
  * @param passkeySignature - Parsed passkey signature components
  * @param verifierAddress - Address of the WebAuthn verifier contract
@@ -95,10 +84,11 @@ export function parseAssertionResponse(assertionResponse) {
  * @param lastLedger - Current ledger sequence number
  * @param expirationLedgerOffset - How many ledgers the signature is valid for (default 100)
  * @param contextRuleIds - Context-rule IDs authorizing each auth context (index-aligned).
- *                        Defaults to `[0]` — the Default rule that ships with every
- *                        smart account and authorizes self-modification.
+ *                        Used only in `'v0.7'` mode. Defaults to `[0]` — the
+ *                        Default rule that ships with every smart account.
+ * @param version - Which on-chain auth shape to emit. See `SmartAccountAuthVersion`.
  */
-export function injectPasskeySignature(transaction, passkeySignature, verifierAddress, publicKey, lastLedger, expirationLedgerOffset = DEFAULT_EXPIRATION_OFFSET, contextRuleIds = [0]) {
+export function injectPasskeySignature(transaction, passkeySignature, verifierAddress, publicKey, lastLedger, expirationLedgerOffset = DEFAULT_EXPIRATION_OFFSET, contextRuleIds = [0], version = 'v0.6') {
     // Mutate via clone-and-replace, not in-place. The canonical
     // `authorizeEntry` helper in stellar-base does the same — and for good
     // reason: through `assembleTransaction(...).build()`, `op.auth[i]` is
@@ -146,10 +136,17 @@ export function injectPasskeySignature(transaction, passkeySignature, verifierAd
             val: xdr.ScVal.scvBytes(sigDataBytes),
         }),
     ]);
-    // context_rule_ids: Vec<u32>
+    if (version === 'v0.6') {
+        // v0.6: `Signatures(Map<Signer, Bytes>)` is a tuple struct wrapping the
+        // signers map. The XDR encoding is `Vec[Map[Signer, Bytes]]` — exactly
+        // one element, the map itself.
+        creds.signature(xdr.ScVal.scvVec([signersMap]));
+        op.auth[0] = signedEntry;
+        return;
+    }
+    // v0.7: AuthPayload struct.
     const contextRuleIdsVec = xdr.ScVal.scvVec(contextRuleIds.map((id) => xdr.ScVal.scvU32(id)));
-    // AuthPayload struct → ScMap, alphabetical field order
-    // (context_rule_ids < signers).
+    // ScMap with Symbol keys in alphabetical order (context_rule_ids < signers).
     creds.signature(xdr.ScVal.scvMap([
         new xdr.ScMapEntry({
             key: xdr.ScVal.scvSymbol("context_rule_ids"),

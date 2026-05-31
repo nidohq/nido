@@ -126,52 +126,60 @@ export async function fetchRegistryAddress(name: string): Promise<string> {
  *  account), so existing call sites that pass an arbitrary account don't
  *  crash.
  */
-export async function fetchVerifierAddress(account: string): Promise<string> {
-  // Read get_context_rule(0) via raw RPC + scValToNative instead of the
-  // typed SmartAccountClient bindings. The bindings carry the *current*
-  // ContextRule schema (OZ v0.7+: includes `signer_ids`/`policy_ids` Vec<u32>
-  // fields), but accounts deployed by the unupgraded factory still run an
-  // older WASM and return a slimmer ContextRule. Feeding that into the
-  // bindings' typed parser throws `Type [object Object] was not vec, but
-  // [object Object] is` — and the throw silently fell back to the
-  // registry-registered verifier, which is what the on-chain rule does NOT
-  // reference. Raw scValToNative is shape-agnostic, so we can traverse the
-  // returned native object for an External signer regardless of which
-  // version the contract is on.
-  try {
-    const server = new rpc.Server(RPC_URL);
-    const rv = await simulateView(
-      server,
-      new Contract(account),
-      'get_context_rule',
-      nativeToScVal(0, { type: 'u32' }),
-    );
-    const native = scValToNative(rv) as { signers?: unknown[] };
-    for (const s of native.signers ?? []) {
-      // scValToNative deserializes a Soroban `Signer` enum (Rust tuple
-      // variant) as a plain ARRAY: [variant_name_string, ...values].
-      // For `External(Address, Bytes)`, that's ["External", verifier, pubkey].
-      // The typed bindings would wrap this as {tag, values}, but here we're
-      // bypassing them precisely because their schema may not match older
-      // accounts. Handle the array form as the primary case; also handle
-      // {tag,values} and {External:[…]} for defensive forward-compat.
-      if (Array.isArray(s) && s[0] === 'External' && typeof s[1] === 'string') {
-        return s[1];
-      }
-      const asTagged = s as { tag?: string; values?: unknown[] };
-      if (asTagged.tag === 'External' && Array.isArray(asTagged.values)) {
-        return asTagged.values[0] as string;
-      }
-      const obj = s as Record<string, unknown>;
-      const ext = obj.External;
-      if (Array.isArray(ext) && typeof ext[0] === 'string') {
-        return ext[0];
-      }
+/** What `fetchAccountAuthInfo` returns: the verifier address the account's
+ *  default rule lists for its primary passkey, plus the on-chain OZ version
+ *  (detected by checking whether the rule has v0.7-only `signer_ids` field). */
+export interface AccountAuthInfo {
+  verifierAddress: string;
+  version: 'v0.6' | 'v0.7';
+}
+
+/** Single-call query that returns both pieces of info `signAndSubmit` needs
+ *  to construct a correct auth signature against the on-chain contract. */
+export async function fetchAccountAuthInfo(account: string): Promise<AccountAuthInfo> {
+  const server = new rpc.Server(RPC_URL);
+  const rv = await simulateView(
+    server,
+    new Contract(account),
+    'get_context_rule',
+    nativeToScVal(0, { type: 'u32' }),
+  );
+  const native = scValToNative(rv) as { signers?: unknown[]; signer_ids?: unknown };
+  // v0.7+ ContextRule has `signer_ids: Vec<u32>`; v0.6 doesn't. Use that as
+  // the detection signal.
+  const version: 'v0.6' | 'v0.7' = 'signer_ids' in native ? 'v0.7' : 'v0.6';
+  let verifierAddress: string | null = null;
+  for (const s of native.signers ?? []) {
+    if (Array.isArray(s) && s[0] === 'External' && typeof s[1] === 'string') {
+      verifierAddress = s[1];
+      break;
     }
-  } catch {
-    // fall through — registry as last resort
+    const asTagged = s as { tag?: string; values?: unknown[] };
+    if (asTagged.tag === 'External' && Array.isArray(asTagged.values)) {
+      verifierAddress = asTagged.values[0] as string;
+      break;
+    }
+    const obj = s as Record<string, unknown>;
+    const ext = obj.External;
+    if (Array.isArray(ext) && typeof ext[0] === 'string') {
+      verifierAddress = ext[0];
+      break;
+    }
   }
-  return fetchRegistryAddress('verifier');
+  if (!verifierAddress) {
+    // Last-resort fallback so old call sites don't crash on edge cases.
+    verifierAddress = await fetchRegistryAddress('verifier');
+  }
+  return { verifierAddress, version };
+}
+
+/** Back-compat shim — prefer `fetchAccountAuthInfo` which returns version too. */
+export async function fetchVerifierAddress(account: string): Promise<string> {
+  try {
+    return (await fetchAccountAuthInfo(account)).verifierAddress;
+  } catch {
+    return fetchRegistryAddress('verifier');
+  }
 }
 
 // --- Internal parsers ------------------------------------------------------
