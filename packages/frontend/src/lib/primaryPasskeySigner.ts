@@ -3,7 +3,7 @@ import {
   TransactionBuilder,
   Networks,
   Keypair,
-  Operation,
+  xdr,
 } from '@stellar/stellar-sdk';
 import {
   loadCredential,
@@ -76,30 +76,27 @@ export async function signAndSubmit(args: {
   // 2. Build & simulate the un-signed tx.
   //
   // CRUCIAL: strip any existing auth entries off the operation before
-  // simulating. `args.operation` typically arrives carrying the unsigned
-  // auth-entry templates from a previous AssembledTransaction.simulate
-  // (the contract bindings stash them on the built tx). If we hand those
-  // back to the simulator in recording mode, it tries to run __check_auth
-  // against the Void signature inside them — and the OZ smart account
-  // can't deserialize Void as AuthPayload, traps with
-  // UnreachableCodeReached, and the simulator returns Auth/InvalidAction
-  // BEFORE we ever reach the passkey prompt.
+  // simulating. `args.operation` is an `xdr.Operation` carrying the
+  // unsigned auth-entry templates that the contract bindings'
+  // AssembledTransaction.simulate left on the built tx (Void signature,
+  // SorobanAddressCredentials placeholder). If we hand those back to
+  // simulateTransaction in recording mode, the simulator runs
+  // __check_auth(payload, Void, contexts) against the smart account —
+  // and the OZ contract can't deserialize Void as AuthPayload, traps
+  // with UnreachableCodeReached, simulate returns Auth/InvalidAction,
+  // and we throw BEFORE the WebAuthn prompt.
   //
-  // Building a fresh operation with auth=[] mirrors what
-  // AssembledTransaction.simulate does internally and lets the simulator
-  // generate the auth requirements from scratch.
-  const opForSim = Operation.invokeHostFunction({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    func: (args.operation as any).func,
-    auth: [],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    source: (args.operation as any).source,
-  });
+  // Mirror what AssembledTransaction.simulate does internally: build
+  // from an op with no auth entries so the simulator generates them
+  // fresh in recording mode. Clone the XDR op so we don't mutate the
+  // caller's operation.
+  const opClone = xdr.Operation.fromXDR(args.operation.toXDR());
+  opClone.body().invokeHostFunctionOp().auth([]);
   const sim_tx = new TransactionBuilder(sourceAccount, {
     fee: '10000000',
     networkPassphrase: Networks.TESTNET,
   })
-    .addOperation(opForSim)
+    .addOperation(opClone)
     .setTimeout(0)
     .build();
 
