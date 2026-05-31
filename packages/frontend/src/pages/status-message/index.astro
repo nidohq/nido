@@ -8,7 +8,10 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         <h1>Status Message</h1>
         <p class="info">Set a status message on-chain via your smart account.</p>
         </div>
-        <a href="/" class="home-btn">Home</a>
+        <div class="header-links">
+            <a id="account-link" class="home-btn hidden">Open wallet</a>
+            <a id="home-link" class="home-btn" href="/">Home</a>
+        </div>
     </div>
 
 
@@ -97,6 +100,12 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     margin-top: 0.5rem;
     display: inline-block;
   }
+
+  .header-links {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
 </style>
 
 <script>
@@ -110,6 +119,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     hex2buf,
     buf2hex,
     accountUrl,
+    stripSubdomain,
     loadSessionKeyMaterial,
     forgetSessionKeyMaterial,
     signWithSessionPasskey,
@@ -287,12 +297,36 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       });
   }
 
-  // Show banner for initial account value (from URL param or empty)
+  // --- Header navigation links ---
+  //
+  // The page lives on `status-message[.--pr-N].mysoroban.xyz`, so a static
+  // <a href="/"> wouldn't go to the wallet — it'd stay on the dApp
+  // subdomain (the worker rewrites `/` here back to `/status-message/`).
+  // Compute the apex at runtime and route Home there. Account link
+  // appears whenever a contract is in the input.
+  const $homeLink = document.getElementById("home-link") as HTMLAnchorElement;
+  const $accountLink = document.getElementById("account-link") as HTMLAnchorElement;
+  const apexHost = stripSubdomain(window.location.host);
+  $homeLink.href = `${window.location.protocol}//${apexHost}/`;
+
+  function updateAccountLink(account: string) {
+    if (account && /^C[A-Z0-9]{55}$/.test(account)) {
+      $accountLink.href = accountUrl(window.location.host, account, "/account/");
+      $accountLink.classList.remove("hidden");
+    } else {
+      $accountLink.classList.add("hidden");
+    }
+  }
+
+  // Show banner + nav link for initial account value (from URL param or empty)
   updateDelegationBanner($contractInput.value.trim());
+  updateAccountLink($contractInput.value.trim());
 
   // Update banner whenever the account input changes
   $contractInput.addEventListener("input", () => {
-    updateDelegationBanner($contractInput.value.trim());
+    const v = $contractInput.value.trim();
+    updateDelegationBanner(v);
+    updateAccountLink(v);
   });
 
   // --- Load message ---
