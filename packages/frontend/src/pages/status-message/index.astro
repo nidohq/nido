@@ -110,12 +110,11 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     hex2buf,
     buf2hex,
     accountUrl,
-    computeAccountAddress,
     loadSessionKeyMaterial,
     forgetSessionKeyMaterial,
     signWithSessionPasskey,
   } from "@g2c/passkey-sdk";
-  import { findRuleForPubkey } from "../../lib/policyChainFetch.js";
+  import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
   import { startDelegation, readDelegationReturn } from "../../lib/delegationHandover.js";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc } from "@stellar/stellar-sdk";
 
@@ -126,13 +125,13 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   const STATUS_CONTRACT = "CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV";
   const FACTORY_CONTRACT_ID = "CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXHIERNOZPPYMUNBT2JZ2SK";
 
-  // WebAuthn verifier WASM hash (from factory contract source)
-  const VERIFIER_WASM_HASH = Buffer.from([
-    0xb9,0x39,0x33,0x11,0xf9,0x7b,0x49,0x8f,0xbb,0x89,0x76,0xec,0x50,0xdd,0x85,0x85,0xdd,0x99,0xad,0x44,0x3b,0x8f,0x13,0xec,0x5f,0x75,0x19,0x86,0x72,0x9f,0x99,0xbe,
-  ]);
-  const VERIFIER_ADDRESS = computeAccountAddress(
-    FACTORY_CONTRACT_ID, VERIFIER_WASM_HASH, Networks.TESTNET
-  );
+  // WebAuthn verifier — resolved per-account from chain when signing.
+  // Was previously a deterministic derivation from FACTORY+wasm_hash,
+  // which broke once the factory stopped lazy-deploying its own
+  // verifier and instead resolved one via stellar-registry, AND once
+  // the registered verifier was redeployed (different address).
+  // Now: read it off the account's own rule so we always cite the
+  // verifier the smart account actually trusts.
 
   // --- UI refs ---
 
@@ -392,6 +391,12 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         }
         const contextRuleIds = [ruleId];
 
+        // Look up the verifier the smart account actually trusts —
+        // not a hardcoded address. Once issue #26 (registry resolution)
+        // is fully wired this and `fetchVerifierAddress` collapse into
+        // a single registry call.
+        const verifierAddress = await fetchVerifierAddress(contract);
+
         $setForm.textContent = "Touch your authenticator to sign...";
 
         // OZ v0.7+ smart accounts verify against
@@ -420,7 +425,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         injectPasskeySignature(
           authTxn,
           parsed,
-          VERIFIER_ADDRESS,
+          verifierAddress,
           sessionPubkey,
           lastLedger,
           undefined,
@@ -511,8 +516,9 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           const txXdr = localStorage.getItem("sm:txXdr");
           const lastLedgerStr = localStorage.getItem("sm:lastLedger");
           const keypairSecret = localStorage.getItem("sm:keypairSecret");
+          const callbackContract = localStorage.getItem("sm:contract");
 
-          if (!txXdr || !lastLedgerStr || !keypairSecret) {
+          if (!txXdr || !lastLedgerStr || !keypairSecret || !callbackContract) {
             throw new Error("Missing stored transaction data. Please try again.");
           }
 
@@ -522,7 +528,10 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           // Reconstruct transaction from stored XDR
           const authTxn = TransactionBuilder.fromXDR(txXdr, Networks.TESTNET) as Transaction;
 
-          // Inject passkey signature into auth entry (OZ smart account format)
+          // Inject passkey signature into auth entry (OZ smart account format).
+          // Read the verifier off the account's own rule rather than a stale
+          // hardcoded derivation — same reason as the in-page session path.
+          const verifierAddress = await fetchVerifierAddress(callbackContract);
           injectPasskeySignature(
             authTxn,
             {
@@ -530,7 +539,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
               clientDataJson: hex2buf(clientDataJSON),
               signature: hex2buf(signature),
             },
-            VERIFIER_ADDRESS,
+            verifierAddress,
             hex2buf(publicKeyHex),
             lastLedger
           );
