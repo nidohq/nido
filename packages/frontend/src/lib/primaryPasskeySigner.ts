@@ -162,26 +162,53 @@ export async function signAndSubmit(args: {
     contextRuleIds,
   );
 
-  // 7. Re-simulate the now-signed tx in ENFORCE mode as a sanity check —
-  //    surfaces auth failures (bad signature, expired ledger, wrong rule)
-  //    BEFORE submit. simulateTransaction defaults to "record" mode,
-  //    which IGNORES provided auth entries and just records what auth
-  //    would be required; under that mode __check_auth runs against an
-  //    empty signatures payload (`signatures: Void`) and traps even for
-  //    a correctly signed tx. "enforce" makes the simulator actually
-  //    verify the auth we supply.
+  // 7. Re-simulate the now-signed tx in ENFORCE mode — both to verify
+  //    the auth (surfaces bad sig / wrong rule before submit) AND to
+  //    recompute the resource footprint to cover __check_auth's reads.
   //
-  //    Crucially, also do NOT call `rpc.assembleTransaction(...)` after
-  //    injection — it rebuilds the auth entries from the sim result's
-  //    unsigned templates and silently discards our signature. The
-  //    initial assemble in step 4 already baked in resource fees from
-  //    the first simulation, which sized them for the expected signed
-  //    payload.
+  //    The initial assemble in step 4 sized resources based on a
+  //    simulation we ran with auth=[] (had to, otherwise the unsigned
+  //    auth templates would trap recording-mode __check_auth against
+  //    `signatures: Void`). That footprint covers the operation but
+  //    NOT the storage keys __check_auth touches when actually
+  //    verifying signers — so submit would later trap with
+  //    "trying to access contract data key outside of the footprint"
+  //    (scecExceededLimit on ContextRuleData), even though everything
+  //    else was correct.
+  //
+  //    `simulateTransaction` defaults to "record" mode which ignores
+  //    provided auth entries entirely. Passing "enforce" makes it run
+  //    __check_auth against our injected signature, producing both a
+  //    pass/fail signal AND a fresh `transactionData` (sorobanData)
+  //    with the correct read-write footprint and resource fees.
+  //
+  //    Splice that fresh sorobanData into the existing assembled tx
+  //    via TransactionBuilder.cloneFrom — do NOT call
+  //    `rpc.assembleTransaction` to do it: that function rebuilds the
+  //    auth entries from the sim result's UNSIGNED templates and
+  //    silently discards our signature.
   const final_sim = await server.simulateTransaction(assembled_tx, undefined, 'enforce');
   if (rpc.Api.isSimulationError(final_sim)) {
     throw new Error(`Final simulation failed: ${(final_sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
   }
-  assembled_tx.sign(submitter);
+  const successFinalSim = final_sim as rpc.Api.SimulateTransactionSuccessResponse;
+  const newSorobanData = successFinalSim.transactionData.build();
+  const newResourceFee = BigInt(newSorobanData.resourceFee().toString());
+  const classicFee = BigInt(assembled_tx.fee) - BigInt(
+    // Walk the previous sorobanData's resourceFee out of the envelope.
+    (assembled_tx.toEnvelope().v1().tx().ext().value() as xdr.SorobanTransactionData | undefined)
+      ?.resourceFee().toString() ?? '0',
+  );
+  const refittedBuilder = TransactionBuilder.cloneFrom(assembled_tx, {
+    fee: (classicFee + newResourceFee).toString(),
+    sorobanData: newSorobanData,
+    networkPassphrase: Networks.TESTNET,
+  });
+  // cloneFrom carries operations across as-is (including the signed
+  // auth entries on our InvokeHostFunction op). build() emits a new
+  // Transaction with the right footprint AND our signature intact.
+  const refitted_tx = refittedBuilder.build();
+  refitted_tx.sign(submitter);
   // 8. Submit and wait for chain confirmation. A successful enforce-mode
   //    sim isn't proof the tx lands — fee-bid races, ledger close failures,
   //    or out-of-band footprint errors can still drop a tx. Returning the
@@ -189,7 +216,7 @@ export async function signAndSubmit(args: {
   //    say "Done" while the rule we just paid to install never persisted
   //    (rediscovered when the dApp then tried to use it and __check_auth
   //    failed because no such rule was on-chain).
-  const sendResult = await server.sendTransaction(assembled_tx);
+  const sendResult = await server.sendTransaction(refitted_tx);
   if (sendResult.status === 'ERROR') {
     const detail = sendResult.errorResult?.toXDR('base64') ?? 'unknown';
     throw new Error(`Submit rejected: ${detail}`);
