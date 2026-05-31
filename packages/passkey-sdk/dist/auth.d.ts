@@ -1,9 +1,12 @@
 import { xdr, rpc, Operation } from "@stellar/stellar-sdk";
 import type { PasskeySignature } from "./types.js";
 /**
- * Compute the authorization hash for a Soroban auth entry.
+ * Compute the Soroban signature_payload — sha256 of the HashIdPreimage that
+ * binds the auth invocation, nonce, expiration ledger, and network. This is
+ * what the host hands to `__check_auth` as the first argument.
  *
- * This hash is what gets signed by the passkey (used as the WebAuthn challenge).
+ * NOTE: in OZ v0.7+ smart accounts the *signed* digest is one step further —
+ * see `computeAuthDigest`. The WebAuthn ceremony should sign that, not this.
  *
  * @param authEntry - The SorobanAuthorizationEntry from simulation
  * @param networkPassphrase - Stellar network passphrase
@@ -11,6 +14,23 @@ import type { PasskeySignature } from "./types.js";
  * @param expirationLedgerOffset - How many ledgers the signature is valid for (default 100)
  */
 export declare function buildAuthHash(authEntry: xdr.SorobanAuthorizationEntry, networkPassphrase: string, lastLedger: number, expirationLedgerOffset?: number): Buffer;
+/**
+ * Compute the OZ v0.7+ auth digest the smart account's `do_check_auth` will
+ * verify each signer's signature against:
+ *
+ *     auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
+ *
+ * This binds the signed message to the specific context rule the caller is
+ * invoking, preventing rule-substitution replay. The WebAuthn challenge MUST
+ * be this digest, not the bare `signature_payload`.
+ *
+ * `signature_payload` is the 32-byte result from `buildAuthHash`.
+ * `contextRuleIds` is the same array passed to `injectPasskeySignature`'s
+ *   `contextRuleIds` parameter; default `[0]` (the Default rule).
+ *
+ * Matches `compute_auth_digest` in `crates/integration-tests/src/lib.rs`.
+ */
+export declare function computeAuthDigest(signaturePayload: Uint8Array, contextRuleIds?: readonly number[]): Buffer;
 /**
  * Extract the first Soroban auth entry from a simulation result.
  */

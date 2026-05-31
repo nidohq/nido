@@ -6,9 +6,12 @@ import type { PasskeySignature } from "./types.js";
 const DEFAULT_EXPIRATION_OFFSET = 10000;
 
 /**
- * Compute the authorization hash for a Soroban auth entry.
+ * Compute the Soroban signature_payload — sha256 of the HashIdPreimage that
+ * binds the auth invocation, nonce, expiration ledger, and network. This is
+ * what the host hands to `__check_auth` as the first argument.
  *
- * This hash is what gets signed by the passkey (used as the WebAuthn challenge).
+ * NOTE: in OZ v0.7+ smart accounts the *signed* digest is one step further —
+ * see `computeAuthDigest`. The WebAuthn ceremony should sign that, not this.
  *
  * @param authEntry - The SorobanAuthorizationEntry from simulation
  * @param networkPassphrase - Stellar network passphrase
@@ -36,6 +39,35 @@ export function buildAuthHash(
     }),
   );
   return hash(entry.toXDR());
+}
+
+/**
+ * Compute the OZ v0.7+ auth digest the smart account's `do_check_auth` will
+ * verify each signer's signature against:
+ *
+ *     auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
+ *
+ * This binds the signed message to the specific context rule the caller is
+ * invoking, preventing rule-substitution replay. The WebAuthn challenge MUST
+ * be this digest, not the bare `signature_payload`.
+ *
+ * `signature_payload` is the 32-byte result from `buildAuthHash`.
+ * `contextRuleIds` is the same array passed to `injectPasskeySignature`'s
+ *   `contextRuleIds` parameter; default `[0]` (the Default rule).
+ *
+ * Matches `compute_auth_digest` in `crates/integration-tests/src/lib.rs`.
+ */
+export function computeAuthDigest(
+  signaturePayload: Uint8Array,
+  contextRuleIds: readonly number[] = [0],
+): Buffer {
+  // context_rule_ids.to_xdr() in Rust serializes the Vec<u32> as the
+  // ScVal::Vec form. The JS equivalent is xdr.ScVal.scvVec([scvU32(...)]).
+  const ctxIdsXdr = xdr.ScVal.scvVec(
+    contextRuleIds.map((id) => xdr.ScVal.scvU32(id)),
+  ).toXDR();
+  const preimage = Buffer.concat([Buffer.from(signaturePayload), ctxIdsXdr]);
+  return hash(preimage);
 }
 
 /**

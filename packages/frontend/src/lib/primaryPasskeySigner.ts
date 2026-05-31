@@ -8,6 +8,7 @@ import {
 import {
   loadCredential,
   buildAuthHash,
+  computeAuthDigest,
   getAuthEntry,
   injectPasskeySignature,
   parseAssertionResponse,
@@ -106,17 +107,28 @@ export async function signAndSubmit(args: {
   }
   const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
 
-  // 3. Extract the auth entry and compute the hash the user must sign.
+  // 3. Extract the auth entry and compute the AUTH DIGEST the user must
+  //    sign. OZ v0.7+ smart accounts don't verify against the raw Soroban
+  //    signature_payload — they verify against
+  //
+  //      auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
+  //
+  //    which binds the signed message to the chosen rule (preventing
+  //    rule-substitution replay). injectPasskeySignature defaults
+  //    context_rule_ids to [0]; we must use the same array here so the
+  //    contract's recomputed digest matches our signature.
   const authEntry = getAuthEntry(successSim);
   const lastLedger = successSim.latestLedger;
-  const authHash = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
+  const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
+  const contextRuleIds = [0];
+  const authDigest = computeAuthDigest(signaturePayload, contextRuleIds);
 
   // 4. Assemble so auth entries are baked into the tx XDR before signing.
   const assembled_tx = rpc.assembleTransaction(sim_tx, successSim).build();
 
-  // 5. Get a WebAuthn assertion over the auth hash.
-  const challengeBuf = new ArrayBuffer(authHash.byteLength);
-  new Uint8Array(challengeBuf).set(authHash);
+  // 5. Get a WebAuthn assertion over the auth digest.
+  const challengeBuf = new ArrayBuffer(authDigest.byteLength);
+  new Uint8Array(challengeBuf).set(authDigest);
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge: challengeBuf,
@@ -136,12 +148,17 @@ export async function signAndSubmit(args: {
   });
 
   // 6. Inject the passkey signature into the assembled tx's auth entry.
+  //    Pass the SAME contextRuleIds we used to derive authDigest above so
+  //    the AuthPayload struct on the auth entry and the digest the contract
+  //    recomputes both refer to rule 0 (the Default rule).
   injectPasskeySignature(
     assembled_tx,
     parsed,
     args.verifierAddress,
     hex2buf(cred.publicKey),
     lastLedger,
+    undefined,
+    contextRuleIds,
   );
 
   // 7. Re-simulate the now-signed tx in ENFORCE mode as a sanity check —
