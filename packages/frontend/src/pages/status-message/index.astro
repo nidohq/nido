@@ -385,10 +385,21 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         // time precisely so we don't have to recover it from the assertion.
         const sessionPubkey = hex2buf(material.publicKey);
 
-        // Assemble the transaction (bakes auth entry into XDR).
-        const authTxn = rpc.assembleTransaction(tx.built!, sim).build();
+        // `tx.built` is ALREADY the assembled tx from the bindings'
+        // internal simulate (AssembledTransaction.simulate replaces
+        // .built with `assembleTransaction(raw, sim).build()` on
+        // success). Re-running `rpc.assembleTransaction(tx.built, sim)`
+        // calls `TransactionBuilder.cloneFrom(tx.built)`, which fails
+        // the `tx instanceof Transaction` check across Vite-bundled
+        // module instances and surfaces as
+        //   "expected a 'Transaction', got: [object Object]".
+        // Mutate the existing built tx in place via the same XDR
+        // round-trip clone trick we use in injectPasskeySignature.
+        const authTxn = tx.built!;
 
-        // Inject the session-passkey signature into the assembled transaction.
+        // Inject the session-passkey signature into the assembled
+        // transaction. Default to v0.6 shape (existing on-chain
+        // contracts) — see auth.ts SmartAccountAuthVersion docs.
         injectPasskeySignature(
           authTxn,
           parsed,
@@ -399,14 +410,19 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
         $setForm.textContent = "Submitting...";
 
-        // Re-simulate with the real signature for accurate resource estimates.
+        // Re-simulate the signed tx in enforce mode to surface auth
+        // failures (bad sig, wrong rule) BEFORE submit. Default
+        // "record" mode strips provided auth entries — same gotcha as
+        // primaryPasskeySigner. Do NOT re-assembleTransaction after
+        // this point: that would discard the signature we just
+        // injected.
         const server = new rpc.Server(RPC_URL);
-        const sim2 = await server.simulateTransaction(authTxn);
+        const sim2 = await server.simulateTransaction(authTxn, undefined, 'enforce');
         if (rpc.Api.isSimulationError(sim2) || rpc.Api.isSimulationRestore(sim2)) {
           throw new Error(`Re-simulation failed: ${"error" in sim2 ? sim2.error : "restore needed"}`);
         }
-        const finalTx = rpc.assembleTransaction(authTxn, sim2).build();
-        finalTx.sign(keypair);
+        authTxn.sign(keypair);
+        const finalTx = authTxn;
 
         $resultSection.classList.remove("hidden");
         $statusValue.textContent = "Submitting transaction...";
