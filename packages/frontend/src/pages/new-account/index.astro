@@ -1,100 +1,138 @@
 ---
-import BaseLayout from "../../layouts/BaseLayout.astro";
+import NidoLayout from "../../layouts/NidoLayout.astro";
+import Logo from "../../components/Logo.astro";
+import Nest from "../../components/Nest.astro";
+import Icon from "../../components/Icon.astro";
+import Toast from "../../components/Toast.astro";
+import PasskeySheet from "../../components/PasskeySheet.astro";
 ---
 
-<BaseLayout title="G2C — Set Up Passkey">
-  <h1>Set Up Your Account</h1>
-  <p class="info">
-    Register a passkey to secure your smart account, then deploy it on-chain.
-    Your passkey (fingerprint, face, or security key) will be the only way to authorize transactions.
-  </p>
+<NidoLayout title="Nido — Set up your account">
+  <div class="col-scroll scroll-hide pad screen-in">
+    <!-- header: back-less brand + demo chip + 2-step progress -->
+    <div style="padding: 6px 4px 22px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+        <Logo size={19} mark markSize={24} />
+        <span class="chip" style="font-size:11px;"><span class="dot acc"></span>Testnet</span>
+      </div>
+      <div class="steps">
+        <i id="step-1"></i>
+        <i id="step-2"></i>
+      </div>
+    </div>
 
-  <div id="status-bar">
-    <div>Account: <code id="contract-id"></code></div>
+    <!-- account id surfaced quietly (preserves the contractId surface) -->
+    <div class="addr" id="account-chip" style="margin-bottom:18px;">
+      <Icon name="home" size={14} color="var(--mut)" />
+      <code id="contract-id"></code>
+    </div>
+
+    <div id="error-box" class="card" style="display:none; padding:14px 16px; margin-bottom:18px; border-color:var(--danger); background:var(--acc-soft); color:var(--danger); font-size:13.5px; line-height:1.5;"></div>
+
+    <!-- ===================== STEP 1 · LOCK IT TO YOU ===================== -->
+    <section id="passkey-section">
+      <div style="display:grid; place-items:center; margin:10px 0 22px;">
+        <Nest size={104} />
+      </div>
+      <div class="disp" style="font-weight:800; font-size:28px; line-height:1.06; text-align:center;">
+        Lock it to you
+      </div>
+      <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;">
+        Use <span id="pk-label-inline">your passkey</span> so only you can get into your Nido.
+        Nothing to memorize, nothing to write down.
+      </p>
+
+      <div style="display:flex; flex-direction:column; gap:14px; margin-top:26px;">
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="lock" size={19} color="var(--ink-soft)" />
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Only you get in</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">Your face never leaves this device, and can't be faked.</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="refresh" size={19} color="var(--ink-soft)" />
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Across your devices</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">Set up once and it follows you to your phone and laptop.</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="shieldcheck" size={19} color="var(--ink-soft)" />
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Never locked out</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">Add a trusted friend later so you can always get back in.</div>
+          </div>
+        </div>
+      </div>
+
+      <button id="register-btn" class="btn acc" style="margin-top:28px;">
+        <span id="pk-icon"><Icon name="faceid" size={20} color="#fff" /></span>
+        <span>Confirm with <span id="pk-label-btn">Face ID</span></span>
+      </button>
+    </section>
+
+    <!-- ===================== STEP 2 · SETTING UP ===================== -->
+    <section id="deploy-section" class="hidden" style="display:flex; flex-direction:column; min-height:440px;">
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div style="display:grid; place-items:center; height:116px;">
+          <span id="deploy-nest-spinning"><Nest size={104} spin dur={1.1} /></span>
+          <span id="deploy-nest-static" style="display:none;"><Nest size={104} /></span>
+        </div>
+        <div class="disp" style="font-weight:800; font-size:26px; margin-top:28px;">Setting up your Nido</div>
+
+        <div style="display:flex; flex-direction:column; gap:13px; margin-top:24px; width:100%; max-width:300px;">
+          <div class="checkitem" id="check-0" style="display:flex; align-items:center; gap:12px; opacity:.4; transition:opacity .3s;">
+            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center;"></span>
+            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Locked to you</span>
+          </div>
+          <div class="checkitem" id="check-1" style="display:flex; align-items:center; gap:12px; opacity:.4; transition:opacity .3s;">
+            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center;"></span>
+            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Publishing to Stellar</span>
+          </div>
+          <div class="checkitem" id="check-2" style="display:flex; align-items:center; gap:12px; opacity:.4; transition:opacity .3s;">
+            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center;"></span>
+            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Your Nido is ready</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:9px; align-items:center; justify-content:center; color:var(--mut); padding-bottom:8px;">
+        <Icon name="sparkle" size={16} color="var(--acc)" />
+        <span id="deploy-foot" style="font-size:13px; line-height:1.4; text-align:center;">Almost there — taking you in…</span>
+      </div>
+    </section>
+
+    <!-- ===================== DONE ===================== -->
+    <section id="done-section" class="hidden">
+      <div style="display:grid; place-items:center; margin:10px 0 22px;">
+        <div style="width:72px; height:72px; border-radius:50%; background:var(--good-soft); display:grid; place-items:center; animation:pop .4s both;">
+          <Icon name="check" size={36} color="var(--good)" stroke={2.6} />
+        </div>
+      </div>
+      <div class="disp" style="font-weight:800; font-size:28px; line-height:1.06; text-align:center;">Your Nido is ready</div>
+      <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;">
+        It's live on Stellar and locked to you. Nothing to memorize, nothing to write down.
+      </p>
+      <a id="account-link" class="btn acc" style="margin-top:28px; text-decoration:none;">
+        Go to your Nido <Icon name="arrow" size={18} color="#fff" />
+      </a>
+      <a id="explorer-link" class="link" target="_blank" rel="noopener" style="display:block; text-align:center; margin-top:16px; font-size:13.5px;">
+        View on Stellar Expert
+      </a>
+    </section>
   </div>
 
-  <div id="error-box" class="error" style="display:none"></div>
-
-  <section>
-    <h2>1. Register Passkey</h2>
-    <p class="info">
-      Your browser will prompt you to create a passkey.
-      This passkey is bound to your account and will be used to sign all future transactions.
-    </p>
-    <div class="field">
-      <button id="register-btn">Register Passkey</button>
-    </div>
-    <pre id="register-result" style="display:none"></pre>
-  </section>
-
-  <section id="deploy-section" class="hidden">
-    <h2>2. Deploy Account</h2>
-    <p class="info">Publish your passkey-secured smart account to the Stellar network.</p>
-    <div class="field">
-      <button id="deploy-btn" class="primary">Deploy Account</button>
-    </div>
-    <pre id="deploy-result" style="display:none"></pre>
-  </section>
-
-  <section id="done-section" class="hidden">
-    <h2>Account Ready</h2>
-    <p class="info">Your smart account is live. Use your passkey to sign transactions.</p>
-    <div class="field">
-      <a id="account-link" class="button-link">Go to Account</a>
-    </div>
-  </section>
-</BaseLayout>
-
-<style>
-  body {
-    background: #1a1a2e;
-  }
-
-  button.primary {
-    background: #1a6b3a;
-    border-color: #1a8b4a;
-    font-size: 1.1rem;
-    padding: 0.7rem 2rem;
-  }
-
-  button.primary:hover {
-    background: #1a8b4a;
-  }
-
-  #status-bar {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 4px;
-    padding: 0.5rem 0.75rem;
-    margin: 1rem 0;
-    font-size: 0.85rem;
-  }
-
-  .button-link {
-    display: inline-block;
-    background: #1a6b3a;
-    color: #e0e0e0;
-    border: 1px solid #1a8b4a;
-    padding: 0.5rem 1.2rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.95rem;
-    text-decoration: none;
-  }
-
-  .button-link:hover {
-    background: #1a8b4a;
-  }
-
-  #deploy-result a {
-    color: #5bc0de;
-    text-decoration: underline;
-  }
-
-  #deploy-result a:hover {
-    color: #7dd4ed;
-  }
-</style>
+  <!-- mounted once: real-promise-driven passkey sheet + toast host -->
+  <PasskeySheet title="Lock it to you" sub="Confirm with your passkey to finish setting up." />
+  <Toast />
+</NidoLayout>
 
 <script>
   import { Keypair, Networks, TransactionBuilder, Operation, Address, Account, rpc, xdr, nativeToScVal } from "@stellar/stellar-sdk";
@@ -108,6 +146,9 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     activateAccount,
     fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
+  import { withPasskeySheet } from "../../lib/passkeySheet";
+  import { detectPasskeyLabel } from "../../lib/passkeyLabel";
+  import { toast } from "../../lib/toast";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
 
@@ -123,17 +164,28 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   let passkeyPublicKey: Uint8Array | null = null;
   let credentialIdBytes: Uint8Array | null = null;
 
+  // --- Passkey label (copy hint only; never gates the real ceremony) ---
+
+  const pk = detectPasskeyLabel();
+
   // --- UI refs ---
 
   const $contractIdEl = document.getElementById("contract-id")!;
+  const $accountChip = document.getElementById("account-chip")!;
   const $errorBox = document.getElementById("error-box")!;
   const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
-  const $registerResult = document.getElementById("register-result") as HTMLPreElement;
+  const $pkLabelBtn = document.getElementById("pk-label-btn")!;
+  const $pkLabelInline = document.getElementById("pk-label-inline")!;
+  const $passkeySection = document.getElementById("passkey-section")!;
   const $deploySection = document.getElementById("deploy-section")!;
-  const $deployBtn = document.getElementById("deploy-btn") as HTMLButtonElement;
-  const $deployResult = document.getElementById("deploy-result") as HTMLPreElement;
+  const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
+  const $deployNestStatic = document.getElementById("deploy-nest-static")!;
+  const $deployFoot = document.getElementById("deploy-foot")!;
   const $doneSection = document.getElementById("done-section")!;
   const $accountLink = document.getElementById("account-link") as HTMLAnchorElement;
+  const $explorerLink = document.getElementById("explorer-link") as HTMLAnchorElement;
+  const $step1 = document.getElementById("step-1")!;
+  const $step2 = document.getElementById("step-2")!;
 
   // --- UI helpers ---
 
@@ -146,52 +198,107 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     $errorBox.style.display = "none";
   }
 
-  // --- Init status bar ---
+  // Animated "Setting up your Nido" checklist. Each step is one of:
+  //   "pending" (dim ring) · "active" (spinner) · "done" (teal check).
+  const CHECK_LABELS = ["check-0", "check-1", "check-2"];
+
+  function renderCheck(i: number, state: "pending" | "active" | "done") {
+    const item = document.getElementById(CHECK_LABELS[i]);
+    if (!item) return;
+    const mark = item.querySelector(".check-mark") as HTMLElement;
+    item.style.opacity = state === "pending" ? ".4" : "1";
+    if (state === "done") {
+      mark.innerHTML =
+        `<span style="width:24px;height:24px;border-radius:50%;background:var(--good);display:grid;place-items:center;">` +
+        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>`;
+    } else if (state === "active") {
+      mark.innerHTML =
+        `<svg class="spin" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg>`;
+    } else {
+      mark.innerHTML = `<span style="width:24px;height:24px;border-radius:50%;border:2px solid var(--line);display:block;"></span>`;
+    }
+  }
+
+  function setCheckProgress(done: number, activeIdx: number) {
+    for (let i = 0; i < CHECK_LABELS.length; i++) {
+      if (i < done) renderCheck(i, "done");
+      else if (i === activeIdx) renderCheck(i, "active");
+      else renderCheck(i, "pending");
+    }
+  }
+
+  // --- Init: surface the contract id + apply the passkey label to copy ---
 
   $contractIdEl.textContent = contractId || "(unknown)";
+  $pkLabelBtn.textContent = pk.label;
+  $pkLabelInline.textContent = pk.label;
+
+  // Match the button glyph to the detected platform (faceid is the default
+  // rendered server-side). Inner paths mirror the Icon component's map.
+  const PK_GLYPHS: Record<string, string> = {
+    faceid: `<g><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" /><path d="M9 10v1M15 10v1M12 10v3l-1 .5M9.5 15.5s1 1 2.5 1 2.5-1 2.5-1" /></g>`,
+    fingerprint: `<g><path d="M12 11v4a5 5 0 0 1-1 3" /><path d="M8.5 8.5A5 5 0 0 1 17 12v2" /><path d="M5.5 12a6.5 6.5 0 0 1 11-4.7" /><path d="M14 14v1a3 3 0 0 0 .5 1.7" /></g>`,
+    eye: `<g><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.8" /></g>`,
+    key: `<g><circle cx="8" cy="12" r="3.5" /><path d="M11.5 12H20M17 12v3M14 12v2.5" /></g>`,
+  };
+  const $pkIcon = document.getElementById("pk-icon")!;
+  if (PK_GLYPHS[pk.icon]) {
+    $pkIcon.innerHTML =
+      `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PK_GLYPHS[pk.icon]}</svg>`;
+  }
+  // First step is in progress.
+  $step1.classList.add("on");
+  renderCheck(0, "pending");
+  renderCheck(1, "pending");
+  renderCheck(2, "pending");
 
   if (!contractId) {
-    showError("Invalid URL. Please start from the home page.");
+    showError("That link looks off. Please start again from the home page.");
   }
 
   if (!secretKey) {
-    showError("Missing setup data. Please start from the home page.");
+    showError("We're missing some setup data. Please start again from the home page.");
   }
 
-  // --- Register Passkey ---
+  // --- Step 1 · Lock it to you (register passkey) ---
 
   $registerBtn.addEventListener("click", async () => {
     clearError();
     if (!contractId) {
-      showError("No contract ID found in subdomain.");
+      showError("No account found in this link. Please start again from the home page.");
       return;
     }
 
     try {
       $registerBtn.disabled = true;
-      $registerBtn.textContent = "Waiting for authenticator...";
 
       const userId = new Uint8Array(16);
       crypto.getRandomValues(userId);
 
-      const credential = (await navigator.credentials.create({
-        publicKey: {
-          challenge: crypto.getRandomValues(new Uint8Array(32)),
-          rp: { name: `Soroban ${contractId}`, id: rpId },
-          user: {
-            id: userId,
-            name: contractId,
-            displayName: `Account ${contractId}`,
-          },
-          pubKeyCredParams: [{ alg: -7, type: "public-key" }],
-          authenticatorSelection: {
-            residentKey: "required",
-            userVerification: "required",
-          },
-          attestation: "none",
-          timeout: 60000,
-        },
-      })) as PublicKeyCredential;
+      // Drive the REAL ceremony through the sheet — no fake timer. The OS
+      // passkey dialog is the source of truth; the sheet closes when it settles.
+      const credential = (await withPasskeySheet(
+        () =>
+          navigator.credentials.create({
+            publicKey: {
+              challenge: crypto.getRandomValues(new Uint8Array(32)),
+              rp: { name: `Soroban ${contractId}`, id: rpId },
+              user: {
+                id: userId,
+                name: contractId,
+                displayName: `Account ${contractId}`,
+              },
+              pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+              authenticatorSelection: {
+                residentKey: "required",
+                userVerification: "required",
+              },
+              attestation: "none",
+              timeout: 60000,
+            },
+          }),
+        { title: "Lock it to you", sub: `Confirm with ${pk.label} to finish setting up.` },
+      )) as PublicKeyCredential;
 
       const reg = parseRegistration(credential as any);
       passkeyPublicKey = reg.publicKey;
@@ -199,33 +306,31 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
       sdkSaveCredential(contractId!, credentialIdBytes, passkeyPublicKey);
 
-      $registerResult.style.display = "block";
-      $registerResult.textContent = JSON.stringify(
-        {
-          credentialId: buf2base64url(credentialIdBytes),
-          publicKey: buf2hex(passkeyPublicKey),
-          rpId: rpId,
-        },
-        null,
-        2
-      );
+      void buf2base64url(credentialIdBytes);
+      void buf2hex(passkeyPublicKey);
 
-      $registerBtn.textContent = "Passkey Registered";
+      // Advance to "Setting up your Nido" and kick off the deploy automatically.
+      $step1.classList.remove("on");
+      $step1.classList.add("done");
+      $step2.classList.add("on");
+      $passkeySection.classList.add("hidden");
+      $accountChip.classList.add("hidden");
       $deploySection.classList.remove("hidden");
+
+      void deploy();
     } catch (err: any) {
       if (err.name === "NotAllowedError") {
-        showError("Passkey registration was blocked. If you're using an in-app browser (Twitter, Instagram, etc.), tap the menu (\u2026) and choose \"Open in Safari\" or \"Open in Browser\".");
+        showError("We couldn't reach your passkey. If you're in an in-app browser (Twitter, Instagram, etc.), tap the menu (…) and choose \"Open in Safari\" or \"Open in Browser\".");
       } else {
-        showError(`Registration failed: ${err.message}`);
+        showError(`Couldn't set up your passkey: ${err.message}`);
       }
       $registerBtn.disabled = false;
-      $registerBtn.textContent = "Register Passkey";
     }
   });
 
-  // --- Deploy Account ---
+  // --- Step 2 · Setting up your Nido (deploy account) ---
 
-  $deployBtn.addEventListener("click", async () => {
+  async function deploy() {
     clearError();
     if (!passkeyPublicKey || !secretKey) {
       showError("Register a passkey first and ensure ?key= is set.");
@@ -233,8 +338,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     }
 
     try {
-      $deployBtn.disabled = true;
-      $deployBtn.textContent = "Deploying...";
+      // 1 · "Locked to you" is already done by the time we get here.
+      setCheckProgress(1, 1);
 
       const keypair = Keypair.fromSecret(secretKey);
       const server = new rpc.Server(RPC_URL);
@@ -287,20 +392,35 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
       activateAccount(contractId!);
 
-      $deployResult.style.display = "block";
-      $deployResult.innerHTML = `Account deployed!\n<a href="https://stellar.expert/explorer/testnet/contract/${contractId}" target="_blank" rel="noopener">View on Stellar Expert</a>`;
+      // 2 · published; 3 · ready.
+      setCheckProgress(2, 2);
+      setCheckProgress(3, -1);
+      $deployNestSpinning.style.display = "none";
+      $deployNestStatic.style.display = "block";
+      $deployFoot.textContent = "All set. Welcome to your Nido.";
 
-      // Show link to account page
+      // Wire up the done screen.
       const protocol = window.location.protocol;
       const host = window.location.host;
       $accountLink.href = `${protocol}//${host}/account/`;
-      $doneSection.classList.remove("hidden");
+      $explorerLink.href = `https://stellar.expert/explorer/testnet/contract/${contractId}`;
 
-      $deployBtn.textContent = "Deployed";
+      toast({ msg: "Your Nido is ready", icon: "check" });
+
+      // Brief beat so the final check lands before the reveal.
+      await new Promise((r) => setTimeout(r, 700));
+      $deploySection.classList.add("hidden");
+      $doneSection.classList.remove("hidden");
+      $step2.classList.remove("on");
+      $step2.classList.add("done");
     } catch (err: any) {
-      showError(`Deploy failed: ${err.message}`);
-      $deployBtn.disabled = false;
-      $deployBtn.textContent = "Deploy Account";
+      // Fall back to the passkey step so the user can retry the deploy.
+      showError(`Couldn't finish setting up: ${err.message}`);
+      $deploySection.classList.add("hidden");
+      $passkeySection.classList.remove("hidden");
+      $accountChip.classList.remove("hidden");
+      $step2.classList.remove("on");
+      $registerBtn.disabled = false;
     }
-  });
+  }
 </script>
