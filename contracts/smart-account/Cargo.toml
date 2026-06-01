@@ -6,8 +6,14 @@ license.workspace = true
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 doctest = false
+
+# Marks this crate as a Soroban contract so `stellar-scaffold build` treats a
+# normal cargo dependency on it (see contracts/factory/Cargo.toml) as a
+# build-order edge: smart-account is built before any crate that depends on it.
+[package.metadata.stellar]
+contract = true
 
 [dependencies]
 soroban-sdk = { workspace = true }

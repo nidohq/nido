@@ -10,9 +10,27 @@ test:
 build:
     cargo build --workspace
 
-# Build and optimize Soroban contracts
+# Build and optimize Soroban contracts.
+# `stellar-scaffold build` topologically sorts the contract crates (via the
+# `[package.metadata.stellar] contract = true` edges) so dependencies build
+# first — notably smart-account before the factory, whose build.rs embeds the
+# smart-account wasm.
+#
+# SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2: scaffold invokes raw
+# `cargo rustc` rather than `stellar contract build`, so it does not set the
+# signal soroban-sdk 26's build script expects; we set it here (we build with a
+# new enough stellar-cli) so the build does not abort on spec-shaking.
+#
+# Scaffold does NOT run wasm-opt, so we optimize in-place afterwards (the old
+# `stellar contract build --optimize` did this); deployed wasm must stay
+# optimized.
 build-contracts:
-    stellar contract build --optimize --profile contract
+    SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 stellar-scaffold build --profile contract
+    @for wasm in target/wasm32v1-none/contract/*.wasm; do \
+        case "$wasm" in *.optimized.wasm) continue;; esac; \
+        echo "→ optimize $wasm"; \
+        stellar contract optimize --wasm "$wasm" --wasm-out "$wasm"; \
+    done
 
 build-ts:
     npx tsc -p ./packages/passkey-sdk/tsconfig.json

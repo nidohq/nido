@@ -14,6 +14,12 @@ soroban-sdk = { workspace = true }
 stellar-accounts = { workspace = true }
 soroban-sdk-tools = { workspace = true }
 stellar-registry.workspace = true
+# Build-order edge only: the factory embeds the smart-account WASM via
+# `include_bytes!` in build.rs and must never `use` any item from this crate.
+# The dependency exists so `stellar-scaffold build` builds smart-account first.
+# An unreferenced rlib's archive members are not linked into the factory cdylib,
+# so this does not leak smart-account's exports into the factory wasm.
+g2c-smart-account = { path = "../smart-account" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

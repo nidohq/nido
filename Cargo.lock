@@ -740,6 +740,7 @@ dependencies = [
 name = "g2c-factory"
 version = "0.1.0"
 dependencies = [
+ "g2c-smart-account",
  "soroban-sdk",
  "soroban-sdk-tools",
  "stellar-accounts",
