@@ -142,10 +142,12 @@ export class G2cWalletButton extends HTMLElement {
   private render(): void {
     const s = this.session;
     if (!s) {
+      // Logged-out: a warm "Connect your Nido" call-to-action. Reskin only —
+      // the click handler + connect() flow are unchanged.
       this.innerHTML = `
         <div class="g2c-wb">
-          <button type="button" class="g2c-wb-connect"${this.busy ? ' disabled' : ''}>
-            ${this.busy ? 'Connecting…' : 'Connect wallet'}
+          <button type="button" class="g2c-wb-connect btn acc"${this.busy ? ' disabled' : ''}>
+            ${this.busy ? 'Finding your nest…' : 'Connect your Nido'}
           </button>
           <div class="g2c-wb-error" style="display:none"></div>
         </div>`;
@@ -163,15 +165,15 @@ export class G2cWalletButton extends HTMLElement {
             : ''
         }</div>`
       : '';
-    const kindLabel = isG2cWallet(s.walletId) ? 'g2c smart account' : esc(s.walletId);
+    const kindLabel = isG2cWallet(s.walletId) ? 'Nido smart account' : esc(s.walletId);
 
     this.innerHTML = `
       <div class="g2c-wb g2c-wb-connected">
         <span class="g2c-wb-meta">
-          <span class="g2c-wb-id">${kindLabel}</span>
+          <span class="g2c-wb-id chip ${isG2cWallet(s.walletId) ? 'acc' : ''}">${kindLabel}</span>
           <span class="g2c-wb-addr" title="${esc(s.walletAddress)}">${esc(shorten(s.walletAddress))}</span>
         </span>
-        <button type="button" class="g2c-wb-disconnect"${this.busy ? ' disabled' : ''}>
+        <button type="button" class="g2c-wb-disconnect btn ghost sm"${this.busy ? ' disabled' : ''}>
           ${this.busy ? '…' : 'Disconnect'}
         </button>
         ${warningHtml}
