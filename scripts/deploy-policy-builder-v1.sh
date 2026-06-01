@@ -4,7 +4,9 @@
 #   - Publish + deploy the multisig-policy under its canonical registry name
 #   - Ensure the WebAuthn verifier is registered by name (publish + deploy
 #     if not)
-#   - Publish + upgrade the factory wasm via the stellar-registry
+#   - Publish the factory wasm, deploy a FRESH admin-capable factory
+#     (passing --admin via __constructor), and repoint the registry
+#     'factory' name to it (a pre-admin factory can't self-upgrade)
 #
 # Idempotent: each step checks current state and skips work that's already done.
 #
@@ -32,8 +34,8 @@
 #                        the registry label; the factory deploys by sha256 of
 #                        its embedded wasm, and this script asserts the
 #                        published bytes' hash matches that embedded wasm.
-#   FACTORY_VERSION      factory wasm version to publish + upgrade to
-#                        (default 0.2.0).
+#   FACTORY_VERSION      factory wasm version to publish + deploy fresh from
+#                        (default 0.4.0; the admin-capable factory).
 #   REGISTRY_PREFIX      Prefix for unverified registry names (default
 #                        "unverified/"). Set to "" to use the verified
 #                        registry (requires curation rights).
@@ -77,7 +79,7 @@ FACTORY_CONTRACT_ID="${FACTORY_CONTRACT_ID:-CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXH
 POLICY_VERSION="${POLICY_VERSION:-0.2.0}"
 VERIFIER_VERSION="${VERIFIER_VERSION:-0.2.0}"
 ACCOUNT_VERSION="${ACCOUNT_VERSION:-0.1.0}"
-FACTORY_VERSION="${FACTORY_VERSION:-0.3.0}"
+FACTORY_VERSION="${FACTORY_VERSION:-0.4.0}"
 REGISTRY_PREFIX="${REGISTRY_PREFIX:-unverified/}"
 
 # Canonical registry names (prefixed). These are what `factory.resolve(name)`
@@ -129,6 +131,16 @@ sha256_of() {
     else
         return 1
     fi
+}
+
+# Returns the admin address of a factory contract, empty if the contract
+# doesn't implement admin() or has no admin stored (i.e. it predates the
+# admin constructor and traps on admin()). Reads stdout only; errors → empty.
+factory_admin() {
+    local id="$1" out
+    out="$(stellar contract invoke --id "$id" --source-account "$ALIAS" \
+        -- admin 2>/dev/null)" || return 0
+    printf '%s' "$out" | grep -oE 'G[A-Z0-9]{55}|C[A-Z0-9]{55}' | head -1
 }
 
 # Returns the wasm hash for a published (name, version), empty if not published.
@@ -278,9 +290,17 @@ else
     ok "embed==installed verified: sha256($ACCOUNT_NAME) = $local_account_hash"
 fi
 
-# --- Task 4b: factory publish + upgrade ----------------------------------
+# --- Task 4b: factory fresh-deploy + registry repoint --------------------
+#
+# The factory's `__constructor(e, admin: Address)` stores the admin that
+# alone may call admin()/set_admin()/upgrade(). A constructor only runs at
+# DEPLOY time, so an in-place `stellar registry upgrade` of a pre-admin
+# factory can NEVER populate the admin slot — admin()/upgrade() would keep
+# trapping. Per issue #26's migration plan, the only correct move is to
+# deploy a FRESH factory (passing --admin) at a new address and repoint the
+# registry `factory` name to it. (The old factory can't self-upgrade.)
 
-note "Task 4b · factory v$FACTORY_VERSION"
+note "Task 4b · factory v$FACTORY_VERSION (fresh deploy + repoint)"
 
 published_factory_hash="$(fetch_hash "$FACTORY_NAME" "$FACTORY_VERSION")"
 if [ -n "$published_factory_hash" ]; then
@@ -294,58 +314,66 @@ else
     ok "published $FACTORY_NAME@$FACTORY_VERSION"
 fi
 
+# The admin the fresh factory is constructed with = the deploying alias's
+# public key (resolved from the alias so the constructor gets a G-address).
+ADMIN_ADDR="$(stellar keys address "$ALIAS")"
+[ -n "$ADMIN_ADDR" ] || die "could not resolve public key for alias '$ALIAS' (stellar keys address)"
+ok "factory admin will be: $ADMIN_ADDR"
+
+# Idempotency guard: if `factory` already resolves to an admin-capable
+# contract (admin() returns an address rather than trapping), the fresh
+# deploy already happened on a prior run — skip.
 registered_factory="$(fetch_contract_id "$FACTORY_NAME")"
-if [ -z "$registered_factory" ]; then
-    warn "$FACTORY_NAME at $FACTORY_CONTRACT_ID is not yet registered by name."
-    warn "Registering so 'stellar registry upgrade' can target it."
-    stellar registry register-contract \
-        --contract-name "$FACTORY_NAME" \
-        --contract-address "$FACTORY_CONTRACT_ID" \
-        --owner "$ALIAS" \
-        --source-account "$ALIAS"
-    registered_factory="$(fetch_contract_id "$FACTORY_NAME")"
-    ok "registered $FACTORY_NAME: $registered_factory"
-elif [ "$registered_factory" != "$FACTORY_CONTRACT_ID" ]; then
-    die "registered $FACTORY_NAME ($registered_factory) does not match FACTORY_CONTRACT_ID ($FACTORY_CONTRACT_ID). Set FACTORY_CONTRACT_ID env var if you're targeting a different deployment."
-else
-    skip "$FACTORY_NAME already registered as $registered_factory"
+existing_admin=""
+if [ -n "$registered_factory" ]; then
+    existing_admin="$(factory_admin "$registered_factory")"
 fi
 
-# `--version` is JSON-parsed by the registry CLI, so bare `0.2.0` fails as
-# "trailing characters" (0.2 is a valid JSON number, then `.0` errors). Quote
-# it as a JSON string.
-if stellar registry upgrade \
-    --contract-name "$FACTORY_NAME" \
-    --wasm-name "$FACTORY_NAME" \
-    --version "\"$FACTORY_VERSION\"" \
-    --source-account "$ALIAS" 2>/tmp/upgrade.err
-then
-    ok "upgraded $FACTORY_NAME to $FACTORY_VERSION"
+if [ -n "$existing_admin" ]; then
+    skip "$FACTORY_NAME already admin-capable: $registered_factory (admin $existing_admin)"
+    new_factory="$registered_factory"
 else
-    rc=$?
-    if grep -q "non-existent contract function.*upgrade\|non-existent contract function.*admin" /tmp/upgrade.err; then
-        warn "factory upgrade SKIPPED: the deployed contract at"
-        warn "  $FACTORY_CONTRACT_ID"
-        warn "doesn't implement the admin()/upgrade(hash) methods that"
-        warn "stellar-registry's 'upgrade' flow requires. The factory wasn't"
-        warn "designed with upgrade machinery; in-place upgrade isn't possible."
-        warn ""
-        warn "This isn't a blocker for the policy-builder v1 flows: the SDK"
-        warn "and /security UI talk to smart accounts directly (not the"
-        warn "factory). Multisig-policy + verifier are deployed and"
-        warn "registered, so add_context_rule + the registry lookups work."
-        warn ""
-        warn "If you want NEW accounts to use the registered verifier (rather"
-        warn "than the old lazy-deployed hash-based one), deploy a fresh"
-        warn "factory at a NEW address and update the frontend's"
-        warn "FACTORY_CONTRACT_ID — a follow-up task, not required for v1."
+    if [ -n "$registered_factory" ]; then
+        note "registered $FACTORY_NAME ($registered_factory) predates the admin"
+        note "constructor (admin() traps). Deploying a fresh admin-capable factory."
     else
-        warn "factory upgrade failed (rc=$rc):"
-        sed 's/^/    /' /tmp/upgrade.err >&2
-        exit "$rc"
+        note "$FACTORY_NAME is not registered yet. Deploying a fresh factory."
     fi
+
+    # Deploy a fresh factory, passing the constructor arg. `stellar contract
+    # deploy ... -- --admin <ADDR>` prints the new C-address on stdout.
+    new_factory="$(stellar contract deploy \
+        --wasm "$FACTORY_WASM" \
+        --source-account "$ALIAS" \
+        -- --admin "$ADMIN_ADDR" \
+        | grep -oE 'C[A-Z0-9]{55}' | head -1)"
+    [ -n "$new_factory" ] || die "fresh factory deploy did not return a contract id"
+    ok "deployed fresh factory: $new_factory"
+
+    # Repoint (or register) the `factory` registry name to the new address so
+    # name-based resolution (SDK/frontend/the factory's own lookups) picks up
+    # the admin-capable instance.
+    if [ -n "$registered_factory" ]; then
+        stellar registry update-contract-address \
+            --contract-name "$FACTORY_NAME" \
+            --new-address "$new_factory" \
+            --source-account "$ALIAS"
+        ok "repointed $FACTORY_NAME → $new_factory"
+    else
+        stellar registry register-contract \
+            --contract-name "$FACTORY_NAME" \
+            --contract-address "$new_factory" \
+            --owner "$ALIAS" \
+            --source-account "$ALIAS"
+        ok "registered $FACTORY_NAME → $new_factory"
+    fi
+
+    warn "The factory address changed to $new_factory."
+    warn "Update FACTORY_CONTRACT_ID / the frontend if anything still hardcodes"
+    warn "the old address ($FACTORY_CONTRACT_ID). Name-based resolution already"
+    warn "tracks the new one via the registry."
 fi
-rm -f /tmp/upgrade.err
+registered_factory="$new_factory"
 
 # --- Summary ---------------------------------------------------------
 
@@ -356,7 +384,7 @@ Summary:
   $POLICY_NAME@$POLICY_VERSION   $policy_addr
   $VERIFIER_NAME (registered)     $verifier_addr
   $ACCOUNT_NAME@$ACCOUNT_VERSION  $published_account_hash (published)
-  $FACTORY_NAME                   $registered_factory (registered by name)
+  $FACTORY_NAME                   $registered_factory (admin-capable, registered by name)
 
 The multisig-policy contract and the WebAuthn verifier are now deployed and
 registered. The policy-builder UI on /security can be used against any
@@ -365,12 +393,13 @@ add_context_rule + the registry resolution happen at the SDK layer, no
 factory involvement needed.
 
 Notes:
-- The existing factory at $FACTORY_CONTRACT_ID could not be upgraded in
-  place (it doesn't implement admin()/upgrade()). If the warning above
-  surfaced, the factory continues to lazy-deploy the OLD hash-based
-  verifier for newly-created accounts. To switch newly-created accounts to
-  the registered '$VERIFIER_NAME' contract, deploy a fresh factory and
-  update the frontend FACTORY_CONTRACT_ID — separate follow-up.
+- The factory now carries an admin (set via __constructor at deploy time),
+  so admin()/set_admin()/upgrade() work. A pre-admin factory CANNOT be
+  upgraded in place (the constructor only runs on deploy), so this script
+  deploys a FRESH factory at a new address and repoints the registry
+  '$FACTORY_NAME' name to it. The admin is the deploying alias's public key
+  ($ADMIN_ADDR). Newly-created accounts now resolve the verifier by name
+  via the registry instead of a hardcoded lazy-deploy hash.
 - Both the multisig-policy and the registered verifier are reachable by
   name via 'stellar registry fetch-contract-id <name> --source-account
   <alias>'. The SDK's policyChainFetch.fetchRegistryAddress(name) does the

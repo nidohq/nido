@@ -97,14 +97,6 @@
                   "storage": [
                     {
                       "key": {
-                        "symbol": "Account"
-                      },
-                      "val": {
-                        "bytes": "00825acd2c0a09af287adf2442f8109e5ebee8f010fede9f147743dcfbb52b4d"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "Admin"
                       },
                       "val": {

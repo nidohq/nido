@@ -51,6 +51,9 @@ export {
 
 export { resolveName, resolveNameCached } from "./resolve.js";
 
+export { fetchRegistryAddress, REGISTRY_FALLBACKS } from "./registry.js";
+export type { FetchRegistryAddressOptions } from "./registry.js";
+
 export type { PendingAccount, SessionKeyMaterial } from "./storage.js";
 
 export {

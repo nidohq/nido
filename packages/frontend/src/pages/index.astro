@@ -159,12 +159,11 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     loadPendingAccounts,
     savePendingAccount,
     activateAccount,
+    fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
 
-  const FACTORY_CONTRACT_ID = "CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXHIERNOZPPYMUNBT2JZ2SK";
   const RPC_URL = "https://soroban-testnet.stellar.org";
   const FRIENDBOT_URL = "https://friendbot.stellar.org";
-  const NAME_REGISTRY_ID = "CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX";
 
   // --- Reserved dApp subdomain redirect ---
   // status-message.<base> (and any future entry in
@@ -186,18 +185,23 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   if (detectedName && !isContractId(detectedName)) {
     // On a name subdomain — redirect to /account/ on the same subdomain
     // (keeps the shareable name URL intact)
-    resolveNameCached(
-      RPC_URL,
-      NAME_REGISTRY_ID,
-      detectedName,
-      "Test SDF Network ; September 2015"
-    ).then((resolved) => {
-      if (resolved) {
-        window.location.replace("/account/");
-      }
-    }).catch(() => {
-      // Name not found — continue showing the home page
-    });
+    fetchRegistryAddress("name-registry")
+      .then((nameRegistryId) =>
+        resolveNameCached(
+          RPC_URL,
+          nameRegistryId,
+          detectedName,
+          "Test SDF Network ; September 2015"
+        )
+      )
+      .then((resolved) => {
+        if (resolved) {
+          window.location.replace("/account/");
+        }
+      })
+      .catch(() => {
+        // Name not found — continue showing the home page
+      });
   }
 
   const $createBtn = document.getElementById("create-btn") as HTMLButtonElement;
@@ -306,7 +310,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       $progressInfo.textContent = "Predicting smart account address...";
       const client = new Client({
-        contractId: FACTORY_CONTRACT_ID,
+        contractId: await fetchRegistryAddress("factory"),
         networkPassphrase: Networks.TESTNET,
         rpcUrl: RPC_URL,
         publicKey: publicKey,

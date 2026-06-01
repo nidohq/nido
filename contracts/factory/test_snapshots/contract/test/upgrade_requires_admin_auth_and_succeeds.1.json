@@ -27,7 +27,26 @@
         }
       ]
     ],
-    []
+    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+              "function_name": "upgrade",
+              "args": [
+                {
+                  "bytes": "00825acd2c0a09af287adf2442f8109e5ebee8f010fede9f147743dcfbb52b4d"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ]
   ],
   "ledger": {
     "protocol_version": 26,
@@ -86,23 +105,35 @@
           "data": {
             "contract_data": {
               "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "ledger_key_nonce": {
+                  "nonce": "1033654523790656264"
+                }
+              },
+              "durability": "temporary",
+              "val": "void"
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
               "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
               "key": "ledger_key_contract_instance",
               "durability": "persistent",
               "val": {
                 "contract_instance": {
                   "executable": {
-                    "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    "wasm": "00825acd2c0a09af287adf2442f8109e5ebee8f010fede9f147743dcfbb52b4d"
                   },
                   "storage": [
-                    {
-                      "key": {
-                        "symbol": "Account"
-                      },
-                      "val": {
-                        "bytes": "00825acd2c0a09af287adf2442f8109e5ebee8f010fede9f147743dcfbb52b4d"
-                      }
-                    },
                     {
                       "key": {
                         "symbol": "Admin"
@@ -350,5 +381,46 @@
       }
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        "type_": "system",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "executable_update"
+              },
+              {
+                "vec": [
+                  {
+                    "symbol": "Wasm"
+                  },
+                  {
+                    "bytes": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  }
+                ]
+              },
+              {
+                "vec": [
+                  {
+                    "symbol": "Wasm"
+                  },
+                  {
+                    "bytes": "00825acd2c0a09af287adf2442f8109e5ebee8f010fede9f147743dcfbb52b4d"
+                  }
+                ]
+              }
+            ],
+            "data": {
+              "vec": []
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }

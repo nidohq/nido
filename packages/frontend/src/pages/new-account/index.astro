@@ -106,9 +106,9 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     contractIdFromHostname,
     saveCredential as sdkSaveCredential,
     activateAccount,
+    fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
 
-  const FACTORY_CONTRACT_ID = "CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXHIERNOZPPYMUNBT2JZ2SK";
   const RPC_URL = "https://soroban-testnet.stellar.org";
 
   // --- State ---
@@ -249,7 +249,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       })
         .addOperation(
           Operation.invokeContractFunction({
-            contract: FACTORY_CONTRACT_ID,
+            contract: await fetchRegistryAddress("factory"),
             function: "create_account",
             args: [
               Address.fromString(keypair.publicKey()).toScVal(),

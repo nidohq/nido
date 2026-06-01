@@ -72,6 +72,7 @@ mod registry {
 pub struct Config {
     account: InstanceItem<BytesN<32>>,
     passkey: InstanceItem<Address>,
+    admin: InstanceItem<Address>,
 }
 
 #[contract]
@@ -79,8 +80,31 @@ pub struct Contract;
 
 #[contractimpl]
 impl Contract {
-    pub fn __constructor(e: &Env) {
+    pub fn __constructor(e: &Env, admin: Address) {
         xlm::register(e, &e.current_contract_address());
+        Config::new(e).admin.set(&admin);
+    }
+
+    /// The factory admin — the only address allowed to rotate the admin or
+    /// upgrade the factory wasm. Set at construct time.
+    pub fn admin(e: &Env) -> Address {
+        Config::new(e)
+            .admin
+            .get()
+            .expect("factory admin not set; deploy a fresh factory (old instances predate admin)")
+    }
+
+    /// Rotate the admin. Requires the current admin's auth.
+    pub fn set_admin(e: &Env, new_admin: Address) {
+        Self::admin(e).require_auth();
+        Config::new(e).admin.set(&new_admin);
+    }
+
+    /// Upgrade the factory's own wasm to `new_wasm_hash` (an already-installed
+    /// wasm hash). Requires admin auth.
+    pub fn upgrade(e: &Env, new_wasm_hash: BytesN<32>) {
+        Self::admin(e).require_auth();
+        e.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     ///Deploy an account contract and add a passkey to it. Lastly transfer funds to the contract's account.
@@ -152,7 +176,7 @@ impl Contract {
 mod test {
     use super::*;
     use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{contract, contractimpl, Env};
+    use soroban_sdk::{contract, contractimpl, Env, IntoVal};
 
     // Minimal mock: every `fetch_contract_id` call returns a fixed address.
     #[contract]
@@ -185,7 +209,8 @@ mod test {
         let expected = Address::generate(&env);
         env.register_at(&registry_addr, MockRegistry, (expected.clone(),));
 
-        let factory_addr = env.register(Contract, ());
+        let admin = Address::generate(&env);
+        let factory_addr = env.register(Contract, (admin,));
         let first = env.as_contract(&factory_addr, || Contract::resolve(&env, "verifier"));
         let second = env.as_contract(&factory_addr, || Contract::resolve(&env, "verifier"));
         assert_eq!(first, expected);
@@ -214,7 +239,9 @@ mod test {
         // i.e. the hash `deploy_v2` will look up.
         let uploaded = env.deployer().upload_contract_wasm(smart_account::WASM);
 
-        let factory_addr = env.register(Contract, ());
+        // The admin arg is irrelevant here; this test only exercises the
+        // wasm-hash derivation, but the constructor requires one.
+        let factory_addr = env.register(Contract, (Address::generate(&env),));
         let derived = env.as_contract(&factory_addr, || Contract::account_wasm_hash(&env));
 
         assert_eq!(
@@ -231,7 +258,9 @@ mod test {
     fn account_wasm_hash_caches_first_computation() {
         let env = Env::default();
         env.mock_all_auths();
-        let factory_addr = env.register(Contract, ());
+        // The admin arg is irrelevant here; this test only exercises the
+        // wasm-hash cache, but the constructor requires one.
+        let factory_addr = env.register(Contract, (Address::generate(&env),));
 
         env.as_contract(&factory_addr, || {
             // Nothing cached yet.
@@ -248,5 +277,105 @@ mod test {
             let second = Contract::account_wasm_hash(&env);
             assert_eq!(second, fresh);
         });
+    }
+
+    /// The admin passed to `__constructor` is stored and returned by `admin`.
+    /// (`mock_all_auths` is needed because the constructor registers the XLM
+    /// SAC and mints, which requires auth.)
+    #[test]
+    fn admin_is_set_at_construct_time() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let id = env.register(Contract, (admin.clone(),));
+        let client = ContractClient::new(&env, &id);
+        assert_eq!(client.admin(), admin);
+    }
+
+    /// `set_admin` rotates the admin (requires the current admin's auth).
+    #[test]
+    fn set_admin_rotates_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+        let id = env.register(Contract, (admin.clone(),));
+        let client = ContractClient::new(&env, &id);
+
+        client.set_admin(&new_admin);
+        assert_eq!(client.admin(), new_admin);
+    }
+
+    /// `set_admin` requires the current admin's authorization. With auth
+    /// cleared the call must fail.
+    #[test]
+    fn set_admin_requires_auth() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+        let id = env.register(Contract, (admin.clone(),));
+        let client = ContractClient::new(&env, &id);
+
+        // Clear all authorizations: the require_auth on the current admin
+        // must now reject, and the admin must be unchanged.
+        env.set_auths(&[]);
+        assert!(client.try_set_admin(&new_admin).is_err());
+        assert_eq!(client.admin(), admin);
+    }
+
+    /// `set_admin` checks the *current* admin specifically — auth from a
+    /// non-admin address is not sufficient.
+    #[test]
+    fn set_admin_requires_current_admin_auth() {
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let imposter = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+        let id = env.register(Contract, (admin.clone(),));
+        let client = ContractClient::new(&env, &id);
+
+        // Only the imposter authorizes — the contract requires `admin`.
+        let res = client
+            .mock_auths(&[MockAuth {
+                address: &imposter,
+                invoke: &MockAuthInvoke {
+                    contract: &id,
+                    fn_name: "set_admin",
+                    args: (new_admin.clone(),).into_val(&env),
+                    sub_invokes: &[],
+                },
+            }])
+            .try_set_admin(&new_admin);
+        assert!(res.is_err());
+        assert_eq!(client.admin(), admin);
+    }
+
+    /// `upgrade` requires admin auth and (with auth mocked + an installed wasm)
+    /// succeeds. We install the embedded smart-account wasm to obtain a valid,
+    /// already-uploaded wasm hash for `update_current_contract_wasm`.
+    #[test]
+    fn upgrade_requires_admin_auth_and_succeeds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let id = env.register(Contract, (admin.clone(),));
+        let client = ContractClient::new(&env, &id);
+
+        // A valid, installed wasm hash for the host to upgrade to.
+        let wasm_hash = env
+            .deployer()
+            .upload_contract_wasm(Bytes::from_slice(&env, smart_account::WASM));
+
+        // With auth cleared the upgrade is rejected.
+        env.set_auths(&[]);
+        assert!(client.try_upgrade(&wasm_hash).is_err());
+
+        // With the admin's auth mocked it goes through.
+        env.mock_all_auths();
+        client.upgrade(&wasm_hash);
     }
 }

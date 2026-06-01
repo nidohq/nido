@@ -1,9 +1,13 @@
 import type { Friend, MultisigRecoveryBlock } from '@g2c/passkey-sdk';
-import { multisigRecoveryModule, resolveFriendInput, resolveName } from '@g2c/passkey-sdk';
+import {
+  multisigRecoveryModule,
+  resolveFriendInput,
+  resolveName,
+  fetchRegistryAddress,
+} from '@g2c/passkey-sdk';
 import { installRecovery } from './recoveryActions.js';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
-const REGISTRY_ID = 'CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX';
 const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 
 function emptyFriend(): Friend {
@@ -107,8 +111,13 @@ export function mountRecoveryForm(container: HTMLElement, account: string): void
         status.textContent = '…';
         try {
           const r = await resolveFriendInput(input.value, {
-            resolveName: (name) =>
-              resolveName(RPC_URL, REGISTRY_ID, name, NETWORK_PASSPHRASE),
+            resolveName: async (name) =>
+              resolveName(
+                RPC_URL,
+                await fetchRegistryAddress('name-registry'),
+                name,
+                NETWORK_PASSPHRASE,
+              ),
           });
           if (r) {
             f.address = r.address;

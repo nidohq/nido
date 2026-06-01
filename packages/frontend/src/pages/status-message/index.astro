@@ -123,17 +123,19 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     loadSessionKeyMaterial,
     forgetSessionKeyMaterial,
     signWithSessionPasskey,
+    fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
   import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
   import { startDelegation, readDelegationReturn } from "../../lib/delegationHandover.js";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
-  // Hardcoded so bindings can be regenerated without --contract-id (the
-  // stellar CLI generator only emits `networks` when contract-id is
-  // passed at regen time, and bindings are regenerated frequently).
-  const STATUS_CONTRACT = "CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV";
-  const FACTORY_CONTRACT_ID = "CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXHIERNOZPPYMUNBT2JZ2SK";
+  // Resolved by name via the on-chain registry (with a single hardcoded
+  // fallback inside `fetchRegistryAddress` for registry outages). Previously
+  // hardcoded here so bindings could be regenerated without --contract-id;
+  // routing through the registry keeps that property while making a redeploy
+  // a registry-only change.
+  const STATUS_CONTRACT = await fetchRegistryAddress("status-message");
 
   // WebAuthn verifier — resolved per-account from chain when signing.
   // Was previously a deterministic derivation from FACTORY+wasm_hash,

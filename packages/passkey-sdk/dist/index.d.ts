@@ -8,6 +8,8 @@ export { getContractSalt, computeAccountAddress, lookupExistingAccount, deploySm
 export { buf2hex, hex2buf, buf2base64url, base64url2buf, } from "./encoding.js";
 export { isContractId, contractIdFromHostname, nameFromHostname, accountUrl, stripSubdomain, dappPathFromHostname, dappUrl, RESERVED_DAPP_SUBDOMAINS, } from "./url.js";
 export { resolveName, resolveNameCached } from "./resolve.js";
+export { fetchRegistryAddress, REGISTRY_FALLBACKS } from "./registry.js";
+export type { FetchRegistryAddressOptions } from "./registry.js";
 export type { PendingAccount, SessionKeyMaterial } from "./storage.js";
 export { saveCredential, loadCredential, saveAccount, loadAccounts, savePendingAccount, loadPendingAccounts, removePendingAccount, activateAccount, saveAccountName, loadAccountName, saveFriendNickname, loadFriendNicknames, saveSessionKeyMaterial, loadSessionKeyMaterial, forgetSessionKeyMaterial, saveBlockLabel, loadBlockLabels, } from "./storage.js";
 export { extractXdrOperations } from './assembledTx.js';

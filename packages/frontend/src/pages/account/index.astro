@@ -365,11 +365,11 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     loadCredential as sdkLoadCredential,
     saveAccountName,
     loadAccountName,
+    fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
   import { formatSignResult } from "../../lib/formatting";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
-  const NAME_REGISTRY_ID = "CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX";
 
   // --- URL params (needed early for signing mode detection) ---
 
@@ -394,7 +394,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     try {
       const resolved = await resolveNameCached(
         RPC_URL,
-        NAME_REGISTRY_ID,
+        await fetchRegistryAddress("name-registry"),
         detectedName,
         "Test SDF Network ; September 2015"
       );
@@ -833,7 +833,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     async function getVerifierAddress(): Promise<string> {
       if (_verifierAddress) return _verifierAddress;
       const { Buffer } = await import("buffer");
-      const FACTORY_ID = "CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXHIERNOZPPYMUNBT2JZ2SK";
+      const FACTORY_ID = await fetchRegistryAddress("factory");
       const VERIFIER_HASH = Buffer.from([
         0xb9,0x39,0x33,0x11,0xf9,0x7b,0x49,0x8f,0xbb,0x89,0x76,0xec,0x50,0xdd,0x85,0x85,
         0xdd,0x99,0xad,0x44,0x3b,0x8f,0x13,0xec,0x5f,0x75,0x19,0x86,0x72,0x9f,0x99,0xbe,
@@ -891,7 +891,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         })
           .addOperation(
             Operation.invokeContractFunction({
-              contract: NAME_REGISTRY_ID,
+              contract: await fetchRegistryAddress("name-registry"),
               function: "register",
               args: [
                 Address.fromString(contractId).toScVal(),

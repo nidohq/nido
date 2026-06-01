@@ -12,6 +12,7 @@ import {
 import { Client as SmartAccountClient } from 'smart-account';
 import type { ContextRule, ContextRuleType, Signer } from 'smart-account';
 import type { ChainRule, ChainSigner, PolicyState } from '@g2c/passkey-sdk';
+import { fetchRegistryAddress as sdkFetchRegistryAddress } from '@g2c/passkey-sdk';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = Networks.TESTNET;
@@ -96,17 +97,17 @@ export async function fetchPolicyState(
 
 /** Resolve a canonical contract name via the on-chain registry. The factory
  *  uses this same lookup; the frontend mirrors it so SDK helpers can resolve
- *  policy and verifier addresses without going through the factory. */
+ *  policy and verifier addresses without going through the factory.
+ *
+ *  Delegates to the SDK's `fetchRegistryAddress` (single source of truth for
+ *  registry routing + hardcoded fallbacks), pinned to this frontend's testnet
+ *  RPC / network / registry constants. */
 export async function fetchRegistryAddress(name: string): Promise<string> {
-  const server = new rpc.Server(RPC_URL);
-  const rv = await simulateView(
-    server,
-    new Contract(REGISTRY_ADDRESS),
-    'fetch_contract_id',
-    nativeToScVal(name, { type: 'string' }),
-  );
-  // The registry returns an `Address` — scValToNative converts to a strkey.
-  return scValToNative(rv) as string;
+  return sdkFetchRegistryAddress(name, {
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    registryId: REGISTRY_ADDRESS,
+  });
 }
 
 /** Resolve the verifier address that THIS account actually trusts for its
