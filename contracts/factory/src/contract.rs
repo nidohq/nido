@@ -8,31 +8,44 @@ use stellar_accounts::smart_account::Signer;
 use crate::xlm;
 
 mod smart_account {
-    //! Embeds the smart-account wasm so the factory no longer hardcodes its
-    //! wasm hash. The bytes are staged by `build.rs` (which copies the
-    //! `just build-contracts` output, `g2c_smart_account.wasm`, into the
-    //! location `import_contract_client!` resolves) and pulled in here via
-    //! `include_bytes!`. The deploy hash is derived at runtime from these bytes
-    //! (see `super::Contract::account_wasm_hash`), so it tracks the wasm
-    //! automatically — no more hand-recomputed `ACCOUNT_HASH`.
+    //! Embeds the smart-account contract wasm so the factory no longer
+    //! hardcodes its wasm hash. The mechanism:
     //!
-    //! NOTE: the issue asked for
-    //! `stellar_registry::import_contract_client!("unverified/smart-account@0.1.0")`.
-    //! That macro expands to `soroban_sdk::contractimport!`, which also
-    //! generates a typed contract `Client`. The smart-account's
+    //!  1. `build.rs` stages the `just build-contracts` output
+    //!     (`g2c_smart_account.wasm`) and emits `STELLAR_ACCOUNT_WASM` pointing
+    //!     at it.
+    //!  2. `include_bytes!(env!("STELLAR_ACCOUNT_WASM"))` embeds those exact
+    //!     bytes into the factory wasm as `WASM` below.
+    //!  3. At runtime the factory computes `sha256(WASM)` (see
+    //!     `super::Contract::account_wasm_hash`) and passes that hash to
+    //!     `deploy_v2`. So the deploy hash tracks the embedded bytes
+    //!     automatically — no more hand-recomputed `ACCOUNT_HASH`.
+    //!
+    //! For `deploy_v2` to resolve, those same bytes must already be installed
+    //! on-chain. The deploy script's smart-account publish step
+    //! (`scripts/deploy-policy-builder-v1.sh`) installs the locally-built wasm
+    //! and asserts its sha256 matches what the factory embeds, so the
+    //! embed==installed invariant holds.
+    //!
+    //! NOTE: an earlier approach used
+    //! `stellar_registry::import_contract_client!("unverified/smart-account@0.1.0")`,
+    //! which expands to `soroban_sdk::contractimport!` and also generates a
+    //! typed contract `Client`. The smart-account's
     //! `__check_auth(..., auth_contexts: Vec<Context>)` signature makes the
-    //! generator emit a bare `Context` type that it neither defines nor
-    //! imports (the same soroban-spec gap `scripts/fix-bindings.sh` patches for
-    //! the TS bindings), so the generated client fails to compile inside the
+    //! generator emit a bare `Context` type that it neither defines nor imports
+    //! (the same soroban-spec gap `scripts/fix-bindings.sh` patches for the TS
+    //! bindings), so the generated client fails to compile inside the
     //! macro-created module — which we cannot edit. We therefore embed only the
     //! wasm bytes (no client), avoiding the gap while still eliminating the
-    //! hardcoded hash, which is what the issue is about. See the PR body.
+    //! hardcoded hash. The registry `ACCOUNT_VERSION` is now just a label under
+    //! which the bytes are published; nothing enforces it equals the embedded
+    //! wasm — the sha256 comparison in the deploy script does that.
     //!
     //! `STELLAR_ACCOUNT_WASM` is an absolute path emitted by `build.rs`; the
     //! built-in `include_bytes!` macro expands `env!` eagerly.
 
-    /// Raw smart-account contract wasm. Equivalent to the `WASM` const that
-    /// `contractimport!` would generate.
+    /// Raw smart-account contract wasm, embedded at build time. `sha256` of
+    /// these bytes is the hash the factory hands to `deploy_v2`.
     pub const WASM: &[u8] = include_bytes!(env!("STELLAR_ACCOUNT_WASM"));
 }
 
@@ -113,7 +126,22 @@ impl Contract {
     /// wasm hash that `deploy_v2` expects. Derived from `smart_account::WASM`
     /// (embedded at build time) so it tracks the wasm automatically instead of
     /// a hand-maintained constant.
+    ///
+    /// Hashing the full ~33 KB wasm inside the host is not free, so the result
+    /// is cached in instance storage (`Config::account`) and computed only on
+    /// the first call. Subsequent `create_account` calls read the cached value.
     fn account_wasm_hash(e: &Env) -> BytesN<32> {
+        if let Some(cached) = Config::get_account(e) {
+            return cached;
+        }
+        let hash = Self::compute_account_wasm_hash(e);
+        Config::set_account(e, &hash);
+        hash
+    }
+
+    /// Freshly compute `sha256(smart_account::WASM)` without consulting the
+    /// cache. Used to populate the cache and as the source of truth in tests.
+    fn compute_account_wasm_hash(e: &Env) -> BytesN<32> {
         e.crypto()
             .sha256(&Bytes::from_slice(e, smart_account::WASM))
             .to_bytes()
@@ -164,13 +192,16 @@ mod test {
         assert_eq!(first, second);
     }
 
-    /// The runtime-derived deploy hash must equal the SHA-256 of the embedded
-    /// smart-account wasm — i.e. the installed-wasm hash `deploy_v2` expects.
-    /// This is the value that used to be the hand-maintained `ACCOUNT_HASH`
-    /// constant; deriving it guarantees it stays in lockstep with the wasm.
+    /// The property that actually matters: the hash the factory hands to
+    /// `deploy_v2` must equal the hash the host assigns when the *same* bytes
+    /// are installed/uploaded on-chain. `upload_contract_wasm` returns exactly
+    /// the hash `deploy_v2` later demands, so proving they're equal proves the
+    /// embedded wasm will resolve at deploy time (not just that we recomputed
+    /// our own function body).
     #[test]
-    fn account_wasm_hash_matches_sha256_of_embedded_wasm() {
+    fn account_wasm_hash_equals_uploaded_wasm_hash() {
         let env = Env::default();
+        env.mock_all_auths();
 
         // The embedded wasm is staged by build.rs and must be non-empty
         // (catches a mis-staged / empty file).
@@ -179,14 +210,43 @@ mod test {
             "embedded smart-account wasm is empty"
         );
 
-        let hash = Contract::account_wasm_hash(&env);
+        // Hash the host assigns when these exact bytes are installed on-chain —
+        // i.e. the hash `deploy_v2` will look up.
+        let uploaded = env.deployer().upload_contract_wasm(smart_account::WASM);
 
-        // Independent SHA-256 of the same bytes via the host's hash util.
-        let expected = env
-            .crypto()
-            .sha256(&Bytes::from_slice(&env, smart_account::WASM))
-            .to_bytes();
-        assert_eq!(hash, expected);
-        assert_eq!(hash.to_array().len(), 32);
+        let factory_addr = env.register(Contract, ());
+        let derived = env.as_contract(&factory_addr, || Contract::account_wasm_hash(&env));
+
+        assert_eq!(
+            derived, uploaded,
+            "factory deploy hash must match the installed-wasm hash"
+        );
+        assert_eq!(derived.to_array().len(), 32);
+    }
+
+    /// The cached hash (read back from instance storage on the second call)
+    /// must equal the freshly-computed hash. Guards the lazy-cache path added
+    /// to avoid rehashing the ~33 KB wasm on every `create_account`.
+    #[test]
+    fn account_wasm_hash_caches_first_computation() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let factory_addr = env.register(Contract, ());
+
+        env.as_contract(&factory_addr, || {
+            // Nothing cached yet.
+            assert!(Config::get_account(&env).is_none());
+
+            let fresh = Contract::compute_account_wasm_hash(&env);
+
+            // First call computes and caches.
+            let first = Contract::account_wasm_hash(&env);
+            assert_eq!(first, fresh);
+            assert_eq!(Config::get_account(&env), Some(fresh.clone()));
+
+            // Second call reads the cache and returns the identical value.
+            let second = Contract::account_wasm_hash(&env);
+            assert_eq!(second, fresh);
+        });
     }
 }

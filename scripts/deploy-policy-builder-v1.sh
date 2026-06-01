@@ -28,9 +28,10 @@
 #                        testnet instance the frontend currently targets).
 #   POLICY_VERSION       multisig-policy semantic version (default 0.1.0).
 #   ACCOUNT_VERSION      smart-account wasm version to publish under
-#                        unverified/smart-account (default 0.1.0). Must match
-#                        the version in the factory's import_contract_client!
-#                        reference so the factory deploys the published wasm.
+#                        unverified/smart-account (default 0.1.0). This is just
+#                        the registry label; the factory deploys by sha256 of
+#                        its embedded wasm, and this script asserts the
+#                        published bytes' hash matches that embedded wasm.
 #   FACTORY_VERSION      factory wasm version to publish + upgrade to
 #                        (default 0.2.0).
 #   REGISTRY_PREFIX      Prefix for unverified registry names (default
@@ -114,6 +115,20 @@ fetch_contract_id() {
     out="$(stellar registry fetch-contract-id "$name" --source-account "$ALIAS" 2>/dev/null)" \
         || return 0
     printf '%s' "$out" | grep -oE 'C[A-Z0-9]{55}' | head -1
+}
+
+# Print the lowercase hex sha256 of a file, using whichever tool is available
+# (sha256sum on Linux, shasum -a 256 on macOS). Returns non-zero if neither
+# tool exists so the caller can `die` with context.
+sha256_of() {
+    local file="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | awk '{print $1}'
+    else
+        return 1
+    fi
 }
 
 # Returns the wasm hash for a published (name, version), empty if not published.
@@ -219,17 +234,18 @@ else
     ok "deployed $VERIFIER_NAME: $verifier_addr"
 fi
 
-# --- smart-account (publish so the factory's wasm hash is resolvable) -----
+# --- smart-account (publish so the factory's deploy hash is resolvable) ---
 
 note "smart-account · publish v$ACCOUNT_VERSION"
 
-# The factory references the smart-account wasm by name+version via
-# `import_contract_client!("unverified/smart-account@$ACCOUNT_VERSION")`. The
-# factory deploys instances by the smart-account's wasm hash, which must be
-# installed/published on-chain. Publishing under the canonical name keeps the
-# wasm discoverable and lets `stellar registry download` resolve it for builds
-# that don't have a local copy. This is publish-only (no deploy): the factory
-# creates the account instances at runtime.
+# The factory EMBEDS the smart-account wasm (via include_bytes! in
+# contracts/factory/build.rs, which embeds the locally-built
+# target/wasm32v1-none/contract/g2c_smart_account.wasm) and deploys instances
+# by sha256 of those embedded bytes. For deploy_v2 to resolve, those EXACT
+# bytes must be installed on-chain — that's what this publish step does.
+# Publish-only (no deploy): the factory creates account instances at runtime.
+# The $ACCOUNT_VERSION here is just the registry label; nothing enforces it
+# equals the embedded wasm — the sha256 assertion below does that.
 published_account_hash="$(fetch_hash "$ACCOUNT_NAME" "$ACCOUNT_VERSION")"
 if [ -n "$published_account_hash" ]; then
     skip "$ACCOUNT_NAME@$ACCOUNT_VERSION already published (hash $published_account_hash)"
@@ -241,6 +257,25 @@ else
         --source-account "$ALIAS"
     published_account_hash="$(fetch_hash "$ACCOUNT_NAME" "$ACCOUNT_VERSION")"
     ok "published $ACCOUNT_NAME@$ACCOUNT_VERSION (hash $published_account_hash)"
+fi
+
+# Enforce the embed==installed invariant: the factory deploys by
+# sha256(embedded wasm), where the embedded wasm IS this locally-built
+# $ACCOUNT_WASM (factory's build.rs embeds exactly this file). Assert the hash
+# published on-chain equals the local sha256 of that same file. This catches
+# "factory embeds build A but the registry installed build B" — a mismatch
+# would make every factory deploy_v2 fail at runtime.
+note "smart-account · verify embed==installed hash"
+
+local_account_hash="$(sha256_of "$ACCOUNT_WASM")" \
+    || die "could not compute sha256 of $ACCOUNT_WASM (need sha256sum or shasum)"
+
+if [ -z "$published_account_hash" ]; then
+    die "could not read the published hash for $ACCOUNT_NAME@$ACCOUNT_VERSION from the registry to verify against the embedded wasm."
+elif [ "$local_account_hash" != "$published_account_hash" ]; then
+    die "$(printf 'smart-account wasm hash MISMATCH — the factory embeds bytes the registry did NOT install:\n  local  sha256($ACCOUNT_WASM) = %s\n  registry %s@%s        = %s\nThe factory deploys by sha256 of its embedded wasm, so deploy_v2 would fail.\nRebuild (just build-contracts) and republish so the installed bytes match what the factory embeds.' "$local_account_hash" "$ACCOUNT_NAME" "$ACCOUNT_VERSION" "$published_account_hash")"
+else
+    ok "embed==installed verified: sha256($ACCOUNT_NAME) = $local_account_hash"
 fi
 
 # --- Task 4b: factory publish + upgrade ----------------------------------
