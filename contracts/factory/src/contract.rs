@@ -91,7 +91,7 @@ impl Contract {
         Config::new(e)
             .admin
             .get()
-            .expect("factory admin not set; contract not constructed")
+            .expect("factory admin not set; deploy a fresh factory (old instances predate admin)")
     }
 
     /// Rotate the admin. Requires the current admin's auth.
@@ -239,7 +239,9 @@ mod test {
         // i.e. the hash `deploy_v2` will look up.
         let uploaded = env.deployer().upload_contract_wasm(smart_account::WASM);
 
-        let factory_addr = env.register(Contract, ());
+        // The admin arg is irrelevant here; this test only exercises the
+        // wasm-hash derivation, but the constructor requires one.
+        let factory_addr = env.register(Contract, (Address::generate(&env),));
         let derived = env.as_contract(&factory_addr, || Contract::account_wasm_hash(&env));
 
         assert_eq!(
@@ -256,7 +258,9 @@ mod test {
     fn account_wasm_hash_caches_first_computation() {
         let env = Env::default();
         env.mock_all_auths();
-        let factory_addr = env.register(Contract, ());
+        // The admin arg is irrelevant here; this test only exercises the
+        // wasm-hash cache, but the constructor requires one.
+        let factory_addr = env.register(Contract, (Address::generate(&env),));
 
         env.as_contract(&factory_addr, || {
             // Nothing cached yet.
