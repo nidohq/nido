@@ -1,43 +1,106 @@
 ---
-import BaseLayout from '../../layouts/BaseLayout.astro';
+// Nido reskin of the dApp signing-request screen (chunk 2D).
+//
+// SECURITY-CRITICAL: the signing ceremony (signTransactionXdr / signMessageRaw /
+// signAuthEntryXdr, loadCredential) and the origin / return-URL validation below
+// are preserved BYTE-FOR-BYTE from the BaseLayout original. Only the markup,
+// copy (Nido voice), and the visual passkey-confirm sheet are new. The real
+// ceremony is driven through `withPasskeySheet(realCeremony)`.
+import NidoLayout from '../../layouts/NidoLayout.astro';
+import Logo from '../../components/Logo.astro';
+import Icon from '../../components/Icon.astro';
+import Toast from '../../components/Toast.astro';
+import PasskeySheet from '../../components/PasskeySheet.astro';
 ---
-<BaseLayout title="Sign request">
-  <main class="sign">
-    <h1>Signature request</h1>
-    <p class="info">
-      The dApp at <code id="dapp-origin">…</code> is asking this account to
-      sign a <span id="kind-label">request</span>.
-    </p>
+<NidoLayout title="Sign request">
+  <div class="topbar">
+    <Logo mark size={20} />
+    <span class="chip mono" id="net-chip" hidden></span>
+  </div>
 
-    <dl class="kv">
-      <dt>Account</dt><dd><code id="account-text" class="wrap"></code></dd>
-      <dt id="payload-label">Payload</dt><dd><code id="payload-text" class="wrap"></code></dd>
-    </dl>
+  <div class="col-scroll">
+    <div class="pad screen-in">
+      <div class="eyebrow">
+        <span class="chip acc"><Icon name="shieldcheck" size={14} stroke={2} /> Signature request</span>
+      </div>
 
-    <div id="error-box" class="error" style="display:none"></div>
+      <h1 class="disp head">Confirm it's you</h1>
+      <p class="lead mut">
+        <code class="hl" id="dapp-origin">…</code> wants this account to sign a
+        <span id="kind-label">request</span>.
+      </p>
 
-    <div id="needs-register" class="hidden">
-      <p class="info">No passkey is registered on this device for this account.
-         Open the account page to register it first.</p>
+      <div class="card review">
+        <div class="rev-row">
+          <span class="rev-key mut">Account</span>
+          <code class="rev-val mono" id="account-text"></code>
+        </div>
+        <hr class="divider" />
+        <div class="rev-row col">
+          <span class="rev-key mut" id="payload-label">Payload</span>
+          <code class="rev-val mono wrap" id="payload-text"></code>
+        </div>
+      </div>
+
+      <div id="error-box" class="alert danger" style="display:none"></div>
+
+      <div id="needs-register" class="hidden">
+        <div class="alert warn">
+          <Icon name="key" size={18} stroke={2} />
+          <span>No passkey is registered on this device for this account. Open the
+          account page to register it first.</span>
+        </div>
+      </div>
+
+      <p id="status" class="status mut"></p>
     </div>
+  </div>
 
-    <div class="actions">
-      <button id="approve" type="button">Approve &amp; sign</button>
-      <button id="cancel" type="button">Cancel</button>
+  <div class="footer">
+    <div class="btn-row">
+      <button id="cancel" type="button" class="btn ghost">Cancel</button>
+      <button id="approve" type="button" class="btn acc">
+        <Icon name="faceid" size={18} stroke={2} color="#fff" /> Confirm
+      </button>
     </div>
-    <p id="status" class="info"></p>
-  </main>
-</BaseLayout>
+  </div>
+
+  <Toast />
+  <PasskeySheet />
+</NidoLayout>
 
 <style>
-  .sign { max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
-  .hidden { display: none; }
-  .actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
-  code { background: #0a2040; padding: 1px 4px; border-radius: 2px; }
-  code.wrap { word-break: break-all; }
-  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin: 1rem 0; }
-  dl.kv dt { color: #8899aa; }
-  dl.kv dd { margin: 0; }
+  .topbar { justify-content: space-between; }
+  .eyebrow { margin: 4px 0 14px; }
+  .head { font-weight: 800; font-size: 30px; margin: 0 0 8px; }
+  .lead { font-size: 14.5px; line-height: 1.55; margin: 0 0 20px; }
+  code.hl {
+    font-family: var(--mono); font-size: 12.5px; color: var(--acc-ink);
+    background: var(--acc-soft); padding: 1px 7px; border-radius: var(--r-sm);
+    word-break: break-all;
+  }
+
+  .review { padding: 4px 16px; margin-bottom: 16px; }
+  .rev-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 0; }
+  .rev-row.col { flex-direction: column; align-items: flex-start; gap: 7px; }
+  .rev-key { font-size: 12.5px; font-weight: 700; }
+  .rev-val { font-size: 12.5px; }
+  .rev-val.wrap { word-break: break-all; line-height: 1.55; color: var(--ink-soft); }
+
+  .alert {
+    display: flex; align-items: flex-start; gap: 9px;
+    border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 14px;
+    font-size: 13px; line-height: 1.5; font-weight: 600;
+  }
+  .alert.danger { background: var(--acc-soft); color: var(--danger); }
+  .alert.warn { background: var(--warn-soft); color: var(--warn); }
+
+  .status { font-size: 13px; margin: 4px 0 0; min-height: 18px; }
+
+  .footer {
+    padding: 14px 22px calc(18px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line); background: var(--paper-2);
+  }
 </style>
 
 <script>
@@ -45,6 +108,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   import { loadCredential } from '@g2c/passkey-sdk';
   import { postResultToOpener } from '@g2c/stellar-wallets-kit-module';
   import { signTransactionXdr, signMessageRaw, signAuthEntryXdr } from '../../lib/walletSign.js';
+  import { withPasskeySheet } from '../../lib/passkeySheet';
+  import { detectPasskeyLabel } from '../../lib/passkeyLabel';
+  import { shortAddr } from '../../lib/address';
 
   const params = new URLSearchParams(window.location.search);
   const kind = params.get('kind') ?? 'tx';
@@ -60,8 +126,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
   function showError(msg: string) { $err.textContent = msg; $err.style.display = 'block'; }
 
+  // Reskin copy: detected platform passkey label drives the confirm voice.
+  const passkey = detectPasskeyLabel();
+
   document.getElementById('dapp-origin')!.textContent = dappOrigin || '(unknown)';
-  document.getElementById('account-text')!.textContent = account || '(missing)';
+  document.getElementById('account-text')!.textContent = account ? shortAddr(account, 6, 6) : '(missing)';
+
+  if (network) {
+    const chip = document.getElementById('net-chip')!;
+    chip.textContent = network.includes('Test') ? 'Testnet' : network.includes('Public') ? 'Mainnet' : 'Custom';
+    chip.hidden = false;
+  }
 
   const payload =
     kind === 'tx' ? (params.get('xdr') ?? '')
@@ -116,17 +191,23 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   approve.addEventListener('click', async () => {
     approve.disabled = true;
     try {
-      $status.textContent = 'Signing with your passkey…';
-      let signed: string;
-      if (kind === 'tx') {
-        signed = await signTransactionXdr({ account: account!, txXdr: payload, networkPassphrase: network });
-      } else if (kind === 'message') {
-        signed = await signMessageRaw({ account: account!, message: payload });
-      } else if (kind === 'authEntry') {
-        signed = await signAuthEntryXdr({ account: account!, authEntryXdr: payload });
-      } else {
-        throw new Error(`Unknown sign kind: ${kind}`);
-      }
+      $status.textContent = `Confirming with ${passkey.label}…`;
+      // Drive the REAL signing ceremony through the Nido confirm sheet. The
+      // sheet is purely visual; the promise it awaits is the genuine signature.
+      const signed: string = await withPasskeySheet(
+        async () => {
+          if (kind === 'tx') {
+            return await signTransactionXdr({ account: account!, txXdr: payload, networkPassphrase: network });
+          } else if (kind === 'message') {
+            return await signMessageRaw({ account: account!, message: payload });
+          } else if (kind === 'authEntry') {
+            return await signAuthEntryXdr({ account: account!, authEntryXdr: payload });
+          } else {
+            throw new Error(`Unknown sign kind: ${kind}`);
+          }
+        },
+        { title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` },
+      );
       $status.textContent = 'Done — returning to dApp…';
       const qs = new URLSearchParams({ g2c_signed: signed, kind });
       setTimeout(() => finish(`?${qs.toString()}`), 300);

@@ -1,52 +1,124 @@
 ---
-import BaseLayout from '../../layouts/BaseLayout.astro';
+// Nido reskin of the dApp connect / account-picker screen (chunk 2D).
+//
+// SECURITY-CRITICAL: the #34 redirect ceremony (postResultToOpener) and the
+// return / dapp same-origin validation (`validatedReturn`) are preserved
+// BYTE-FOR-BYTE from the BaseLayout original. Only the markup, copy (Nido
+// voice), and the account-picker visual are new. No signing happens here.
+import NidoLayout from '../../layouts/NidoLayout.astro';
+import Logo from '../../components/Logo.astro';
+import Icon from '../../components/Icon.astro';
+import Toast from '../../components/Toast.astro';
 ---
-<BaseLayout title="Connect to dApp">
-  <main class="connect">
-    <h1>Choose an account</h1>
-    <p class="info">
-      The dApp at <code id="dapp-origin">…</code> wants to connect to one of
-      your g2c smart accounts. Only the account's public address is shared —
-      no signing happens here.
-    </p>
+<NidoLayout title="Connect to dApp">
+  <div class="topbar">
+    <Logo mark size={20} />
+    <span class="chip good"><span class="dot"></span> Read-only</span>
+  </div>
 
-    <div id="error-box" class="error" style="display:none"></div>
+  <div class="col-scroll">
+    <div class="pad screen-in">
+      <div class="eyebrow">
+        <span class="chip acc"><Icon name="link" size={14} stroke={2} /> Connection request</span>
+      </div>
 
-    <section id="accounts-section">
-      <div id="accounts-list"></div>
-      <p id="no-accounts" class="info hidden">
-        No accounts found on this device. <a href="/">Create one first</a>,
-        then come back.
+      <h1 class="disp head">Choose which Nido to use</h1>
+      <p class="lead mut">
+        <code class="hl" id="dapp-origin">…</code> wants to connect. Only the
+        account's public address is shared — no signing happens here.
       </p>
-    </section>
 
-    <div class="actions">
-      <button id="cancel" type="button">Cancel</button>
+      <div id="error-box" class="alert danger" style="display:none"></div>
+
+      <section id="accounts-section">
+        <div id="accounts-list" class="picker"></div>
+        <div id="no-accounts" class="empty hidden">
+          <Icon name="wallet" size={26} stroke={1.7} color="var(--mut)" />
+          <p>No accounts on this device. <a class="link" href="/">Create one first</a>, then come back.</p>
+        </div>
+      </section>
     </div>
-  </main>
-</BaseLayout>
+  </div>
+
+  <div class="footer">
+    <button id="cancel" type="button" class="btn ghost block">Cancel</button>
+  </div>
+
+  <Toast />
+</NidoLayout>
 
 <style>
-  .connect { max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
-  .hidden { display: none; }
-  .actions { margin-top: 1.25rem; }
-  code { background: #0a2040; padding: 1px 4px; border-radius: 2px; }
-  #accounts-list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }
-  .account-row {
-    display: flex; align-items: center; gap: 0.75rem;
-    background: #0a2040; border: 1px solid #1a3060; border-radius: 6px;
-    padding: 0.6rem 0.85rem; text-align: left; cursor: pointer; width: 100%;
-    color: inherit; font: inherit;
+  .topbar { justify-content: space-between; }
+  .eyebrow { margin: 4px 0 14px; }
+  .head { font-weight: 800; font-size: 30px; margin: 0 0 8px; }
+  .lead { font-size: 14.5px; line-height: 1.55; margin: 0 0 20px; }
+  code.hl {
+    font-family: var(--mono); font-size: 12.5px; color: var(--acc-ink);
+    background: var(--acc-soft); padding: 1px 7px; border-radius: var(--r-sm);
+    word-break: break-all;
   }
-  .account-row:hover { background: #0d2850; border-color: #2a5090; }
-  .account-info { flex: 1; min-width: 0; }
-  .account-name { font-size: 0.95rem; font-weight: 600; color: #e0e0e0; }
-  .account-address { font-family: monospace; font-size: 0.72rem; color: #8899aa; word-break: break-all; }
+
+  .picker { display: flex; flex-direction: column; gap: 10px; }
+
+  .empty {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    text-align: center; padding: 28px 16px; color: var(--mut);
+    border: 1px dashed var(--line); border-radius: var(--r-lg);
+  }
+  .empty p { margin: 0; font-size: 13.5px; line-height: 1.5; }
+
+  .alert {
+    border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 14px;
+    font-size: 13px; line-height: 1.5; font-weight: 600;
+  }
+  .alert.danger { background: var(--acc-soft); color: var(--danger); }
+
+  .footer {
+    padding: 14px 22px calc(18px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line); background: var(--paper-2);
+  }
+</style>
+
+<style is:global>
+  /* Account-picker row — walletswitch-style tappable card. Global so the
+     buttons created in the page <script> are matched. */
+  .picker .account-row {
+    display: flex; align-items: center; gap: 13px; width: 100%;
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: var(--r-lg); padding: 13px 15px; cursor: pointer;
+    text-align: left; color: inherit; font: inherit;
+    transition: border-color .15s, box-shadow .15s, transform .14s cubic-bezier(.2,.7,.3,1);
+  }
+  .picker .account-row:hover { border-color: var(--acc); box-shadow: var(--sh-1); }
+  .picker .account-row:active { transform: scale(.985); }
+  .picker .account-row:disabled { opacity: .42; cursor: not-allowed; }
+  .picker .account-info { flex: 1; min-width: 0; }
+  .picker .account-name { font-size: 14.5px; font-weight: 700; color: var(--ink); }
+  .picker .account-address { font-family: var(--mono); font-size: 12px; color: var(--mut); word-break: break-all; }
+  .picker .account-row .chev { color: var(--mut); flex: 0 0 auto; }
 </style>
 
 <script>
   import { loadAccounts, loadAccountName, isContractId } from '@g2c/passkey-sdk';
   import { postResultToOpener } from '@g2c/stellar-wallets-kit-module';
+  import { shortAddr } from '../../lib/address';
+
+  // Deterministic identicon avatar — FNV-1a hash → hsl radial gradient.
+  // Mirrors src/components/Avatar.astro so picker rows built at runtime match
+  // the Nido avatar look without a server render.
+  function avatarEl(seed: string): HTMLElement {
+    let h = 2166136261;
+    for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
+    h = h >>> 0;
+    const hue1 = h % 360;
+    const hue2 = (h >> 3) % 360;
+    const el = document.createElement('div');
+    el.style.cssText =
+      `width:38px;height:38px;border-radius:50%;flex:0 0 auto;` +
+      `background:radial-gradient(circle at 32% 28%, hsl(${hue1} 70% 62%), hsl(${hue2} 65% 42%));` +
+      `box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.35);`;
+    return el;
+  }
 
   const params = new URLSearchParams(window.location.search);
   const dappOrigin = params.get('dapp') ?? '';
@@ -105,6 +177,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     btn.className = 'account-row';
     btn.type = 'button';
 
+    btn.appendChild(avatarEl(cAddress));
+
     const info = document.createElement('div');
     info.className = 'account-info';
     if (name) {
@@ -115,9 +189,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     }
     const addr = document.createElement('div');
     addr.className = 'account-address';
-    addr.textContent = cAddress;
+    addr.textContent = name ? shortAddr(cAddress, 6, 6) : cAddress;
     info.appendChild(addr);
     btn.appendChild(info);
+
+    const chev = document.createElement('span');
+    chev.className = 'chev';
+    chev.innerHTML =
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+    btn.appendChild(chev);
 
     btn.addEventListener('click', () => {
       finish(`?g2c_address=${cAddress}`);
