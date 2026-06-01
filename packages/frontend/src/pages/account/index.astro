@@ -1,333 +1,266 @@
 ---
-import BaseLayout from "../../layouts/BaseLayout.astro";
+// Nido reskin of the ACCOUNT / home page. Real logic is preserved verbatim
+// from the original (BaseLayout) version — only the markup, copy and presentation
+// are reskinned to the Nido "Warm Nest" design system.
+//
+// Layouts: NidoLayout (NOT BaseLayout). Toast + PasskeySheet are mounted once
+// here so toast() and withPasskeySheet() work.
+//
+// Preserved logic (rewired, not rewritten):
+//   - initAccountCard / fetchXlmBalance — REAL XLM balance (no fabricated USD).
+//   - copy-address — now uses toast() for "Copied!" feedback.
+//   - name section — saveAccountName/loadAccountName + claim/sign-redirect-return flow.
+//   - passkey-info section, register section, sign-a-hash section.
+//   - signing mode — reskinned with PasskeySheet + withPasskeySheet(realCeremony);
+//     loadCredential / signHash / registerPasskey plumbing intact.
+//
+// Send & Activity from the prototype are intentionally OMITTED (no backend).
+// "Settings" links out to the existing /security/ page (no settings built here).
+import NidoLayout from "../../layouts/NidoLayout.astro";
+import Toast from "../../components/Toast.astro";
+import PasskeySheet from "../../components/PasskeySheet.astro";
+import Avatar from "../../components/Avatar.astro";
+import Icon from "../../components/Icon.astro";
+import Qr from "../../components/Qr.astro";
+import Logo from "../../components/Logo.astro";
 ---
 
-<BaseLayout title="Contract Account Wallet">
-  <div class="page-header">
-    <h1>Contract Account Wallet</h1>
-    <div class="header-links">
-      <a id="home-link" class="home-btn">Home</a>
-      <a href="/security/" class="nav-link" style="display:inline-block;margin-left:1rem">Security →</a>
-    </div>
-  </div>
-
-  <div id="error-box" class="error" style="display:none"></div>
-
-  <!-- Signing mode UI -->
-  <div id="signing-mode" class="hidden">
-    <div class="signing-request">
-      <h2>Signature Request</h2>
-      <div>From: <span class="origin" id="sign-origin"></span></div>
-      <div class="hash">Hash: <code id="sign-hash"></code></div>
-    </div>
-
-    <div id="sign-needs-register">
-      <p class="info">No passkey registered yet. Register one first, then you can approve the request.</p>
-      <div class="field">
-        <button id="sign-register-btn">Register Passkey</button>
-      </div>
-    </div>
-
-    <div id="sign-ready" class="hidden">
-      <div class="field">
-        <button id="approve-btn" class="primary">Approve & Sign</button>
-        <button id="deny-btn" style="margin-left:0.5rem">Deny</button>
-      </div>
-    </div>
-
-    <pre id="sign-mode-result" style="display:none"></pre>
-  </div>
-
-  <!-- Home mode UI -->
-  <div id="home-mode" class="hidden">
-    <section id="account-section">
-      <h2>Account</h2>
-      <div class="account-card">
-        <div class="account-field">
-          <span class="account-label">Address</span>
-          <div class="address-row">
-            <code id="contract-id" class="account-address"></code>
-            <button id="copy-btn" class="copy-btn" title="Copy address">Copy</button>
-          </div>
-        </div>
-        <div class="account-field">
-          <span class="account-label">Balance</span>
-          <span id="xlm-balance" class="balance-value">loading...</span>
-        </div>
-        <div class="account-links">
-          <a id="explorer-link" class="explorer-link" target="_blank" rel="noopener" style="display:none">View on Stellar Expert</a>
-        </div>
-      </div>
-    </section>
-
-    <!-- Name section -->
-    <section id="name-section" class="hidden">
-      <h2>Account Name</h2>
-      <div id="name-display" class="hidden">
-        <div class="account-card">
-          <div class="account-field">
-            <span class="account-label">Name</span>
-            <code id="account-name" class="account-address"></code>
-          </div>
-          <div class="account-field">
-            <span class="account-label">Shareable URL</span>
-            <a id="name-url" class="name-link"></a>
+<NidoLayout title="Your Nido">
+  <div class="col-scroll scroll-hide">
+    <!-- top bar -->
+    <div class="topbar">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <Avatar seed="nido" size={36} class="js-avatar" />
+        <div style="text-align:left;">
+          <div id="account-nickname" style="font-weight:800; font-size:14.5px; white-space:nowrap;">Your Nido</div>
+          <div class="mut" style="font-size:11.5px; font-weight:600; display:flex; align-items:center; gap:5px; white-space:nowrap;">
+            <span class="dot" style="background:var(--good); width:6px; height:6px;"></span> Only you
           </div>
         </div>
       </div>
-      <div id="name-claim" class="hidden">
-        <p class="info">Claim a human-readable name for your account. Names are 1-15 characters, lowercase letters and digits only.</p>
-        <div class="field">
-          <label for="name-input">Name</label>
-          <input id="name-input" placeholder="e.g. alice" maxlength="15" pattern="[a-z][a-z0-9]*" />
-        </div>
-        <div class="field" style="margin-top:0.5rem">
-          <button id="claim-name-btn">Claim Name</button>
-        </div>
-        <div id="name-result" class="progress" style="display:none"></div>
-      </div>
-    </section>
+      <a id="home-link" class="btn ghost sm" href="/" style="width:42px; height:42px; padding:0; border-radius:13px;" title="Home" aria-label="Home">
+        <Icon name="home" size={20} />
+      </a>
+    </div>
 
-    <!-- Shown when a passkey is already registered -->
-    <section id="passkey-info-section" class="hidden">
-      <h2>Passkey</h2>
-      <div class="passkey-details">
-        <div class="passkey-status">Registered</div>
-        <div class="passkey-field">
-          <span class="passkey-label">Public Key</span>
-          <code id="passkey-pubkey" class="passkey-value"></code>
+    <div id="error-box" class="card" style="display:none; margin:8px 22px; padding:13px 16px; background:var(--warn-soft); border-color:#ecdcb8; color:var(--warn); font-size:13.5px; line-height:1.45;"></div>
+
+    <!-- ============================================================= -->
+    <!-- SIGNING MODE — reskinned signature request                    -->
+    <!-- ============================================================= -->
+    <div id="signing-mode" class="hidden screen-in pad" style="padding-top:18px;">
+      <div style="text-align:center; margin-bottom:18px;">
+        <div style="width:72px; height:72px; border-radius:20px; background:var(--acc-soft); display:grid; place-items:center; margin:0 auto 14px;">
+          <Icon name="shieldcheck" size={36} color="var(--acc)" />
         </div>
-        <div class="passkey-field">
-          <span class="passkey-label">Credential ID</span>
-          <code id="passkey-cred-id" class="passkey-value"></code>
-        </div>
-        <div class="passkey-field">
-          <span class="passkey-label">RP ID</span>
-          <code id="passkey-rp-id" class="passkey-value"></code>
-        </div>
-        <p class="info rp-explainer">
-          The RP ID (Relying Party Identifier) is the domain that your passkey is bound to.
-          Each smart account gets its own subdomain, so passkeys are scoped per-account
-          and cannot be used to authorize transactions on a different account.
+        <div class="disp" style="font-weight:800; font-size:26px;">Approve this request</div>
+        <p class="mut" style="font-size:14px; line-height:1.5; max-width:320px; margin:8px auto 0;">
+          A dApp is asking you to sign. Review it, then confirm with your passkey.
         </p>
       </div>
-    </section>
 
-    <!-- Shown when no passkey is registered -->
-    <section id="register-section" class="hidden">
-      <h2>Register Passkey</h2>
-      <p class="info">Creates a new passkey bound to this contract's subdomain.</p>
-      <div class="field">
-        <button id="register-btn">Register Passkey</button>
+      <div class="card" style="padding:4px 16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 0;">
+          <span class="mut" style="font-size:13.5px; font-weight:600; white-space:nowrap;">From</span>
+          <span id="sign-origin" class="mono" style="font-size:13px; margin-left:auto; text-align:right; word-break:break-all;"></span>
+        </div>
+        <div style="display:flex; justify-content:space-between; gap:14px; padding:14px 0; border-top:1px solid var(--line-soft);">
+          <span class="mut" style="font-size:13.5px; font-weight:600; white-space:nowrap;">Hash</span>
+          <code id="sign-hash" class="mono" style="font-size:11.5px; margin-left:auto; text-align:right; word-break:break-all;"></code>
+        </div>
       </div>
-      <pre id="no-key-register-result" style="display:none"></pre>
-    </section>
 
-    <section id="sign-section">
-      <h2>Try It out</h2>
-      <p class="info">Want to see how it works?
-          Eventually, other stellar dApps will redirect to this domain when you need to sign a transaction.
-          For now you can invoke a contract or sign arbitrary data below.
-     </p>
-      <h3>Invoke a contract</h3>
-      <p class="info">Set a status message on-chain via your smart account.</p>
-      <div class="field">
-        <a id="status-message-link" class="button-link">Status Message</a>
+      <div id="sign-needs-register" style="margin-top:18px;">
+        <p class="mut" style="font-size:13.5px; line-height:1.5; text-align:center; margin:0 0 14px;">
+          You don't have a passkey on this Nido yet. Set one up first, then you can approve.
+        </p>
+        <button id="sign-register-btn" class="btn acc">
+          <Icon name="key" size={20} color="#fff" /> Set up your passkey
+        </button>
       </div>
-      <h3>Sign a Hash</h3>
-      <p class="info">Authenticate with your passkey to sign a 32-byte hash (e.g. a transaction hash).</p>
-      <div class="field">
-        <label for="hash-input">Hash to sign (64 hex chars)</label>
-        <input id="hash-input" placeholder="e.g. a1b2c3d...64 hex characters" maxlength="64" />
+
+      <div id="sign-ready" class="hidden" style="margin-top:18px;">
+        <button id="approve-btn" class="btn acc">
+          <Icon name="faceid" size={20} color="#fff" /> <span class="js-confirm-label">Confirm it's you</span>
+        </button>
+        <button id="deny-btn" class="btn ghost" style="margin-top:10px;">Not now</button>
       </div>
-      <div class="field" style="margin-top:0.5rem">
-        <button id="sign-btn" disabled>Sign</button>
-        <button id="random-hash-btn" style="margin-left:0.5rem; font-size:0.8rem">Random hash</button>
+
+      <pre id="sign-mode-result" class="mono" style="display:none; margin-top:16px; font-size:12.5px; color:var(--good); text-align:center;"></pre>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- HOME MODE                                                     -->
+    <!-- ============================================================= -->
+    <div id="home-mode" class="hidden screen-in">
+      <!-- balance -->
+      <div style="padding:14px 22px 0; text-align:center;">
+        <div class="mut" style="font-size:13px; font-weight:700;">Balance</div>
+        <div class="disp" id="xlm-balance" style="font-weight:800; font-size:48px; letter-spacing:-.01em; line-height:1.04; margin-top:4px;">…</div>
+        <div class="mut" style="font-size:14px; font-weight:600; margin-top:2px;">In your Nido</div>
+        <div style="display:flex; justify-content:center; margin-top:14px;">
+          <button id="copy-btn" class="addr" title="Copy your address">
+            <code id="contract-id" style="background:none; padding:0;"></code>
+            <Icon name="copy" size={15} color="var(--ink-soft)" />
+          </button>
+        </div>
+        <div style="margin-top:10px;">
+          <a id="explorer-link" class="link" target="_blank" rel="noopener" style="display:none; font-size:13px;">View on Stellar Expert</a>
+        </div>
       </div>
-      <pre id="sign-result" style="display:none"></pre>
-    </section>
+
+      <!-- quick actions -->
+      <div style="display:flex; gap:6px; padding:26px 30px 6px;">
+        <button id="receive-action" class="qa" type="button">
+          <div class="circ soft"><Icon name="receive" size={24} /></div>
+          <span>Receive</span>
+        </button>
+        <a id="sign-action" class="qa" href="#sign-section">
+          <div class="circ"><Icon name="shieldcheck" size={23} color="#fff" /></div>
+          <span>Prove</span>
+        </a>
+        <a class="qa" href="/security/">
+          <div class="circ soft"><Icon name="settings" size={23} /></div>
+          <span>Settings</span>
+        </a>
+      </div>
+
+      <!-- ============ RECEIVE PANEL (display-only) ============ -->
+      <section id="receive-section" class="hidden pad" style="text-align:center; padding-top:18px;">
+        <span class="section-label" style="display:block; text-align:left; margin-bottom:12px;">Receive</span>
+        <p class="mut" style="font-size:14px; line-height:1.5; max-width:320px; margin:0 auto 18px;">
+          Share your address or code so anyone can send to your Nido.
+        </p>
+        <div style="background:var(--paper-2); border:1px solid var(--line); border-radius:22px; padding:18px; display:inline-block; box-shadow:var(--sh-1);">
+          <Qr data="nido" size={188} />
+        </div>
+        <div class="card" style="padding:16px; margin-top:22px; text-align:left; display:flex; align-items:center; gap:12px;">
+          <Avatar seed="nido" size={34} class="js-avatar" />
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:700; font-size:13.5px;">Your Nido</div>
+            <code id="receive-address" class="mut mono" style="font-size:12px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></code>
+          </div>
+        </div>
+        <button id="receive-copy-btn" class="btn soft" style="margin-top:14px;">
+          <Icon name="copy" size={18} /> Copy address
+        </button>
+      </section>
+
+      <!-- ============ NAME SECTION ============ -->
+      <section id="name-section" class="hidden pad" style="padding-top:18px;">
+        <span class="section-label" style="display:block; margin-bottom:12px;">Your name</span>
+
+        <div id="name-display" class="hidden">
+          <div class="card" style="padding:4px 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 0;">
+              <span class="mut" style="font-size:13.5px; font-weight:600;">Name</span>
+              <code id="account-name" class="mono" style="font-size:14px; margin-left:auto;"></code>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 0; border-top:1px solid var(--line-soft);">
+              <span class="mut" style="font-size:13.5px; font-weight:600;">Share link</span>
+              <a id="name-url" class="link mono" style="font-size:12.5px; margin-left:auto; text-align:right; word-break:break-all;"></a>
+            </div>
+          </div>
+        </div>
+
+        <div id="name-claim" class="hidden">
+          <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            Claim a friendly name for your Nido. 1–15 characters, lowercase letters and digits, starting with a letter.
+          </p>
+          <div class="field">
+            <label for="name-input">Name</label>
+            <input id="name-input" class="input" placeholder="e.g. alice" maxlength="15" pattern="[a-z][a-z0-9]*" />
+          </div>
+          <button id="claim-name-btn" class="btn acc" style="margin-top:12px;">Claim this name</button>
+          <div id="name-result" class="mut mono" style="display:none; font-size:12.5px; margin-top:12px; text-align:center; line-height:1.5;"></div>
+        </div>
+      </section>
+
+      <!-- ============ PASSKEY INFO (when registered) ============ -->
+      <section id="passkey-info-section" class="hidden pad" style="padding-top:18px;">
+        <span class="section-label" style="display:block; margin-bottom:12px;">Your passkey</span>
+        <div class="card" style="padding:16px;">
+          <div style="display:flex; align-items:center; gap:11px; margin-bottom:12px;">
+            <div style="width:38px; height:38px; border-radius:11px; background:var(--good-soft); display:grid; place-items:center;">
+              <Icon name="shieldcheck" size={20} color="var(--good)" />
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:700; font-size:14.5px;">Active</div>
+              <div class="mut" style="font-size:12.5px;">You're the only one who gets in</div>
+            </div>
+            <span class="chip good" style="font-size:11px;">On</span>
+          </div>
+          <div style="border-top:1px solid var(--line-soft); padding-top:12px;">
+            <div class="mut" style="font-size:12px; font-weight:700; margin-bottom:4px;">Public key</div>
+            <code id="passkey-pubkey" class="mono" style="font-size:11.5px; word-break:break-all; display:block;"></code>
+            <div class="mut" style="font-size:12px; font-weight:700; margin:12px 0 4px;">Credential ID</div>
+            <code id="passkey-cred-id" class="mono" style="font-size:11.5px; word-break:break-all; display:block;"></code>
+            <div class="mut" style="font-size:12px; font-weight:700; margin:12px 0 4px;">Bound to</div>
+            <code id="passkey-rp-id" class="mono" style="font-size:11.5px; word-break:break-all; display:block;"></code>
+          </div>
+          <p class="mut" style="font-size:12px; line-height:1.5; margin:12px 0 0;">
+            Your passkey is bound to this Nido's own subdomain — it can't be used to approve anything on another account.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============ REGISTER (when no passkey) ============ -->
+      <section id="register-section" class="hidden pad" style="padding-top:18px;">
+        <span class="section-label" style="display:block; margin-bottom:12px;">Set up your passkey</span>
+        <div class="card" style="padding:16px;">
+          <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            Create a passkey bound to this Nido. It's how you'll prove it's you — no seed phrase, no password.
+          </p>
+          <button id="register-btn" class="btn acc">
+            <Icon name="key" size={20} color="#fff" /> Set up your passkey
+          </button>
+          <pre id="no-key-register-result" class="mono" style="display:none; margin-top:14px; font-size:11.5px; white-space:pre-wrap; word-break:break-all; color:var(--ink-soft);"></pre>
+        </div>
+      </section>
+
+      <!-- ============ SIGN / TRY IT OUT ============ -->
+      <section id="sign-section" class="pad" style="padding-top:18px;">
+        <span class="section-label" style="display:block; margin-bottom:12px;">Try it out</span>
+        <div class="card" style="padding:16px;">
+          <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            Curious how it works? Eventually other Stellar apps will send you here to confirm. For now, set a status
+            message on-chain or sign a hash yourself.
+          </p>
+
+          <div style="font-weight:700; font-size:14px; margin-bottom:8px;">Invoke a contract</div>
+          <a id="status-message-link" class="btn soft" style="margin-bottom:18px;">
+            <Icon name="bolt" size={18} /> Set a status message
+          </a>
+
+          <div style="font-weight:700; font-size:14px; margin:6px 0 8px;">Sign a hash</div>
+          <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 12px;">
+            Confirm with your passkey to sign a 32-byte hash (e.g. a transaction hash).
+          </p>
+          <div class="field">
+            <label for="hash-input">Hash to sign (64 hex chars)</label>
+            <input id="hash-input" class="input mono" placeholder="a1b2c3…64 hex characters" maxlength="64" />
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button id="sign-btn" class="btn acc" disabled>
+              <Icon name="faceid" size={18} color="#fff" /> <span class="js-confirm-label">Sign</span>
+            </button>
+            <button id="random-hash-btn" class="btn ghost">
+              <Icon name="refresh" size={18} /> Random
+            </button>
+          </div>
+          <pre id="sign-result" class="mono" style="display:none; margin-top:14px; font-size:11.5px; white-space:pre-wrap; word-break:break-all; color:var(--ink-soft);"></pre>
+        </div>
+      </section>
+
+      <div style="display:flex; justify-content:center; margin:8px 0 28px;">
+        <Logo size={18} mark markSize={24} />
+      </div>
+    </div>
   </div>
-</BaseLayout>
 
-<style>
-  body {
-    background: #1a1a2e;
-  }
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-
-  button.primary {
-    background: #1a6b3a;
-    border-color: #1a8b4a;
-    font-size: 1.1rem;
-    padding: 0.7rem 2rem;
-  }
-
-  button.primary:hover {
-    background: #1a8b4a;
-  }
-
-  .account-card {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 6px;
-    padding: 1rem;
-  }
-
-  .account-field {
-    margin-bottom: 0.75rem;
-  }
-
-  .account-field:last-of-type {
-    margin-bottom: 0;
-  }
-
-  .account-label {
-    color: #8899aa;
-    display: block;
-    font-size: 0.8rem;
-    margin-bottom: 0.25rem;
-  }
-
-  .address-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .account-address {
-    color: #c0d0e0;
-    word-break: break-all;
-    font-size: 0.85rem;
-  }
-
-  .copy-btn {
-    background: #1a3060;
-    color: #8899aa;
-    border: 1px solid #2a4070;
-    padding: 0.2rem 0.5rem;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .copy-btn:hover {
-    background: #2a4070;
-    color: #c0d0e0;
-  }
-
-  .balance-value {
-    font-family: monospace;
-    font-size: 1.3rem;
-    color: #e0e0e0;
-  }
-
-  .account-links {
-    margin-top: 0.75rem;
-  }
-
-  .explorer-link {
-    color: #5bc0de;
-    text-decoration: underline;
-    font-size: 0.8rem;
-  }
-
-  .explorer-link:hover {
-    color: #7dd4ed;
-  }
-
-  .signing-request {
-    background: #1a2a1a;
-    border: 1px solid #2a4a2a;
-    border-radius: 6px;
-    padding: 1rem;
-    margin: 1rem 0;
-  }
-
-  .signing-request .origin {
-    color: #80b0e0;
-    font-size: 0.9rem;
-  }
-
-  .signing-request .hash {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: #c0c0c0;
-    margin: 0.75rem 0;
-    word-break: break-all;
-  }
-
-  .passkey-details {
-    background: #0a2040;
-    border: 1px solid #1a3060;
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
-  }
-
-  .passkey-status {
-    color: #6fcf97;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-  }
-
-  .passkey-field {
-    margin: 0.4rem 0;
-    font-size: 0.85rem;
-  }
-
-  .passkey-label {
-    color: #8899aa;
-    display: block;
-    margin-bottom: 0.15rem;
-  }
-
-  .passkey-value {
-    color: #c0d0e0;
-    word-break: break-all;
-    font-size: 0.8rem;
-  }
-
-  .rp-explainer {
-    margin-top: 0.75rem;
-    margin-bottom: 0;
-    font-size: 0.8rem;
-  }
-
-  .button-link {
-    display: inline-block;
-    background: #4a1a6b;
-    color: #e0e0e0;
-    border: 1px solid #6a2a8b;
-    padding: 0.5rem 1.2rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.95rem;
-    text-decoration: none;
-  }
-
-  .button-link:hover {
-    background: #5a2a7b;
-  }
-
-  .name-link {
-    color: #5bc0de;
-    font-family: monospace;
-    font-size: 0.85rem;
-    word-break: break-all;
-    text-decoration: underline;
-  }
-
-  .name-link:hover {
-    color: #7dd4ed;
-  }
-</style>
+  <Toast />
+  <PasskeySheet />
+</NidoLayout>
 
 <script>
   import {
@@ -368,8 +301,20 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
   import { formatSignResult } from "../../lib/formatting";
+  import { toast } from "../../lib/toast";
+  import { withPasskeySheet } from "../../lib/passkeySheet";
+  import { detectPasskeyLabel } from "../../lib/passkeyLabel";
+  import { shortAddr } from "../../lib/address";
+  import { formatXlm } from "../../lib/money";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
+
+  // Friendly platform label for confirm copy ("Confirm with Face ID", etc.).
+  const passkey = detectPasskeyLabel();
+  const confirmLabel = `Confirm with ${passkey.label}`;
+  document.querySelectorAll<HTMLElement>(".js-confirm-label").forEach((el) => {
+    el.textContent = confirmLabel;
+  });
 
   // --- URL params (needed early for signing mode detection) ---
 
@@ -409,13 +354,11 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         // Stay on name subdomain — use resolved ID for all operations
         contractId = resolved;
       } else {
-        document.getElementById("error-box")!.textContent = `Name "${detectedName}" not found in the registry.`;
-        document.getElementById("error-box")!.style.display = "block";
+        showError(`Name "${detectedName}" not found in the registry.`);
       }
     } catch (err: any) {
       if (err.message === "redirecting") throw err;
-      document.getElementById("error-box")!.textContent = `Failed to resolve name: ${err.message}`;
-      document.getElementById("error-box")!.style.display = "block";
+      showError(`Couldn't resolve that name: ${err.message}`);
     }
   }
 
@@ -508,9 +451,13 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     document.getElementById("error-box")!.style.display = "none";
   }
 
+  function passkeyBlockedHint(action: "registration" | "signing"): string {
+    return `Passkey ${action} was blocked. If you're using an in-app browser (Twitter, Instagram, etc.), tap the menu (…) and choose "Open in Safari" or "Open in Browser".`;
+  }
+
   function initAccountCard() {
-    document.getElementById("contract-id")!.textContent =
-      contractId || "(unknown)";
+    const display = contractId ? shortAddr(contractId, 6, 6) : "(unknown)";
+    document.getElementById("contract-id")!.textContent = display;
 
     const $explorerLink = document.getElementById("explorer-link") as HTMLAnchorElement;
     if (contractId) {
@@ -518,17 +465,14 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       $explorerLink.style.display = "inline";
     }
 
-    // Copy button
+    // Copy button — uses the Nido toast for feedback.
     document.getElementById("copy-btn")!.addEventListener("click", async () => {
       if (!contractId) return;
-      const btn = document.getElementById("copy-btn") as HTMLButtonElement;
       try {
         await navigator.clipboard.writeText(contractId);
-        btn.textContent = "Copied!";
-        setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+        toast({ msg: "Copied your address", icon: "check" });
       } catch {
-        btn.textContent = "Failed";
-        setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+        toast("Couldn't copy — try selecting it manually");
       }
     });
   }
@@ -565,19 +509,20 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       const btn = document.getElementById("sign-register-btn") as HTMLButtonElement;
       try {
         btn.disabled = true;
-        btn.textContent = "Waiting for authenticator...";
-        await registerPasskey();
+        await withPasskeySheet(() => registerPasskey(), {
+          title: "Set up your passkey",
+          sub: `Confirm with ${passkey.label} to create it.`,
+        });
         document.getElementById("sign-needs-register")!.classList.add("hidden");
         document.getElementById("sign-ready")!.classList.remove("hidden");
       } catch (err: any) {
         if (err.name === "NotAllowedError") {
-          showError("Passkey registration was blocked. If you're using an in-app browser (Twitter, Instagram, etc.), tap the menu (\u2026) and choose \"Open in Safari\" or \"Open in Browser\".");
+          showError(passkeyBlockedHint("registration"));
         } else {
-          showError(`Registration failed: ${err.message}`);
+          showError(`Couldn't set up your passkey: ${err.message}`);
         }
       } finally {
         btn.disabled = false;
-        btn.textContent = "Register Passkey";
       }
     });
 
@@ -588,13 +533,15 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       const btn = document.getElementById("approve-btn") as HTMLButtonElement;
       try {
         btn.disabled = true;
-        btn.textContent = "Waiting for authenticator...";
 
-        const result = await signHash(signHashParam!);
+        const result = await withPasskeySheet(() => signHash(signHashParam!), {
+          title: confirmLabel,
+          sub: "Approving the request from the app.",
+        });
 
         const $result = document.getElementById("sign-mode-result")!;
         $result.style.display = "block";
-        $result.textContent = "Signed! Redirecting...";
+        $result.textContent = "Approved — sending you back…";
 
         const cbUrl = new URL(callbackUrl!);
         cbUrl.searchParams.set("authenticatorData", result.authenticatorData);
@@ -607,12 +554,11 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         }, 500);
       } catch (err: any) {
         if (err.name === "NotAllowedError") {
-          showError("Passkey signing was blocked. If you're using an in-app browser (Twitter, Instagram, etc.), tap the menu (\u2026) and choose \"Open in Safari\" or \"Open in Browser\".");
+          showError(passkeyBlockedHint("signing"));
         } else {
-          showError(`Signing failed: ${err.message}`);
+          showError(`Couldn't confirm: ${err.message}`);
         }
         btn.disabled = false;
-        btn.textContent = "Approve & Sign";
       }
     });
 
@@ -656,6 +602,25 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       document.getElementById("register-section")!.classList.remove("hidden");
     }
 
+    // Receive panel toggle (display-only)
+    const $receiveSection = document.getElementById("receive-section")!;
+    document.getElementById("receive-action")!.addEventListener("click", () => {
+      const open = $receiveSection.classList.toggle("hidden");
+      if (!open) {
+        $receiveSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
+    // Receive copy button
+    document.getElementById("receive-copy-btn")!.addEventListener("click", async () => {
+      if (!contractId) return;
+      try {
+        await navigator.clipboard.writeText(contractId);
+        toast({ msg: "Copied your address", icon: "check" });
+      } catch {
+        toast("Couldn't copy — try selecting it manually");
+      }
+    });
+
     // Register passkey (when none exists yet)
     const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
     const $noKeyRegisterResult = document.getElementById("no-key-register-result") as HTMLPreElement;
@@ -663,9 +628,14 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       clearError();
       try {
         $registerBtn.disabled = true;
-        $registerBtn.textContent = "Waiting for authenticator...";
 
-        const { credentialId, publicKey } = await registerPasskey();
+        const { credentialId, publicKey } = await withPasskeySheet(
+          () => registerPasskey(),
+          {
+            title: "Set up your passkey",
+            sub: `Confirm with ${passkey.label} to create it.`,
+          },
+        );
 
         $noKeyRegisterResult.style.display = "block";
         $noKeyRegisterResult.textContent = JSON.stringify(
@@ -682,15 +652,15 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
         const newCred = loadCredential();
         if (newCred) showPasskeyInfo(newCred);
+        toast({ msg: "Passkey ready", icon: "check" });
       } catch (err: any) {
         if (err.name === "NotAllowedError") {
-          showError("Passkey registration was blocked. If you're using an in-app browser (Twitter, Instagram, etc.), tap the menu (\u2026) and choose \"Open in Safari\" or \"Open in Browser\".");
+          showError(passkeyBlockedHint("registration"));
         } else {
-          showError(`Registration failed: ${err.message}`);
+          showError(`Couldn't set up your passkey: ${err.message}`);
         }
       } finally {
         $registerBtn.disabled = false;
-        $registerBtn.textContent = "Register Passkey";
       }
     });
 
@@ -705,21 +675,22 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
       try {
         $signBtn.disabled = true;
-        $signBtn.textContent = "Waiting for authenticator...";
 
-        const result = await signHash(hashHex);
+        const result = await withPasskeySheet(() => signHash(hashHex), {
+          title: confirmLabel,
+          sub: "Signing the hash you entered.",
+        });
 
         $signResult.style.display = "block";
         $signResult.innerHTML = formatSignResult(result);
       } catch (err: any) {
         if (err.name === "NotAllowedError") {
-          showError("Passkey signing was blocked. If you're using an in-app browser (Twitter, Instagram, etc.), tap the menu (\u2026) and choose \"Open in Safari\" or \"Open in Browser\".");
+          showError(passkeyBlockedHint("signing"));
         } else {
-          showError(`Signing failed: ${err.message}`);
+          showError(`Couldn't sign: ${err.message}`);
         }
       } finally {
         $signBtn.disabled = false;
-        $signBtn.textContent = "Sign";
       }
     });
 
@@ -791,15 +762,22 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     initHomeMode();
   }
 
-  // Fetch balance in background
+  // Show the real, full address in the Receive panel.
+  document.getElementById("receive-address")!.textContent = contractId || "(unknown)";
+
+  // Fetch balance in background — REAL XLM, no fabricated fiat figure.
+  const $balance = document.getElementById("xlm-balance")!;
   if (contractId) {
     fetchXlmBalance(contractId).then((balance) => {
-      document.getElementById("xlm-balance")!.textContent = `${balance} XLM`;
+      // Friendly grouping via money.formatXlm; keep the XLM figure truthful
+      // (no fabricated fiat "$" balance — that was the prototype's mock).
+      const friendly = formatXlm(balance);
+      $balance.innerHTML = `${friendly} <span class="mut" style="font-size:24px;">XLM</span>`;
     }).catch(() => {
-      document.getElementById("xlm-balance")!.textContent = "unavailable";
+      $balance.textContent = "unavailable";
     });
   } else {
-    document.getElementById("xlm-balance")!.textContent = "—";
+    $balance.textContent = "—";
   }
 
   // --- Name section ---
@@ -819,6 +797,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     if (existingName) {
       $nameDisplay.classList.remove("hidden");
       document.getElementById("account-name")!.textContent = existingName;
+      // Reflect the claimed name in the top bar nickname too.
+      document.getElementById("account-nickname")!.textContent = existingName;
       const rootHost = stripSubdomain(window.location.host);
       const nameLink = document.getElementById("name-url") as HTMLAnchorElement;
       const nameHref = accountUrl(rootHost, existingName, "/account/");
@@ -865,9 +845,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
       try {
         $claimBtn.disabled = true;
-        $claimBtn.textContent = "Registering...";
         $nameResult.style.display = "block";
-        $nameResult.textContent = "Loading...";
+        $nameResult.textContent = "Getting things ready…";
 
         // Load Buffer polyfill — needed by buildAuthHash and other SDK functions
         const { Buffer: B } = await import("buffer");
@@ -875,11 +854,11 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           (globalThis as any).Buffer = B;
         }
 
-        $nameResult.textContent = "Funding transaction keypair...";
+        $nameResult.textContent = "Funding transaction keypair…";
         const keypair = await getNameKeypair();
         const server = new rpc.Server(RPC_URL);
 
-        $nameResult.textContent = "Building transaction...";
+        $nameResult.textContent = "Building transaction…";
 
         const sourceAccount = await server
           .getAccount(keypair.publicKey())
@@ -902,7 +881,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
           .setTimeout(300)
           .build();
 
-        $nameResult.textContent = "Simulating transaction...";
+        $nameResult.textContent = "Simulating transaction…";
         const sim = await server.simulateTransaction(simTx);
 
         if (rpc.Api.isSimulationError(sim)) {
@@ -926,18 +905,17 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         localStorage.setItem("g2c:name-lastLedger", lastLedger.toString());
         localStorage.setItem("g2c:name-pending", name);
 
-        $nameResult.textContent = "Redirecting for passkey signature...";
+        $nameResult.textContent = "Taking you to confirm with your passkey…";
 
         // Redirect to the signing flow on this same account page
         const callback = `${window.location.protocol}//${window.location.host}/account/?nameresult=1`;
         const signUrl = `/account/?sign=${authHashHex}&callback=${encodeURIComponent(callback)}`;
         window.location.href = signUrl;
       } catch (err: any) {
-        showError(`Name claim failed: ${err.message}`);
+        showError(`Couldn't claim that name: ${err.message}`);
         $nameResult.style.display = "none";
       } finally {
         $claimBtn.disabled = false;
-        $claimBtn.textContent = "Claim Name";
       }
     });
 
@@ -950,7 +928,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       const publicKeyHex = params.get("publicKey");
 
       if (params.get("error")) {
-        showError("Name registration was denied.");
+        showError("Name claim was cancelled.");
       } else if (authenticatorData && clientDataJSON && signatureHex && publicKeyHex) {
         (async () => {
           $nameResult.style.display = "block";
@@ -991,7 +969,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
             );
 
             // Re-simulate with real signature
-            $nameResult.textContent = "Simulating signed transaction...";
+            $nameResult.textContent = "Simulating signed transaction…";
             const server = new rpc.Server(RPC_URL);
             const sim = await server.simulateTransaction(authTxn);
 
@@ -1004,7 +982,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
             finalTx.sign(keypair);
 
             // Submit
-            $nameResult.textContent = "Submitting transaction...";
+            $nameResult.textContent = "Submitting transaction…";
             const sendResult = await server.sendTransaction(finalTx);
 
             if (sendResult.status === "ERROR") {
@@ -1012,7 +990,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
             }
 
             // Poll for confirmation
-            $nameResult.textContent = "Waiting for confirmation...";
+            $nameResult.textContent = "Waiting for confirmation…";
             let getResult = await server.getTransaction(sendResult.hash);
             while (getResult.status === "NOT_FOUND") {
               await new Promise((r) => setTimeout(r, 1500));
@@ -1029,7 +1007,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 
               // Redirect to the claimed name's subdomain
               const rootHost = stripSubdomain(window.location.host);
-              $nameResult.textContent = `Name "${pendingName}" registered! Redirecting...`;
+              $nameResult.textContent = `Your Nido is now "${pendingName}" — taking you there…`;
               const nameUrl = accountUrl(rootHost, pendingName, "/account/");
               setTimeout(() => {
                 window.location.href = `${window.location.protocol}${nameUrl}`;
@@ -1038,7 +1016,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
               throw new Error(`Transaction failed: ${getResult.status}`);
             }
           } catch (err: any) {
-            showError(`Name registration failed: ${err.message}`);
+            showError(`Couldn't finish claiming your name: ${err.message}`);
             $nameResult.style.display = "none";
           }
         })();
