@@ -1,0 +1,132 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Connect to dApp">
+  <main class="connect">
+    <h1>Choose an account</h1>
+    <p class="info">
+      The dApp at <code id="dapp-origin">…</code> wants to connect to one of
+      your g2c smart accounts. Only the account's public address is shared —
+      no signing happens here.
+    </p>
+
+    <div id="error-box" class="error" style="display:none"></div>
+
+    <section id="accounts-section">
+      <div id="accounts-list"></div>
+      <p id="no-accounts" class="info hidden">
+        No accounts found on this device. <a href="/">Create one first</a>,
+        then come back.
+      </p>
+    </section>
+
+    <div class="actions">
+      <button id="cancel" type="button">Cancel</button>
+    </div>
+  </main>
+</BaseLayout>
+
+<style>
+  .connect { max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
+  .hidden { display: none; }
+  .actions { margin-top: 1.25rem; }
+  code { background: #0a2040; padding: 1px 4px; border-radius: 2px; }
+  #accounts-list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }
+  .account-row {
+    display: flex; align-items: center; gap: 0.75rem;
+    background: #0a2040; border: 1px solid #1a3060; border-radius: 6px;
+    padding: 0.6rem 0.85rem; text-align: left; cursor: pointer; width: 100%;
+    color: inherit; font: inherit;
+  }
+  .account-row:hover { background: #0d2850; border-color: #2a5090; }
+  .account-info { flex: 1; min-width: 0; }
+  .account-name { font-size: 0.95rem; font-weight: 600; color: #e0e0e0; }
+  .account-address { font-family: monospace; font-size: 0.72rem; color: #8899aa; word-break: break-all; }
+</style>
+
+<script>
+  import { loadAccounts, loadAccountName, isContractId } from '@g2c/passkey-sdk';
+  import { postResultToOpener } from '@g2c/stellar-wallets-kit-module';
+
+  const params = new URLSearchParams(window.location.search);
+  const dappOrigin = params.get('dapp') ?? '';
+  const returnUrl = params.get('return') ?? '';
+
+  const $err = document.getElementById('error-box')!;
+  const $list = document.getElementById('accounts-list')!;
+  const $none = document.getElementById('no-accounts')!;
+  document.getElementById('dapp-origin')!.textContent = dappOrigin || '(unknown)';
+
+  function showError(msg: string) {
+    $err.textContent = msg;
+    $err.style.display = 'block';
+  }
+
+  // Validate the dApp origin and that the return URL is same-origin with it.
+  // This is the anti-redirect-abuse guard mirrored from the delegate flow:
+  // we only ever hand the address to the origin that asked for it.
+  function validatedReturn(): URL | null {
+    if (!dappOrigin) { showError('Missing dapp origin parameter.'); return null; }
+    let origin: string;
+    try { origin = new URL(dappOrigin).origin; } catch { showError('Malformed dapp origin.'); return null; }
+    if (returnUrl) {
+      let r: URL;
+      try { r = new URL(returnUrl); } catch { showError('Malformed return URL.'); return null; }
+      if (r.origin !== origin) {
+        showError(`Return URL origin (${r.origin}) does not match dapp origin (${origin}).`);
+        return null;
+      }
+      return r;
+    }
+    // No explicit return URL: that's fine for the popup path (we postMessage
+    // to the opener). Synthesize the origin so postResultToOpener targets it.
+    return new URL(origin);
+  }
+
+  const ret = validatedReturn();
+
+  function finish(search: string) {
+    if (!ret) return;
+    postResultToOpener(search, ret.origin, returnUrl || undefined);
+  }
+
+  document.getElementById('cancel')!.addEventListener('click', () => {
+    finish('?g2c_connect=cancelled');
+  });
+
+  // Render the device's accounts as pick buttons.
+  const accounts = loadAccounts().filter(isContractId);
+  if (accounts.length === 0) {
+    $none.classList.remove('hidden');
+  }
+  for (const cAddress of accounts) {
+    const name = loadAccountName(cAddress);
+    const btn = document.createElement('button');
+    btn.className = 'account-row';
+    btn.type = 'button';
+
+    const info = document.createElement('div');
+    info.className = 'account-info';
+    if (name) {
+      const n = document.createElement('div');
+      n.className = 'account-name';
+      n.textContent = name;
+      info.appendChild(n);
+    }
+    const addr = document.createElement('div');
+    addr.className = 'account-address';
+    addr.textContent = cAddress;
+    info.appendChild(addr);
+    btn.appendChild(info);
+
+    btn.addEventListener('click', () => {
+      finish(`?g2c_address=${cAddress}`);
+    });
+    $list.appendChild(btn);
+  }
+
+  if (!ret) {
+    // validatedReturn already surfaced the error; disable interaction.
+    document.querySelectorAll<HTMLButtonElement>('.account-row').forEach((b) => (b.disabled = true));
+  }
+</script>

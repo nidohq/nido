@@ -1,0 +1,140 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Sign request">
+  <main class="sign">
+    <h1>Signature request</h1>
+    <p class="info">
+      The dApp at <code id="dapp-origin">…</code> is asking this account to
+      sign a <span id="kind-label">request</span>.
+    </p>
+
+    <dl class="kv">
+      <dt>Account</dt><dd><code id="account-text" class="wrap"></code></dd>
+      <dt id="payload-label">Payload</dt><dd><code id="payload-text" class="wrap"></code></dd>
+    </dl>
+
+    <div id="error-box" class="error" style="display:none"></div>
+
+    <div id="needs-register" class="hidden">
+      <p class="info">No passkey is registered on this device for this account.
+         Open the account page to register it first.</p>
+    </div>
+
+    <div class="actions">
+      <button id="approve" type="button">Approve &amp; sign</button>
+      <button id="cancel" type="button">Cancel</button>
+    </div>
+    <p id="status" class="info"></p>
+  </main>
+</BaseLayout>
+
+<style>
+  .sign { max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
+  .hidden { display: none; }
+  .actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
+  code { background: #0a2040; padding: 1px 4px; border-radius: 2px; }
+  code.wrap { word-break: break-all; }
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin: 1rem 0; }
+  dl.kv dt { color: #8899aa; }
+  dl.kv dd { margin: 0; }
+</style>
+
+<script>
+  import { contractIdFromHostname } from '@g2c/passkey-sdk';
+  import { loadCredential } from '@g2c/passkey-sdk';
+  import { postResultToOpener } from '@g2c/stellar-wallets-kit-module';
+  import { signTransactionXdr, signMessageRaw, signAuthEntryXdr } from '../../lib/walletSign.js';
+
+  const params = new URLSearchParams(window.location.search);
+  const kind = params.get('kind') ?? 'tx';
+  const dappOrigin = params.get('dapp') ?? '';
+  const returnUrl = params.get('return') ?? '';
+  const network = params.get('network') ?? undefined;
+  const account = contractIdFromHostname(window.location.hostname);
+
+  const $err = document.getElementById('error-box')!;
+  const $status = document.getElementById('status')!;
+  const approve = document.getElementById('approve') as HTMLButtonElement;
+  const cancel = document.getElementById('cancel') as HTMLButtonElement;
+
+  function showError(msg: string) { $err.textContent = msg; $err.style.display = 'block'; }
+
+  document.getElementById('dapp-origin')!.textContent = dappOrigin || '(unknown)';
+  document.getElementById('account-text')!.textContent = account || '(missing)';
+
+  const payload =
+    kind === 'tx' ? (params.get('xdr') ?? '')
+    : kind === 'message' ? (params.get('message') ?? '')
+    : kind === 'authEntry' ? (params.get('authEntry') ?? '')
+    : '';
+  document.getElementById('kind-label')!.textContent =
+    kind === 'tx' ? 'transaction' : kind === 'message' ? 'message' : kind === 'authEntry' ? 'auth entry' : 'request';
+  document.getElementById('payload-label')!.textContent =
+    kind === 'message' ? 'Message' : kind === 'tx' ? 'Transaction XDR' : 'Auth entry XDR';
+  document.getElementById('payload-text')!.textContent = payload || '(missing)';
+
+  // anti-redirect-abuse: only post back to the origin that asked.
+  function validatedOrigin(): string | null {
+    if (!dappOrigin) { showError('Missing dapp origin parameter.'); return null; }
+    let origin: string;
+    try { origin = new URL(dappOrigin).origin; } catch { showError('Malformed dapp origin.'); return null; }
+    if (returnUrl) {
+      try {
+        if (new URL(returnUrl).origin !== origin) {
+          showError('Return URL origin does not match dapp origin.');
+          return null;
+        }
+      } catch { showError('Malformed return URL.'); return null; }
+    }
+    return origin;
+  }
+
+  const origin = validatedOrigin();
+
+  function finish(search: string) {
+    if (!origin) return;
+    postResultToOpener(search, origin, returnUrl || undefined);
+  }
+
+  function validate(): string | null {
+    if (!account) return 'This page must be opened on an account subdomain.';
+    if (!payload) return 'Missing payload to sign.';
+    if (!origin) return 'Invalid dApp origin / return URL.';
+    if (!loadCredential(account)) {
+      document.getElementById('needs-register')!.classList.remove('hidden');
+      return 'No passkey registered for this account on this device.';
+    }
+    return null;
+  }
+
+  const err = validate();
+  if (err) { showError(err); approve.disabled = true; }
+
+  cancel.addEventListener('click', () => finish('?g2c_sign=cancelled'));
+
+  approve.addEventListener('click', async () => {
+    approve.disabled = true;
+    try {
+      $status.textContent = 'Signing with your passkey…';
+      let signed: string;
+      if (kind === 'tx') {
+        signed = await signTransactionXdr({ account: account!, txXdr: payload, networkPassphrase: network });
+      } else if (kind === 'message') {
+        signed = await signMessageRaw({ account: account!, message: payload });
+      } else if (kind === 'authEntry') {
+        signed = await signAuthEntryXdr({ account: account!, authEntryXdr: payload });
+      } else {
+        throw new Error(`Unknown sign kind: ${kind}`);
+      }
+      $status.textContent = 'Done — returning to dApp…';
+      const qs = new URLSearchParams({ g2c_signed: signed, kind });
+      setTimeout(() => finish(`?${qs.toString()}`), 300);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showError(`Failed: ${msg}`);
+      $status.textContent = '';
+      approve.disabled = false;
+    }
+  });
+</script>

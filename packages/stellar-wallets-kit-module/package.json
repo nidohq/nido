@@ -1,0 +1,33 @@
+{
+  "name": "@g2c/stellar-wallets-kit-module",
+  "version": "0.1.0",
+  "description": "A @creit.tech/stellar-wallets-kit module that makes a g2c passkey smart-account available to any dApp using the kit.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@g2c/passkey-sdk": "*"
+  },
+  "peerDependencies": {
+    "@creit.tech/stellar-wallets-kit": "^2.0.0"
+  },
+  "devDependencies": {
+    "@creit.tech/stellar-wallets-kit": "^2.2.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.7"
+  }
+}

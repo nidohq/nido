@@ -50,6 +50,44 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     </form>
   </section>
 
+  <!-- Demo: dApp <-> wallet via @creit.tech/stellar-wallets-kit + selector -->
+  <section id="kit-demo">
+    <h2>3. Demo: connect via stellar-wallets-kit</h2>
+    <p class="info">
+      This panel talks to your wallet <strong>only through</strong>
+      <code>@creit.tech/stellar-wallets-kit</code>. The
+      <code>@g2c/stellar-wallets-kit-module</code> registers g2c
+      <strong>alongside</strong> the standard wallets (Freighter, xBull, …) so
+      you pick one from the kit's selector modal — no g2c-specific connect code.
+      For a g2c smart account, Set Message builds the <code>udpate_message</code>
+      tx, hands the XDR to <code>kit.signTransaction()</code> (which runs the
+      passkey ceremony at <code>/sign/</code>), then submits the returned signed
+      XDR.
+    </p>
+    <div class="field">
+      <g2c-wallet-button id="kit-wallet"></g2c-wallet-button>
+    </div>
+    <div id="kit-nong2c" class="message-display hidden">
+      <div class="value">
+        This demo signs as a g2c <strong>smart account</strong> (C-address). The
+        selected wallet is a classic Stellar account — switch to a g2c wallet to
+        set a message here.
+      </div>
+    </div>
+    <div class="field">
+      <label for="kit-message-input">New message (via kit)</label>
+      <input id="kit-message-input" placeholder="Hello from the kit!" />
+    </div>
+    <div class="field">
+      <button id="kit-set" class="primary" type="button" disabled>Set Message via kit</button>
+    </div>
+    <div id="kit-status" class="message-display hidden">
+      <div class="label">Kit status</div>
+      <div class="value" id="kit-status-value"></div>
+      <a id="kit-tx-link" href="#" target="_blank" rel="noopener" style="display:none">View on Stellar Expert</a>
+    </div>
+  </section>
+
   <!-- Result (shown after redirect back) -->
   <section id="result-section" class="hidden">
     <h2>Result</h2>
@@ -106,6 +144,50 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     gap: 0.5rem;
     align-items: center;
   }
+
+  #kit-demo code {
+    background: #1a2040;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.85em;
+  }
+
+  g2c-wallet-button .g2c-wb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  g2c-wallet-button .g2c-wb-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  g2c-wallet-button .g2c-wb-id {
+    font-size: 0.78rem;
+    color: #9ac;
+  }
+
+  g2c-wallet-button .g2c-wb-addr {
+    font-family: monospace;
+    font-size: 0.78rem;
+    color: #9ac;
+    word-break: break-all;
+  }
+
+  g2c-wallet-button .g2c-wb-warning {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+    color: #e0c060;
+  }
+
+  g2c-wallet-button .g2c-wb-error {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+    color: #e08080;
+  }
 </style>
 
 <script>
@@ -128,6 +210,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
   import { startDelegation, readDelegationReturn } from "../../lib/delegationHandover.js";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
+  import { defineG2cWalletButton, WALLET_CHANGED_EVENT } from "../../components/g2c-wallet-button.js";
+  import { signTransaction as kitSignTransaction, isG2cWallet, type WalletSession } from "../../lib/walletConnect.js";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
   // Resolved by name via the on-chain registry (with a single hardcoded
@@ -670,5 +754,152 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         }
       })();
     }
+  }
+
+  // ===================================================================
+  // Demo: drive a wallet through @creit.tech/stellar-wallets-kit's selector
+  // ===================================================================
+  //
+  // Everything below is what an *arbitrary* dApp would write: it knows
+  // nothing about g2c passkeys, subdomains, or the WebAuthn verifier. It only
+  // knows the kit API (`connect`/`signTransaction`) and that it registered the
+  // g2c module ALONGSIDE the standard wallets (via the reusable helper in
+  // ../../lib/walletConnect.ts). The user picks a wallet from the kit's
+  // selector modal; the module + /connect/ + /sign/ pages do all the
+  // g2c-specific work behind the redirect ceremony.
+
+  {
+    const $kitWallet = document.getElementById("kit-wallet")!;
+
+    // Tell the button the g2c apex base BEFORE it upgrades — the page lives at
+    // `status-message[.--pr-N].<base>`, and `stripSubdomain` recovers the apex
+    // (preserving the `--pr-N` preview prefix, which a naive last-two-labels
+    // split would drop). Set the attribute first so the element's
+    // connectedCallback reads it when it inits the kit.
+    const apexBase = `${window.location.protocol}//${stripSubdomain(window.location.host)}`;
+    $kitWallet.setAttribute("base", apexBase);
+    $kitWallet.setAttribute("network-passphrase", Networks.TESTNET);
+
+    // Register the <g2c-wallet-button> custom element. It inits the kit once
+    // (g2c + standard modules) and owns connect/disconnect/session-restore.
+    defineG2cWalletButton();
+    const $kitMessageInput = document.getElementById("kit-message-input") as HTMLInputElement;
+    const $kitSet = document.getElementById("kit-set") as HTMLButtonElement;
+    const $kitStatus = document.getElementById("kit-status")!;
+    const $kitStatusValue = document.getElementById("kit-status-value")!;
+    const $kitTxLink = document.getElementById("kit-tx-link") as HTMLAnchorElement;
+    const $kitNonG2c = document.getElementById("kit-nong2c")!;
+
+    // The currently connected session, or null. Only g2c (C-address) sessions
+    // can drive the smart-account set-message flow below.
+    let kitSession: WalletSession | null = null;
+
+    function kitSetStatus(msg: string) {
+      $kitStatus.classList.remove("hidden");
+      $kitStatusValue.textContent = msg;
+    }
+
+    function applySession(session: WalletSession | null) {
+      kitSession = session;
+      if (session && isG2cWallet(session.walletId)) {
+        // A g2c smart account: enable set-message and feed the C-address into
+        // the read/load + delegation sections above.
+        $kitNonG2c.classList.add("hidden");
+        $kitSet.disabled = false;
+        $contractInput.value = session.walletAddress;
+        updateDelegationBanner(session.walletAddress);
+        updateAccountLink(session.walletAddress);
+      } else if (session) {
+        // A classic G-address wallet — degrade gracefully: the set-message
+        // flow signs as a smart account, so it can't use this wallet.
+        $kitNonG2c.classList.remove("hidden");
+        $kitSet.disabled = true;
+      } else {
+        $kitNonG2c.classList.add("hidden");
+        $kitSet.disabled = true;
+      }
+    }
+
+    // The custom element restores any persisted session on load and emits the
+    // change event; listen for connect/disconnect/restore.
+    $kitWallet.addEventListener(WALLET_CHANGED_EVENT, (e) => {
+      applySession((e as CustomEvent<WalletSession | null>).detail);
+    });
+
+    $kitSet.addEventListener("click", async () => {
+      clearError();
+      const message = $kitMessageInput.value.trim();
+      const kitAccount = kitSession?.walletAddress ?? null;
+      if (!kitAccount || !kitSession || !isG2cWallet(kitSession.walletId)) {
+        showError("Connect a g2c smart-account wallet first.");
+        return;
+      }
+      if (!message) { showError("Enter a message to set via the kit."); return; }
+
+      $kitSet.disabled = true;
+      const origLabel = $kitSet.textContent;
+      try {
+        const keypair = await keypairReady;
+
+        // 1. Build the Soroban tx XDR for `udpate_message` with the connected
+        //    smart account as `author`. The funded G-address is the tx source
+        //    (fee payer); the smart account authorizes via its passkey.
+        kitSetStatus("Building transaction…");
+        const client = new Client({
+          contractId: STATUS_CONTRACT,
+          networkPassphrase: Networks.TESTNET,
+          rpcUrl: RPC_URL,
+          publicKey: keypair.publicKey(),
+        });
+        const tx = await client.udpate_message(
+          { message, author: kitAccount },
+          { simulate: true },
+        );
+        const unsignedXdr = tx.built!.toXDR();
+
+        // 2. Hand the XDR to the kit. The g2c module opens `<account>.<base>/sign/`,
+        //    runs the passkey ceremony, and returns the XDR with the smart
+        //    account's auth entry signed (SEP-43: signing != submitting).
+        kitSetStatus("Awaiting wallet signature (passkey)…");
+        const { signedTxXdr } = await kitSignTransaction(unsignedXdr, {
+          networkPassphrase: Networks.TESTNET,
+          address: kitAccount,
+        });
+
+        // 3. The returned tx is signed by the smart account but still needs the
+        //    fee-payer (tx source) signature. Add it and submit.
+        kitSetStatus("Submitting signed transaction…");
+        const server = new rpc.Server(RPC_URL);
+        const signedTx = TransactionBuilder.fromXDR(signedTxXdr, Networks.TESTNET) as Transaction;
+        signedTx.sign(keypair);
+
+        const sendResult = await server.sendTransaction(signedTx);
+        if (sendResult.status === "ERROR") {
+          throw new Error(`Rejected: ${sendResult.errorResult?.toXDR("base64") ?? "unknown"}`);
+        }
+
+        kitSetStatus("Waiting for confirmation…");
+        let getResult = await server.getTransaction(sendResult.hash);
+        while (getResult.status === "NOT_FOUND") {
+          await new Promise((r) => setTimeout(r, 1500));
+          getResult = await server.getTransaction(sendResult.hash);
+        }
+
+        if (getResult.status === "SUCCESS") {
+          kitSetStatus("Message updated via the kit!");
+          $kitTxLink.href = `https://stellar.expert/explorer/testnet/tx/${sendResult.hash}`;
+          $kitTxLink.style.display = "inline";
+          try { await loadMessage(kitAccount); } catch (_) { /* non-critical */ }
+        } else {
+          throw new Error(`Transaction failed: ${getResult.status}`);
+        }
+      } catch (err: any) {
+        kitSetStatus(`Failed: ${err.message ?? err}`);
+        showError(`Kit set-message failed: ${err.message ?? err}`);
+      } finally {
+        $kitSet.disabled = false;
+        $kitSet.textContent = origLabel;
+      }
+    });
   }
 </script>
