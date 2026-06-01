@@ -27,6 +27,10 @@
 #   FACTORY_CONTRACT_ID  Existing deployed factory address (default = the
 #                        testnet instance the frontend currently targets).
 #   POLICY_VERSION       multisig-policy semantic version (default 0.1.0).
+#   ACCOUNT_VERSION      smart-account wasm version to publish under
+#                        unverified/smart-account (default 0.1.0). Must match
+#                        the version in the factory's import_contract_client!
+#                        reference so the factory deploys the published wasm.
 #   FACTORY_VERSION      factory wasm version to publish + upgrade to
 #                        (default 0.2.0).
 #   REGISTRY_PREFIX      Prefix for unverified registry names (default
@@ -71,6 +75,7 @@ export STELLAR_NETWORK="$NETWORK"   # the CLI doesn't take --network; reads env
 FACTORY_CONTRACT_ID="${FACTORY_CONTRACT_ID:-CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXHIERNOZPPYMUNBT2JZ2SK}"
 POLICY_VERSION="${POLICY_VERSION:-0.2.0}"
 VERIFIER_VERSION="${VERIFIER_VERSION:-0.2.0}"
+ACCOUNT_VERSION="${ACCOUNT_VERSION:-0.1.0}"
 FACTORY_VERSION="${FACTORY_VERSION:-0.3.0}"
 REGISTRY_PREFIX="${REGISTRY_PREFIX:-unverified/}"
 
@@ -82,11 +87,13 @@ REGISTRY_PREFIX="${REGISTRY_PREFIX:-unverified/}"
 # the factory source.
 POLICY_NAME="${REGISTRY_PREFIX}multisig-policy"
 VERIFIER_NAME="${REGISTRY_PREFIX}verifier"
+ACCOUNT_NAME="${REGISTRY_PREFIX}smart-account"
 FACTORY_NAME="${REGISTRY_PREFIX}factory"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 POLICY_WASM="$REPO_ROOT/target/wasm32v1-none/contract/g2c_multisig_policy.wasm"
 VERIFIER_WASM="$REPO_ROOT/target/wasm32v1-none/contract/g2c_webauthn_verifier.wasm"
+ACCOUNT_WASM="$REPO_ROOT/target/wasm32v1-none/contract/g2c_smart_account.wasm"
 FACTORY_WASM="$REPO_ROOT/target/wasm32v1-none/contract/g2c_factory.wasm"
 
 cd "$REPO_ROOT"
@@ -140,7 +147,7 @@ if [ -z "${SKIP_BUILD:-}" ]; then
     ok "build-contracts complete"
 fi
 
-for wasm in "$POLICY_WASM" "$VERIFIER_WASM" "$FACTORY_WASM"; do
+for wasm in "$POLICY_WASM" "$VERIFIER_WASM" "$ACCOUNT_WASM" "$FACTORY_WASM"; do
     [ -f "$wasm" ] || die "expected wasm not found: $wasm (run 'just build-contracts' first)"
 done
 
@@ -210,6 +217,30 @@ else
         --source-account "$ALIAS"
     verifier_addr="$(fetch_contract_id "$VERIFIER_NAME")"
     ok "deployed $VERIFIER_NAME: $verifier_addr"
+fi
+
+# --- smart-account (publish so the factory's wasm hash is resolvable) -----
+
+note "smart-account · publish v$ACCOUNT_VERSION"
+
+# The factory references the smart-account wasm by name+version via
+# `import_contract_client!("unverified/smart-account@$ACCOUNT_VERSION")`. The
+# factory deploys instances by the smart-account's wasm hash, which must be
+# installed/published on-chain. Publishing under the canonical name keeps the
+# wasm discoverable and lets `stellar registry download` resolve it for builds
+# that don't have a local copy. This is publish-only (no deploy): the factory
+# creates the account instances at runtime.
+published_account_hash="$(fetch_hash "$ACCOUNT_NAME" "$ACCOUNT_VERSION")"
+if [ -n "$published_account_hash" ]; then
+    skip "$ACCOUNT_NAME@$ACCOUNT_VERSION already published (hash $published_account_hash)"
+else
+    stellar registry publish \
+        --wasm "$ACCOUNT_WASM" \
+        --wasm-name "$ACCOUNT_NAME" \
+        --binver "$ACCOUNT_VERSION" \
+        --source-account "$ALIAS"
+    published_account_hash="$(fetch_hash "$ACCOUNT_NAME" "$ACCOUNT_VERSION")"
+    ok "published $ACCOUNT_NAME@$ACCOUNT_VERSION (hash $published_account_hash)"
 fi
 
 # --- Task 4b: factory publish + upgrade ----------------------------------
@@ -289,6 +320,7 @@ cat <<EOF
 Summary:
   $POLICY_NAME@$POLICY_VERSION   $policy_addr
   $VERIFIER_NAME (registered)     $verifier_addr
+  $ACCOUNT_NAME@$ACCOUNT_VERSION  $published_account_hash (published)
   $FACTORY_NAME                   $registered_factory (registered by name)
 
 The multisig-policy contract and the WebAuthn verifier are now deployed and
