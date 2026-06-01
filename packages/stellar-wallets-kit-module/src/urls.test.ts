@@ -28,6 +28,19 @@ describe('accountOrigin', () => {
   it('throws on an invalid contract id', () => {
     expect(() => accountOrigin(BASE, 'not-a-contract')).toThrow();
   });
+  it('encodes a PR-preview base into a single `--pr-N` subdomain level', () => {
+    // The dApp-derived base collapses to `pr-34.<apex>` in previews; the
+    // account origin must be `<acc>--pr-34.<apex>`, NOT `<acc>.pr-34.<apex>`,
+    // so wildcard TLS + the WebAuthn rpId still match.
+    expect(accountOrigin('pr-34.mysoroban.xyz', C)).toBe(
+      `https://${C.toLowerCase()}--pr-34.mysoroban.xyz`,
+    );
+  });
+  it('preserves an explicit scheme with a PR-preview base', () => {
+    expect(accountOrigin('http://pr-7.localhost', C)).toBe(
+      `http://${C.toLowerCase()}--pr-7.localhost`,
+    );
+  });
 });
 
 describe('connectUrl', () => {

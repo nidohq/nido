@@ -21,6 +21,26 @@ function splitScheme(base) {
     return [null, base];
 }
 /**
+ * If `host` is a g2c PR-preview base (`pr-<N>.<apex>`), return `["<N>", apex]`;
+ * otherwise `[null, host]`.
+ *
+ * g2c encodes preview deployments into a single subdomain level so wildcard
+ * TLS still matches: the account page in a preview lives at
+ * `<c-address>--pr-<N>.<apex>`, NOT `<c-address>.pr-<N>.<apex>`. The base this
+ * module is configured with (derived from the dApp's own host via
+ * `stripSubdomain`) collapses to the bare `pr-<N>.<apex>` form in previews, so
+ * we have to re-expand it here when building the per-account origin.
+ */
+function splitPreview(host) {
+    const parts = host.split('.');
+    if (parts.length <= 1)
+        return [null, host];
+    const m = parts[0].match(/^pr-(\d+)$/);
+    if (m)
+        return [m[1], parts.slice(1).join('.')];
+    return [null, host];
+}
+/**
  * The apex origin for the g2c deployment, e.g. `https://g2c.example.xyz`.
  * If `base` already carries a scheme (handy for `http://localhost:4321` in
  * dev) it's preserved; otherwise `https` is assumed.
@@ -39,7 +59,13 @@ export function accountOrigin(base, account) {
         throw new Error(`accountOrigin: not a contract id: ${account}`);
     }
     const [scheme, host] = splitScheme(base);
-    return `${scheme ?? 'https'}://${account.toLowerCase()}.${host}`;
+    const acc = account.toLowerCase();
+    const [preview, apex] = splitPreview(host);
+    // In a preview the account lives at `<acc>--pr-<N>.<apex>` (one subdomain
+    // level) so wildcard TLS + the WebAuthn rpId both still match; in production
+    // it's simply `<acc>.<host>`.
+    const accountHost = preview ? `${acc}--pr-${preview}.${apex}` : `${acc}.${host}`;
+    return `${scheme ?? 'https'}://${accountHost}`;
 }
 /**
  * The apex account picker. The user chooses a smart account; the picker
