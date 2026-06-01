@@ -770,19 +770,23 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       updateAccountLink(address);
     }
 
-    // Surface an already-cached selection (the module caches the chosen
-    // C-address in this origin's localStorage) without prompting.
+    // Silent probe: `getAddress()` only reads the kit's in-memory active
+    // address (it does NOT call the module or open a popup), so on a fresh
+    // page load it's empty and throws — hence the no-op catch. A real connect
+    // happens on the button click below via `fetchAddress()`.
     StellarWalletsKit.getAddress()
       .then(({ address }) => { if (address) onConnected(address); })
-      .catch(() => { /* nothing cached yet — wait for Connect */ });
+      .catch(() => { /* not connected this session yet — wait for Connect */ });
 
     $kitConnect.addEventListener("click", async () => {
       clearError();
       $kitConnect.disabled = true;
       try {
-        // Goes through the module → apex `/connect/` picker (popup), returns
-        // the chosen smart-account C-address.
-        const { address } = await StellarWalletsKit.getAddress();
+        // `fetchAddress()` (NOT `getAddress()`) invokes the selected module's
+        // getAddress → apex `/connect/` picker (popup), then caches the chosen
+        // C-address in the kit. `getAddress()` only reads that cache and would
+        // throw "No wallet has been connected." before anything is fetched.
+        const { address } = await StellarWalletsKit.fetchAddress();
         onConnected(address);
       } catch (err: any) {
         showError(`Connect failed: ${err.message ?? err}`);
