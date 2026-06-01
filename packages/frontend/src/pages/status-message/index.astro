@@ -1,192 +1,191 @@
 ---
-import BaseLayout from "../../layouts/BaseLayout.astro";
+// Nido reskin of the status-message developer demo. Switched from BaseLayout to
+// NidoLayout (Warm Nest design system). This is a behavior-preserving restyle:
+// every id, query param, localStorage key, event name and handler in the
+// <script> below is unchanged — only markup classes, copy, and presentation
+// were touched. <Toast/> is mounted once here per the foundation contract.
+import NidoLayout from "../../layouts/NidoLayout.astro";
+import Toast from "../../components/Toast.astro";
+import Logo from "../../components/Logo.astro";
+import Icon from "../../components/Icon.astro";
 ---
 
-<BaseLayout title="Status Message">
-    <div class="page-header">
-        <div>
-        <h1>Status Message</h1>
-        <p class="info">Set a status message on-chain via your smart account.</p>
-        </div>
-        <div class="header-links">
-            <a id="account-link" class="home-btn hidden">Open wallet</a>
-            <a id="home-link" class="home-btn" href="/">Home</a>
-        </div>
-    </div>
-
-
-  <div id="error-box" class="error" style="display:none"></div>
-
-  <!-- Delegation status banner -->
-  <div id="delegation-status"></div>
-
-  <!-- Read current message -->
-  <section>
-    <h2>1. Read Message</h2>
-    <div class="field">
-      <label for="contract-input">Smart Account C-address</label>
-      <input id="contract-input" placeholder="C..." />
-    </div>
-    <div class="field">
-      <button id="load-btn">Load Message</button>
-    </div>
-    <div id="current-message" class="message-display hidden">
-      <div class="label">Current message</div>
-      <div class="value" id="message-value"></div>
-    </div>
-  </section>
-
-  <!-- Set new message -->
-  <section>
-    <h2>2. Set Message</h2>
-    <form id="set-form">
-    <div class="field">
-      <label for="message-input">New message</label>
-      <input id="message-input" placeholder="Hello Passkeys!" />
-    </div>
-    <div class="field">
-      <button  class="primary"> Set Message</button>
-    </div>
-    </form>
-  </section>
-
-  <!-- Demo: dApp <-> wallet via @creit.tech/stellar-wallets-kit + selector -->
-  <section id="kit-demo">
-    <h2>3. Demo: connect via stellar-wallets-kit</h2>
-    <p class="info">
-      This panel talks to your wallet <strong>only through</strong>
-      <code>@creit.tech/stellar-wallets-kit</code>. The
-      <code>@g2c/stellar-wallets-kit-module</code> registers g2c
-      <strong>alongside</strong> the standard wallets (Freighter, xBull, …) so
-      you pick one from the kit's selector modal — no g2c-specific connect code.
-      For a g2c smart account, Set Message builds the <code>udpate_message</code>
-      tx, hands the XDR to <code>kit.signTransaction()</code> (which runs the
-      passkey ceremony at <code>/sign/</code>), then submits the returned signed
-      XDR.
-    </p>
-    <div class="field">
-      <g2c-wallet-button id="kit-wallet"></g2c-wallet-button>
-    </div>
-    <div id="kit-nong2c" class="message-display hidden">
-      <div class="value">
-        This demo signs as a g2c <strong>smart account</strong> (C-address). The
-        selected wallet is a classic Stellar account — switch to a g2c wallet to
-        set a message here.
+<NidoLayout title="Status Message">
+  <div class="col-scroll screen-in pad">
+    <div class="topbar">
+      <Logo mark size={20} />
+      <div class="header-links">
+        <a id="account-link" class="chip hidden">Open wallet</a>
+        <a id="home-link" class="chip" href="/">Home</a>
       </div>
     </div>
-    <div class="field">
-      <label for="kit-message-input">New message (via kit)</label>
-      <input id="kit-message-input" placeholder="Hello from the kit!" />
-    </div>
-    <div class="field">
-      <button id="kit-set" class="primary" type="button" disabled>Set Message via kit</button>
-    </div>
-    <div id="kit-status" class="message-display hidden">
-      <div class="label">Kit status</div>
-      <div class="value" id="kit-status-value"></div>
-      <a id="kit-tx-link" href="#" target="_blank" rel="noopener" style="display:none">View on Stellar Expert</a>
-    </div>
-  </section>
 
-  <!-- Result (shown after redirect back) -->
-  <section id="result-section" class="hidden">
-    <h2>Result</h2>
-    <div id="submit-status" class="message-display">
-      <div class="label">Status</div>
-      <div class="value" id="status-value">Submitting transaction...</div>
-      <a id="tx-link" href="#" target="_blank" rel="noopener" style="display:none">View on Stellar Expert</a>
-    </div>
-  </section>
-</BaseLayout>
+    <header class="sm-head rise">
+      <h1 class="disp sm-title">Leave a note in your nest</h1>
+      <p class="sm-lead">
+        Write a little status that lives on-chain, signed by your Nido with a
+        passkey — no seed phrase, no extension. The steps below are a developer
+        demo of how a dApp talks to a Nido smart account.
+      </p>
+    </header>
+
+    <div id="error-box" class="sm-error" style="display:none"></div>
+
+    <!-- Delegation status banner -->
+    <div id="delegation-status"></div>
+
+    <!-- Read current message -->
+    <section class="card sm-card">
+      <div class="section-label">Step 1 · Read</div>
+      <h2 class="disp sm-h2">Read a note</h2>
+      <div class="field">
+        <label for="contract-input">Smart account C-address</label>
+        <input id="contract-input" class="input mono" placeholder="C..." />
+      </div>
+      <div class="field">
+        <button id="load-btn" class="btn soft">Load note</button>
+      </div>
+      <div id="current-message" class="sm-display hidden">
+        <div class="label">Current note</div>
+        <div class="value" id="message-value"></div>
+      </div>
+    </section>
+
+    <!-- Set new message -->
+    <section class="card sm-card">
+      <div class="section-label">Step 2 · Write</div>
+      <h2 class="disp sm-h2">Set a new note</h2>
+      <form id="set-form">
+        <div class="field">
+          <label for="message-input">New note</label>
+          <input id="message-input" class="input" placeholder="Hello from my nest!" />
+        </div>
+        <div class="field">
+          <button class="btn acc">
+            <Icon name="send" size={18} color="#fff" /> Set note
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Demo: dApp <-> wallet via @creit.tech/stellar-wallets-kit + selector -->
+    <section id="kit-demo" class="card sm-card">
+      <div class="section-label">Step 3 · Connect</div>
+      <h2 class="disp sm-h2">Connect via stellar-wallets-kit</h2>
+      <p class="sm-info">
+        This panel talks to your wallet <strong>only through</strong>
+        <code>@creit.tech/stellar-wallets-kit</code>. The
+        <code>@g2c/stellar-wallets-kit-module</code> registers Nido
+        <strong>alongside</strong> the standard wallets (Freighter, xBull, …) so
+        you pick one from the kit's selector modal — no Nido-specific connect
+        code. For a Nido smart account, Set note builds the
+        <code>udpate_message</code> tx, hands the XDR to
+        <code>kit.signTransaction()</code> (which runs the passkey ceremony at
+        <code>/sign/</code>), then submits the returned signed XDR.
+      </p>
+      <div class="field">
+        <g2c-wallet-button id="kit-wallet"></g2c-wallet-button>
+      </div>
+      <div id="kit-nong2c" class="sm-display hidden">
+        <div class="value">
+          This demo signs as a Nido <strong>smart account</strong> (C-address).
+          The selected wallet is a classic Stellar account — switch to a Nido
+          wallet to set a note here.
+        </div>
+      </div>
+      <div class="field">
+        <label for="kit-message-input">New note (via kit)</label>
+        <input id="kit-message-input" class="input" placeholder="Hello from the kit!" />
+      </div>
+      <div class="field">
+        <button id="kit-set" class="btn acc" type="button" disabled>Set note via kit</button>
+      </div>
+      <div id="kit-status" class="sm-display hidden">
+        <div class="label">Kit status</div>
+        <div class="value" id="kit-status-value"></div>
+        <a id="kit-tx-link" class="link" href="#" target="_blank" rel="noopener" style="display:none">View on Stellar Expert</a>
+      </div>
+    </section>
+
+    <!-- Result (shown after redirect back) -->
+    <section id="result-section" class="card sm-card hidden">
+      <div class="section-label">Result</div>
+      <h2 class="disp sm-h2">All done</h2>
+      <div id="submit-status" class="sm-display">
+        <div class="label">Status</div>
+        <div class="value" id="status-value">Submitting transaction...</div>
+        <a id="tx-link" class="link" href="#" target="_blank" rel="noopener" style="display:none">View on Stellar Expert</a>
+      </div>
+    </section>
+  </div>
+  <Toast />
+</NidoLayout>
 
 <style>
-  body {
-    background: #1e1e2e;
-  }
-
-  button.primary {
-    background: #4a1a6b;
-    border-color: #6a2a8b;
-  }
-
-  button.primary:hover {
-    background: #5a2a7b;
-  }
-
-  .message-display {
-    background: #1a2040;
-    border: 1px solid #2a3060;
-    border-radius: 6px;
-    padding: 1rem;
-    margin: 1rem 0;
-  }
-
-  .message-display .label {
-    color: #808090;
-    font-size: 0.8rem;
-  }
-
-  .message-display .value {
-    color: #e0e0e0;
-    font-size: 0.95rem;
-    margin-top: 0.25rem;
-  }
-
-  .message-display a {
-    color: #7a9ec9;
-    font-size: 0.85rem;
-    margin-top: 0.5rem;
-    display: inline-block;
-  }
-
   .header-links {
     display: flex;
-    gap: 0.5rem;
+    gap: 8px;
     align-items: center;
   }
+  .header-links .chip { text-decoration: none; cursor: pointer; }
 
-  #kit-demo code {
-    background: #1a2040;
-    padding: 1px 4px;
-    border-radius: 3px;
-    font-size: 0.85em;
+  .sm-head { padding: 6px 0 18px; }
+  .sm-title {
+    font-weight: 800;
+    font-size: clamp(28px, 7vw, 36px);
+    line-height: 1.04;
+    margin: 0 0 10px;
+  }
+  .sm-lead { font-size: 15px; line-height: 1.55; color: var(--ink-soft); margin: 0; max-width: 38ch; }
+
+  .sm-card { padding: 20px; margin-bottom: 16px; }
+  .sm-h2 { font-weight: 800; font-size: 19px; margin: 6px 0 16px; }
+  .sm-card .field { margin-bottom: 14px; }
+  .sm-card .field:last-child { margin-bottom: 0; }
+
+  .sm-info { font-size: 13px; line-height: 1.6; color: var(--ink-soft); margin: 0 0 16px; }
+  .sm-info code {
+    font-family: var(--mono); font-size: 0.88em;
+    background: var(--chip); color: var(--ink-soft);
+    padding: 1px 5px; border-radius: var(--r-sm);
   }
 
+  .sm-error {
+    background: var(--acc-soft); color: var(--danger);
+    border: 1px solid var(--acc-glow); border-radius: var(--r-md);
+    padding: 12px 14px; margin: 0 0 16px; font-size: 14px; font-weight: 600;
+  }
+
+  .sm-display {
+    background: var(--paper-3); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: 14px 16px; margin: 14px 0 0;
+  }
+  .sm-display .label {
+    font-size: 11px; font-weight: 800; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--mut);
+  }
+  .sm-display .value { font-size: 15px; color: var(--ink); margin-top: 5px; word-break: break-word; }
+  .sm-display a { display: inline-block; margin-top: 8px; font-size: 13px; }
+
+  /* ---- <g2c-wallet-button> reskin (Nido tokens) ---- */
   g2c-wallet-button .g2c-wb {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.6rem;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
   }
-
+  g2c-wallet-button .g2c-wb-connect { width: 100%; }
   g2c-wallet-button .g2c-wb-meta {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
+    display: inline-flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
   }
-
-  g2c-wallet-button .g2c-wb-id {
-    font-size: 0.78rem;
-    color: #9ac;
-  }
-
   g2c-wallet-button .g2c-wb-addr {
-    font-family: monospace;
-    font-size: 0.78rem;
-    color: #9ac;
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft);
     word-break: break-all;
   }
-
   g2c-wallet-button .g2c-wb-warning {
-    flex-basis: 100%;
-    font-size: 0.8rem;
-    color: #e0c060;
+    flex-basis: 100%; font-size: 12.5px; color: var(--warn);
+    background: var(--warn-soft); border-radius: var(--r-sm); padding: 8px 11px;
   }
-
+  g2c-wallet-button .g2c-wb-warning a { color: var(--warn); font-weight: 700; }
   g2c-wallet-button .g2c-wb-error {
-    flex-basis: 100%;
-    font-size: 0.8rem;
-    color: #e08080;
+    flex-basis: 100%; font-size: 12.5px; color: var(--danger);
   }
 </style>
 
@@ -304,13 +303,12 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     const $status = document.getElementById("delegation-status")!;
     if (!account) {
       $status.innerHTML = `
-        <div style="background:#f7f7fa;border:1px solid #ddd;border-radius:6px;padding:0.75rem;margin:0.5rem 0">
-          <p style="margin:0 0 0.5rem 0;font-size:0.9em;color:#666">
+        <div class="card sm-card" style="background:var(--paper-3);margin-bottom:16px">
+          <p style="margin:0 0 12px 0;font-size:13px;line-height:1.55;color:var(--ink-soft)">
             Type your smart account address above, then delegate this dApp
-            so signing stays in-page (no wallet round-trip per message).
+            so signing stays in-page (no wallet round-trip per note).
           </p>
-          <button id="delegate-button" disabled
-                  style="font-size:0.95em;padding:0.4rem 0.8rem;opacity:0.6;cursor:not-allowed">
+          <button id="delegate-button" class="btn soft" disabled>
             Delegate this dApp →
           </button>
         </div>`;
@@ -318,19 +316,19 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     }
     const material = loadSessionKeyMaterial(account, STATUS_CONTRACT);
     const delegatedBanner = material
-      ? `<p style="margin:0 0 0.5rem 0;font-size:0.9em;color:#9ac">
+      ? `<p style="margin:0 0 8px 0;font-size:14px;color:var(--good)">
            <strong>Delegated</strong> — signs in-page with a dApp-scoped passkey.
-           <button id="forget-delegation" style="margin-left:0.5rem;font-size:0.85em">Forget delegation</button>
+           <button id="forget-delegation" class="link" style="background:none;border:none;cursor:pointer;margin-left:6px;font-size:13px;font-weight:700">Forget delegation</button>
          </p>
-         <p style="margin:0 0 0.5rem 0;font-size:0.85em;color:#666">
+         <p style="margin:0 0 12px 0;font-size:13px;line-height:1.55;color:var(--ink-soft)">
            Each action prompts your authenticator (Touch ID / device unlock) at this origin;
            no wallet round-trip. Re-delegate to replace this session passkey with a fresh one.
          </p>`
-      : `<p style="margin:0 0 0.5rem 0;font-size:0.9em">
+      : `<p style="margin:0 0 8px 0;font-size:14px;color:var(--ink)">
            <strong>Not delegated.</strong> Every action will redirect to your
            wallet for a passkey prompt.
          </p>
-         <p style="margin:0 0 0.5rem 0;font-size:0.85em;color:#666">
+         <p style="margin:0 0 12px 0;font-size:13px;line-height:1.55;color:var(--ink-soft)">
            Delegate this dApp to skip the round-trip: a passkey scoped to
            the status-message contract is created at this origin. The
            private key never leaves your authenticator — XSS at this site
@@ -338,9 +336,9 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
            unlock here, just not a full wallet detour.
          </p>`;
     $status.innerHTML = `
-      <div style="background:#f7f7fa;border:1px solid #ddd;border-radius:6px;padding:0.75rem;margin:0.5rem 0">
+      <div class="card sm-card" style="background:var(--paper-3);margin-bottom:16px">
         ${delegatedBanner}
-        <button id="delegate-button" style="font-size:0.95em;padding:0.4rem 0.8rem">
+        <button id="delegate-button" class="btn soft">
           ${material ? "Re-delegate this dApp →" : "Delegate this dApp →"}
         </button>
       </div>`;
@@ -622,7 +620,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         }
 
         $setForm.disabled = false;
-        $setForm.textContent = "Set Message";
+        $setForm.textContent = "Set note";
         return;
       }
 
@@ -645,7 +643,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     } catch (err: any) {
       showError(`Failed to build transaction: ${err.message}`);
       $setForm.disabled = false;
-      $setForm.textContent = "Set Message";
+      $setForm.textContent = "Set note";
     }
   });
 
