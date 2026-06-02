@@ -4,7 +4,15 @@
     "packages/*",
     "packages/contract-bindings/*"
   ],
+  "scripts": {
+    "test:support": "vitest run --config vitest.support.config.ts",
+    "test:e2e": "playwright test --grep @fast",
+    "test:e2e:cdp": "playwright test --project=chromium-cdp"
+  },
   "devDependencies": {
-    "@playwright/test": "^1.58.2"
+    "@playwright/test": "^1.58.2",
+    "@noble/curves": "^2.2.0",
+    "esbuild": "^0.27.3",
+    "vitest": "^4.1.7"
   }
 }
