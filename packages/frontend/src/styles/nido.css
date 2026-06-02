@@ -375,3 +375,60 @@ a.link { color: var(--acc); font-weight: 700; text-decoration: none; }
 /* ---------- visibility helpers (existing scripts toggle these; the prototype CSS omits them) ---------- */
 .hidden { display: none; }
 [hidden] { display: none; }
+
+/* ---------- responsive shells (desktop redesign) ---------- */
+/* 800–1024: app pages widen to a centered ~820px column, no sidebar yet. */
+@media (min-width: 800px) {
+  .appwrap-app { align-items: flex-start; }
+  .col-app { max-width: 820px; }
+  .appwrap-app > .nido-sidebar { display: none; }
+}
+/* ≥1024: real desktop — sidebar + content rail, centered as a unit. */
+@media (min-width: 1024px) {
+  .appwrap-app {
+    max-width: 1200px;
+    margin-inline: auto;
+    gap: 24px;
+    padding: 28px 24px 36px;
+    align-items: stretch;
+  }
+  .appwrap-app > .nido-sidebar { display: flex; }
+  .col-app {
+    max-width: none;
+    flex: 1;
+    min-height: min(860px, calc(100vh - 64px));
+    max-height: calc(100vh - 64px);
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    box-shadow: var(--sh-3);
+    overflow: hidden;
+  }
+}
+
+.nido-sidebar {
+  display: none; /* shown ≥1024 via .appwrap-app media query */
+  flex-direction: column;
+  width: 240px;
+  flex: 0 0 240px;
+  padding: 8px 4px;
+  gap: 6px;
+}
+.nido-sidebar-brand { display: flex; padding: 10px 12px 18px; text-decoration: none; }
+.nido-sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
+.nido-navitem {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border-radius: 13px;
+  color: var(--ink-soft); font-weight: 700; font-size: 15px;
+  text-decoration: none;
+}
+.nido-navitem:hover { background: var(--chip); color: var(--ink); }
+.nido-navitem.is-active { background: var(--acc-soft); color: var(--acc); }
+.nido-sidebar-account {
+  margin-top: auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 14px;
+  text-decoration: none; color: var(--ink);
+}
+.nido-sidebar-account:hover { background: var(--chip); }
+.nido-account-name { font-weight: 700; font-size: 14px; }

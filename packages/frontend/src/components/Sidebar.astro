@@ -1,0 +1,38 @@
+---
+// Nido desktop sidebar (≥1024px). Brand mark + wordmark (top), section nav,
+// account chip (bottom). Hidden below 1024 via CSS (.nido-sidebar).
+import Logo from "./Logo.astro";
+import Avatar from "./Avatar.astro";
+import Icon from "./Icon.astro";
+
+const path = Astro.url.pathname;
+const isActive = (href: string) =>
+  href === "/" ? path === "/" : path.startsWith(href);
+
+const NAV = [
+  { href: "/", label: "Home", icon: "home" },
+  { href: "/security/", label: "Security", icon: "shield" },
+] as const;
+---
+
+<aside class="nido-sidebar">
+  <a class="nido-sidebar-brand" href="/" aria-label="Nido home">
+    <Logo size={20} mark markSize={28} />
+  </a>
+  <nav class="nido-sidebar-nav">
+    {NAV.map((item) => (
+      <a
+        class:list={["nido-navitem", { "is-active": isActive(item.href) }]}
+        href={item.href}
+        aria-current={isActive(item.href) ? "page" : undefined}
+      >
+        <Icon name={item.icon} size={18} />
+        <span>{item.label}</span>
+      </a>
+    ))}
+  </nav>
+  <a class="nido-sidebar-account" href="/account/" aria-label="Your account">
+    <Avatar seed="nido" size={32} class="js-avatar" />
+    <span class="nido-account-name js-account-nickname">Your Nido</span>
+  </a>
+</aside>
