@@ -1,0 +1,26 @@
+[workspace]
+members = ["contracts/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+soroban-sdk = "26.0.1"
+# soroban-sdk-tools: rev cbafae3 is the soroban-sdk 26 update. Pinned directly
+# here (rather than inherited from the g2c root workspace) so this example is a
+# self-contained stellar-scaffold project. Keep in sync with the repo root
+# Cargo.toml if the rev moves.
+soroban-sdk-tools = { git = "https://github.com/BlaineHeffron/soroban-sdk-tools", rev = "cbafae3439f01a4add2411c6162885edb30e7389" }
+
+[profile.release]
+opt-level = "z"
+debug = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
+strip = true

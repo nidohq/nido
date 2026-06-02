@@ -2,7 +2,9 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "packages/contract-bindings/*"
+    "packages/contract-bindings/*",
+    "examples/status-message-dapp",
+    "examples/status-message-dapp/packages/*"
   ],
   "scripts": {
     "test:support": "vitest run --config vitest.support.config.ts",
