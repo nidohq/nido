@@ -1,0 +1,38 @@
+name: Testnet e2e (quarantined)
+
+# Manual-only: slow, depends on live Stellar testnet + friendbot, and currently
+# PINS bug #3 (UnvalidatedContext). Never gates PRs. Trigger from the Actions
+# tab. Set the repo secret G2C_TEST_BANK_SECRET (a funded testnet G-account
+# secret) to skip friendbot for the name submitter; without it the app funds
+# its own submitter via friendbot.
+on:
+  workflow_dispatch:
+
+jobs:
+  testnet:
+    name: Testnet lifecycle (create+deploy + name-claim pin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Install Playwright browsers + system deps
+        run: npx playwright install --with-deps chromium webkit
+      - name: Build passkey-sdk
+        run: npx tsc -p ./packages/passkey-sdk/tsconfig.json
+      - name: Build frontend
+        run: npx astro build --root ./packages/frontend
+      - name: Testnet tier (chromium + webkit)
+        run: npx playwright test --project=testnet-chromium --project=testnet-webkit
+        env:
+          G2C_TEST_BANK_SECRET: ${{ secrets.G2C_TEST_BANK_SECRET }}
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-testnet
+          path: playwright-report/
+          retention-days: 7

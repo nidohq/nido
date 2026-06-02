@@ -1,0 +1,50 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  unit:
+    name: Unit (TestAuthenticator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Unit tests (shim crypto vs SDK parsers)
+        run: npx vitest run --config vitest.support.config.ts
+
+  e2e:
+    name: E2E (fast UI + CDP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Install Playwright browsers + system deps
+        run: npx playwright install --with-deps chromium firefox webkit
+      # Mirrors the deploy/preview workflows: build the SDK, then the frontend,
+      # so the static webServer serves a real dist for the e2e tiers.
+      - name: Build passkey-sdk
+        run: npx tsc -p ./packages/passkey-sdk/tsconfig.json
+      - name: Build frontend
+        run: npx astro build --root ./packages/frontend
+      - name: Fast UI e2e tier (shim — chromium/firefox/webkit)
+        run: npx playwright test --grep @fast
+      - name: Chromium CDP virtual-authenticator fidelity lane
+        run: npx playwright test --project=chromium-cdp
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

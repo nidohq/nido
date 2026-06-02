@@ -289,6 +289,7 @@ import Nest from "../../components/Nest.astro";
     parseRegistration,
     derToCompact,
     buildAuthHash,
+    computeAuthDigest,
     getAuthEntry,
     injectPasskeySignature,
     computeAccountAddress,
@@ -923,8 +924,14 @@ import Nest from "../../components/Nest.astro";
         // Extract auth entry and compute hash for passkey signing
         const authEntry = getAuthEntry(successSim);
         const lastLedger = successSim.latestLedger;
-        const authHash = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
-        const authHashHex = buf2hex(authHash);
+        // OZ v0.7 accounts verify the WebAuthn challenge against
+        // sha256(signature_payload || context_rule_ids.to_xdr()), NOT the bare
+        // signature_payload. injectPasskeySignature (in the nameresult return
+        // flow) defaults contextRuleIds=[0], so sign computeAuthDigest(payload,
+        // [0]) to match — mirrors walletSign.ts. Signing the bare payload makes
+        // __check_auth trap with Auth/InvalidAction.
+        const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
+        const authHashHex = buf2hex(computeAuthDigest(signaturePayload, [0]));
 
         // Assemble the transaction with simulation results so auth entries
         // are baked into the XDR (needed by injectPasskeySignature later)
