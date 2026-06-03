@@ -9,7 +9,7 @@ permissions:
   pull-requests: write
 
 env:
-  PAGES_PROJECT: mysoroban
+  PAGES_PROJECT: nido
 
 jobs:
   deploy:
@@ -44,8 +44,8 @@ jobs:
         with:
           script: |
             const prNum = context.payload.pull_request.number;
-            const previewUrl = `https://pr-${prNum}.mysoroban.xyz`;
-            const body = `**Preview deployed!**\n\n${previewUrl}\n\nAccount URLs: \`<contract-address>--pr-${prNum}.mysoroban.xyz\``;
+            const previewUrl = `https://pr-${prNum}.nido.fyi`;
+            const body = `**Preview deployed!**\n\n${previewUrl}\n\nAccount URLs: \`<contract-address>--pr-${prNum}.nido.fyi\``;
 
             // Find existing bot comment
             const { data: comments } = await github.rest.issues.listComments({
