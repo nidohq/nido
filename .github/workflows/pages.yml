@@ -30,7 +30,7 @@ env:
   PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
   PUBLIC_STELLAR_RPC_URL: "https://soroban-testnet.stellar.org"
   PUBLIC_STELLAR_HORIZON_URL: "https://horizon-testnet.stellar.org"
-  PUBLIC_G2C_BASE: "https://mysoroban.xyz"
+  PUBLIC_G2C_BASE: "https://nido.fyi"
 
 jobs:
   build:
