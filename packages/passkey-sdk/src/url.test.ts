@@ -40,6 +40,23 @@ describe('accountUrl', () => {
       `//${C.toLowerCase()}--pr-24.mysoroban.xyz/security/delegate/`,
     );
   });
+
+  // Regression: production dApp origin. The session-less status-message sign
+  // flow calls accountUrl(window.location.host, …) from `status-message.nido.fyi`.
+  // accountUrl previously prepended to the FULL host → `<acc>.status-message.nido.fyi`
+  // (a two-label subdomain with no wildcard cert). It must strip to the apex,
+  // matching dappUrl, → `<acc>.nido.fyi`.
+  it('production from a reserved-dApp origin (status-message): strips to apex', () => {
+    expect(accountUrl('status-message.nido.fyi', C, '/')).toBe(
+      `//${C.toLowerCase()}.nido.fyi/`,
+    );
+  });
+
+  it('production from a contract subdomain: strips to apex', () => {
+    expect(accountUrl('cabc1234.mysoroban.xyz', C, '/account/')).toBe(
+      `//${C.toLowerCase()}.mysoroban.xyz/account/`,
+    );
+  });
 });
 
 describe('stripSubdomain', () => {
