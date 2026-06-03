@@ -43,7 +43,7 @@ name = "testnet-user"
 default = true
 
 [staging.contracts]
-# status_message = { id = "C..." }
+status_message = { id = "CBXVJXHPSYORSAHPX4I6NYPQMDJWK2STQCE6JTIM7FNV4OZSIDJFGNDM" }
 
 ### Production — mainnet, bind by id.
 [production.network]

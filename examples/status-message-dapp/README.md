@@ -49,10 +49,17 @@ builds the contract, deploys it to the network selected by `STELLAR_SCAFFOLD_ENV
 (`development` by default), and generates the client into `packages/status_message`
 + `src/contracts/status_message.ts`. Vite serves the app.
 
-> The generated client and the contract address are **not** committed (they're
-> build output, see `.gitignore`). A fresh checkout therefore needs one
-> `npm start` / `stellar scaffold build --build-clients` before `tsc`/`vite build`
-> will succeed.
+> **Committed client for the live demo.** So the [GitHub Pages
+> deployment](https://theahaco.github.io/g2c/) can build with a plain
+> `npm ci && vite build` (no Rust, no scaffold, no live RPC), the generated
+> client for the deployed testnet contract is checked in: the `staging`
+> environment binds `status_message` by id
+> (`CBXVJXHPSYORSAHPX4I6NYPQMDJWK2STQCE6JTIM7FNV4OZSIDJFGNDM`) and
+> `packages/status_message/` (source) + `src/contracts/status_message.ts` are
+> tracked. Local `development`/`testing` runs still regenerate the client via
+> `npm start`, overwriting it for the network you're on. To repoint the demo at
+> a new deployment, update the `staging` id and re-run
+> `STELLAR_SCAFFOLD_ENV=staging stellar scaffold build --build-clients`.
 
 ### Local network (default)
 

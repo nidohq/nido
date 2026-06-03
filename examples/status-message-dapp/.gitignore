@@ -40,7 +40,13 @@ lerna-debug.log*
 packages/*
 # if you have other workspace packages, add them here
 !packages/.gitkeep
+# Committed for the GitHub Pages build: the status-message client, bound to the
+# deployed testnet id. Build output (dist/) and node_modules/ stay ignored via
+# the global rules above; the per-package lockfile is build-local.
+!packages/status_message/
+packages/status_message/package-lock.json
 
 # generated contract client imports
 src/contracts/*
 !src/contracts/util.ts
+!src/contracts/status_message.ts
