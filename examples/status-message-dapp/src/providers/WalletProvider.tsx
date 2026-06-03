@@ -151,6 +151,8 @@ function deepEqual<T>(a: T, b: T): boolean {
 
 export interface WalletContextType {
 	address?: string
+	/** The selected wallet's product id (e.g. "g2c" for Nido), or null. */
+	walletId: string | null
 	balances: MappedBalances
 	isPending: boolean
 	network?: string
@@ -165,6 +167,7 @@ const POLL_INTERVAL = 1000
 export const WalletContext = // @ts-ignore
 	createContext<WalletContextType>({
 		isPending: true,
+		walletId: null,
 		balances: {},
 		updateBalances: async () => {},
 		signTransaction,
@@ -364,6 +367,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const contextValue = useMemo(
 		() => ({
 			address,
+			walletId,
 			network,
 			networkPassphrase,
 			balances,
@@ -374,6 +378,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 		}),
 		[
 			address,
+			walletId,
 			network,
 			networkPassphrase,
 			balances,
