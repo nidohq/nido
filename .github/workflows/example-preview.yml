@@ -55,21 +55,37 @@ jobs:
         run: echo "/* /index.html 200" > dist/_redirects
         working-directory: examples/status-message-dapp
 
+      # Deploy to a branch alias of the mysoroban project. The custom-domain
+      # wildcard (*.mysoroban.xyz) only serves the project's PRODUCTION branch,
+      # so for the example we use wrangler's branch-alias *.pages.dev URL — the
+      # one it prints as "Deployment alias URL" — which always maps to this
+      # branch's latest deployment.
       - name: Deploy to Cloudflare Pages
+        id: deploy
         run: |
-          npx wrangler pages deploy examples/status-message-dapp/dist \
+          set +e
+          out=$(npx wrangler pages deploy examples/status-message-dapp/dist \
             --project-name "$PAGES_PROJECT" \
-            --branch "example-pr-${{ github.event.pull_request.number }}"
+            --branch "example-pr-${{ github.event.pull_request.number }}" 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          [ "$code" -eq 0 ] || exit "$code"
+          url=$(printf '%s\n' "$out" | grep -i 'alias URL' | grep -oE 'https://[^ ]+' | tail -1 || true)
+          echo "preview_url=$url" >> "$GITHUB_OUTPUT"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Comment preview URL on PR
         uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
         with:
           script: |
             const prNum = context.payload.pull_request.number;
-            const previewUrl = `https://example-pr-${prNum}.mysoroban.xyz`;
+            const previewUrl = process.env.PREVIEW_URL
+              || `https://example-pr-${prNum}.mysoroban.pages.dev`;
             const body = `**Example dApp preview deployed!**\n\n${previewUrl}\n\nThe \`status-message\` example (testnet) connecting through the g2c wallet selector at mysoroban.xyz. The live home is https://theahaco.github.io/g2c/ once merged.`;
 
             const { data: comments } = await github.rest.issues.listComments({
