@@ -7,6 +7,13 @@ export const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 export const SUBMITTER_KEY = 'g2c:name-keypair';
 
 /**
+ * localStorage key the status-message dApp uses for its tx submitter/fee-payer.
+ * It's only a fee payer (the smart account authorizes via its passkey), so we
+ * reuse the same funded bank secret to skip the page's own friendbot funding.
+ */
+export const SM_SUBMITTER_KEY = 'sm:keypairSecret';
+
+/**
  * Registry-safe unique name: `<prefix>` + base36 of the timestamp, lowercased,
  * clamped to 15 chars, guaranteed to start with a letter.
  */
@@ -25,10 +32,14 @@ export async function seedBank(context: BrowserContext): Promise<void> {
   const secret = process.env.G2C_TEST_BANK_SECRET;
   if (!secret) return; // no bank → app friendbots its own submitter
   await context.addInitScript(
-    ([k, v]) => {
-      try { localStorage.setItem(k, v); } catch { /* pre-DOM on some engines */ }
+    ([k1, k2, v]) => {
+      // Seed BOTH submitters: the name-claim flow (g2c:name-keypair) and the
+      // status-message dApp's fee payer (sm:keypairSecret). Same funded bank
+      // secret — both are only ever the tx source/fee payer, never the signer.
+      try { localStorage.setItem(k1, v); } catch { /* pre-DOM on some engines */ }
+      try { localStorage.setItem(k2, v); } catch { /* pre-DOM on some engines */ }
     },
-    [SUBMITTER_KEY, secret] as const,
+    [SUBMITTER_KEY, SM_SUBMITTER_KEY, secret] as const,
   );
 }
 
