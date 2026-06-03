@@ -126,7 +126,14 @@ export function accountUrl(host, contractId, path = "/") {
         const apex = host.split(".").slice(1).join(".");
         return `//${contractId.toLowerCase()}${PREVIEW_SEP}${preview}.${apex}${path}`;
     }
-    return `//${contractId.toLowerCase()}.${host}${path}`;
+    // The calling host could be the apex (mysoroban.xyz), a contract subdomain
+    // (cabc.mysoroban.xyz), or a reserved-dApp subdomain (status-message.nido.fyi).
+    // Strip to the apex before prepending, mirroring dappUrl: 3+ labels means
+    // there's a subdomain to drop, 2 labels means we're already at the apex.
+    // (This codebase doesn't deal with multi-segment TLDs like co.uk.)
+    const parts = host.split(".");
+    const apex = parts.length > 2 ? parts.slice(1).join(".") : host;
+    return `//${contractId.toLowerCase()}.${apex}${path}`;
 }
 /**
  * Strip the contract ID from a host string, preserving any preview prefix.
