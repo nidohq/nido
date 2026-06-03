@@ -1,8 +1,114 @@
-import { test, expect, useIdentity } from '../../support/fixtures';
-import { seedBank } from '../../support/testnet';
+import { test, expect, useIdentity, SEED_HEX } from '../../support/fixtures';
+import { seedBank, withRetry } from '../../support/testnet';
+import { credentialFor } from '../../support/auth/seed';
 import { createAndDeployAs, installRecoveryRule } from '../../support/recovery';
+import {
+  Account,
+  Contract,
+  Networks,
+  TransactionBuilder,
+  nativeToScVal,
+  scValToNative,
+  rpc,
+} from '@stellar/stellar-sdk';
 
 const PORT = Number(process.env.E2E_PORT || 4399);
+const RPC_URL = 'https://soroban-testnet.stellar.org';
+const DUMMY_SOURCE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+
+/**
+ * Node-side mirror of `findRuleForPubkey` (copied verbatim from
+ * session-key.testnet.spec.ts). Uses ONLY `@stellar/stellar-sdk` — NOT the
+ * `@g2c/passkey-sdk` barrel (its untranspiled `export * as` namespace trips
+ * Playwright's TS transform in the Node test process).
+ *
+ * Simulates `get_context_rules_count` then `get_context_rule(i)` on the account,
+ * decodes each rule RAW via `scValToNative`, and scans every signer for an
+ * `["External", verifierAddr, pubkeyBytes]` whose pubkey hex equals `pubkeyHex`.
+ * Returns the matching rule id (or null), plus the verifier + context type.
+ */
+async function findRuleForPubkey(
+  account: string,
+  pubkeyHex: string,
+): Promise<{ ruleId: number; verifier: string; contextType: string } | null> {
+  const server = new rpc.Server(RPC_URL);
+
+  async function simulateView(method: string, ...args: ReturnType<typeof nativeToScVal>[]) {
+    const source = new Account(DUMMY_SOURCE, '0');
+    const tx = new TransactionBuilder(source, {
+      fee: '100',
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(new Contract(account).call(method, ...args))
+      .setTimeout(0)
+      .build();
+    const sim = await server.simulateTransaction(tx);
+    if (rpc.Api.isSimulationError(sim)) {
+      throw new Error(
+        `simulateView ${method}: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`,
+      );
+    }
+    const result = (sim as rpc.Api.SimulateTransactionSuccessResponse).result;
+    if (!result) throw new Error(`simulateView ${method}: no result`);
+    return result.retval;
+  }
+
+  // Decode the bytes a raw-`scValToNative` External signer hands back (it may
+  // arrive as Uint8Array, a number[], or an object with numeric keys).
+  function bytesToHex(raw: unknown): string | null {
+    if (raw instanceof Uint8Array) {
+      return Array.from(raw, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    if (Array.isArray(raw)) {
+      return (raw as number[]).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    if (typeof raw === 'object' && raw !== null) {
+      const obj = raw as Record<string, number>;
+      const ordered: number[] = [];
+      for (let j = 0; obj[j as unknown as string] !== undefined; j++) {
+        ordered.push(obj[j as unknown as string]);
+      }
+      if (ordered.length > 0) {
+        return ordered.map((b) => b.toString(16).padStart(2, '0')).join('');
+      }
+    }
+    return null;
+  }
+
+  // Raw-decoded Soroban enum: a tag-first array (e.g. ["CallContract", addr]),
+  // or a bare symbol for a fieldless variant (e.g. "Default").
+  function ctxTypeLabel(ct: unknown): string {
+    if (Array.isArray(ct)) return ct.map((v) => String(v)).join(':');
+    return String(ct);
+  }
+
+  const countRv = await simulateView('get_context_rules_count');
+  const count = scValToNative(countRv) as number;
+  const lowerHex = pubkeyHex.toLowerCase();
+
+  for (let i = 0; i < count; i++) {
+    const ruleRv = await simulateView('get_context_rule', nativeToScVal(i, { type: 'u32' }));
+    const native = scValToNative(ruleRv) as {
+      id?: number;
+      signers?: unknown[];
+      context_type?: unknown;
+    };
+    for (const s of native.signers ?? []) {
+      // ["External", verifier, pubkey_bytes]
+      if (Array.isArray(s) && s[0] === 'External') {
+        const candidateHex = bytesToHex(s[2]);
+        if (candidateHex && candidateHex.toLowerCase() === lowerHex) {
+          return {
+            ruleId: native.id ?? i,
+            verifier: String(s[1]),
+            contextType: ctxTypeLabel(native.context_type),
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * @testnet — real-chain end-to-end of the social-recovery (1-of-1) ceremony.
@@ -24,16 +130,26 @@ const PORT = Number(process.env.E2E_PORT || 4399);
  *  5) Originator: paste the blob, add it (#om-add-sig → 1/1), submit
  *     (#om-submit → #om-submit-status).
  *
+ * ADDITIVE recovery (NOT a full rotation): this flow only ADDS the new passkey
+ * to the account's Default rule (rule 0); the old/lost key is NOT revoked.
+ * Soroban permits one InvokeHostFunction op per tx, so a rotation is a single
+ * action and prepareRotation prefers ADDING the new key — the #om-remove-id
+ * removal branch is never exercised here. After this test the account has BOTH
+ * the old (lost) and new keys installed as signers on rule 0. Revoking the lost
+ * key (filling #om-remove-id, a second rotation) is a deferred follow-on.
+ *
  * ASSERT-OR-PIN: recovery is the most auth-fragile flow (nested friend auth
  * targeting the RECOVERING account's __check_auth + byte-identical parent
  * expiration + multisig threshold policy). If a step is rejected on-chain we
  * capture the EXACT #om-submit-status / #fm-status text and which step produced
- * it, then throw (documenting the failure) rather than mask it.
+ * it, then throw (documenting the failure) rather than mask it. On success we
+ * independently verify on-chain (findRuleForPubkey) that the new key landed as a
+ * signer — UI string + chain truth, mirroring the session-key spec's standard.
  */
 test.describe('@testnet social recovery (1-of-1)', () => {
   test.describe.configure({ timeout: 360_000 });
 
-  test('friend-gated rotation: stage → friend signs → collect → submit', async ({
+  test('friend-gated key ADD (additive recovery): stage → friend signs → collect → submit', async ({
     page,
     context,
   }) => {
@@ -160,8 +276,36 @@ test.describe('@testnet social recovery (1-of-1)', () => {
     }
     expect(outcome).toBe('ok');
 
+    // --- ON-CHAIN READ-BACK (chain truth, not just the UI string) ---
+    // The UI said "Rotation submitted"; now independently confirm the new
+    // rotation key actually landed as a signer on the originator's rules. Mirror
+    // session-key's standard: derive the rotated key's pubkey deterministically
+    // (same seed+label the shim's create() used at #om-new-key) and assert it's
+    // an External signer on rule 0 (recovery ADDS the new primary key to the
+    // Default rule). withRetry absorbs RPC ledger-close lag.
+    const rotated = await credentialFor(SEED_HEX, 'orig-rotated');
+    expect(rotated.publicKeyHex).toMatch(/^04[0-9a-fA-F]{128}$/);
+    const rotatedRule = await withRetry(
+      async () => {
+        const m = await findRuleForPubkey(orig.cAddress, rotated.publicKeyHex);
+        if (!m) {
+          throw new Error(`rotated pubkey not yet an on-chain signer on ${orig.cAddress}`);
+        }
+        return m;
+      },
+      { tries: 4, baseMs: 1500 },
+    );
+    expect(
+      rotatedRule,
+      `rotated pubkey ${rotated.publicKeyHex} not found as a signer on ${orig.cAddress}`,
+    ).not.toBeNull();
+    // Recovery ADDS the new primary key to the Default rule (rule 0).
+    expect(rotatedRule.ruleId).toBe(0);
+
     expect(errors.filter((e) => /Buffer|is not defined|Unexpected token/.test(e))).toEqual([]);
     test.info().annotations.push({ type: 'orig', description: orig.cAddress });
     test.info().annotations.push({ type: 'friend', description: friend.cAddress });
+    test.info().annotations.push({ type: 'rotatedPubkey', description: rotated.publicKeyHex });
+    test.info().annotations.push({ type: 'rotatedRuleId', description: String(rotatedRule.ruleId) });
   });
 });

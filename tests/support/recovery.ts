@@ -66,11 +66,11 @@ export async function installRecoveryRule(
   await page.locator('#rc-friends .friend-row').first().waitFor({ timeout: 15_000 });
 
   // Surface a failing install: the form alert()s the contract/auth error.
+  // Record the message for ANY dialog (not just the known failure patterns) so a
+  // surprise prompt isn't swallowed silently. These are UI alerts — no secrets.
   let installAlert: string | null = null;
   page.on('dialog', (d) => {
-    if (/Failed to install recovery|did not resolve|at least one friend/i.test(d.message())) {
-      installAlert = d.message();
-    }
+    installAlert = d.message();
     d.accept().catch(() => {});
   });
 
