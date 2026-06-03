@@ -17,7 +17,8 @@
   /* ink */
   --ink:      #2A1A12;
   --ink-soft: #6b5446;
-  --mut:      #9a8676;
+  --mut:      #7a6655;  /* C-02: darkened from #9a8676 (3.2:1) to ~5.0:1 on cream — clears WCAG AA for the body/sub text that uses it, kept a step below --ink-soft */
+  --mut-faint:#9a8676;  /* the old light tone, reserved for ≥16px or purely decorative labels */
   /* lines */
   --line:      #efe2d2;
   --line-soft: #f4ebde;
@@ -108,7 +109,7 @@ button { font-family: inherit; }
   position: sticky; top: 0; z-index: 20;
   background: linear-gradient(var(--paper-2) 70%, rgba(255,253,248,0));
 }
-.wordmark { font-family: var(--disp); font-weight: 800; font-size: 21px; letter-spacing: -0.01em; }
+.wordmark { font-family: var(--disp); font-weight: 800; font-size: 21px; letter-spacing: -0.01em; color: var(--ink); }  /* explicit colour: the sidebar/topbar wordmark lives inside <a> tags, so without this it inherits the UA link blue */
 .wordmark b { color: var(--acc); font-weight: 800; }
 
 /* ---------- buttons ---------- */
@@ -135,7 +136,7 @@ button { font-family: inherit; }
 .qa { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; flex: 1; }
 .qa .circ {
   width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--acc); color: #fff; box-shadow: var(--sh-acc);
+  background: var(--acc-btn); color: #fff; box-shadow: var(--sh-acc);  /* C-03: AA coral so the white glyph clears 4.5:1 */
   transition: transform .14s cubic-bezier(.2,.7,.3,1);
 }
 .qa .circ.soft { background: var(--chip); color: var(--ink); box-shadow: var(--sh-1); }
@@ -251,7 +252,9 @@ textarea.input { height: auto; padding: 13px 15px; resize: none; line-height: 1.
 .faceid .tick { position: absolute; inset: 0; display: grid; place-items: center; }
 
 /* ---------- toast ---------- */
-.toastwrap { position: absolute; left: 0; right: 0; bottom: 86px; z-index: 80; display: flex; justify-content: center; pointer-events: none; }
+/* S-03: default offset assumes no bottom tab bar (desktop rail has none); only clear a tab bar when one is actually present. */
+.toastwrap { position: absolute; left: 0; right: 0; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 80; display: flex; justify-content: center; pointer-events: none; }
+body:has(.tabbar) .toastwrap { bottom: calc(86px + env(safe-area-inset-bottom)); }
 .toast {
   background: var(--ink); color: var(--paper); padding: 11px 17px; border-radius: var(--r-pill);
   font-size: 13.5px; font-weight: 600; box-shadow: var(--sh-2);
@@ -277,13 +280,18 @@ textarea.input { height: auto; padding: 13px 15px; resize: none; line-height: 1.
 /* enter animations */
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes pop { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
-.rise { animation: rise .5s both; }
-.screen-in > * { animation: rise .45s both; }
-.screen-in > *:nth-child(2) { animation-delay: .05s; }
-.screen-in > *:nth-child(3) { animation-delay: .1s; }
-.screen-in > *:nth-child(4) { animation-delay: .15s; }
-.screen-in > *:nth-child(5) { animation-delay: .2s; }
-.screen-in > *:nth-child(6) { animation-delay: .25s; }
+/* S-01: the end-state is the base style (visible). The entrance only plays when
+   motion is welcome, so an interrupted, reduced-motion, or print render never
+   leaves content stuck at opacity:0. */
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise .5s both; }
+  .screen-in > * { animation: rise .45s both; }
+  .screen-in > *:nth-child(2) { animation-delay: .05s; }
+  .screen-in > *:nth-child(3) { animation-delay: .1s; }
+  .screen-in > *:nth-child(4) { animation-delay: .15s; }
+  .screen-in > *:nth-child(5) { animation-delay: .2s; }
+  .screen-in > *:nth-child(6) { animation-delay: .25s; }
+}
 
 /* spinner */
 .spin { animation: spin .9s linear infinite; }
@@ -295,10 +303,40 @@ textarea.input { height: auto; padding: 13px 15px; resize: none; line-height: 1.
 .pad { padding: 6px 22px 28px; }
 .section-label { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); }
 .divider { height: 1px; background: var(--line-soft); margin: 0; border: none; }
-a.link { color: var(--acc); font-weight: 700; text-decoration: none; }
+a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; }  /* C-01: darker coral so link text clears WCAG AA on cream */
 
 /* placeholder hatch */
 .ph { background-image: repeating-linear-gradient(45deg, var(--line) 0 1px, transparent 1px 10px); }
+
+/* ===================================================================
+   K-01 · One alert component, semantic variants (was: 3 ad-hoc treatments)
+   <div class="alert danger|warn|info|good"> … </div>
+   =================================================================== */
+.alert {
+  display: flex; align-items: flex-start; gap: 9px;
+  border-radius: var(--r-md); padding: 12px 14px; margin: 0 0 14px;
+  font-size: 13.5px; line-height: 1.5; font-weight: 600;
+  border: 1px solid transparent;
+}
+.alert .alert-ico { flex: 0 0 auto; margin-top: 1px; }
+.alert.danger { background: #FBE7E2; color: var(--danger); border-color: #f1c9c0; }
+.alert.warn   { background: var(--warn-soft); color: var(--warn); border-color: #ecdcb8; }
+.alert.info   { background: var(--acc-soft); color: var(--acc-ink); border-color: #f6d3c2; }
+.alert.good   { background: var(--good-soft); color: var(--good); border-color: #bfe6e9; }
+
+/* S-02 · Shared loading skeleton + empty state (was: "Loading…" / "…" / dashed card, inconsistently) */
+.skeleton {
+  border-radius: var(--r-sm); background: linear-gradient(100deg, var(--paper-3) 30%, var(--chip) 50%, var(--paper-3) 70%);
+  background-size: 200% 100%; animation: skeleton 1.3s ease-in-out infinite; min-height: 1em;
+}
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+@keyframes skeleton { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.empty {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  text-align: center; padding: 28px 16px; color: var(--mut);
+  border: 1px dashed var(--line); border-radius: var(--r-lg);
+}
+.empty p { margin: 0; font-size: 13.5px; line-height: 1.5; }
 
 /* ===================================================================
    LANDING
