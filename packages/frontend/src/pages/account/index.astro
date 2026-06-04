@@ -242,10 +242,8 @@ import Nest from "../../components/Nest.astro";
 
 <script>
   import {
-    Asset,
     Networks,
     Address,
-    Contract,
     TransactionBuilder,
     Transaction,
     Account,
@@ -253,7 +251,6 @@ import Nest from "../../components/Nest.astro";
     Keypair,
     rpc,
     nativeToScVal,
-    scValToNative,
   } from "@stellar/stellar-sdk";
   import {
     parseRegistration,
@@ -283,6 +280,7 @@ import Nest from "../../components/Nest.astro";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { shortAddr } from "../../lib/address";
   import { formatXlm } from "../../lib/money";
+  import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
@@ -645,39 +643,6 @@ import Nest from "../../components/Nest.astro";
         $registerBtn.disabled = false;
       }
     });
-  }
-
-  // --- Balance ---
-
-  async function fetchXlmBalance(contractAddress: string): Promise<string> {
-    const server = new rpc.Server(RPC_URL);
-    const xlmSacId = Asset.native().contractId(Networks.TESTNET);
-    const xlmContract = new Contract(xlmSacId);
-
-    const dummySource = new Account(
-      "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-      "0"
-    );
-
-    const tx = new TransactionBuilder(dummySource, {
-      fee: "100",
-      networkPassphrase: Networks.TESTNET,
-    })
-      .addOperation(
-        xlmContract.call("balance", Address.fromString(contractAddress).toScVal())
-      )
-      .setTimeout(0)
-      .build();
-
-    const sim = await server.simulateTransaction(tx);
-    if (rpc.Api.isSimulationError(sim)) return "0";
-
-    const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
-    if (!successSim.result) return "0";
-
-    const rawBalance = scValToNative(successSim.result.retval) as bigint;
-    const xlm = Number(rawBalance) / 10_000_000;
-    return xlm.toFixed(7);
   }
 
   // --- Init ---
