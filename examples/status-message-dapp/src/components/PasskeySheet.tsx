@@ -36,7 +36,8 @@ export const PasskeySheet = ({
 					</svg>
 				</div>
 				<div className="nps-tick" aria-hidden="true">
-					{/* Success check shown on `done`. */}
+					{/* Success check — revealed by `withPasskeySheet` once the real
+					    ceremony resolves (the `done` state). */}
 					<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
 						<path d="M20 6 9 17l-5-5" />
 					</svg>
@@ -48,6 +49,9 @@ export const PasskeySheet = ({
 			<div className="nps-sub" id="nido-passkey-sub">
 				{sub}
 			</div>
+			{/* "What you're approving" rows — filled safely (textContent) by the
+			    controller from PasskeySheetCopy.details. */}
+			<div className="nps-details" id="nido-passkey-details" />
 		</div>
 	</div>
 )

@@ -18,6 +18,9 @@
 	--nps-mut: #9a8676;
 	--nps-good: #1f9d55;
 	--nps-good-soft: #d8f3e3;
+	--nps-chip: #f4e8d7;
+	--nps-line: #efe6d8;
+	--nps-r-md: 14px;
 	--nps-disp: "Fraunces", Georgia, serif;
 	--nps-body: "Hanken Grotesk", system-ui, sans-serif;
 
@@ -114,6 +117,7 @@
 	opacity: 0;
 	transition: opacity 0.2s ease;
 }
+/* Confirmed state — set by withPasskeySheet only after the ceremony resolves. */
 .nps-faceid.done .nps-scan {
 	display: none;
 }
@@ -142,4 +146,40 @@
 	margin: 6px auto 0;
 	max-width: 300px;
 	line-height: 1.5;
+}
+
+/* "What you're approving" rows. Empty (no children) when a sign passes no
+   details, so it collapses to nothing. */
+.nps-details {
+	margin-top: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	background: var(--nps-line, #efe6d8);
+	border-radius: var(--nps-r-md, 14px);
+	overflow: hidden;
+}
+.nps-details:empty {
+	display: none;
+}
+.nps-detail {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 14px;
+	padding: 11px 14px;
+	background: var(--nps-chip, #f4e8d7);
+	font-size: 13.5px;
+}
+.nps-detail-label {
+	color: var(--nps-mut);
+	flex-shrink: 0;
+	font-weight: 600;
+}
+.nps-detail-value {
+	color: var(--nps-ink);
+	font-weight: 600;
+	text-align: right;
+	overflow-wrap: anywhere;
+	min-width: 0;
 }
