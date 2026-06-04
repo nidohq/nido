@@ -1,0 +1,81 @@
+name: Deploy Example to GitHub Pages
+
+# Deploys examples/status-message-dapp/ as a live testnet demo at
+# https://theahaco.github.io/g2c/. Independent of the Cloudflare deploy of the
+# main Nido frontend (see deploy.yml / preview.yml).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "examples/status-message-dapp/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+# Build-time config for the live demo. All public (no secrets). The committed
+# client is bound to the testnet contract id; these point the frontend at
+# testnet and at the production g2c passkey wallet.
+env:
+  PUBLIC_STELLAR_NETWORK: TESTNET
+  PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+  PUBLIC_STELLAR_RPC_URL: "https://soroban-testnet.stellar.org"
+  PUBLIC_STELLAR_HORIZON_URL: "https://horizon-testnet.stellar.org"
+  PUBLIC_G2C_BASE: "https://nido.fyi"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The example imports these workspace packages, which publish built dist/.
+      # The status_message client is committed as source and built here too.
+      - name: Build workspace dependencies
+        run: |
+          npm run build -w @g2c/passkey-sdk
+          npm run build -w @g2c/stellar-wallets-kit-module
+          npm run build -w status_message
+
+      - name: Build the example (base=/g2c/)
+        run: npm run build:pages
+        working-directory: examples/status-message-dapp
+
+      # GitHub Pages serves 404.html for unmatched paths; making it the SPA
+      # shell lets client-side routes (e.g. /g2c/debug) survive a direct reload.
+      - name: SPA fallback
+        run: cp dist/index.html dist/404.html
+        working-directory: examples/status-message-dapp
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: examples/status-message-dapp/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -3,7 +3,9 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "packages/contract-bindings/*"
+    "packages/contract-bindings/*",
+    "examples/status-message-dapp",
+    "examples/status-message-dapp/packages/*"
   ],
   "scripts": {
     "build:packages": "npm run build -w smart-account -w multisig-policy -w webauthn-verifier -w factory -w status-message -w @g2c/passkey-sdk -w @g2c/stellar-wallets-kit-module",

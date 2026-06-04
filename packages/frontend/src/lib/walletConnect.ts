@@ -115,7 +115,7 @@ const WALLET_BEHAVIOR: Record<string, WalletBehavior> = {
     kind: 'popup-always',
     supportsGetNetwork: true,
     warning:
-      'g2c opens a popup to your account subdomain for every connect and signature (passkey ceremony). Allow popups for this site.',
+      'Nido opens a popup to your account subdomain for every connect and signature (passkey ceremony). Allow popups for this site.',
   },
   freighter: { kind: 'standard', supportsGetNetwork: true },
   xbull: { kind: 'standard', supportsGetNetwork: true },

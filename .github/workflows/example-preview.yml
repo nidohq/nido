@@ -1,0 +1,114 @@
+name: Example dApp PR Preview
+
+# Per-PR preview of examples/status-message-dapp/ on Cloudflare Pages, so the
+# example can be reviewed live before merge. Mirrors preview.yml (the Nido
+# frontend preview) but deploys the example to a distinct branch alias
+# (example-pr-<N>.mysoroban.xyz) so the two never collide. The live home of the
+# example remains GitHub Pages (see pages.yml); this is throwaway preview infra.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "examples/status-message-dapp/**"
+      - ".github/workflows/example-preview.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  PAGES_PROJECT: mysoroban
+  # Testnet runtime config (all public). base stays "/" — the preview sits at a
+  # subdomain apex, unlike the /g2c/ GitHub Pages path.
+  PUBLIC_STELLAR_NETWORK: TESTNET
+  PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+  PUBLIC_STELLAR_RPC_URL: "https://soroban-testnet.stellar.org"
+  PUBLIC_STELLAR_HORIZON_URL: "https://horizon-testnet.stellar.org"
+  PUBLIC_G2C_BASE: "https://nido.fyi"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build workspace dependencies
+        run: |
+          npm run build -w @g2c/passkey-sdk
+          npm run build -w @g2c/stellar-wallets-kit-module
+          npm run build -w status_message
+
+      - name: Build the example (apex base)
+        run: npx vite build
+        working-directory: examples/status-message-dapp
+
+      - name: SPA routing for Cloudflare
+        run: echo "/* /index.html 200" > dist/_redirects
+        working-directory: examples/status-message-dapp
+
+      # Deploy to a branch alias of the mysoroban project. The custom-domain
+      # wildcard (*.mysoroban.xyz) only serves the project's PRODUCTION branch,
+      # so for the example we use wrangler's branch-alias *.pages.dev URL — the
+      # one it prints as "Deployment alias URL" — which always maps to this
+      # branch's latest deployment.
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        run: |
+          set +e
+          out=$(npx wrangler pages deploy examples/status-message-dapp/dist \
+            --project-name "$PAGES_PROJECT" \
+            --branch "example-pr-${{ github.event.pull_request.number }}" 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          [ "$code" -eq 0 ] || exit "$code"
+          url=$(printf '%s\n' "$out" | grep -i 'alias URL' | grep -oE 'https://[^ ]+' | tail -1 || true)
+          echo "preview_url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+        with:
+          script: |
+            const prNum = context.payload.pull_request.number;
+            const previewUrl = process.env.PREVIEW_URL
+              || `https://example-pr-${prNum}.mysoroban.pages.dev`;
+            const body = `**Example dApp preview deployed!**\n\n${previewUrl}\n\nThe \`status-message\` example (testnet) connecting through the g2c wallet selector at mysoroban.xyz. The live home is https://theahaco.github.io/g2c/ once merged.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNum,
+            });
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Example dApp preview deployed!')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNum,
+                body,
+              });
+            }

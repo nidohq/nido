@@ -1,0 +1,52 @@
+# stellar/soroban/Rust output
+target
+.soroban
+
+# project identity and alias files will be in .config/stellar
+.config
+
+# test snapshot folders from sample contracts
+test_snapshots
+
+# build output
+dist
+dist-ssr
+*.tsbuildinfo
+
+# dependencies
+node_modules/
+
+# logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# environment variables
+.env
+.env.*
+!.env.example
+
+# easy way to create temporary local-only files and folders
+*.local.*
+
+# macOS-specific files
+.DS_Store
+
+# generated contract clients
+packages/*
+# if you have other workspace packages, add them here
+!packages/.gitkeep
+# Committed for the GitHub Pages build: the status-message client, bound to the
+# deployed testnet id. Build output (dist/) and node_modules/ stay ignored via
+# the global rules above; the per-package lockfile is build-local.
+!packages/status_message/
+packages/status_message/package-lock.json
+
+# generated contract client imports
+src/contracts/*
+!src/contracts/util.ts
+!src/contracts/status_message.ts

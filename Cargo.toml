@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/integration-tests", "contracts/*"]
+# examples/* are self-contained stellar-scaffold projects with their own
+# workspace + toolchain; keep them out of this workspace's resolution.
+exclude = ["examples"]
 
 [workspace.package]
 version = "0.1.0"

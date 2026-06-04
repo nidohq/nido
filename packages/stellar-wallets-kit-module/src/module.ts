@@ -76,7 +76,7 @@ export interface G2cModuleParams {
 export class G2cModule implements ModuleInterface {
   moduleType: ModuleType = ModuleType.HOT_WALLET;
   productId: string = G2C_ID;
-  productName: string = 'g2c (passkey)';
+  productName: string = 'Nido (passkey)';
   productUrl: string;
   productIcon: string = G2C_ICON;
 
