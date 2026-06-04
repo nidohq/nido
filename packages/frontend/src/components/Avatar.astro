@@ -25,14 +25,20 @@ function hashStr(s: string): number {
 }
 
 const h = hashStr(seed);
-const hue1 = h % 360;
-const hue2 = (h >> 3) % 360;
+// C-04: pull hues from a brand-adjacent set (coral / amber / honey / teal /
+// indigo / plum) instead of the full wheel, so every avatar stays in the Nido
+// palette. Unsigned shifts (>>>) avoid the signed-shift NaN: `h >> n` goes
+// negative for large hashes, which indexed the anchor array out of bounds.
+const anchors = [14, 28, 40, 186, 250, 332];
+const j = ((h >>> 11) % 16) - 8;
+const hue1 = (anchors[h % anchors.length] + j + 360) % 360;
+const hue2 = (anchors[(h >>> 5) % anchors.length] - j + 360) % 360;
 const style = [
   `width: ${size}px`,
   `height: ${size}px`,
   "border-radius: 50%",
   "flex: 0 0 auto",
-  `background: radial-gradient(circle at 32% 28%, hsl(${hue1} 70% 62%), hsl(${hue2} 65% 42%))`,
+  `background: radial-gradient(circle at 32% 28%, hsl(${hue1} 58% 60%), hsl(${hue2} 60% 42%))`,
   "box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.35)",
 ].join("; ");
 ---

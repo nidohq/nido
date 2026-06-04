@@ -24,7 +24,7 @@ import Toast from "../components/Toast.astro";
         </a>
       </nav>
 
-      <div id="error-box" class="card" style="display:none; border-color: var(--danger); color: var(--danger); padding: 13px 16px; margin-bottom: 16px; font-size: 14px;"></div>
+      <div id="error-box" class="alert danger" style="display:none; margin-bottom: 16px;"></div>
 
       <header class="lp-hero">
         <div class="lp-hero-copy">
@@ -39,6 +39,7 @@ import Toast from "../components/Toast.astro";
               Create your Nido <Icon name="arrow" size={18} color="#fff" />
             </button>
           </div>
+          <div class="mut" style="font-size: 12.5px; font-weight: 600; margin-top: 12px; display:inline-flex; align-items:center; gap:7px;"><span class="dot acc" style="width:7px;height:7px;border-radius:50%;background:var(--acc);display:inline-block;"></span> Demo on Stellar testnet — no real funds.</div>
           <div id="progress-info" class="chip" style="display:none; margin-top: 16px;"></div>
           <div class="lp-trust">
             <span><Icon name="faceid" size={15} color="var(--mut)" /> Set up with your face</span>
@@ -54,11 +55,11 @@ import Toast from "../components/Toast.astro";
               <span class="chip good" style="font-size: 11px;"><Icon name="lock" size={13} color="var(--good)" /> Only you</span>
             </div>
             <div class="mut" style="font-size: 12.5px; font-weight: 700; margin-top: 26px;">Balance</div>
-            <div class="disp" style="font-weight: 800; font-size: 46px; letter-spacing: -.01em; line-height: 1; margin-top: 3px;">$250<span class="mut" style="font-size: 26px;">.00</span></div>
-            <div class="mut" style="font-size: 13px; font-weight: 600;">Ready to spend</div>
+            <div class="disp" style="font-weight: 800; font-size: 44px; letter-spacing: -.01em; line-height: 1; margin-top: 3px;">250 <span class="mut" style="font-size: 24px;">XLM</span></div>
+            <div class="mut" style="font-size: 13px; font-weight: 600;">In your Nido</div>
             <div class="btn-row" style="margin-top: 20px;">
-              <div class="btn acc" style="height: 46px; font-size: 14px; pointer-events: none;"><Icon name="send" size={17} color="#fff" /> Send</div>
-              <div class="btn soft" style="height: 46px; font-size: 14px; pointer-events: none;"><Icon name="receive" size={17} /> Receive</div>
+              <div class="btn acc" style="height: 46px; font-size: 14px; pointer-events: none;"><Icon name="receive" size={17} color="#fff" /> Receive</div>
+              <div class="btn soft" style="height: 46px; font-size: 14px; pointer-events: none;"><Icon name="shieldcheck" size={17} /> Approve</div>
             </div>
           </div>
           <div class="lp-float lp-float-1"><Icon name="faceid" size={26} color="var(--coral)" /></div>
@@ -73,24 +74,18 @@ import Toast from "../components/Toast.astro";
           <h2 class="disp lp-h2" style="text-align: left;">Your Nidos</h2>
         </div>
         <div id="accounts-list"></div>
+        <!-- Returning visitors who already have a Nido see this instead of the
+             marketing create-hero — a quiet secondary "create another". -->
+        <div id="create-another" class="hidden" style="margin-top: 22px;">
+          <button id="create-another-btn" class="btn ghost" style="width: auto; padding: 0 22px; height: 48px;">
+            <Icon name="sparkle" size={16} color="var(--acc)" /> Create another Nido
+          </button>
+        </div>
       </section>
 
-      <!-- Set Up step (shown after Create your Nido prepares an address) -->
-      <section id="passkey-section" class="lp-how hidden" style="padding-top: 40px;">
-        <div class="lp-secthead" style="text-align: left; margin-bottom: 18px;">
-          <span class="section-label acc">One last step</span>
-          <h2 class="disp lp-h2" style="text-align: left;">Set up your face</h2>
-        </div>
-        <div class="lp-step" style="padding: 22px 22px 24px;">
-          <p class="mut" style="font-size: 14.5px; line-height: 1.55; margin: 0 0 14px;">
-            Your Nido is reserved. Finish by setting it up with your face — that's the only key, and only you have it.
-          </p>
-          <button type="button" class="addr" id="c-address-result" style="margin-bottom: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis;"></button>
-          <a id="setup-link" class="btn acc block button-link" style="text-decoration: none;">
-            Set up with your face <Icon name="faceid" size={18} color="#fff" />
-          </a>
-        </div>
-      </section>
+      <!-- F-01: no interstitial "Set up your face" hand-off card — "Create your
+           Nido" reserves the account and routes straight into the /new-account/
+           "Lock it to you" passkey step, which makes the same promise better. -->
 
       <!-- How it works -->
       <section class="lp-how" id="how">
@@ -223,12 +218,22 @@ import Toast from "../components/Toast.astro";
   const $createBtn = document.getElementById("create-btn") as HTMLButtonElement;
   const $createBtnBand = document.getElementById("create-btn-band") as HTMLButtonElement;
   const $progressInfo = document.getElementById("progress-info")!;
-  const $passkeySection = document.getElementById("passkey-section")!;
-  const $cAddressResult = document.getElementById("c-address-result") as HTMLButtonElement;
-  const $setupLink = document.getElementById("setup-link") as HTMLAnchorElement;
   const $errorBox = document.getElementById("error-box")!;
   const $accountsSection = document.getElementById("accounts-section")!;
   const $accountsList = document.getElementById("accounts-list")!;
+  const $createAnother = document.getElementById("create-another")!;
+  const $createAnotherBtn = document.getElementById("create-another-btn") as HTMLButtonElement;
+
+  // Welcome-back mode: a returning visitor who already has a Nido shouldn't be
+  // shown the marketing "Create your Nido" hero again. Lead with "Your Nidos"
+  // and demote creation to a quiet secondary button.
+  function enterWelcomeBack() {
+    document.querySelector<HTMLElement>(".lp-hero")?.classList.add("hidden");
+    document.getElementById("how")?.classList.add("hidden");
+    document.getElementById("why")?.classList.add("hidden");
+    document.querySelector<HTMLElement>(".lp-band")?.classList.add("hidden");
+    $createAnother.classList.remove("hidden");
+  }
 
   function showError(msg: string) {
     $errorBox.textContent = msg;
@@ -296,6 +301,10 @@ import Toast from "../components/Toast.astro";
   for (const cAddress of activeAccounts) {
     addAccountRow(cAddress);
   }
+  // Already have a Nido on this device → welcome-back view, not the create pitch.
+  if (activeAccounts.length > 0) {
+    enterWelcomeBack();
+  }
 
   // --- Check pending accounts against chain ---
 
@@ -317,6 +326,8 @@ import Toast from "../components/Toast.astro";
       if (exists) {
         activateAccount(contractId);
         addAccountRow(contractId);
+        // A pending Nido just confirmed on-chain → switch to welcome-back too.
+        enterWelcomeBack();
       }
     }
   })();
@@ -355,14 +366,11 @@ import Toast from "../components/Toast.astro";
       // Save as pending
       savePendingAccount(cAddress, secret);
 
-      $progressInfo.style.display = "none";
-      $cAddressResult.textContent = cAddress;
-      $setupLink.href = accountUrl(window.location.host, cAddress, `/new-account/?key=${secret}`);
-      $passkeySection.classList.remove("hidden");
-      $passkeySection.scrollIntoView({ behavior: "smooth", block: "start" });
-
-      btn.innerHTML = original;
-      btn.disabled = false;
+      // F-01: route straight into the "Lock it to you" passkey step — no
+      // interstitial hand-off card. The button stays disabled through the
+      // navigation so it can't be double-fired.
+      $progressInfo.textContent = "Taking you in…";
+      window.location.href = accountUrl(window.location.host, cAddress, `/new-account/?key=${secret}`);
     } catch (err: any) {
       showError(err.message || String(err));
       $progressInfo.style.display = "none";
@@ -374,5 +382,8 @@ import Toast from "../components/Toast.astro";
   $createBtn.addEventListener("click", () => createAccount($createBtn));
   if ($createBtnBand) {
     $createBtnBand.addEventListener("click", () => createAccount($createBtnBand));
+  }
+  if ($createAnotherBtn) {
+    $createAnotherBtn.addEventListener("click", () => createAccount($createAnotherBtn));
   }
 </script>

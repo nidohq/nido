@@ -27,7 +27,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       <code id="contract-id"></code>
     </div>
 
-    <div id="error-box" class="card" style="display:none; padding:14px 16px; margin-bottom:18px; border-color:var(--danger); background:var(--acc-soft); color:var(--danger); font-size:13.5px; line-height:1.5;"></div>
+    <div id="error-box" class="alert danger" style="display:none; margin-bottom:18px;"></div>
 
     <!-- ===================== STEP 1 · LOCK IT TO YOU ===================== -->
     <section id="passkey-section">
@@ -118,12 +118,14 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       </div>
       <div class="disp" style="font-weight:800; font-size:28px; line-height:1.06; text-align:center;">Your Nido is ready</div>
       <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;">
-        It's live on Stellar and locked to you. Nothing to memorize, nothing to write down.
+        It's live on Stellar and locked to you. Taking you to your wallet…
       </p>
-      <a id="account-link" class="btn acc" style="margin-top:28px; text-decoration:none;">
-        Go to your Nido <Icon name="arrow" size={18} color="#fff" />
-      </a>
-      <a id="explorer-link" class="link" target="_blank" rel="noopener" style="display:block; text-align:center; margin-top:16px; font-size:13.5px;">
+      <!-- F-02: no manual "Go to your Nido" button — the flow auto-advances into /account/. -->
+      <div style="display:flex; gap:9px; align-items:center; justify-content:center; color:var(--mut); margin-top:24px;">
+        <Nest size={22} spin dur={1.1} />
+        <span style="font-size:13.5px; font-weight:600;">Opening your Nido…</span>
+      </div>
+      <a id="explorer-link" class="link" target="_blank" rel="noopener" style="display:block; text-align:center; margin-top:18px; font-size:13.5px;">
         View on Stellar Expert
       </a>
     </section>
@@ -148,6 +150,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   } from "@g2c/passkey-sdk";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
+  import { shortAddr } from "../../lib/address";
   import { toast } from "../../lib/toast";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
 
@@ -183,7 +186,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const $deployNestStatic = document.getElementById("deploy-nest-static")!;
   const $deployFoot = document.getElementById("deploy-foot")!;
   const $doneSection = document.getElementById("done-section")!;
-  const $accountLink = document.getElementById("account-link") as HTMLAnchorElement;
   const $explorerLink = document.getElementById("explorer-link") as HTMLAnchorElement;
   const $step1 = document.getElementById("step-1")!;
   const $step2 = document.getElementById("step-2")!;
@@ -230,7 +232,11 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
   // --- Init: surface the contract id + apply the passkey label to copy ---
 
-  $contractIdEl.textContent = contractId || "(unknown)";
+  // Show a shortened address so the 56-char contract ID never overflows the
+  // quiet pill chip (full ID stays in the URL / localStorage). The chip carries
+  // a title with the full value for hover/inspection.
+  $contractIdEl.textContent = contractId ? shortAddr(contractId, 6, 6) : "(unknown)";
+  if (contractId) $accountChip.title = contractId;
   $pkLabelBtn.textContent = pk.label;
   $pkLabelInline.textContent = pk.label;
 
@@ -409,7 +415,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // Wire up the done screen.
       const protocol = window.location.protocol;
       const host = window.location.host;
-      $accountLink.href = `${protocol}//${host}/account/`;
+      const accountUrl = `${protocol}//${host}/account/`;
       $explorerLink.href = `https://stellar.expert/explorer/testnet/contract/${contractId}`;
 
       toast({ msg: "Your Nido is ready", icon: "check" });
@@ -420,6 +426,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       $doneSection.classList.remove("hidden");
       $step2.classList.remove("on");
       $step2.classList.add("done");
+
+      // F-02: auto-advance into the wallet after a brief "ready" beat — arriving
+      // in the funded wallet is the payoff, and the deploy copy already promised
+      // an automatic hand-off. "View on Stellar Expert" remains the only opt-in link.
+      setTimeout(() => {
+        window.location.href = accountUrl;
+      }, 1700);
     } catch (err: any) {
       // Fall back to the passkey step so the user can retry the deploy.
       showError(`Couldn't finish setting up: ${err.message}`);
