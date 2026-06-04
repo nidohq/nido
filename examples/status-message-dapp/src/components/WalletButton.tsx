@@ -34,8 +34,8 @@ export const WalletButton = () => {
 				opacity: isPending ? 0.6 : 1,
 			}}
 		>
-			<Text as="div" size="sm">
-				Wallet Balance: {balances?.xlm?.balance ?? "-"} XLM
+			<Text as="div" size="sm" style={{ whiteSpace: "nowrap" }}>
+				{balances?.xlm?.balance ?? "-"} XLM
 			</Text>
 
 			<div id="modalContainer">

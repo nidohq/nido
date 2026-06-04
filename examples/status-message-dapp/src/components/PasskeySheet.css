@@ -1,0 +1,185 @@
+/*
+ * Nido-styled in-page "confirming…" bottom sheet.
+ *
+ * Brand tokens (Warm Nest palette) are scoped to `.nps-scrim` so they can't
+ * leak into the dApp's @stellar/design-system theme. Class names are prefixed
+ * `nps-` for the same reason; the `show` / `done` modifiers are only meaningful
+ * combined with a prefixed base class, so they're collision-safe. Visual frame
+ * mirrors the wallet's PasskeySheet; lifecycle is promise-driven (passkeySheet.ts).
+ */
+
+.nps-scrim {
+	/* Warm Nest brand tokens — scoped, not global. */
+	--nps-acc: #f25c2a;
+	--nps-acc-soft: #fce3d6;
+	--nps-acc-glow: rgba(242, 92, 42, 0.28);
+	--nps-paper: #ffffff;
+	--nps-ink: #2a1a12;
+	--nps-mut: #9a8676;
+	--nps-good: #1f9d55;
+	--nps-good-soft: #d8f3e3;
+	--nps-chip: #f4e8d7;
+	--nps-line: #efe6d8;
+	--nps-r-md: 14px;
+	--nps-disp: "Fraunces", Georgia, serif;
+	--nps-body: "Hanken Grotesk", system-ui, sans-serif;
+
+	position: fixed;
+	inset: 0;
+	z-index: 9999;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	background: rgba(20, 18, 12, 0.42);
+	backdrop-filter: blur(3px);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.26s ease;
+}
+.nps-scrim.show {
+	opacity: 1;
+}
+
+.nps-sheet {
+	width: 100%;
+	max-width: 448px;
+	background: var(--nps-paper);
+	color: var(--nps-ink);
+	font-family: var(--nps-body);
+	border-radius: 26px 26px 0 0;
+	padding: 10px 24px calc(26px + env(safe-area-inset-bottom));
+	box-shadow: 0 -20px 60px rgba(20, 20, 15, 0.22);
+	transform: translateY(102%);
+	transition: transform 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nps-scrim.show .nps-sheet {
+	transform: translateY(0);
+}
+
+.nps-grab {
+	width: 40px;
+	height: 4px;
+	border-radius: 999px;
+	background: #e7dccb;
+	margin: 0 auto 8px;
+}
+
+.nps-faceid {
+	width: 96px;
+	height: 96px;
+	margin: 6px auto 4px;
+	position: relative;
+}
+.nps-faceid .nps-frame {
+	position: absolute;
+	inset: 0;
+	border-radius: 24px;
+	border: 2.5px solid var(--nps-acc);
+	box-shadow: 0 0 0 6px var(--nps-acc-soft);
+	transition:
+		border-color 0.25s ease,
+		box-shadow 0.25s ease;
+}
+.nps-faceid .nps-scan {
+	position: absolute;
+	left: 8px;
+	right: 8px;
+	height: 2.5px;
+	border-radius: 2px;
+	background: var(--nps-acc);
+	box-shadow: 0 0 10px 2px var(--nps-acc-glow);
+	animation: nps-scanmove 1.5s ease-in-out infinite;
+}
+@keyframes nps-scanmove {
+	0%,
+	100% {
+		top: 16px;
+	}
+	50% {
+		top: 78px;
+	}
+}
+.nps-faceid .nps-glyph {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--nps-acc);
+}
+.nps-faceid .nps-tick {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--nps-good);
+	opacity: 0;
+	transition: opacity 0.2s ease;
+}
+/* Confirmed state — set by withPasskeySheet only after the ceremony resolves. */
+.nps-faceid.done .nps-scan {
+	display: none;
+}
+.nps-faceid.done .nps-glyph {
+	opacity: 0;
+}
+.nps-faceid.done .nps-tick {
+	opacity: 1;
+}
+.nps-faceid.done .nps-frame {
+	border-color: var(--nps-good);
+	box-shadow: 0 0 0 6px var(--nps-good-soft);
+}
+
+.nps-title {
+	font-family: var(--nps-disp);
+	font-weight: 800;
+	font-size: 21px;
+	text-align: center;
+	margin-top: 16px;
+}
+.nps-sub {
+	color: var(--nps-mut);
+	font-size: 14px;
+	text-align: center;
+	margin: 6px auto 0;
+	max-width: 300px;
+	line-height: 1.5;
+}
+
+/* "What you're approving" rows. Empty (no children) when a sign passes no
+   details, so it collapses to nothing. */
+.nps-details {
+	margin-top: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	background: var(--nps-line, #efe6d8);
+	border-radius: var(--nps-r-md, 14px);
+	overflow: hidden;
+}
+.nps-details:empty {
+	display: none;
+}
+.nps-detail {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 14px;
+	padding: 11px 14px;
+	background: var(--nps-chip, #f4e8d7);
+	font-size: 13.5px;
+}
+.nps-detail-label {
+	color: var(--nps-mut);
+	flex-shrink: 0;
+	font-weight: 600;
+}
+.nps-detail-value {
+	color: var(--nps-ink);
+	font-weight: 600;
+	text-align: right;
+	overflow-wrap: anywhere;
+	min-width: 0;
+}

@@ -8,6 +8,8 @@ import {
 	startDelegation,
 	readDelegationReturn,
 	consumePendingDelegation,
+	consumeAutoStartDelegation,
+	shouldAutoStartDelegation,
 } from "../lib/delegationHandover"
 import { signUpdateMessageInPage, hasSessionKey } from "../lib/nidoSign"
 import { G2C_ID, g2cBase } from "../util/wallet"
@@ -24,9 +26,10 @@ const CONTRACT_ID = statusMessage.options.contractId
  *
  * - "Your status" writes the *connected* account's message; `update_message`
  *   requires the author's auth. For a classic wallet, saving signs normally
- *   through the kit. For a **Nido** smart account, the dApp first creates its own
- *   session passkey ("Create dApp passkey" → delegation), then signs `update_message`
- *   IN-PAGE with that passkey — no wallet round-trip per save.
+ *   through the kit. For a **Nido** smart account, delegation happens on connect
+ *   (auto), then saving signs `update_message` IN-PAGE with the dApp's session
+ *   passkey — no wallet round-trip per save. A successful save reads the account
+ *   back so the new status shows immediately.
  * - "Look up" reads any account's message with a read-only simulation. It's
  *   pre-filled with the connected account on connect / on return from the wallet.
  */
@@ -44,41 +47,21 @@ export const StatusMessage = () => {
 	const [lookupResult, setLookupResult] = useState<string | null>()
 	const [lookupBusy, setLookupBusy] = useState(false)
 
-	const [delegating, setDelegating] = useState(false)
-	const [sessionTick, setSessionTick] = useState(0)
-	const [sessionReady, setSessionReady] = useState(false)
-	const [returnBanner, setReturnBanner] = useState<string>()
-
 	// Pre-fill the lookup field with the connected account so you can read your
 	// own status immediately. Only fills when empty, so it never clobbers typing.
 	useEffect(() => {
 		if (address && !lookupAddr) setLookupAddr(address)
 	}, [address]) // eslint-disable-line react-hooks/exhaustive-deps
 
-	// Handle a return from the wallet's delegate page. The wallet replaces our
-	// query string with only `?delegation=ok|cancelled`, so recover the account
-	// from the locally-persisted pending record and fill the form with it.
+	// On return from the wallet's delegate page, clear the stored request and
+	// drop the ?delegation param so a reload doesn't re-trigger anything.
 	useEffect(() => {
-		const ret = readDelegationReturn()
-		if (!ret) return
-		const pending = consumePendingDelegation()
-		if (pending?.account) setLookupAddr((prev) => prev || pending.account)
-		setReturnBanner(
-			ret === "ok"
-				? "dApp passkey created — saving now signs in-page for this account."
-				: "Delegation cancelled. You can try again any time.",
-		)
-		setSessionTick((t) => t + 1)
-		// Drop ?delegation so a reload doesn't re-trigger this banner.
+		if (!readDelegationReturn()) return
+		consumePendingDelegation()
 		const clean = new URL(window.location.href)
 		clean.searchParams.delete("delegation")
 		window.history.replaceState({}, "", clean.toString())
 	}, [])
-
-	// Whether a session passkey is already delegated for this Nido account.
-	useEffect(() => {
-		setSessionReady(!!nidoAccount && hasSessionKey(nidoAccount, CONTRACT_ID))
-	}, [nidoAccount, sessionTick])
 
 	const delegate = async () => {
 		if (!nidoAccount) {
@@ -86,7 +69,6 @@ export const StatusMessage = () => {
 			return
 		}
 		setSaveError(undefined)
-		setDelegating(true)
 		try {
 			// Creates a passkey at THIS origin, then full-page redirects to
 			// <account>.nido.fyi/security/delegate/ to authorize it. Returns here
@@ -101,8 +83,40 @@ export const StatusMessage = () => {
 			})
 			// Redirect happens; code below won't run.
 		} catch (e) {
-			setDelegating(false)
 			setSaveError(e instanceof Error ? e.message : String(e))
+		}
+	}
+
+	// Auto-start delegation when the user just picked Nido in the selector. The
+	// one-shot flag is set at connect time (util/wallet); consuming it here —
+	// before any redirect — is what prevents a loop on a cancelled return.
+	useEffect(() => {
+		if (!nidoAccount) return
+		const flagged = consumeAutoStartDelegation()
+		if (
+			shouldAutoStartDelegation({
+				account: nidoAccount,
+				flaggedAccount: flagged,
+				hasSessionKey: hasSessionKey(nidoAccount, CONTRACT_ID),
+			})
+		) {
+			void delegate()
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [nidoAccount])
+
+	// Read an account's on-chain status (read-only simulation) into the lookup card.
+	const readStatus = async (author: string) => {
+		setLookupBusy(true)
+		try {
+			const tx = await statusMessage.get_message({ author })
+			// `result` is the simulated Option<string> (undefined when unset).
+			setLookupResult(tx.result ?? null)
+		} catch (e) {
+			console.error(e)
+			setLookupResult(null)
+		} finally {
+			setLookupBusy(false)
 		}
 	}
 
@@ -133,6 +147,9 @@ export const StatusMessage = () => {
 				await tx.signAndSend({ signTransaction })
 			}
 			setSaveState("success")
+			// Confirmation of the write → surface it by reading the account back.
+			setLookupAddr(address)
+			void readStatus(address)
 		} catch (e) {
 			console.error(e)
 			setSaveState("failure")
@@ -142,20 +159,9 @@ export const StatusMessage = () => {
 		}
 	}
 
-	const lookup = async () => {
+	const lookup = () => {
 		const author = lookupAddr.trim() || address
-		if (!author) return
-		setLookupBusy(true)
-		try {
-			const tx = await statusMessage.get_message({ author })
-			// `result` is the simulated Option<string> (undefined when unset).
-			setLookupResult(tx.result ?? null)
-		} catch (e) {
-			console.error(e)
-			setLookupResult(null)
-		} finally {
-			setLookupBusy(false)
-		}
+		if (author) void readStatus(author)
 	}
 
 	return (
@@ -171,34 +177,14 @@ export const StatusMessage = () => {
 				</Text>
 
 				{nidoAccount && (
-					<div className={styles.delegate}>
-						{sessionReady ? (
-							<Text as="div" size="sm" addlClassName={styles.success}>
-								<Icon.CheckCircle size="sm" /> dApp passkey active — saving signs
-								in-page.
-							</Text>
-						) : (
-							<>
-								<Text as="p" size="sm">
-									Logging in with Nido lets this dApp create its own passkey, so it
-									can sign for you in-page without a wallet round-trip on every save.
-								</Text>
-								<Button
-									variant="secondary"
-									size="md"
-									isLoading={delegating}
-									disabled={delegating}
-									onClick={() => void delegate()}
-								>
-									Create dApp passkey
-								</Button>
-							</>
-						)}
-					</div>
-				)}
-				{returnBanner && (
-					<Text as="div" size="sm" addlClassName={styles.progress}>
-						{returnBanner}
+					<Text as="p" size="sm" addlClassName={styles.accountLink}>
+						<a
+							href={accountOrigin(g2cBase(), nidoAccount)}
+							target="_blank"
+							rel="noreferrer"
+						>
+							Manage this account on Nido
+						</a>
 					</Text>
 				)}
 

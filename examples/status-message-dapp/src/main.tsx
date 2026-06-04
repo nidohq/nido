@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client"
 import { BrowserRouter } from "react-router-dom"
 import "./index.css"
 import App from "./App.tsx"
+import { PasskeySheet } from "./components/PasskeySheet.tsx"
 import { NotificationProvider } from "./providers/NotificationProvider.tsx"
 import { WalletProvider } from "./providers/WalletProvider.tsx"
 import "@stellar/design-system/build/styles.min.css"
@@ -25,6 +26,9 @@ createRoot(document.getElementById("root") as HTMLElement).render(
 					<BrowserRouter basename={import.meta.env.BASE_URL}>
 						<App />
 					</BrowserRouter>
+					{/* In-page Nido-styled confirm sheet, driven imperatively by
+					    lib/passkeySheet.ts around the session-key ceremony. */}
+					<PasskeySheet />
 				</WalletProvider>
 			</QueryClientProvider>
 		</NotificationProvider>

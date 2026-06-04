@@ -21,8 +21,11 @@ import {
 	type ModuleInterface,
 } from "@creit.tech/stellar-wallets-kit"
 import { G2cModule, G2C_ID } from "@g2c/stellar-wallets-kit-module"
+import { isContractId } from "@g2c/passkey-sdk"
 import { Horizon } from "@stellar/stellar-sdk"
 import { networkPassphrase, stellarNetwork } from "../contracts/util"
+import { fetchContractXlmBalance, formatStroops } from "../lib/balance"
+import { markAutoStartDelegation } from "../lib/delegationHandover"
 import { withG2cFirst } from "./moduleOrder"
 import storage from "./storage"
 
@@ -86,6 +89,9 @@ export const connectWallet = async () => {
 		if (address) {
 			storage.setItem("walletId", selectedId)
 			storage.setItem("walletAddress", address)
+			// Picking Nido interactively → flag a one-shot auto-start of session-key
+			// delegation; StatusMessage fires it once the provider sees the account.
+			if (selectedId === G2C_ID) markAutoStartDelegation(address)
 		} else {
 			storage.setItem("walletId", "")
 			storage.setItem("walletAddress", "")
@@ -147,7 +153,23 @@ const formatter = new Intl.NumberFormat()
 
 export type MappedBalances = Record<string, Horizon.HorizonApi.BalanceLine>
 
-export const fetchBalances = async (address: string) => {
+export const fetchBalances = async (address: string): Promise<MappedBalances> => {
+	// A Soroban smart account (C-address) is NOT a classic Horizon account, so
+	// `/accounts/<C…>` just 404s. Read its native XLM as a Stellar Asset Contract
+	// balance over RPC instead. Classic G-addresses still go through Horizon.
+	if (isContractId(address)) {
+		const stroops = await fetchContractXlmBalance(address)
+		if (stroops === null) return {}
+		return {
+			xlm: {
+				balance: formatStroops(stroops),
+				asset_type: "native",
+				buying_liabilities: "0",
+				selling_liabilities: "0",
+			} as Horizon.HorizonApi.BalanceLineNative,
+		}
+	}
+
 	try {
 		const { balances } = await horizon.accounts().accountId(address).call()
 		const mapped = balances.reduce((acc, b) => {
@@ -163,7 +185,7 @@ export const fetchBalances = async (address: string) => {
 		}, {} as MappedBalances)
 		return mapped
 	} catch (err) {
-		// `not found` is expected for an unfunded wallet (no `xlm` key results).
+		// `not found` is expected for an unfunded classic account (no `xlm` key).
 		if (!(err instanceof Error && err.message.match(/not found/i))) {
 			console.error(err)
 		}

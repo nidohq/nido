@@ -33,11 +33,11 @@ a[target]:has(button)::after {
 /** HEADER */
 .AppLayout :global(.Layout__header) {
 	border-bottom: 1px solid var(--sds-clr-gray-06);
-	padding: 1rem 3rem;
+	padding: 1rem 2rem;
 }
 
 .AppLayout :global(.Layout__header) :global(.Layout__inset) {
-	gap: 2rem;
+	gap: 1rem;
 }
 
 .AppLayout :global(.Layout__header--center) {

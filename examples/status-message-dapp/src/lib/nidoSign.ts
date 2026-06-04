@@ -33,6 +33,8 @@ import {
 import { Client } from "status_message"
 import { rpcUrl, networkPassphrase } from "../contracts/util"
 import { getFriendbotUrl } from "../util/friendbot"
+import { withPasskeySheet } from "./passkeySheet"
+import { decodeContractCall, buildApprovalDetails } from "./describeAuthEntry"
 import { findRuleForPubkey, fetchVerifierAddress } from "./policyChainFetch"
 
 // Same key the g2c frontend uses for its status-message fee payer, so tooling
@@ -42,6 +44,16 @@ const FEE_PAYER_KEY = "sm:keypairSecret"
 /** True when a session passkey is already delegated for (account, contract). */
 export function hasSessionKey(account: string, contractId: string): boolean {
 	return loadSessionKeyMaterial(account, contractId) !== null
+}
+
+/** Param names for a contract function (from its spec) — labels the sheet's args. */
+function specParamNames(client: Client, fnName: string): string[] {
+	try {
+		const f = client.spec.funcs().find((x) => x.name().toString() === fnName)
+		return f ? f.inputs().map((i) => i.name().toString()) : []
+	} catch {
+		return []
+	}
 }
 
 /**
@@ -116,7 +128,25 @@ export async function signUpdateMessageInPage(opts: {
 	note("Touch your authenticator to sign…")
 	// OZ v0.7+ accounts verify sha256(signature_payload || context_rule_ids.to_xdr()).
 	const authDigest = computeAuthDigest(new Uint8Array(authHash), contextRuleIds)
-	const parsed = await signWithSessionPasskey(material.credentialId, new Uint8Array(authDigest))
+	// Decode what the signature actually authorises straight from the auth entry
+	// (what-you-see-is-what-you-sign) rather than restating app inputs, so the
+	// sheet provably reflects the signed payload. Values render via textContent,
+	// so decoded user input (the message) can't inject into the dialog.
+	const call = decodeContractCall(authEntry.rootInvocation())
+	const details = call
+		? buildApprovalDetails(call, specParamNames(client, call.fn))
+		: [{ label: "Warning", value: "Could not decode this authorization." }]
+
+	// Wrap the real in-page ceremony in the Nido-styled confirm sheet — the OS
+	// passkey prompt is browser chrome we can't restyle, but this frames it.
+	const parsed = await withPasskeySheet(
+		() => signWithSessionPasskey(material.credentialId, new Uint8Array(authDigest)),
+		{
+			title: "Approve status update",
+			sub: "Confirm with your dApp passkey.",
+			details,
+		},
+	)
 	const sessionPubkey = hex2buf(material.publicKey)
 
 	// `tx.built` is the already-assembled tx; inject the session-key signature in
