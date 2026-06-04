@@ -33,6 +33,7 @@ import {
 import { Client } from "status_message"
 import { rpcUrl, networkPassphrase } from "../contracts/util"
 import { getFriendbotUrl } from "../util/friendbot"
+import { withPasskeySheet } from "./passkeySheet"
 import { findRuleForPubkey, fetchVerifierAddress } from "./policyChainFetch"
 
 // Same key the g2c frontend uses for its status-message fee payer, so tooling
@@ -116,7 +117,15 @@ export async function signUpdateMessageInPage(opts: {
 	note("Touch your authenticator to sign…")
 	// OZ v0.7+ accounts verify sha256(signature_payload || context_rule_ids.to_xdr()).
 	const authDigest = computeAuthDigest(new Uint8Array(authHash), contextRuleIds)
-	const parsed = await signWithSessionPasskey(material.credentialId, new Uint8Array(authDigest))
+	// Wrap the real in-page ceremony in the Nido-styled confirm sheet — the OS
+	// passkey prompt is browser chrome we can't restyle, but this frames it.
+	const parsed = await withPasskeySheet(
+		() => signWithSessionPasskey(material.credentialId, new Uint8Array(authDigest)),
+		{
+			title: "Confirm it's you",
+			sub: "Sign in-page with your dApp passkey.",
+		},
+	)
 	const sessionPubkey = hex2buf(material.publicKey)
 
 	// `tx.built` is the already-assembled tx; inject the session-key signature in

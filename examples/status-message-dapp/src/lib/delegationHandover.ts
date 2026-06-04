@@ -144,6 +144,66 @@ export async function startDelegation(opts: StartDelegationOptions): Promise<voi
 	window.location.href = url.toString()
 }
 
+// ---------------------------------------------------------------------------
+// Auto-start delegation on connect.
+//
+// When the user picks Nido in the wallet selector we want to go straight into
+// delegation. The hazard is a redirect loop: if we keyed "start delegation" off
+// "connected Nido account with no session key", a CANCELLED return (still no
+// session key) would re-fire it forever. So instead we set a ONE-SHOT flag at
+// interactive-connect time and consume it before redirecting. A reload (no
+// flag) or a cancelled return (flag already spent) can't re-trigger it.
+// ---------------------------------------------------------------------------
+
+const AUTOSTART_KEY = "g2c:autostartDelegation"
+
+/** sessionStorage by default — scoped to the tab, auto-cleared on close. */
+function defaultSessionStorage(): DelegationStorage | null {
+	try {
+		return typeof sessionStorage !== "undefined" ? sessionStorage : null
+	} catch {
+		return null
+	}
+}
+
+/** Flag that an interactive Nido connect should auto-start delegation. */
+export function markAutoStartDelegation(
+	account: string,
+	store: DelegationStorage | null = defaultSessionStorage(),
+): void {
+	store?.setItem(AUTOSTART_KEY, account)
+}
+
+/**
+ * Read AND clear the auto-start flag (single-use). Returns the flagged account,
+ * or null if absent. Consuming before the redirect is what stops the loop.
+ */
+export function consumeAutoStartDelegation(
+	store: DelegationStorage | null = defaultSessionStorage(),
+): string | null {
+	if (!store) return null
+	const v = store.getItem(AUTOSTART_KEY)
+	if (v) store.removeItem(AUTOSTART_KEY)
+	return v
+}
+
+/**
+ * Decide whether to auto-start delegation right after a connect: only when the
+ * connected account is the one flagged at connect time AND it has no session
+ * key yet. Gating on the flag (not just "no session key") prevents the loop.
+ */
+export function shouldAutoStartDelegation(opts: {
+	account: string | null
+	flaggedAccount: string | null
+	hasSessionKey: boolean
+}): boolean {
+	return (
+		!!opts.account &&
+		opts.flaggedAccount === opts.account &&
+		!opts.hasSessionKey
+	)
+}
+
 /**
  * Inspect URL params on a page that may have just been redirected to from the
  * wallet. Returns the status if present, null otherwise. `search` is injectable

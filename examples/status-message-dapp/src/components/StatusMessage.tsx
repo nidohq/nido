@@ -8,6 +8,8 @@ import {
 	startDelegation,
 	readDelegationReturn,
 	consumePendingDelegation,
+	consumeAutoStartDelegation,
+	shouldAutoStartDelegation,
 } from "../lib/delegationHandover"
 import { signUpdateMessageInPage, hasSessionKey } from "../lib/nidoSign"
 import { G2C_ID, g2cBase } from "../util/wallet"
@@ -105,6 +107,24 @@ export const StatusMessage = () => {
 			setSaveError(e instanceof Error ? e.message : String(e))
 		}
 	}
+
+	// Auto-start delegation when the user just picked Nido in the selector. The
+	// one-shot flag is set at connect time (util/wallet); consuming it here —
+	// before any redirect — is what prevents a loop on a cancelled return.
+	useEffect(() => {
+		if (!nidoAccount) return
+		const flagged = consumeAutoStartDelegation()
+		if (
+			shouldAutoStartDelegation({
+				account: nidoAccount,
+				flaggedAccount: flagged,
+				hasSessionKey: hasSessionKey(nidoAccount, CONTRACT_ID),
+			})
+		) {
+			void delegate()
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [nidoAccount])
 
 	const save = async () => {
 		if (!address) {
