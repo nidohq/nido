@@ -18,8 +18,8 @@ real Rust and TypeScript that implements them. All code is pinned to
 | 1 | [Smart Accounts on Stellar: How OpenZeppelin's Standard Works](./01-stellar-smart-accounts-oz-standard.md) | ✅ Published | Soroban's `CustomAccountInterface` / `__check_auth`; the three-layer model — **signers, context rules, policies**; the `do_check_auth` algorithm and its security properties. |
 | 2 | [How Nido Uses OpenZeppelin Smart Accounts](./02-how-g2c-uses-oz-smart-accounts.md) | ✅ Published | The three thin contracts, the single-transaction factory + deterministic addresses, and the browser SDK that turns a Face ID tap into a Soroban `AuthPayload`. Plus browserless passkey testing, scoped session keys, and recovery. |
 | 3 | [Passkeys & On-Chain WebAuthn: a Byte-by-Byte Deep Dive](./03-passkeys-and-on-chain-webauthn.md) | ✅ Published | The WebAuthn assertion byte-by-byte: `authenticatorData` flags, `clientDataJSON`, the `sha256(authData ‖ sha256(clientData))` digest, secp256r1, the format translation (SPKI/COSE/DER → SEC1/compact), and why on-chain verification is trustless. |
-| 4 | Scoped Sessions & Custom Policies | ◻️ Planned | Writing your own `Policy` (spending limits, allow-lists, time windows), composing policies, and the threshold-divergence footgun in practice. |
-| 5 | Social Recovery | ◻️ Planned | `Signer::Delegated` friends, the nested-auth flow, byte-identical digests across parties, and the `CallContract(self)` scope that lets friends rebuild you without robbing you. |
+| 4 | [Scoped Sessions & Custom Policies](./04-scoped-sessions-and-custom-policies.md) | ✅ Published | Scoped session keys, writing your own `Policy` (spending limits, allow-lists), composing policies on a rule, and the threshold-divergence footgun in practice. |
+| 5 | [Social Recovery](./05-social-recovery.md) | ✅ Published | `Signer::Delegated` friends, the nested-auth flow, byte-identical digests across parties, and the `CallContract(self)` scope that lets friends rebuild you without robbing you. |
 
 ## How to read this
 

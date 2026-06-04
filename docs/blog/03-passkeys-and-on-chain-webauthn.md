@@ -478,9 +478,10 @@ That's the signer. Next we go back up a layer to what a signer is *allowed* to d
 
 ## Next in the series
 
-- [**Part 4 — Scoped Sessions & Custom Policies**](./README.md): writing your own
-  `Policy` (spending limits, allow-lists, time windows), composing policies on a
+- [**Part 4 — Scoped Sessions & Custom Policies**](./04-scoped-sessions-and-custom-policies.md):
+  writing your own `Policy` (spending limits, allow-lists), composing policies on a
   context rule, and the threshold-divergence footgun in practice.
-- **Part 5 — Social Recovery:** the delegated-friend nested-auth flow in full.
+- [**Part 5 — Social Recovery**](./05-social-recovery.md): the delegated-friend
+  nested-auth flow in full.
 
 See the [series index](./README.md) for the roadmap.
