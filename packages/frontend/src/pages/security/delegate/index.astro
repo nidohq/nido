@@ -12,8 +12,14 @@ import Icon from '../../../components/Icon.astro';
 ---
 <NidoLayout title="Let an app in">
   <div class="col-scroll scroll-hide screen-in">
+    <!-- K-02: standard sub-flow top bar (back + centered title) so reaching and
+         leaving nested flows is predictable — matches the recover sub-flow. -->
     <div class="topbar">
+      <a href="/security/" class="btn ghost sm" style="width:40px;height:40px;padding:0;border-radius:12px;" aria-label="Back">
+        <Icon name="back" size={18} />
+      </a>
       <div class="disp" style="font-weight:800;font-size:19px;">Let an app in?</div>
+      <span style="width:40px;"></span>
     </div>
 
     <div class="pad" style="padding-top:8px;">

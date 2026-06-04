@@ -60,18 +60,8 @@ import Toast from '../../components/Toast.astro';
 
   .picker { display: flex; flex-direction: column; gap: 10px; }
 
-  .empty {
-    display: flex; flex-direction: column; align-items: center; gap: 10px;
-    text-align: center; padding: 28px 16px; color: var(--mut);
-    border: 1px dashed var(--line); border-radius: var(--r-lg);
-  }
-  .empty p { margin: 0; font-size: 13.5px; line-height: 1.5; }
-
-  .alert {
-    border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 14px;
-    font-size: 13px; line-height: 1.5; font-weight: 600;
-  }
-  .alert.danger { background: var(--acc-soft); color: var(--danger); }
+  /* K-01/S-02: .alert and .empty now come from the shared nido.css components
+     (was a local override with a different danger background). */
 
   .footer {
     padding: 14px 22px calc(18px + env(safe-area-inset-bottom));

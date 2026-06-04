@@ -4,6 +4,7 @@ import Logo from "../components/Logo.astro";
 import Icon from "../components/Icon.astro";
 import Nest from "../components/Nest.astro";
 import Toast from "../components/Toast.astro";
+import MyNidoMenu from "../components/MyNidoMenu.astro";
 ---
 
 <NidoLayout title="Nido — A safe place for everything" shell="bleed">
@@ -22,9 +23,8 @@ import Toast from "../components/Toast.astro";
         >
           <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
         </a>
+        <MyNidoMenu />
       </nav>
-
-      <div id="error-box" class="card" style="display:none; border-color: var(--danger); color: var(--danger); padding: 13px 16px; margin-bottom: 16px; font-size: 14px;"></div>
 
       <header class="lp-hero">
         <div class="lp-hero-copy">
@@ -35,11 +35,11 @@ import Toast from "../components/Toast.astro";
             Set up in seconds with just your face. Nothing to memorize, and no way to get locked out.
           </p>
           <div class="lp-cta">
-            <button id="create-btn" class="btn acc" style="width: auto; padding: 0 26px; height: 54px;">
-              Create your Nido <Icon name="arrow" size={18} color="#fff" />
+            <button id="get-started-hero" class="btn acc" style="width: auto; padding: 0 26px; height: 54px;">
+              Get started <Icon name="arrow" size={18} color="#fff" />
             </button>
           </div>
-          <div id="progress-info" class="chip" style="display:none; margin-top: 16px;"></div>
+          <div class="mut" style="font-size: 12.5px; font-weight: 600; margin-top: 12px; display:inline-flex; align-items:center; gap:7px;"><span class="dot acc" style="width:7px;height:7px;border-radius:50%;background:var(--acc);display:inline-block;"></span> Demo on Stellar testnet — no real funds.</div>
           <div class="lp-trust">
             <span><Icon name="faceid" size={15} color="var(--mut)" /> Set up with your face</span>
             <span><Icon name="bolt" size={15} color="var(--mut)" /> Ready in seconds</span>
@@ -54,11 +54,11 @@ import Toast from "../components/Toast.astro";
               <span class="chip good" style="font-size: 11px;"><Icon name="lock" size={13} color="var(--good)" /> Only you</span>
             </div>
             <div class="mut" style="font-size: 12.5px; font-weight: 700; margin-top: 26px;">Balance</div>
-            <div class="disp" style="font-weight: 800; font-size: 46px; letter-spacing: -.01em; line-height: 1; margin-top: 3px;">$250<span class="mut" style="font-size: 26px;">.00</span></div>
-            <div class="mut" style="font-size: 13px; font-weight: 600;">Ready to spend</div>
+            <div class="disp" style="font-weight: 800; font-size: 44px; letter-spacing: -.01em; line-height: 1; margin-top: 3px;">250 <span class="mut" style="font-size: 24px;">XLM</span></div>
+            <div class="mut" style="font-size: 13px; font-weight: 600;">In your Nido</div>
             <div class="btn-row" style="margin-top: 20px;">
-              <div class="btn acc" style="height: 46px; font-size: 14px; pointer-events: none;"><Icon name="send" size={17} color="#fff" /> Send</div>
-              <div class="btn soft" style="height: 46px; font-size: 14px; pointer-events: none;"><Icon name="receive" size={17} /> Receive</div>
+              <div class="btn acc" style="height: 46px; font-size: 14px; pointer-events: none;"><Icon name="receive" size={17} color="#fff" /> Receive</div>
+              <div class="btn soft" style="height: 46px; font-size: 14px; pointer-events: none;"><Icon name="shieldcheck" size={17} /> Approve</div>
             </div>
           </div>
           <div class="lp-float lp-float-1"><Icon name="faceid" size={26} color="var(--coral)" /></div>
@@ -66,31 +66,9 @@ import Toast from "../components/Toast.astro";
         </div>
       </header>
 
-      <!-- Your Nidos (active + freshly-created accounts) -->
-      <section id="accounts-section" class="lp-how hidden" style="padding-top: 40px;">
-        <div class="lp-secthead" style="text-align: left; margin-bottom: 18px;">
-          <span class="section-label acc">Welcome back</span>
-          <h2 class="disp lp-h2" style="text-align: left;">Your Nidos</h2>
-        </div>
-        <div id="accounts-list"></div>
-      </section>
-
-      <!-- Set Up step (shown after Create your Nido prepares an address) -->
-      <section id="passkey-section" class="lp-how hidden" style="padding-top: 40px;">
-        <div class="lp-secthead" style="text-align: left; margin-bottom: 18px;">
-          <span class="section-label acc">One last step</span>
-          <h2 class="disp lp-h2" style="text-align: left;">Set up your face</h2>
-        </div>
-        <div class="lp-step" style="padding: 22px 22px 24px;">
-          <p class="mut" style="font-size: 14.5px; line-height: 1.55; margin: 0 0 14px;">
-            Your Nido is reserved. Finish by setting it up with your face — that's the only key, and only you have it.
-          </p>
-          <button type="button" class="addr" id="c-address-result" style="margin-bottom: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis;"></button>
-          <a id="setup-link" class="btn acc block button-link" style="text-decoration: none;">
-            Set up with your face <Icon name="faceid" size={18} color="#fff" />
-          </a>
-        </div>
-      </section>
+      <!-- F-01: no interstitial "Set up your face" hand-off card — "Get started"
+           opens the My Nido menu which routes into the /new-account/
+           "Lock it to you" passkey step, which makes the same promise better. -->
 
       <!-- How it works -->
       <section class="lp-how" id="how">
@@ -145,8 +123,8 @@ import Toast from "../components/Toast.astro";
         <div style="display: flex; justify-content: center; margin-bottom: 22px; position: relative;"><Nest size={64} /></div>
         <h2 class="disp" style="font-weight: 800; font-size: clamp(28px,7vw,40px); letter-spacing: -.01em; position: relative; line-height: 1.05;">Everything you own,<br />in one safe place.</h2>
         <p class="lp-sub" style="margin: 14px auto 0; max-width: 360px; position: relative;">Create your Nido in under a minute. Just your face — nothing to memorize.</p>
-        <button id="create-btn-band" class="btn acc" style="width: auto; padding: 0 28px; height: 54px; margin: 26px auto 0; position: relative;">
-          Create your Nido <Icon name="arrow" size={18} color="#fff" />
+        <button id="get-started-band" class="btn acc" style="width: auto; padding: 0 28px; height: 54px; margin: 26px auto 0; position: relative;">
+          Get started <Icon name="arrow" size={18} color="#fff" />
         </button>
       </section>
 
@@ -160,34 +138,18 @@ import Toast from "../components/Toast.astro";
 </NidoLayout>
 
 <script>
-  import { Keypair, Networks, rpc, xdr } from "@stellar/stellar-sdk";
-  import { Client } from "factory";
   import {
-    accountUrl,
+    isContractId,
     contractIdFromHostname,
     dappPathFromHostname,
-    isContractId,
     nameFromHostname,
     resolveNameCached,
-    stripSubdomain,
-    loadAccounts,
-    loadAccountName,
-    loadPendingAccounts,
-    savePendingAccount,
-    activateAccount,
     fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
-  const FRIENDBOT_URL = "https://friendbot.stellar.org";
 
   // --- Reserved dApp subdomain redirect ---
-  // status-message.<base> (and any future entry in
-  // RESERVED_DAPP_SUBDOMAINS) is served the same static bundle as the
-  // wallet, but the root page routes to the dApp's path. We do this
-  // BEFORE name-resolution so a reserved name never burns a registry
-  // round-trip.
-
   const hostname = window.location.hostname;
   const dappPath = dappPathFromHostname(hostname);
   if (dappPath) {
@@ -204,20 +166,16 @@ import Toast from "../components/Toast.astro";
   }
 
   // --- Name resolution redirect (if visiting via name subdomain) ---
-
   const detectedName = nameFromHostname(hostname);
-
   if (detectedName && !isContractId(detectedName)) {
-    // On a name subdomain — redirect to /account/ on the same subdomain
-    // (keeps the shareable name URL intact)
     fetchRegistryAddress("name-registry")
       .then((nameRegistryId) =>
         resolveNameCached(
           RPC_URL,
           nameRegistryId,
           detectedName,
-          "Test SDF Network ; September 2015"
-        )
+          "Test SDF Network ; September 2015",
+        ),
       )
       .then((resolved) => {
         if (resolved) {
@@ -229,159 +187,10 @@ import Toast from "../components/Toast.astro";
       });
   }
 
-  const $createBtn = document.getElementById("create-btn") as HTMLButtonElement;
-  const $createBtnBand = document.getElementById("create-btn-band") as HTMLButtonElement;
-  const $progressInfo = document.getElementById("progress-info")!;
-  const $passkeySection = document.getElementById("passkey-section")!;
-  const $cAddressResult = document.getElementById("c-address-result") as HTMLButtonElement;
-  const $setupLink = document.getElementById("setup-link") as HTMLAnchorElement;
-  const $errorBox = document.getElementById("error-box")!;
-  const $accountsSection = document.getElementById("accounts-section")!;
-  const $accountsList = document.getElementById("accounts-list")!;
-
-  function showError(msg: string) {
-    $errorBox.textContent = msg;
-    $errorBox.style.display = "block";
+  // --- "Get started" buttons open the My Nido menu ---
+  function openMenu() {
+    window.dispatchEvent(new CustomEvent("nido:open-menu"));
   }
-
-  function clearError() {
-    $errorBox.style.display = "none";
-  }
-
-  // --- Show active accounts ---
-
-  function addAccountRow(contractId: string) {
-    const name = loadAccountName(contractId);
-
-    const a = document.createElement("a");
-    a.className = "row";
-    a.style.textDecoration = "none";
-    a.style.color = "inherit";
-    // Link to name subdomain if available, otherwise contract-ID subdomain
-    a.href = name
-      ? accountUrl(window.location.host, name, "/account/")
-      : accountUrl(window.location.host, contractId, "/account/");
-
-    const icon = document.createElement("div");
-    icon.className = "ricon acc";
-    icon.innerHTML =
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g><path d="M4 8a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v1" /><rect x="4" y="7" width="16" height="12" rx="2.5" /><path d="M16 12h2" /></g></svg>';
-    a.appendChild(icon);
-
-    const info = document.createElement("div");
-    info.className = "rmain";
-
-    if (name) {
-      const nameEl = document.createElement("div");
-      nameEl.className = "rtitle";
-      nameEl.textContent = name;
-      info.appendChild(nameEl);
-    } else {
-      const titleEl = document.createElement("div");
-      titleEl.className = "rtitle";
-      titleEl.textContent = "Your Nido";
-      info.appendChild(titleEl);
-    }
-
-    const addr = document.createElement("div");
-    addr.className = "rsub";
-    addr.textContent = contractId;
-    addr.title = contractId;
-    info.appendChild(addr);
-
-    const arrow = document.createElement("span");
-    arrow.style.color = "var(--mut)";
-    arrow.style.flexShrink = "0";
-    arrow.innerHTML =
-      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>';
-
-    a.appendChild(info);
-    a.appendChild(arrow);
-    $accountsList.appendChild(a);
-    $accountsSection.classList.remove("hidden");
-  }
-
-  const activeAccounts = loadAccounts();
-  for (const cAddress of activeAccounts) {
-    addAccountRow(cAddress);
-  }
-
-  // --- Check pending accounts against chain ---
-
-  async function checkContractExists(contractId: string): Promise<boolean> {
-    try {
-      const server = new rpc.Server(RPC_URL);
-      await server.getContractData(contractId, xdr.ScVal.scvLedgerKeyContractInstance());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  (async () => {
-    const pendingAccounts = loadPendingAccounts();
-    for (const { contractId } of pendingAccounts) {
-      if (activeAccounts.includes(contractId)) continue;
-      const exists = await checkContractExists(contractId);
-      if (exists) {
-        activateAccount(contractId);
-        addAccountRow(contractId);
-      }
-    }
-  })();
-
-  // --- Create new account ---
-
-  async function createAccount(btn: HTMLButtonElement) {
-    clearError();
-    btn.disabled = true;
-    const original = btn.innerHTML;
-    btn.textContent = "Creating...";
-
-    try {
-      $progressInfo.style.display = "inline-flex";
-      $progressInfo.textContent = "Reserving your Nido...";
-
-      const keypair = Keypair.random();
-      const publicKey = keypair.publicKey();
-      const secret = keypair.secret();
-
-      $progressInfo.textContent = "Setting things up...";
-      const res = await fetch(`${FRIENDBOT_URL}?addr=${publicKey}`);
-      if (!res.ok) throw new Error(`Funding failed: ${res.status}`);
-
-      $progressInfo.textContent = "Almost there...";
-      const client = new Client({
-        contractId: await fetchRegistryAddress("factory"),
-        networkPassphrase: Networks.TESTNET,
-        rpcUrl: RPC_URL,
-        publicKey: publicKey,
-      });
-
-      const tx = await client.get_c_address({ funder: publicKey });
-      const cAddress = tx.result;
-
-      // Save as pending
-      savePendingAccount(cAddress, secret);
-
-      $progressInfo.style.display = "none";
-      $cAddressResult.textContent = cAddress;
-      $setupLink.href = accountUrl(window.location.host, cAddress, `/new-account/?key=${secret}`);
-      $passkeySection.classList.remove("hidden");
-      $passkeySection.scrollIntoView({ behavior: "smooth", block: "start" });
-
-      btn.innerHTML = original;
-      btn.disabled = false;
-    } catch (err: any) {
-      showError(err.message || String(err));
-      $progressInfo.style.display = "none";
-      btn.innerHTML = original;
-      btn.disabled = false;
-    }
-  }
-
-  $createBtn.addEventListener("click", () => createAccount($createBtn));
-  if ($createBtnBand) {
-    $createBtnBand.addEventListener("click", () => createAccount($createBtnBand));
-  }
+  document.getElementById("get-started-hero")?.addEventListener("click", openMenu);
+  document.getElementById("get-started-band")?.addEventListener("click", openMenu);
 </script>

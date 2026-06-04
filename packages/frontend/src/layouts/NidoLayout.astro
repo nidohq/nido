@@ -52,6 +52,11 @@ const { title, shell = "app" } = Astro.props;
           <div class="col col-app"><slot /></div>
         </div>
       )}
+      <footer class="site-footer">
+        <a href="https://theahaco.github.io/g2c/" target="_blank" rel="noopener">
+          Example dApp ↗
+        </a>
+      </footer>
     </div>
   </body>
 </html>
@@ -96,6 +101,22 @@ const { title, shell = "app" } = Astro.props;
 
   #webview-warning p {
     margin: 0.25rem 0;
+  }
+
+  /* Global link to the live example dApp (status-message on GitHub Pages). */
+  .site-footer {
+    text-align: center;
+    padding: 1.25rem 1rem 2rem;
+    font-size: 0.85rem;
+  }
+  .site-footer a {
+    color: inherit;
+    opacity: 0.7;
+    text-decoration: none;
+  }
+  .site-footer a:hover {
+    opacity: 1;
+    text-decoration: underline;
   }
 </style>
 

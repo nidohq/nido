@@ -1,4 +1,5 @@
 {
+  "name": "g2c",
   "private": true,
   "workspaces": [
     "packages/*",
@@ -7,6 +8,8 @@
     "examples/status-message-dapp/packages/*"
   ],
   "scripts": {
+    "build:packages": "npm run build -w smart-account -w multisig-policy -w webauthn-verifier -w factory -w status-message -w @g2c/passkey-sdk -w @g2c/stellar-wallets-kit-module",
+    "postinstall": "npm run build:packages",
     "test:support": "vitest run --config vitest.support.config.ts",
     "test:e2e": "playwright test --grep @fast",
     "test:e2e:cdp": "playwright test --project=chromium-cdp"

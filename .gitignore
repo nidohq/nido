@@ -15,8 +15,19 @@ target
 
 # Node / npm
 node_modules/
+
+# Generated TypeScript build output (regenerated via `npm run build:packages`)
 packages/frontend/dist/
+packages/passkey-sdk/dist/
+packages/stellar-wallets-kit-module/dist/
+packages/contract-bindings/*/dist/
+
+# Astro build cache
 packages/frontend/.astro/
+/.astro/
+
+# Stray archives
+*.zip
 
 # Brainstorming visual-companion transient session files
 # (committed specs live under docs/superpowers/)

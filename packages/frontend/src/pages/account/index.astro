@@ -37,7 +37,7 @@ import Nest from "../../components/Nest.astro";
       </a>
     </div>
 
-    <div id="error-box" class="card" style="display:none; margin:8px 22px; padding:13px 16px; background:var(--warn-soft); border-color:#ecdcb8; color:var(--warn); font-size:13.5px; line-height:1.45;"></div>
+    <div id="error-box" class="alert danger" style="display:none; margin:8px 22px;"></div>
 
     <!-- ============================================================= -->
     <!-- SIGNING MODE — reskinned signature request                    -->
@@ -104,19 +104,22 @@ import Nest from "../../components/Nest.astro";
         </div>
       </div>
 
-      <!-- quick actions — full-width action row -->
+      <!-- quick actions — Receive (the everyday action) gets the coral emphasis
+           (H-02); "Prove" is demoted to neutral + renamed the concrete job it
+           does, "Approve" (→ the focused /sign/ surface); "Settings" → "Security"
+           with the shield glyph so the entry points agree on one label (K-03). -->
       <div class="span-all" style="display:flex; gap:6px; padding:26px 30px 6px;">
         <button id="receive-action" class="qa" type="button">
-          <div class="circ soft"><Icon name="receive" size={24} /></div>
+          <div class="circ"><Icon name="receive" size={24} color="#fff" /></div>
           <span>Receive</span>
         </button>
-        <a id="sign-action" class="qa" href="#sign-section">
-          <div class="circ"><Icon name="shieldcheck" size={23} color="#fff" /></div>
-          <span>Prove</span>
+        <a class="qa" href="/sign/">
+          <div class="circ soft"><Icon name="shieldcheck" size={23} /></div>
+          <span>Approve</span>
         </a>
         <a class="qa" href="/security/">
-          <div class="circ soft"><Icon name="settings" size={23} /></div>
-          <span>Settings</span>
+          <div class="circ soft"><Icon name="shield" size={23} /></div>
+          <span>Security</span>
         </a>
       </div>
 
@@ -216,48 +219,15 @@ import Nest from "../../components/Nest.astro";
           <button id="register-btn" class="btn acc">
             <Icon name="key" size={20} color="#fff" /> Set up your passkey
           </button>
-          <pre id="no-key-register-result" class="mono" style="display:none; margin-top:14px; font-size:11.5px; white-space:pre-wrap; word-break:break-all; color:var(--ink-soft);"></pre>
         </div>
       </section>
       </div>
 
-      <!-- ============ DEVELOPER DISCLOSURE ============ -->
-      <details class="card dev-card span-all">
-        <summary>Developer</summary>
-        <!-- ============ SIGN / TRY IT OUT ============ -->
-        <section id="sign-section" style="padding-top:4px;">
-          <span class="section-label" style="display:block; margin-bottom:12px;">Try it out</span>
-          <div class="card" style="padding:16px;">
-            <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
-              Curious how it works? Eventually other Stellar apps will send you here to confirm. For now, set a status
-              message on-chain or sign a hash yourself.
-            </p>
-
-            <div style="font-weight:700; font-size:14px; margin-bottom:8px;">Invoke a contract</div>
-            <a id="status-message-link" class="btn soft" style="margin-bottom:18px;">
-              <Icon name="bolt" size={18} /> Set a status message
-            </a>
-
-            <div style="font-weight:700; font-size:14px; margin:6px 0 8px;">Sign a hash</div>
-            <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 12px;">
-              Confirm with your passkey to sign a 32-byte hash (e.g. a transaction hash).
-            </p>
-            <div class="field">
-              <label for="hash-input">Hash to sign (64 hex chars)</label>
-              <input id="hash-input" class="input mono" placeholder="a1b2c3…64 hex characters" maxlength="64" />
-            </div>
-            <div class="btn-row" style="margin-top:12px;">
-              <button id="sign-btn" class="btn acc" disabled>
-                <Icon name="faceid" size={18} color="#fff" /> <span class="js-confirm-label">Sign</span>
-              </button>
-              <button id="random-hash-btn" class="btn ghost">
-                <Icon name="refresh" size={18} /> Random
-              </button>
-            </div>
-            <pre id="sign-result" class="mono" style="display:none; margin-top:14px; font-size:11.5px; white-space:pre-wrap; word-break:break-all; color:var(--ink-soft);"></pre>
-          </div>
-        </section>
-      </details>
+      <!-- H-03: the "Developer" disclosure (status-message demo + sign-a-hash tool)
+           has been removed from the consumer wallet — it belongs behind a dev flag,
+           not on the primary account screen, so consumers never meet raw hashes.
+           The status-message entry point will return as a link to a properly
+           external dApp (tracked separately). -->
 
       <div class="span-all" style="display:flex; justify-content:center; margin:8px 0 28px;">
         <Logo size={18} mark markSize={24} />
@@ -272,10 +242,8 @@ import Nest from "../../components/Nest.astro";
 
 <script>
   import {
-    Asset,
     Networks,
     Address,
-    Contract,
     TransactionBuilder,
     Transaction,
     Account,
@@ -283,7 +251,6 @@ import Nest from "../../components/Nest.astro";
     Keypair,
     rpc,
     nativeToScVal,
-    scValToNative,
   } from "@stellar/stellar-sdk";
   import {
     parseRegistration,
@@ -302,19 +269,18 @@ import Nest from "../../components/Nest.astro";
     resolveNameCached,
     stripSubdomain,
     accountUrl,
-    dappUrl,
     saveCredential as sdkSaveCredential,
     loadCredential as sdkLoadCredential,
     saveAccountName,
     loadAccountName,
     fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
-  import { formatSignResult } from "../../lib/formatting";
   import { toast } from "../../lib/toast";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { shortAddr } from "../../lib/address";
   import { formatXlm } from "../../lib/money";
+  import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
@@ -506,6 +472,15 @@ import Nest from "../../components/Nest.astro";
   function initSigningMode() {
     document.getElementById("signing-mode")!.classList.remove("hidden");
 
+    // K-04: an "approve a request" moment is a single focused decision — strip
+    // the wallet sidebar + topbar so this surface matches the dedicated /sign/
+    // treatment, regardless of which route the request arrived on. Inline
+    // display:none beats the ≥1024 sidebar media query.
+    const $sidebar = document.querySelector<HTMLElement>(".nido-sidebar");
+    if ($sidebar) $sidebar.style.display = "none";
+    const $topbar = document.querySelector<HTMLElement>(".col-app .topbar");
+    if ($topbar) $topbar.style.display = "none";
+
     // Show request details
     let originDisplay: string;
     try {
@@ -621,15 +596,9 @@ import Nest from "../../components/Nest.astro";
   function initHomeMode() {
     document.getElementById("home-mode")!.classList.remove("hidden");
 
-    const $signBtn = document.getElementById("sign-btn") as HTMLButtonElement;
-    const $signResult = document.getElementById("sign-result") as HTMLPreElement;
-    const $hashInput = document.getElementById("hash-input") as HTMLInputElement;
-    const $randomHashBtn = document.getElementById("random-hash-btn") as HTMLButtonElement;
-
     const cred = loadCredential();
     if (cred) {
       showPasskeyInfo(cred);
-      $signBtn.disabled = false;
     } else {
       document.getElementById("register-section")!.classList.remove("hidden");
     }
@@ -655,7 +624,6 @@ import Nest from "../../components/Nest.astro";
 
     // Register passkey (when none exists yet)
     const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
-    const $noKeyRegisterResult = document.getElementById("no-key-register-result") as HTMLPreElement;
     $registerBtn.addEventListener("click", async () => {
       clearError();
       const support = checkPasskeySupport();
@@ -666,26 +634,13 @@ import Nest from "../../components/Nest.astro";
       try {
         $registerBtn.disabled = true;
 
-        const { credentialId, publicKey } = await withPasskeySheet(
+        await withPasskeySheet(
           () => registerPasskey(),
           {
             title: "Set up your passkey",
             sub: `Confirm with ${passkey.label} to create it.`,
           },
         );
-
-        $noKeyRegisterResult.style.display = "block";
-        $noKeyRegisterResult.textContent = JSON.stringify(
-          {
-            credentialId: buf2base64url(credentialId),
-            publicKey: buf2hex(publicKey),
-            rpId: rpId,
-          },
-          null,
-          2
-        );
-
-        $signBtn.disabled = false;
 
         const newCred = loadCredential();
         if (newCred) showPasskeyInfo(newCred);
@@ -700,103 +655,14 @@ import Nest from "../../components/Nest.astro";
         $registerBtn.disabled = false;
       }
     });
-
-    // Sign
-    $signBtn.addEventListener("click", async () => {
-      clearError();
-      const hashHex = $hashInput.value.trim();
-      if (!/^[0-9a-fA-F]{64}$/.test(hashHex)) {
-        showError("Enter a valid 32-byte hash (64 hex characters)");
-        return;
-      }
-
-      const support = checkPasskeySupport();
-      if (!support.ok) {
-        showError(support.message!);
-        return;
-      }
-
-      try {
-        $signBtn.disabled = true;
-
-        const result = await withPasskeySheet(() => signHash(hashHex), {
-          title: confirmLabel,
-          sub: "Signing the hash you entered.",
-        });
-
-        $signResult.style.display = "block";
-        $signResult.innerHTML = formatSignResult(result);
-      } catch (err: any) {
-        if (err.name === "NotAllowedError") {
-          showError(passkeyBlockedHint("signing"));
-        } else {
-          showError(`Couldn't sign: ${err.message}`);
-        }
-      } finally {
-        $signBtn.disabled = false;
-      }
-    });
-
-    // Random hash
-    $randomHashBtn.addEventListener("click", () => {
-      const bytes = crypto.getRandomValues(new Uint8Array(32));
-      $hashInput.value = buf2hex(bytes);
-    });
-  }
-
-  // --- Balance ---
-
-  async function fetchXlmBalance(contractAddress: string): Promise<string> {
-    const server = new rpc.Server(RPC_URL);
-    const xlmSacId = Asset.native().contractId(Networks.TESTNET);
-    const xlmContract = new Contract(xlmSacId);
-
-    const dummySource = new Account(
-      "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-      "0"
-    );
-
-    const tx = new TransactionBuilder(dummySource, {
-      fee: "100",
-      networkPassphrase: Networks.TESTNET,
-    })
-      .addOperation(
-        xlmContract.call("balance", Address.fromString(contractAddress).toScVal())
-      )
-      .setTimeout(0)
-      .build();
-
-    const sim = await server.simulateTransaction(tx);
-    if (rpc.Api.isSimulationError(sim)) return "0";
-
-    const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
-    if (!successSim.result) return "0";
-
-    const rawBalance = scValToNative(successSim.result.retval) as bigint;
-    const xlm = Number(rawBalance) / 10_000_000;
-    return xlm.toFixed(7);
   }
 
   // --- Init ---
 
   initAccountCard();
 
-  // Set navigation links
-  if (contractId) {
-    const $statusMessageLink = document.getElementById("status-message-link") as HTMLAnchorElement;
-    // Point at the reserved-dApp subdomain so the dApp loads on its own
-    // origin (status-message.<base>) and the cross-origin delegation flow
-    // actually goes between two separate origins. Previously this linked to
-    // //<apex>/status-message/, which served the same bundle from the
-    // wallet's apex and broke the origin-separation premise.
-    $statusMessageLink.href = dappUrl(
-      window.location.host,
-      "status-message",
-      `/?contract=${contractId}`,
-    );
-    // Home link is set unconditionally near the top of the script (before any
-    // code that can throw), so it doesn't need re-setting here.
-  }
+  // Home link is set unconditionally near the top of the script (before any
+  // code that can throw), so it doesn't need setting here.
 
   if (isSigningMode) {
     initSigningMode();

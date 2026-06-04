@@ -111,8 +111,11 @@ import Nest from '../../components/Nest.astro';
       '<p class="mut" style="font-size:13px;">Open this page from your account to manage who can help you.</p>';
     delegationList.innerHTML = '';
   } else {
-    recoveryList.innerHTML = '<p class="mut" style="font-size:13px;">Loading…</p>';
-    delegationList.innerHTML = '<p class="mut" style="font-size:13px;">Loading…</p>';
+    // S-02: shared skeleton placeholder instead of a bare "Loading…" string.
+    const loadingSkeleton =
+      '<div class="skeleton" style="height:46px; margin-bottom:10px;"></div><div class="skeleton" style="height:46px;"></div>';
+    recoveryList.innerHTML = loadingSkeleton;
+    delegationList.innerHTML = loadingSkeleton;
     try {
       const overlay = {
         friendNicknames: loadFriendNicknames(account),

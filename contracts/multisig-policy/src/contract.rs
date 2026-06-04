@@ -62,8 +62,8 @@ mod test {
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::Env;
-    use stellar_accounts::smart_account::{ContextRuleType, Signer};
     use soroban_sdk::String;
+    use stellar_accounts::smart_account::{ContextRuleType, Signer};
 
     #[test]
     fn install_stores_threshold_per_account_rule() {
