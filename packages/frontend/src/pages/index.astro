@@ -194,6 +194,15 @@ import Toast from "../components/Toast.astro";
     window.location.replace(dappPath);
   }
 
+  // --- Bare contract-ID subdomain redirect ---
+  // Visiting cabc….<base> directly lands on this root page; send it straight
+  // to the account view on the same subdomain rather than showing the landing
+  // page. (Name subdomains are handled below after registry resolution.)
+  const subdomainContractId = contractIdFromHostname(hostname);
+  if (subdomainContractId && isContractId(subdomainContractId)) {
+    window.location.replace("/account/");
+  }
+
   // --- Name resolution redirect (if visiting via name subdomain) ---
 
   const detectedName = nameFromHostname(hostname);
