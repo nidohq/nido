@@ -54,7 +54,8 @@ frontend/              # Wallet web app
 ## Documentation
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — Technical architecture, data flows, and security model
-- [APPLICATION.md](./APPLICATION.md) — SCF Build Award application
+- [docs/APPLICATION.md](./docs/APPLICATION.md) — SCF Build Award application
+- [docs/REQUIREMENTS.md](./docs/REQUIREMENTS.md) — SCF Build Award requirements
 
 ## License
 

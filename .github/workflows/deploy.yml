@@ -20,8 +20,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build passkey-sdk
-        run: npx tsc -p ./packages/passkey-sdk/tsconfig.json
+      - name: Build workspace packages
+        run: npm run build:packages
 
       - name: Build frontend
         run: npx astro build --root ./packages/frontend

@@ -2,7 +2,9 @@
 //! invocation `scopedSessionKey.buildInstall` produces in the SDK and
 //! verifies the in-scope / out-of-scope / expired / revoked paths.
 
-use g2c_integration_tests::{build_contract_assertion, compute_auth_digest, deploy_smart_account, test_key};
+use g2c_integration_tests::{
+    build_contract_assertion, compute_auth_digest, deploy_smart_account, test_key,
+};
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::{Address as _, Ledger as _};
@@ -14,7 +16,10 @@ use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 fn session_signer(env: &Env, verifier: &Address) -> (SigningKey, Signer) {
     let key = test_key(2);
     let pubkey = key.verifying_key().to_sec1_bytes();
-    (key, Signer::External(verifier.clone(), Bytes::from_slice(env, &pubkey)))
+    (
+        key,
+        Signer::External(verifier.clone(), Bytes::from_slice(env, &pubkey)),
+    )
 }
 
 /// Sign the auth digest (sha256(payload || context_rule_ids.to_xdr())) with the
@@ -35,7 +40,10 @@ fn one_sig(
     };
     let mut m: Map<Signer, Bytes> = Map::new(env);
     m.set(signer.clone(), sd.to_xdr(env));
-    AuthPayload { signers: m, context_rule_ids }
+    AuthPayload {
+        signers: m,
+        context_rule_ids,
+    }
 }
 
 fn context_for(env: &Env, contract: &Address) -> Context {
@@ -65,7 +73,13 @@ fn session_key_authorizes_target_contract() {
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0x11; 32]));
     let signatures = one_sig(&env, &signer, &key, &hash);
     env.as_contract(&account_addr, || {
-        do_check_auth(&env, &hash, &signatures, &vec![&env, context_for(&env, &target)]).unwrap();
+        do_check_auth(
+            &env,
+            &hash,
+            &signatures,
+            &vec![&env, context_for(&env, &target)],
+        )
+        .unwrap();
     });
 }
 
@@ -90,7 +104,13 @@ fn session_key_rejected_for_other_contract() {
     let signatures = one_sig(&env, &signer, &key, &hash);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         env.as_contract(&account_addr, || {
-            do_check_auth(&env, &hash, &signatures, &vec![&env, context_for(&env, &other)]).unwrap();
+            do_check_auth(
+                &env,
+                &hash,
+                &signatures,
+                &vec![&env, context_for(&env, &other)],
+            )
+            .unwrap();
         });
     }));
     assert!(result.is_err());
@@ -117,13 +137,25 @@ fn session_key_rejected_after_valid_until() {
 
     env.ledger().set_sequence_number(50);
     env.as_contract(&account_addr, || {
-        do_check_auth(&env, &hash, &signatures, &vec![&env, context_for(&env, &target)]).unwrap();
+        do_check_auth(
+            &env,
+            &hash,
+            &signatures,
+            &vec![&env, context_for(&env, &target)],
+        )
+        .unwrap();
     });
 
     env.ledger().set_sequence_number(101);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         env.as_contract(&account_addr, || {
-            do_check_auth(&env, &hash, &signatures, &vec![&env, context_for(&env, &target)]).unwrap();
+            do_check_auth(
+                &env,
+                &hash,
+                &signatures,
+                &vec![&env, context_for(&env, &target)],
+            )
+            .unwrap();
         });
     }));
     assert!(result.is_err());
@@ -149,14 +181,26 @@ fn session_key_rejected_after_revoke() {
     let signatures = one_sig(&env, &signer, &key, &hash);
 
     env.as_contract(&account_addr, || {
-        do_check_auth(&env, &hash, &signatures, &vec![&env, context_for(&env, &target)]).unwrap();
+        do_check_auth(
+            &env,
+            &hash,
+            &signatures,
+            &vec![&env, context_for(&env, &target)],
+        )
+        .unwrap();
     });
 
     client.remove_context_rule(&rule.id);
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         env.as_contract(&account_addr, || {
-            do_check_auth(&env, &hash, &signatures, &vec![&env, context_for(&env, &target)]).unwrap();
+            do_check_auth(
+                &env,
+                &hash,
+                &signatures,
+                &vec![&env, context_for(&env, &target)],
+            )
+            .unwrap();
         });
     }));
     assert!(result.is_err());

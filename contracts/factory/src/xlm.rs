@@ -1,4 +1,7 @@
+// Named `xlm` to mirror the module that `import_asset!("xlm")` generates in
+// non-test builds, so `pub use xlm::*` below resolves identically either way.
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod xlm {
     use super::*;
     const XLM_KEY: &soroban_sdk::Symbol = &soroban_sdk::symbol_short!("XLM");
@@ -24,14 +27,14 @@ mod xlm {
     pub fn stellar_asset_client<'a>(
         env: &soroban_sdk::Env,
     ) -> soroban_sdk::token::StellarAssetClient<'a> {
-        soroban_sdk::token::StellarAssetClient::new(&env, &contract_id(env))
+        soroban_sdk::token::StellarAssetClient::new(env, &contract_id(env))
     }
     /// Create a Stellar Asset Client for the asset which provides an admin interface
     pub fn token_client<'a>(env: &soroban_sdk::Env) -> soroban_sdk::token::TokenClient<'a> {
-        soroban_sdk::token::TokenClient::new(&env, &contract_id(env))
+        soroban_sdk::token::TokenClient::new(env, &contract_id(env))
     }
 }
-const ONE_XLM: i128 = 1_000_000_0; // 1 XLM in stroops;
+const ONE_XLM: i128 = 10_000_000; // 1 XLM in stroops
 
 pub const fn to_stroops(num: u64) -> i128 {
     (num as i128) * ONE_XLM

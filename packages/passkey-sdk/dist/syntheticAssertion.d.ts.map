@@ -1,1 +1,0 @@
-{"version":3,"file":"syntheticAssertion.d.ts","sourceRoot":"","sources":["../src/syntheticAssertion.ts"],"names":[],"mappings":"AAEA;;;;;;;;;;GAUG;AACH,MAAM,WAAW,kBAAkB;IACjC,iBAAiB,EAAE,UAAU,CAAC;IAC9B,cAAc,EAAE,UAAU,CAAC;IAC3B,SAAS,EAAE,UAAU,CAAC;CACvB;AAED,wBAAsB,uBAAuB,CAC3C,WAAW,EAAE,UAAU,EACvB,SAAS,EAAE,UAAU,GACpB,OAAO,CAAC,kBAAkB,CAAC,CA6B7B"}

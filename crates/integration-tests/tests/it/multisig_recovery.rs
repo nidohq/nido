@@ -85,7 +85,10 @@ fn one_friend_signature_is_rejected() {
     let mut sig_map: Map<Signer, Bytes> = Map::new(&env);
     let (signer, sig) = signature_for(&env, &s1, &f1, &auth_digest);
     sig_map.set(signer, sig);
-    let signatures = AuthPayload { signers: sig_map, context_rule_ids };
+    let signatures = AuthPayload {
+        signers: sig_map,
+        context_rule_ids,
+    };
 
     // Auth context: call self (the recovery scope).
     let context = Context::Contract(ContractContext {
@@ -128,7 +131,10 @@ fn two_friend_signatures_pass_for_self_scope() {
     let (signer2, sig2) = signature_for(&env, &s2, &f2, &auth_digest);
     sig_map.set(signer1, sig1);
     sig_map.set(signer2, sig2);
-    let signatures = AuthPayload { signers: sig_map, context_rule_ids };
+    let signatures = AuthPayload {
+        signers: sig_map,
+        context_rule_ids,
+    };
 
     let context = Context::Contract(ContractContext {
         contract: account_addr.clone(),
@@ -164,7 +170,10 @@ fn two_friend_signatures_rejected_for_other_contract() {
     let (signer2, sig2) = signature_for(&env, &s2, &f2, &auth_digest);
     sig_map.set(signer1, sig1);
     sig_map.set(signer2, sig2);
-    let signatures = AuthPayload { signers: sig_map, context_rule_ids };
+    let signatures = AuthPayload {
+        signers: sig_map,
+        context_rule_ids,
+    };
 
     // Auth context: call a DIFFERENT contract (a synthetic token transfer).
     let other = Address::generate(&env);
