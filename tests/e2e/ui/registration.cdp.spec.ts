@@ -29,7 +29,11 @@ test.describe('passkey registration (real CDP virtual authenticator)', () => {
     await setupVirtualAuthenticator(page);
 
     // The contract id surfaced from the subdomain matches our fake address.
-    await expect(page.locator('#contract-id')).toContainText(FAKE_CONTRACT_ID);
+    // The chip shows a shortened head…tail; the full id lives on its title.
+    await expect(page.locator('#account-chip')).toHaveAttribute(
+      'title',
+      FAKE_CONTRACT_ID,
+    );
 
     await expect(page.locator('#register-btn')).toBeVisible();
     await page.locator('#register-btn').click();

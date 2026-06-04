@@ -45,7 +45,11 @@ test.describe('passkey registration (shim) @fast', () => {
     await page.goto(NEW_ACCOUNT_URL);
 
     // The contract id surfaced from the subdomain matches our fake address.
-    await expect(page.locator('#contract-id')).toContainText(FAKE_CONTRACT_ID);
+    // The chip shows a shortened head…tail; the full id lives on its title.
+    await expect(page.locator('#account-chip')).toHaveAttribute(
+      'title',
+      FAKE_CONTRACT_ID,
+    );
 
     // Register: clicking drives the (shimmed) navigator.credentials.create(),
     // parseRegistration(), then saveCredential() to localStorage. On success the
