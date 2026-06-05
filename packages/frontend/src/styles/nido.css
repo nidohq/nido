@@ -402,6 +402,46 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
 .lp-featcard { padding: 24px; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--paper-2); }
 @media (max-width: 720px) { .lp-feat { grid-template-columns: 1fr; } }
 
+/* ===================================================================
+   "Why it's safe" — trust explainer, alternating editorial rows
+   =================================================================== */
+.lp-safe { padding: 56px 0 24px; border-top: 1px solid var(--line); position: relative; overflow: hidden; }
+.lp-safe::before {
+  content: ""; position: absolute; z-index: 0; pointer-events: none;
+  width: 520px; height: 520px; top: -180px; left: 50%; transform: translateX(-50%);
+  background: radial-gradient(circle, var(--acc-glow), rgba(242,92,42,0) 68%); opacity: .32;
+}
+.lp-safe-head { text-align: center; max-width: 660px; margin: 0 auto 60px; position: relative; z-index: 1; }
+.lp-safe-lede { color: var(--ink-soft); font-size: clamp(16px, 1.5vw, 18px); line-height: 1.62; margin: 18px 0 0; }
+.lp-safe-rows { display: flex; flex-direction: column; gap: clamp(44px, 6vw, 76px); position: relative; z-index: 1; }
+.lp-safe-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(28px, 5vw, 64px); align-items: center; }
+.lp-safe-row:nth-child(even) .lp-safe-art { order: 2; }
+.lp-safe-art {
+  position: relative; border-radius: var(--r-xl); padding: 26px; min-height: 248px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--paper-2); border: 1px solid var(--line); box-shadow: var(--sh-2);
+}
+.lp-safe-art svg { width: 100%; height: auto; max-width: 360px; }
+.lp-safe-num { font-family: var(--disp); font-weight: 800; font-size: 14px; color: var(--acc); letter-spacing: .08em; }
+.lp-safe-h3 { font-family: var(--disp); font-weight: 800; font-size: clamp(22px, 2.4vw, 30px); letter-spacing: -.015em; line-height: 1.12; margin: 9px 0 0; }
+.lp-safe-body { color: var(--ink-soft); font-size: 16.5px; line-height: 1.62; margin: 14px 0 0; max-width: 34ch; }
+@media (max-width: 860px) {
+  .lp-safe-row { grid-template-columns: 1fr; gap: 22px; }
+  .lp-safe-art { order: -1 !important; min-height: 220px; }
+  .lp-safe-copy { order: 0 !important; }
+  .lp-safe-body { max-width: none; }
+}
+/* Scroll-reveal is progressive enhancement. The base row is visible; only the
+   JS-added .reveal-ready hides it, and only where motion is welcome — so a
+   no-JS or reduced-motion render shows every row immediately (see S-01). */
+@media (prefers-reduced-motion: no-preference) {
+  .lp-safe.reveal-ready .lp-safe-row {
+    opacity: 0; transform: translateY(20px);
+    transition: opacity .6s cubic-bezier(.2,.7,.3,1), transform .6s cubic-bezier(.2,.7,.3,1);
+  }
+  .lp-safe.reveal-ready .lp-safe-row.is-in { opacity: 1; transform: none; }
+}
+
 /* CTA band */
 .lp-band { text-align: center; padding: 70px 24px 78px; border-top: 1px solid var(--line); position: relative; overflow: hidden; }
 

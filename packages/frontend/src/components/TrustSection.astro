@@ -1,0 +1,181 @@
+---
+// "Why it's safe" — the trust explainer on the landing page.
+//
+// Four alternating editorial rows, each pairing a soft-scene illustration with
+// a short headline + one sentence. Sits between the "Why Nido" feature trio and
+// the closing CTA band. Styles live in styles/nido.css (.lp-safe*).
+//
+// The graphics are decorative: each is aria-hidden, because the adjacent
+// headline + body already carry the full meaning for assistive tech.
+---
+
+<section class="lp-safe" id="trust">
+  <div class="lp-safe-head">
+    <span class="section-label">Why it's safe</span>
+    <h2 class="disp lp-h2">You don't have to trust us.</h2>
+    <p class="lp-safe-lede">
+      Every password is a secret some company has to keep for you — and the
+      headlines are full of the ones who didn't. Nido has no password to leak,
+      and no account we can hold over you. Your face stays on your phone, your
+      account lives on an open blockchain, and anyone can check the math. Here's how.
+    </p>
+  </div>
+
+  <div class="lp-safe-rows">
+
+    <!-- 01 — biometrics never leave the device -->
+    <div class="lp-safe-row">
+      <div class="lp-safe-art">
+        <svg viewBox="0 0 320 220" aria-hidden="true" focusable="false">
+          <ellipse cx="118" cy="116" rx="92" ry="90" fill="#FCE3D6" opacity=".5" />
+          <rect x="58" y="44" width="118" height="150" rx="26" fill="#2A1A12" opacity=".06" />
+          <rect x="52" y="36" width="118" height="150" rx="26" fill="#fff" stroke="#efe2d2" stroke-width="2" />
+          <rect x="72" y="64" width="78" height="96" rx="22" fill="#DBF0F1" />
+          <circle cx="100" cy="104" r="3.4" fill="#2A1A12" /><circle cx="124" cy="104" r="3.4" fill="#2A1A12" />
+          <path d="M98 122 q14 11 28 0" fill="none" stroke="#F25C2A" stroke-width="2.6" stroke-linecap="round" />
+          <circle cx="146" cy="70" r="14" fill="#F25C2A" />
+          <rect x="140" y="69" width="12" height="9" rx="2" fill="#fff" /><path d="M142 69 v-2 a4 4 0 0 1 8 0 v2" fill="none" stroke="#fff" stroke-width="2" />
+          <path d="M172 130 q44 4 70 -26" fill="none" stroke="#F5A623" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="1 7" />
+          <rect x="232" y="78" width="64" height="34" rx="17" fill="#F25C2A" />
+          <path d="M246 95 l6 6 12 -14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+          <text x="111" y="180" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="11" fill="#7a6655">your face stays in</text>
+          <text x="264" y="128" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="11" fill="#7a6655">signed proof</text>
+        </svg>
+      </div>
+      <div class="lp-safe-copy">
+        <span class="lp-safe-num">01</span>
+        <h3 class="lp-safe-h3">Your face never leaves your phone.</h3>
+        <p class="lp-safe-body">
+          Your fingerprint or face scan is sealed inside a secure chip on your
+          device. Nido never sees it. When you approve something, your phone signs
+          it inside that chip — and sends out only the signature, never your biometrics.
+        </p>
+      </div>
+    </div>
+
+    <!-- 02 — verified in the open on Stellar -->
+    <div class="lp-safe-row">
+      <div class="lp-safe-art">
+        <svg viewBox="0 0 320 220" aria-hidden="true" focusable="false">
+          <ellipse cx="160" cy="116" rx="152" ry="84" fill="#DBF0F1" opacity=".35" />
+          <rect x="18" y="70" width="80" height="100" rx="18" fill="#fff" stroke="#efe2d2" stroke-width="2" />
+          <circle cx="46" cy="112" r="11" fill="none" stroke="#F25C2A" stroke-width="3" />
+          <path d="M57 112 H76 M70 112 v8 M76 112 v6" stroke="#F25C2A" stroke-width="3" stroke-linecap="round" fill="none" />
+          <text x="58" y="158" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="10" fill="#7a6655">private key</text>
+          <text x="58" y="171" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="10" fill="#7a6655">stays on phone</text>
+          <path d="M102 116 H150" stroke="#F5A623" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="1 7" fill="none" />
+          <rect x="112" y="104" width="40" height="22" rx="11" fill="#F25C2A" />
+          <path d="M120 115 l4 4 8 -9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+          <rect x="174" y="60" width="128" height="118" rx="18" fill="#fff" stroke="#efe2d2" stroke-width="2" />
+          <rect x="190" y="82" width="96" height="9" rx="4" fill="#f0e6d6" />
+          <rect x="190" y="100" width="76" height="9" rx="4" fill="#f0e6d6" />
+          <circle cx="238" cy="142" r="16" fill="#DBF0F1" />
+          <path d="M230 142 l5 5 11 -13" fill="none" stroke="#0E9AA8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="206" cy="44" r="8" fill="#F5A623" /><circle cx="228" cy="40" r="8" fill="#0E9AA8" /><circle cx="250" cy="44" r="8" fill="#F25C2A" />
+          <text x="238" y="198" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="11" fill="#7a6655">Stellar · anyone can verify</text>
+        </svg>
+      </div>
+      <div class="lp-safe-copy">
+        <span class="lp-safe-num">02</span>
+        <h3 class="lp-safe-h3">Checked in the open, by anyone.</h3>
+        <p class="lp-safe-body">
+          Your account lives on Stellar, a public blockchain built for one thing:
+          verifying signatures. It speaks the same open passkey standard your phone
+          already uses — so every approval is proven out in the open, by code anyone
+          can read. No secret server to trust.
+        </p>
+      </div>
+    </div>
+
+    <!-- 03 — you own it, not a row in a database -->
+    <div class="lp-safe-row">
+      <div class="lp-safe-art">
+        <svg viewBox="0 0 320 220" aria-hidden="true" focusable="false">
+          <g opacity=".5">
+            <rect x="20" y="68" width="116" height="86" rx="16" fill="#fff" stroke="#d9cdbb" stroke-width="2" />
+            <circle cx="46" cy="100" r="5" fill="#b9a890" /><circle cx="62" cy="100" r="5" fill="#b9a890" /><circle cx="78" cy="100" r="5" fill="#b9a890" /><circle cx="94" cy="100" r="5" fill="#b9a890" />
+            <text x="78" y="134" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="10" fill="#7a6655">their database</text>
+            <path d="M28 118 L128 82" stroke="#c2452f" stroke-width="3" stroke-linecap="round" />
+          </g>
+          <text x="160" y="116" text-anchor="middle" font-family="Fraunces, serif" font-size="17" font-style="italic" fill="#a8937e">vs</text>
+          <rect x="184" y="54" width="120" height="112" rx="18" fill="#fff" stroke="#F25C2A" stroke-width="2.4" />
+          <circle cx="230" cy="92" r="16" fill="#DBF0F1" />
+          <circle cx="224" cy="90" r="2.4" fill="#2A1A12" /><circle cx="236" cy="90" r="2.4" fill="#2A1A12" />
+          <path d="M223 99 q7 6 14 0" fill="none" stroke="#F25C2A" stroke-width="2" stroke-linecap="round" />
+          <path d="M246 92 H274 M268 92 v7 M274 92 v5" stroke="#F25C2A" stroke-width="3" stroke-linecap="round" />
+          <circle cx="244" cy="138" r="13" fill="#F25C2A" />
+          <path d="M237 138 l5 5 9 -11" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+          <text x="244" y="182" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="11" fill="#7a6655">your account, only yours</text>
+        </svg>
+      </div>
+      <div class="lp-safe-copy">
+        <span class="lp-safe-num">03</span>
+        <h3 class="lp-safe-h3">It's yours — not a row in someone's database.</h3>
+        <p class="lp-safe-body">
+          A password trusts a stranger to guard it. "Sign in with Google" hands them
+          your identity. Your Nido is a smart-contract account that answers only to
+          your face — no landlord, no middleman, no off-switch anyone else can flip.
+        </p>
+      </div>
+    </div>
+
+    <!-- 04 — multiple devices + friend-quorum recovery -->
+    <div class="lp-safe-row">
+      <div class="lp-safe-art">
+        <svg viewBox="0 0 320 240" aria-hidden="true" focusable="false">
+          <ellipse cx="160" cy="120" rx="152" ry="96" fill="#FCE3D6" opacity=".4" />
+          <text x="160" y="16" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="10" fill="#7a6655">your devices</text>
+          <path d="M150 92 L96 44 M160 90 L160 46 M170 92 L224 44" stroke="#e2d6c5" stroke-width="2" fill="none" />
+          <rect x="84" y="26" width="22" height="32" rx="5" fill="#fff" stroke="#0E9AA8" stroke-width="2" />
+          <rect x="146" y="28" width="28" height="18" rx="3" fill="#fff" stroke="#0E9AA8" stroke-width="2" />
+          <rect x="214" y="26" width="28" height="22" rx="4" fill="#fff" stroke="#0E9AA8" stroke-width="2" />
+          <rect x="126" y="90" width="68" height="60" rx="16" fill="#F25C2A" />
+          <circle cx="160" cy="112" r="5" fill="#fff" /><path d="M144 132 q16 -22 32 0" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" />
+          <path d="M160 150 L62 188 M160 152 L110 196 M160 152 L160 184 M160 152 L210 196 M160 150 L258 188" stroke="#f0e6d6" stroke-width="1.6" fill="none" />
+          <circle cx="62" cy="190" r="13" fill="#F25C2A" />
+          <circle cx="110" cy="200" r="13" fill="#d9cdbb" />
+          <circle cx="160" cy="204" r="13" fill="#F25C2A" />
+          <circle cx="210" cy="200" r="13" fill="#d9cdbb" />
+          <circle cx="258" cy="190" r="13" fill="#F25C2A" />
+          <text x="160" y="232" text-anchor="middle" font-family="Hanken Grotesk, sans-serif" font-size="11" fill="#7a6655">any 3 of 5 friends can let you back in</text>
+        </svg>
+      </div>
+      <div class="lp-safe-copy">
+        <span class="lp-safe-num">04</span>
+        <h3 class="lp-safe-h3">Lose your phone, not your Nido.</h3>
+        <p class="lp-safe-body">
+          Add all your devices — phone, laptop, tablet. Then pick a few people you
+          trust who can let you back in, but only when enough of them agree: any
+          three of five, say. No one of them can act alone, and no one can lock you out.
+        </p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<script>
+  // Reveal each row as it scrolls into view. Pure progressive enhancement:
+  // the section's base state is fully visible, so a no-JS or reduced-motion
+  // render shows everything. We only add the hiding class (.reveal-ready) when
+  // JS runs AND motion is welcome — and because the section is below the fold,
+  // the initial hide happens off-screen, with no visible flash.
+  const section = document.querySelector(".lp-safe");
+  const motionOK = window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
+
+  if (section && motionOK && "IntersectionObserver" in window) {
+    section.classList.add("reveal-ready");
+    const observer = new IntersectionObserver(
+      (entries, obs) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-in");
+            obs.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0.18, rootMargin: "0px 0px -8% 0px" },
+    );
+    section.querySelectorAll(".lp-safe-row").forEach((row) => observer.observe(row));
+  }
+</script>
