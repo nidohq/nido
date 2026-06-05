@@ -70,6 +70,17 @@ import Nest from '../../components/Nest.astro';
                 </div>
                 <span class="chip good" style="font-size:11px;">On</span>
               </div>
+              <div id="device-details" hidden style="border-top:1px solid var(--line-soft);padding:14px 16px;">
+                <div class="mut" style="font-size:12px;font-weight:700;margin-bottom:4px;">Public key</div>
+                <code id="device-pubkey" class="mono" style="font-size:11.5px;word-break:break-all;display:block;"></code>
+                <div class="mut" style="font-size:12px;font-weight:700;margin:12px 0 4px;">Credential ID</div>
+                <code id="device-cred-id" class="mono" style="font-size:11.5px;word-break:break-all;display:block;"></code>
+                <div class="mut" style="font-size:12px;font-weight:700;margin:12px 0 4px;">Bound to</div>
+                <code id="device-rp-id" class="mono" style="font-size:11.5px;word-break:break-all;display:block;"></code>
+                <p class="mut" style="font-size:12px;line-height:1.5;margin:12px 0 0;">
+                  Your passkey is bound to this Nido's own subdomain — it can't approve anything on another account.
+                </p>
+              </div>
             </div>
           </section>
         </div>
@@ -95,6 +106,8 @@ import Nest from '../../components/Nest.astro';
     loadFriendNicknames,
     loadBlockLabels,
     loadSessionKeyMaterial,
+    loadCredential,
+    buf2base64url,
   } from '@g2c/passkey-sdk';
   import { fetchAllChainRules, fetchPolicyState } from '../../lib/policyChainFetch.js';
   import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
@@ -103,6 +116,16 @@ import Nest from '../../components/Nest.astro';
   import { mountDelegationForm } from '../../lib/delegationForm.js';
 
   const account = contractIdFromHostname(window.location.hostname);
+
+  // Passkey details for this device (relocated here from the account page).
+  const deviceCred = account ? loadCredential(account) : null;
+  if (deviceCred) {
+    (document.getElementById('device-details') as HTMLElement).hidden = false;
+    document.getElementById('device-pubkey')!.textContent = deviceCred.publicKey;
+    document.getElementById('device-cred-id')!.textContent = buf2base64url(deviceCred.credentialId);
+    document.getElementById('device-rp-id')!.textContent = window.location.hostname;
+  }
+
   const recoveryList = document.getElementById('recovery-list')!;
   const delegationList = document.getElementById('delegation-list')!;
 
