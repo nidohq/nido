@@ -38,7 +38,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         Lock it to you
       </div>
       <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;">
-        Use <span id="pk-label-inline">your passkey</span> so only you can get into your Nido.
+        Use your passkey so only you can get into your Nido.
         Nothing to memorize, nothing to write down.
       </p>
 
@@ -73,13 +73,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       </div>
 
       <button id="register-btn" class="btn acc" style="margin-top:28px;">
-        <span id="pk-icon"><Icon name="faceid" size={20} color="#fff" /></span>
-        <span>Confirm with <span id="pk-label-btn">Face ID</span></span>
+        <Icon name="key" size={20} color="#fff" />
+        <span>Create with a passkey</span>
       </button>
     </section>
 
     <!-- ===================== STEP 2 · SETTING UP ===================== -->
-    <section id="deploy-section" class="hidden" style="display:flex; flex-direction:column; min-height:440px;">
+    <section id="deploy-section" class="hidden" style="min-height:440px;">
       <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;">
         <div style="display:grid; place-items:center; height:116px;">
           <span id="deploy-nest-spinning"><Nest size={104} spin dur={1.1} /></span>
@@ -136,6 +136,14 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   <Toast />
 </NidoLayout>
 
+<style>
+  /* Visibility is owned by the `.hidden` toggle. The deploy step needs a flex
+     column layout, but an inline `display:flex` would beat `.hidden` (which is
+     not !important) and leave it rendered on top of the passkey step — the
+     "two cards" bug. Apply the flex layout only while the section is shown. */
+  #deploy-section:not(.hidden) { display: flex; flex-direction: column; }
+</style>
+
 <script>
   import { Keypair, Networks, TransactionBuilder, Operation, Address, Account, rpc, xdr, nativeToScVal } from "@stellar/stellar-sdk";
   import { Buffer } from "buffer";
@@ -149,7 +157,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
   import { withPasskeySheet } from "../../lib/passkeySheet";
-  import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { shortAddr } from "../../lib/address";
   import { toast } from "../../lib/toast";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
@@ -168,18 +175,12 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   let passkeyPublicKey: Uint8Array | null = null;
   let credentialIdBytes: Uint8Array | null = null;
 
-  // --- Passkey label (copy hint only; never gates the real ceremony) ---
-
-  const pk = detectPasskeyLabel();
-
   // --- UI refs ---
 
   const $contractIdEl = document.getElementById("contract-id")!;
   const $accountChip = document.getElementById("account-chip")!;
   const $errorBox = document.getElementById("error-box")!;
   const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
-  const $pkLabelBtn = document.getElementById("pk-label-btn")!;
-  const $pkLabelInline = document.getElementById("pk-label-inline")!;
   const $passkeySection = document.getElementById("passkey-section")!;
   const $deploySection = document.getElementById("deploy-section")!;
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
@@ -230,29 +231,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     }
   }
 
-  // --- Init: surface the contract id + apply the passkey label to copy ---
+  // --- Init: surface the contract id ---
 
   // Show a shortened address so the 56-char contract ID never overflows the
   // quiet pill chip (full ID stays in the URL / localStorage). The chip carries
   // a title with the full value for hover/inspection.
   $contractIdEl.textContent = contractId ? shortAddr(contractId, 6, 6) : "(unknown)";
   if (contractId) $accountChip.title = contractId;
-  $pkLabelBtn.textContent = pk.label;
-  $pkLabelInline.textContent = pk.label;
-
-  // Match the button glyph to the detected platform (faceid is the default
-  // rendered server-side). Inner paths mirror the Icon component's map.
-  const PK_GLYPHS: Record<string, string> = {
-    faceid: `<g><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" /><path d="M9 10v1M15 10v1M12 10v3l-1 .5M9.5 15.5s1 1 2.5 1 2.5-1 2.5-1" /></g>`,
-    fingerprint: `<g><path d="M12 11v4a5 5 0 0 1-1 3" /><path d="M8.5 8.5A5 5 0 0 1 17 12v2" /><path d="M5.5 12a6.5 6.5 0 0 1 11-4.7" /><path d="M14 14v1a3 3 0 0 0 .5 1.7" /></g>`,
-    eye: `<g><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.8" /></g>`,
-    key: `<g><circle cx="8" cy="12" r="3.5" /><path d="M11.5 12H20M17 12v3M14 12v2.5" /></g>`,
-  };
-  const $pkIcon = document.getElementById("pk-icon")!;
-  if (PK_GLYPHS[pk.icon]) {
-    $pkIcon.innerHTML =
-      `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PK_GLYPHS[pk.icon]}</svg>`;
-  }
   // First step is in progress.
   $step1.classList.add("on");
   renderCheck(0, "pending");
@@ -310,7 +295,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
               timeout: 60000,
             },
           }),
-        { title: "Lock it to you", sub: `Confirm with ${pk.label} to finish setting up.` },
+        { title: "Lock it to you", sub: "Confirm with your passkey to finish setting up." },
       )) as PublicKeyCredential;
 
       const reg = parseRegistration(credential as any);

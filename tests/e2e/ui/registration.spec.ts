@@ -51,6 +51,14 @@ test.describe('passkey registration (shim) @fast', () => {
       FAKE_CONTRACT_ID,
     );
 
+    // Regression (one card, not two): on load only the passkey step shows. The
+    // deploy/done steps are toggled purely via `.hidden`; this guards against an
+    // inline `display` (or other override) ever beating it and stacking a second
+    // "card" on top of the passkey step.
+    await expect(page.locator('#passkey-section')).toBeVisible();
+    await expect(page.locator('#deploy-section')).toBeHidden();
+    await expect(page.locator('#done-section')).toBeHidden();
+
     // Register: clicking drives the (shimmed) navigator.credentials.create(),
     // parseRegistration(), then saveCredential() to localStorage. On success the
     // page hides the passkey step and reveals the "Setting up your Nido" step.
