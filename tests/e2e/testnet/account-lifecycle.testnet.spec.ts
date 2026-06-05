@@ -7,7 +7,10 @@ const PORT = Number(process.env.E2E_PORT || 4399);
 test.describe('@testnet account lifecycle', () => {
   test.describe.configure({ timeout: 180_000 });
 
-  test('create + deploy (v0.7), then claim a name — pins bug #3 (UnvalidatedContext)', async ({ page, context }) => {
+  // PARKED: the claim-name feature is hidden behind SHOW_NAME_SECTION (=false)
+  // in account/index.astro, so step 4's `#name-claim` never appears. Re-enable
+  // this bug-#3 pin (remove `.skip`) when the flag is flipped back on.
+  test.skip('create + deploy (v0.7), then claim a name — pins bug #3 (UnvalidatedContext)', async ({ page, context }) => {
     await seedBank(context);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

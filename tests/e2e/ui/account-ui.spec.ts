@@ -50,13 +50,16 @@ test.describe('account page — UI only (no chain) @fast', () => {
     expect(fatal).toEqual([]);
   });
 
-  test('empty name rejected by client validation @fast', async ({ page }) => {
+  test('name-claim form is parked behind SHOW_NAME_SECTION @fast', async ({ page }) => {
     await page.goto(ACCOUNT_URL, { waitUntil: 'networkidle' });
+    await expect(page.locator('#home-mode')).toBeVisible();
 
-    // On the contract subdomain the name-claim form is revealed and the claim
-    // button is wired by the if(r && !Z) block in xe(), no chain required.
-    await page.locator('#claim-name-btn').click();
-    await expect(page.locator('#error-box')).toBeVisible();
-    await expect(page.locator('#error-box')).toContainText('1-15 characters');
+    // The claim-name feature is parked behind SHOW_NAME_SECTION (=false) in
+    // account/index.astro: the markup still ships (asserted by the test above)
+    // but the JS never reveals the form on a contract subdomain. When the flag
+    // is flipped back on, restore the client-side "1-15 characters" validation
+    // assertion here (click #claim-name-btn → expect #error-box).
+    await expect(page.locator('#name-section')).toBeHidden();
+    await expect(page.locator('#claim-name-btn')).toBeHidden();
   });
 });
