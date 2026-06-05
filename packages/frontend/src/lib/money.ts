@@ -63,3 +63,23 @@ export function stroopsToXlm(stroops: bigint | number | string): string {
   const fracStr = frac.toString().padStart(XLM_FRACTION_DIGITS, "0").replace(/0+$/, "");
   return `${sign}${whole.toString()}.${fracStr}`;
 }
+
+/**
+ * Convert a user-entered decimal XLM string to an integer stroop count.
+ * Inverse of {@link stroopsToXlm}. Accepts up to 7 fractional digits (XLM's
+ * max precision) and throws on anything malformed so callers can show a
+ * validation error.
+ *
+ * @param amount  decimal XLM string, e.g. "12.5" or "0.0000001"
+ * @returns stroops as a bigint
+ * @throws if `amount` is not a non-negative decimal with ≤ 7 fraction digits
+ */
+export function xlmToStroops(amount: string): bigint {
+  const trimmed = amount.trim();
+  if (!/^\d+(\.\d{1,7})?$/.test(trimmed)) {
+    throw new Error(`Invalid XLM amount: "${amount}"`);
+  }
+  const [whole, frac = ""] = trimmed.split(".");
+  const fracPadded = frac.padEnd(XLM_FRACTION_DIGITS, "0");
+  return BigInt(whole) * STROOPS_PER_XLM + BigInt(fracPadded);
+}
