@@ -278,8 +278,9 @@ import Nest from "../../components/Nest.astro";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { shortAddr } from "../../lib/address";
-  import { formatXlm } from "../../lib/money";
+  import { formatXlm, xlmToStroops } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
+  import { sendXlm, validateRecipient } from "../../lib/sendXlm";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
@@ -308,6 +309,10 @@ import Nest from "../../components/Nest.astro";
   const hostname = window.location.hostname;
   let contractId = contractIdFromHostname(hostname);
   const rpId = hostname;
+
+  // Cached XLM balance (string), kept fresh for the Send panel's hint, Max
+  // button, and over-balance guard. Set when the balance fetch resolves.
+  let currentBalanceXlm = "0";
 
   // Point the home link at the apex as early as possible, before any code
   // that could throw. The static fallback is href="/", but on a contract
@@ -616,6 +621,94 @@ import Nest from "../../components/Nest.astro";
       }
     });
 
+    // --- Send panel ---
+    const $sendSection = document.getElementById("send-section")!;
+    document.getElementById("send-action")!.addEventListener("click", () => {
+      const open = $sendSection.classList.toggle("hidden");
+      if (!open) {
+        $sendSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
+
+    const $sendTo = document.getElementById("send-to") as HTMLInputElement;
+    const $sendAmount = document.getElementById("send-amount") as HTMLInputElement;
+    const $sendResult = document.getElementById("send-result")!;
+    const $sendSubmit = document.getElementById("send-submit") as HTMLButtonElement;
+
+    document.getElementById("send-max")!.addEventListener("click", () => {
+      $sendAmount.value = currentBalanceXlm;
+    });
+
+    $sendSubmit.addEventListener("click", async () => {
+      clearError();
+      if (!contractId) return;
+
+      const to = $sendTo.value.trim();
+      const amount = $sendAmount.value.trim();
+
+      if (!validateRecipient(to)) {
+        showError("Enter a valid address (starts with C… or G…).");
+        return;
+      }
+
+      let stroops: bigint;
+      try {
+        stroops = xlmToStroops(amount);
+      } catch {
+        showError("Enter a valid amount (up to 7 decimal places).");
+        return;
+      }
+      if (stroops <= 0n) {
+        showError("Amount must be greater than zero.");
+        return;
+      }
+      // Soft balance guard — only when we have a parseable known balance.
+      try {
+        if (xlmToStroops(currentBalanceXlm) < stroops) {
+          showError("Amount is more than your balance.");
+          return;
+        }
+      } catch {
+        /* balance unknown/unavailable — let the network decide */
+      }
+
+      const support = checkPasskeySupport();
+      if (!support.ok) {
+        showError(support.message!);
+        return;
+      }
+
+      try {
+        $sendSubmit.disabled = true;
+        $sendResult.style.display = "block";
+        $sendResult.textContent = `Confirm with ${passkey.label} to send ${amount} XLM…`;
+
+        await sendXlm({ smartAccount: contractId, destination: to, stroops });
+
+        toast({ msg: "Sent", icon: "check" });
+        $sendResult.textContent = "Sent — updating your balance…";
+        $sendTo.value = "";
+        $sendAmount.value = "";
+
+        const fresh = await fetchXlmBalance(contractId);
+        currentBalanceXlm = fresh;
+        const friendly = formatXlm(fresh);
+        $balance.innerHTML = `${friendly} <span class="mut" style="font-size:24px;">XLM</span>`;
+        document.getElementById("send-balance-hint")!.textContent = `Balance: ${friendly} XLM`;
+        $sendResult.style.display = "none";
+        $sendSection.classList.add("hidden");
+      } catch (err: any) {
+        if (err.name === "NotAllowedError") {
+          showError(passkeyBlockedHint("signing"));
+        } else {
+          showError(`Couldn't send: ${err.message}`);
+        }
+        $sendResult.style.display = "none";
+      } finally {
+        $sendSubmit.disabled = false;
+      }
+    });
+
     // Register passkey (when none exists yet)
     const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
     $registerBtn.addEventListener("click", async () => {
@@ -674,6 +767,9 @@ import Nest from "../../components/Nest.astro";
       // (no fabricated fiat "$" balance — that was the prototype's mock).
       const friendly = formatXlm(balance);
       $balance.innerHTML = `${friendly} <span class="mut" style="font-size:24px;">XLM</span>`;
+      currentBalanceXlm = balance;
+      const hint = document.getElementById("send-balance-hint");
+      if (hint) hint.textContent = `Balance: ${friendly} XLM`;
     }).catch(() => {
       $balance.textContent = "unavailable";
     });
