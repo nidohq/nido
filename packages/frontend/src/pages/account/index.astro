@@ -109,8 +109,12 @@ import Nest from "../../components/Nest.astro";
            does, "Approve" (→ the focused /sign/ surface); "Settings" → "Security"
            with the shield glyph so the entry points agree on one label (K-03). -->
       <div class="span-all" style="display:flex; gap:6px; padding:26px 30px 6px;">
+        <button id="send-action" class="qa" type="button">
+          <div class="circ"><Icon name="send" size={24} color="#fff" /></div>
+          <span>Send</span>
+        </button>
         <button id="receive-action" class="qa" type="button">
-          <div class="circ"><Icon name="receive" size={24} color="#fff" /></div>
+          <div class="circ soft"><Icon name="receive" size={23} /></div>
           <span>Receive</span>
         </button>
         <a class="qa" href="/sign/">
@@ -121,6 +125,32 @@ import Nest from "../../components/Nest.astro";
           <div class="circ soft"><Icon name="shield" size={23} /></div>
           <span>Security</span>
         </a>
+      </div>
+
+      <!-- ============ SEND PANEL ============ -->
+      <div class="grid-cell">
+      <section id="send-section" class="hidden pad" style="padding-top:18px;">
+        <span class="section-label" style="display:block; margin-bottom:12px;">Send XLM</span>
+        <p class="mut" style="font-size:14px; line-height:1.5; margin:0 0 16px;">
+          Send XLM from your Nido to any Stellar address.
+        </p>
+        <div class="field">
+          <label for="send-to">To</label>
+          <input id="send-to" class="input" placeholder="C… or G…" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field" style="margin-top:12px;">
+          <label for="send-amount">Amount</label>
+          <input id="send-amount" class="input" inputmode="decimal" placeholder="0.0" />
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+            <span id="send-balance-hint" class="mut" style="font-size:12px;"></span>
+            <button id="send-max" type="button" class="link" style="font-size:12px; background:none; border:none; cursor:pointer; padding:0;">Max</button>
+          </div>
+        </div>
+        <button id="send-submit" class="btn acc" style="margin-top:14px;">
+          <Icon name="send" size={18} color="#fff" /> Send
+        </button>
+        <div id="send-result" class="mut mono" style="display:none; font-size:12.5px; margin-top:12px; text-align:center; line-height:1.5;"></div>
+      </section>
       </div>
 
       <!-- ============ RECEIVE PANEL (display-only) ============ -->
