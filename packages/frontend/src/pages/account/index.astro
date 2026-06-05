@@ -178,36 +178,6 @@ import Nest from "../../components/Nest.astro";
       </section>
       </div>
 
-      <!-- ============ PASSKEY INFO (when registered) ============ -->
-      <div class="grid-cell">
-      <section id="passkey-info-section" class="hidden pad" style="padding-top:18px;">
-        <span class="section-label" style="display:block; margin-bottom:12px;">Your passkey</span>
-        <div class="card" style="padding:16px;">
-          <div style="display:flex; align-items:center; gap:11px; margin-bottom:12px;">
-            <div style="width:38px; height:38px; border-radius:11px; background:var(--good-soft); display:grid; place-items:center;">
-              <Icon name="shieldcheck" size={20} color="var(--good)" />
-            </div>
-            <div style="flex:1;">
-              <div style="font-weight:700; font-size:14.5px;">Active</div>
-              <div class="mut" style="font-size:12.5px;">You're the only one who gets in</div>
-            </div>
-            <span class="chip good" style="font-size:11px;">On</span>
-          </div>
-          <div style="border-top:1px solid var(--line-soft); padding-top:12px;">
-            <div class="mut" style="font-size:12px; font-weight:700; margin-bottom:4px;">Public key</div>
-            <code id="passkey-pubkey" class="mono" style="font-size:11.5px; word-break:break-all; display:block;"></code>
-            <div class="mut" style="font-size:12px; font-weight:700; margin:12px 0 4px;">Credential ID</div>
-            <code id="passkey-cred-id" class="mono" style="font-size:11.5px; word-break:break-all; display:block;"></code>
-            <div class="mut" style="font-size:12px; font-weight:700; margin:12px 0 4px;">Bound to</div>
-            <code id="passkey-rp-id" class="mono" style="font-size:11.5px; word-break:break-all; display:block;"></code>
-          </div>
-          <p class="mut" style="font-size:12px; line-height:1.5; margin:12px 0 0;">
-            Your passkey is bound to this Nido's own subdomain — it can't be used to approve anything on another account.
-          </p>
-        </div>
-      </section>
-      </div>
-
       <!-- ============ REGISTER (when no passkey) ============ -->
       <div class="grid-cell">
       <section id="register-section" class="hidden pad" style="padding-top:18px;">
@@ -262,7 +232,6 @@ import Nest from "../../components/Nest.astro";
     computeAccountAddress,
     buf2hex,
     hex2buf,
-    buf2base64url,
     contractIdFromHostname,
     isContractId,
     nameFromHostname,
@@ -585,21 +554,11 @@ import Nest from "../../components/Nest.astro";
   // HOME MODE
   // =====================
 
-  function showPasskeyInfo(cred: { credentialId: Uint8Array; publicKey: string }) {
-    document.getElementById("passkey-info-section")!.classList.remove("hidden");
-    document.getElementById("register-section")!.classList.add("hidden");
-    document.getElementById("passkey-pubkey")!.textContent = cred.publicKey;
-    document.getElementById("passkey-cred-id")!.textContent = buf2base64url(cred.credentialId);
-    document.getElementById("passkey-rp-id")!.textContent = rpId;
-  }
-
   function initHomeMode() {
     document.getElementById("home-mode")!.classList.remove("hidden");
 
     const cred = loadCredential();
-    if (cred) {
-      showPasskeyInfo(cred);
-    } else {
+    if (!cred) {
       document.getElementById("register-section")!.classList.remove("hidden");
     }
 
@@ -642,8 +601,7 @@ import Nest from "../../components/Nest.astro";
           },
         );
 
-        const newCred = loadCredential();
-        if (newCred) showPasskeyInfo(newCred);
+        document.getElementById("register-section")!.classList.add("hidden");
         toast({ msg: "Passkey ready", icon: "check" });
       } catch (err: any) {
         if (err.name === "NotAllowedError") {
