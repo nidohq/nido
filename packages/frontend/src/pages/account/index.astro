@@ -254,6 +254,11 @@ import Nest from "../../components/Nest.astro";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
 
+  // Name/claim feature is parked for now. Flip to `true` to bring back the
+  // on-page "Your name" / "Claim a name" card. (Name-subdomain *resolution*
+  // below is independent of this flag and stays active.)
+  const SHOW_NAME_SECTION = false;
+
   // Friendly platform label for confirm copy ("Confirm with Face ID", etc.).
   const passkey = detectPasskeyLabel();
   const confirmLabel = `Confirm with ${passkey.label}`;
@@ -648,7 +653,7 @@ import Nest from "../../components/Nest.astro";
 
   // --- Name section ---
 
-  if (contractId && !isSigningMode) {
+  if (SHOW_NAME_SECTION && contractId && !isSigningMode) {
     const $nameSection = document.getElementById("name-section")!;
     const $nameDisplay = document.getElementById("name-display")!;
     const $nameClaim = document.getElementById("name-claim")!;
