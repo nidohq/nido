@@ -42,4 +42,13 @@ describe("loadActivityPage", () => {
     vi.spyOn(expert, "fetchExpertPage").mockRejectedValue(new Error("boom"));
     await expect(loadActivityPage({ address: ADDR, cursor: "c1" })).rejects.toThrow("boom");
   });
+
+  it("does not fall back when Expert is unavailable mid-pagination (cursor present)", async () => {
+    vi.spyOn(expert, "fetchExpertPage").mockRejectedValue(new expert.ExpertUnavailableError(402));
+    const rpcSpy = vi.spyOn(rpcSrc, "fetchRpcRecent").mockResolvedValue({
+      items: [], nextCursor: null, source: "rpc", partial: true,
+    });
+    await expect(loadActivityPage({ address: ADDR, cursor: "c1" })).rejects.toBeInstanceOf(expert.ExpertUnavailableError);
+    expect(rpcSpy).not.toHaveBeenCalled();
+  });
 });

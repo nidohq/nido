@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { fetchExpertPage, ExpertUnavailableError } from "./expertSource.js";
 import fixture from "./__fixtures__/expert-tx-testnet.json";
 
-const ADDR = "CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S";
+const ADDR = "CCA2KXEUA4EQW3NL4QRCIZ2VRMA7V6A54DHXPA4RBTAGH72PCCYT5MSA";
 afterEach(() => vi.restoreAllMocks());
 
 describe("fetchExpertPage", () => {
@@ -16,6 +16,10 @@ describe("fetchExpertPage", () => {
     expect(page.items.length).toBeGreaterThan(0);
     expect(page.nextCursor).toBe("12235399753646080"); // from _links.next.href in the fixture
     expect(page.items.every((r) => r.explorerUrl.includes("/tx/"))).toBe(true);
+    const received = page.items.find((r) => r.kind === "payment" && r.direction === "in");
+    expect(received).toBeDefined();
+    expect(received!.amount).toBe("9,990");
+    expect(received!.asset).toBe("XLM");
   });
 
   it("throws ExpertUnavailableError on 402 (the fallback trigger)", async () => {
