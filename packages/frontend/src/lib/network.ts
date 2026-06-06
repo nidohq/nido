@@ -5,8 +5,7 @@ export const NETWORK_NAME = "testnet" as const;
 export const NETWORK_PASSPHRASE = Networks.TESTNET;
 export const RPC_URL = "https://soroban-testnet.stellar.org";
 
-/** Stellar Expert JSON API + human explorer base, network-scoped. */
-export const EXPERT_API_BASE = `https://api.stellar.expert/explorer/${NETWORK_NAME}`;
+/** Stellar Expert human-explorer base (used to link each row to its tx). */
 export const EXPLORER_BASE = `https://stellar.expert/explorer/${NETWORK_NAME}`;
 
 /** Native-XLM Stellar Asset Contract id for this network. */
