@@ -1,0 +1,78 @@
+---
+// packages/frontend/src/pages/account/activity/index.astro
+import NidoLayout from "../../../layouts/NidoLayout.astro";
+---
+<NidoLayout title="Activity" shell="app">
+  <section class="card">
+    <h1 class="section-label">Activity</h1>
+    <div id="activity-root">
+      <div id="activity-skeleton">
+        <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
+      </div>
+      <div id="activity-list" hidden></div>
+      <div class="empty" id="activity-empty" hidden>No activity yet</div>
+      <div class="alert info" id="activity-note" hidden>Showing recent activity (full history is temporarily unavailable).</div>
+      <div class="alert danger" id="activity-error" hidden>
+        Couldn’t load activity. <button class="btn ghost" id="activity-retry">Retry</button>
+      </div>
+      <button class="btn soft" id="activity-more" hidden>Load more</button>
+    </div>
+  </section>
+</NidoLayout>
+
+<style is:global>
+  #activity-skeleton { display: grid; gap: 10px; }
+  #activity-skeleton .skeleton { height: 48px; border-radius: 10px; display: block; }
+  #activity-more { margin-top: 14px; }
+</style>
+
+<script>
+  import { loadActivityPage } from "../../../lib/activity/history.js";
+  import type { ActivityItem } from "../../../lib/activity/types.js";
+  import { contractIdFromHostname } from "@g2c/passkey-sdk";
+
+  function rowHtml(it: ActivityItem): string {
+    const icon = it.kind === "payment" ? (it.direction === "in" ? "↓" : "↑") : "•";
+    const iconCls = it.kind === "payment" && it.direction === "in" ? "in" : "acc";
+    const when = new Date(it.timestamp * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    const sign = it.kind === "payment" ? (it.direction === "in" ? "+" : "−") : "";
+    const amt = it.amount ? `<span class="ramt">${sign}${it.amount} <small>${it.asset}</small></span>` : "";
+    return `<a class="row" href="${it.explorerUrl}" target="_blank" rel="noopener noreferrer">
+      <span class="ricon ${iconCls}">${icon}</span>
+      <span class="rmain"><span class="rtitle">${it.title}</span><span class="rsub">${it.subtitle ?? when}</span></span>${amt}</a>`;
+  }
+
+  const address = contractIdFromHostname(window.location.hostname);
+  const skel = document.getElementById("activity-skeleton")!;
+  const list = document.getElementById("activity-list")!;
+  const empty = document.getElementById("activity-empty")!;
+  const note = document.getElementById("activity-note")!;
+  const errBox = document.getElementById("activity-error")!;
+  const moreBtn = document.getElementById("activity-more") as HTMLButtonElement;
+  let cursor: string | null = null;
+
+  async function loadPage(first: boolean) {
+    errBox.hidden = true;
+    if (first) skel.hidden = false;
+    moreBtn.disabled = true;
+    try {
+      const page = await loadActivityPage({ address: address!, cursor });
+      skel.hidden = true;
+      if (first && page.items.length === 0) { empty.hidden = false; return; }
+      list.insertAdjacentHTML("beforeend", page.items.map(rowHtml).join(""));
+      list.hidden = false;
+      note.hidden = !page.partial;
+      cursor = page.nextCursor;
+      moreBtn.hidden = page.nextCursor === null;
+      moreBtn.disabled = false;
+    } catch {
+      skel.hidden = true;
+      errBox.hidden = false;
+      moreBtn.hidden = true;
+    }
+  }
+
+  moreBtn.addEventListener("click", () => loadPage(false));
+  document.getElementById("activity-retry")!.addEventListener("click", () => loadPage(cursor === null));
+  if (!address) { skel.hidden = true; empty.hidden = false; } else { loadPage(true); }
+</script>
