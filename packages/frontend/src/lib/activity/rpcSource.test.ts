@@ -32,28 +32,52 @@ describe("mapRpcEvents", () => {
 });
 
 describe("fetchRpcRecent", () => {
-  it("fetchRpcRecent fans out 3 filters with base64 topic encoding and returns a page", async () => {
+  const LATEST = 3_000_000;
+
+  it("scans tip-anchored ledger chunks with all 3 filters combined per request", async () => {
     const { fetchRpcRecent } = await import("./rpcSource.js");
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: 1000 } as any);
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     const getEventsSpy = vi
       .spyOn(rpc.Server.prototype, "getEvents")
-      .mockResolvedValue({ events: [], cursor: "" } as any);
+      .mockResolvedValue({ events: [], latestLedger: LATEST } as any);
 
     const page = await fetchRpcRecent(SELF);
 
-    expect(getEventsSpy).toHaveBeenCalledTimes(3);
-    // startLedger floored at 1 (1000 - WINDOW_LEDGERS < 1); no range error → no retry.
-    expect((getEventsSpy.mock.calls[0][0] as any).startLedger).toBe(1);
+    // One request per chunk (MAX_CHUNKS = 6), each carrying all three filters.
+    expect(getEventsSpy).toHaveBeenCalledTimes(6);
+    const req0 = getEventsSpy.mock.calls[0][0] as any;
+    expect(req0.filters).toHaveLength(3);
+    expect(req0.endLedger).toBe(LATEST);             // first chunk anchored at the tip
+    expect(req0.startLedger).toBe(LATEST - 9000 + 1); // CHUNK_LEDGERS span
+
     // filter 0 = account's own events (no topics); filters 1 & 2 = SAC transfer topic filters
-    const f0 = (getEventsSpy.mock.calls[0][0] as any).filters[0];
-    expect(f0.contractIds).toEqual([SELF]);
-    expect(f0.topics).toBeUndefined();
+    expect(req0.filters[0].contractIds).toEqual([SELF]);
+    expect(req0.filters[0].topics).toBeUndefined();
     const transferTopic = nativeToScVal("transfer", { type: "symbol" }).toXDR("base64");
     const selfTopic = Address.fromString(SELF).toScVal().toXDR("base64");
-    const f1 = (getEventsSpy.mock.calls[1][0] as any).filters[0];
-    expect(f1.topics[0]).toEqual([transferTopic, "*", selfTopic, "*"]); // incoming
-    const f2 = (getEventsSpy.mock.calls[2][0] as any).filters[0];
-    expect(f2.topics[0]).toEqual([transferTopic, selfTopic, "*", "*"]); // outgoing
+    expect(req0.filters[1].topics[0]).toEqual([transferTopic, "*", selfTopic, "*"]); // incoming
+    expect(req0.filters[2].topics[0]).toEqual([transferTopic, selfTopic, "*", "*"]); // outgoing
+
+    // chunks chain backward with no gap: chunk 1's endLedger = chunk 0's startLedger - 1
+    const req1 = getEventsSpy.mock.calls[1][0] as any;
+    expect(req1.endLedger).toBe(req0.startLedger - 1);
     expect(Array.isArray(page.items)).toBe(true);
+  });
+
+  it("shrinks a chunk's span on a processing-limit error, then stops if even the smallest span fails", async () => {
+    const { fetchRpcRecent } = await import("./rpcSource.js");
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    // Always throw the dense-SAC processing-limit error.
+    const getEventsSpy = vi
+      .spyOn(rpc.Server.prototype, "getEvents")
+      .mockRejectedValue(new Error("[-32001] request exceeded processing limit threshold"));
+
+    const page = await fetchRpcRecent(SELF);
+
+    // Chunk 0 retries with shrinking spans 9000 → 3000 → 1000 (3 tries), then gives up; no chunk 1.
+    expect(getEventsSpy).toHaveBeenCalledTimes(3);
+    const spans = getEventsSpy.mock.calls.map((c) => (c[0] as any).endLedger - (c[0] as any).startLedger + 1);
+    expect(spans).toEqual([9000, 3000, 1000]);
+    expect(page.items).toEqual([]);
   });
 });

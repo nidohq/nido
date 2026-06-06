@@ -3,14 +3,17 @@ import { RPC_URL, NATIVE_SAC_ID } from "../network.js";
 import { groupTxRows } from "./classify.js";
 import type { ActivityPage, DecodedEvent, DecodedTx } from "./types.js";
 
-// The public testnet RPC retains roughly the last week of events (~120,960
-// ledgers). We start just inside that retention — close enough to cover the full
-// retained window, with ~80 min of headroom so the request stays valid as the
-// window slides forward between calls (testnet closes a ledger every ~5s). If
-// retention is unexpectedly shorter, the range-error retry pins the start to the
-// oldest retained ledger plus a small buffer to survive the slide.
-const WINDOW_LEDGERS = 120_000; // ≈ 6.9 days at ~5s/ledger
-const RANGE_BUFFER_LEDGERS = 120; // ≈ 10 min of slide headroom for the retry
+// `getEvents` only scans a bounded span (~9k ledgers) per request and returns
+// events ASCENDING from `startLedger`, so a single wide query never reaches the
+// most-recent activity at the chain tip. And the native XLM SAC is so busy that
+// scanning it over a wide range trips the RPC's `[-32001] processing limit`. So
+// we walk fixed ledger chunks BACKWARD from the tip (newest first), each a single
+// bounded request, and stop as soon as the dense SAC trips the limit — keeping
+// whatever contiguous recent span we could fetch. The explorer link covers older
+// history. (This is why the in-app view is "latest activity", not full history.)
+const CHUNK_LEDGERS = 9_000;      // ≈ 12.5 h at ~5s/ledger; the largest span that reliably scans
+const MIN_CHUNK_LEDGERS = 1_000;  // shrink a chunk down to this on -32001 before giving up
+const MAX_CHUNKS = 6;             // upper bound on requests (~3 days of coverage when the SAC allows)
 const PAGE_LIMIT = 1000;
 
 type RawEvent = {
@@ -45,60 +48,61 @@ export function mapRpcEvents(raw: RawEvent[], self: string): ActivityPage {
   return { items };
 }
 
-/** Parse the oldest retained ledger out of the RPC "ledger range: A - B" error. */
-function oldestFromRangeError(err: unknown): number | null {
-  const msg = String((err as { message?: string })?.message ?? err);
-  const m = /ledger range:\s*(\d+)\s*-\s*\d+/.exec(msg);
-  return m ? Number(m[1]) : null;
+/**
+ * The three event filters that constitute an account's activity: its own
+ * contract events (signer/policy/rule changes) plus native-SAC `transfer` events
+ * to and from it. EventFilter.topics is string[][] — each segment a base64 ScVal
+ * or "*" (any one segment); protocol-23+ SAC `transfer` emits 4 topics
+ * [transfer, from, to, asset].
+ */
+function accountFilters(address: string): rpc.Api.EventFilter[] {
+  const transferTopic = nativeToScVal("transfer", { type: "symbol" }).toXDR("base64");
+  const selfTopic = Address.fromString(address).toScVal().toXDR("base64");
+  return [
+    { type: "contract", contractIds: [address] },
+    { type: "contract", contractIds: [NATIVE_SAC_ID], topics: [[transferTopic, "*", selfTopic, "*"]] }, // incoming
+    { type: "contract", contractIds: [NATIVE_SAC_ID], topics: [[transferTopic, selfTopic, "*", "*"]] }, // outgoing
+  ];
 }
 
 /**
- * Fetch the wallet's recent activity (the ~7-day window the RPC retains) from
- * Soroban RPC: the account's own admin events plus native-SAC
- * `transfer` events to/from the account. This is the source of truth for the
- * history feature — Stellar Expert's full-history `/tx` endpoint is gated to its
- * own origin and is unusable cross-origin from this app.
+ * Fetch the wallet's latest activity from Soroban RPC by scanning fixed ledger
+ * chunks backward from the chain tip (newest first). Each chunk is one bounded
+ * request; if the dense native SAC trips the RPC's `[-32001]` processing limit we
+ * shrink that chunk's span and retry, and if even the smallest span fails we stop
+ * — returning whatever contiguous recent span we could fetch.
  *
- * Each filter is capped at PAGE_LIMIT events (no cursor follow-up); a very busy
- * account could exceed that, dropping the oldest events in the window. Fine for a
- * "recent activity" view.
+ * This is the source of truth for the in-app history view. It is deliberately
+ * NOT full history: Stellar Expert's `/tx` API is origin-gated (unusable from
+ * this app) and the public RPC can neither retain (~1 week) nor cheaply scan the
+ * busy SAC far back. Older history is reached via the explorer link in the UI.
  */
 export async function fetchRpcRecent(address: string): Promise<ActivityPage> {
   const server = new rpc.Server(RPC_URL);
-  const { sequence } = await server.getLatestLedger();
-  let startLedger = Math.max(1, sequence - WINDOW_LEDGERS);
-
-  // EventFilter.topics is string[][] — each segment a base64 ScVal or "*" (any one
-  // segment). Protocol-23+ SAC `transfer` emits 4 topics: [transfer, from, to, asset].
-  const transferTopic = nativeToScVal("transfer", { type: "symbol" }).toXDR("base64");
-  const selfTopic = Address.fromString(address).toScVal().toXDR("base64");
-
-  const filters: rpc.Api.EventFilter[] = [
-    // The account's own admin events (signer_added, context_rule_added, …) — all topics.
-    { type: "contract", contractIds: [address] },
-    // Incoming XLM: transfer where `to` == self.
-    { type: "contract", contractIds: [NATIVE_SAC_ID], topics: [[transferTopic, "*", selfTopic, "*"]] },
-    // Outgoing XLM: transfer where `from` == self.
-    { type: "contract", contractIds: [NATIVE_SAC_ID], topics: [[transferTopic, selfTopic, "*", "*"]] },
-  ];
+  const { sequence: latest } = await server.getLatestLedger();
+  const filters = accountFilters(address);
 
   const raw: RawEvent[] = [];
-  for (const filter of filters) {
-    try {
-      let res;
+  let endLedger = latest;
+  for (let chunk = 0; chunk < MAX_CHUNKS && endLedger > 1; chunk++) {
+    let span = CHUNK_LEDGERS;
+    let fetched = false;
+    let startLedger = Math.max(1, endLedger - span + 1);
+    while (span >= MIN_CHUNK_LEDGERS) {
+      startLedger = Math.max(1, endLedger - span + 1);
       try {
-        res = await server.getEvents({ startLedger, filters: [filter], limit: PAGE_LIMIT });
-      } catch (e) {
-        // startLedger was older than retention — pin to the oldest retained ledger
-        // plus a buffer (so a ledger or two of slide before the retry can't push it
-        // back out of range), for this and every subsequent filter, then retry.
-        const oldest = oldestFromRangeError(e);
-        if (oldest === null) throw e;
-        startLedger = oldest + RANGE_BUFFER_LEDGERS;
-        res = await server.getEvents({ startLedger, filters: [filter], limit: PAGE_LIMIT });
+        const res = await server.getEvents({ startLedger, endLedger, filters, limit: PAGE_LIMIT });
+        raw.push(...(res.events as unknown as RawEvent[]));
+        fetched = true;
+        break;
+      } catch {
+        // Most likely [-32001] (dense SAC in this range): shrink and retry. Any
+        // other error (e.g. range older than retention) also ends this chunk.
+        span = Math.floor(span / 3);
       }
-      raw.push(...(res.events as unknown as RawEvent[]));
-    } catch { /* a single failing filter shouldn't sink the whole fetch */ }
+    }
+    if (!fetched) break; // even the smallest span failed → stop at the recent span we have
+    endLedger = startLedger - 1; // chain to the next-older chunk with no gap
   }
   return mapRpcEvents(raw, address);
 }
