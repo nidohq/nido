@@ -3,13 +3,13 @@ import { RPC_URL, NATIVE_SAC_ID } from "../network.js";
 import { groupTxRows } from "./classify.js";
 import type { ActivityPage, DecodedEvent, DecodedTx } from "./types.js";
 
-// The public testnet RPC retains roughly the last week of events (~120k ledgers).
-// We query a conservative window comfortably *inside* that retention so the
-// request stays valid even as the retained window slides forward between calls
-// (testnet closes a ledger every ~5s). If retention is unexpectedly shorter, the
-// range-error retry pins the start to the oldest retained ledger plus a small
-// buffer to survive the slide.
-const WINDOW_LEDGERS = 100_000; // ≈ 5.8 days at ~5s/ledger, ~16% inside retention
+// The public testnet RPC retains roughly the last week of events (~120,960
+// ledgers). We start just inside that retention — close enough to cover the full
+// retained window, with ~80 min of headroom so the request stays valid as the
+// window slides forward between calls (testnet closes a ledger every ~5s). If
+// retention is unexpectedly shorter, the range-error retry pins the start to the
+// oldest retained ledger plus a small buffer to survive the slide.
+const WINDOW_LEDGERS = 120_000; // ≈ 6.9 days at ~5s/ledger
 const RANGE_BUFFER_LEDGERS = 120; // ≈ 10 min of slide headroom for the retry
 const PAGE_LIMIT = 1000;
 
@@ -53,8 +53,8 @@ function oldestFromRangeError(err: unknown): number | null {
 }
 
 /**
- * Fetch the wallet's recent activity (a ~6-day window inside the RPC's retained
- * events) from Soroban RPC: the account's own admin events plus native-SAC
+ * Fetch the wallet's recent activity (the ~7-day window the RPC retains) from
+ * Soroban RPC: the account's own admin events plus native-SAC
  * `transfer` events to/from the account. This is the source of truth for the
  * history feature — Stellar Expert's full-history `/tx` endpoint is gated to its
  * own origin and is unusable cross-origin from this app.
