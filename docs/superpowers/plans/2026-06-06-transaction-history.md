@@ -1,5 +1,7 @@
 # Transaction / Activity History Implementation Plan
 
+> **AMENDED DURING EXECUTION:** the Stellar Expert `/tx` primary turned out to be origin-gated and unusable from this app (CORS cross-origin, 402 server-side). The feature shipped **RPC-only as "Recent activity" (~7 days)** — Tasks 4 & 5 (`decodeTx`, `expertSource`) were removed, `rpcSource` became the single source, and pagination/"Load more" was dropped. See the **Addendum** in `docs/superpowers/specs/2026-06-06-transaction-history-design.md` for the full rationale. The task text below is the original (pre-pivot) plan, kept for history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Show a g2c wallet user a readable history of their smart account's on-chain activity (payments + smart-account operations) as a "Recent activity" card on the account home and a dedicated paginated `/account/activity` page.
@@ -630,7 +632,9 @@ export async function fetchExpertPage(address: string, cursor: string | null): P
 
   return {
     items,
-    nextCursor: records.length < PAGE_LIMIT ? null : cursorFromHref(json._links?.next?.href),
+    // End of history is an empty record set, NOT "fewer than the limit" (the
+    // server always returns a `next` href while records remain).
+    nextCursor: records.length === 0 ? null : cursorFromHref(json._links?.next?.href),
     source: "expert",
     partial: false,
   };
@@ -693,7 +697,7 @@ describe("mapRpcEvents", () => {
     expect(page.source).toBe("rpc");
     expect(page.partial).toBe(true);
     expect(page.nextCursor).toBeNull();
-    expect(page.items[0]).toMatchObject({ kind: "payment", direction: "in", amount: "9990" });
+    expect(page.items[0]).toMatchObject({ kind: "payment", direction: "in", amount: "9,990" });
   });
 });
 ```
@@ -752,13 +756,19 @@ export async function fetchRpcRecent(address: string): Promise<ActivityPage> {
   const server = new rpc.Server(RPC_URL);
   const latest = await server.getLatestLedger();
   const startLedger = Math.max(1, latest.sequence - RECENT_LEDGERS);
-  const transferSym = nativeToScVal("transfer", { type: "symbol" });
-  const selfScv = Address.fromString(address).toScVal();
 
-  const filters: rpc.Server.GetEventsRequest["filters"] = [
-    { type: "contract", contractIds: [address], topics: [["*"]] },                         // admin events
-    { type: "contract", contractIds: [NATIVE_SAC_ID], topics: [[transferSym, "*", selfScv]] }, // incoming
-    { type: "contract", contractIds: [NATIVE_SAC_ID], topics: [[transferSym, selfScv, "*"]] }, // outgoing
+  // EventFilter.topics is string[][] — each segment a base64 ScVal or "*" (any
+  // one segment). Protocol-23+ SAC `transfer` emits 4 topics: [transfer, from, to, asset].
+  const transferTopic = nativeToScVal("transfer", { type: "symbol" }).toXDR("base64");
+  const selfTopic = Address.fromString(address).toScVal().toXDR("base64");
+
+  const filters: rpc.Api.EventFilter[] = [
+    // The account's own admin events (signer_added, context_rule_added, …) — all topics.
+    { type: "contract", contractIds: [address] },
+    // Incoming XLM: transfer where `to` == self.
+    { type: "contract", contractIds: [NATIVE_SAC_ID], topics: [[transferTopic, "*", selfTopic, "*"]] },
+    // Outgoing XLM: transfer where `from` == self.
+    { type: "contract", contractIds: [NATIVE_SAC_ID], topics: [[transferTopic, selfTopic, "*", "*"]] },
   ];
 
   const raw: RawEvent[] = [];

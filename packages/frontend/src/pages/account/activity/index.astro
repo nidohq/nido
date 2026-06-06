@@ -5,17 +5,16 @@ import NidoLayout from "../../../layouts/NidoLayout.astro";
 <NidoLayout title="Activity" shell="app">
   <section class="card">
     <h1 class="section-label">Activity</h1>
+    <p class="mut activity-window">Your wallet activity from the last 7 days.</p>
     <div id="activity-root">
       <div id="activity-skeleton">
         <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
       </div>
       <div id="activity-list" hidden></div>
-      <div class="empty" id="activity-empty" hidden>No activity yet</div>
-      <div class="alert info" id="activity-note" hidden>Showing recent activity (full history is temporarily unavailable).</div>
+      <div class="empty" id="activity-empty" hidden>No activity in the last 7 days</div>
       <div class="alert danger" id="activity-error" hidden>
         Couldn’t load activity. <button class="btn ghost" id="activity-retry">Retry</button>
       </div>
-      <button class="btn soft" id="activity-more" hidden>Load more</button>
     </div>
   </section>
 </NidoLayout>
@@ -23,7 +22,7 @@ import NidoLayout from "../../../layouts/NidoLayout.astro";
 <style is:global>
   #activity-skeleton { display: grid; gap: 10px; }
   #activity-skeleton .skeleton { height: 48px; border-radius: 10px; display: block; }
-  #activity-more { margin-top: 14px; }
+  .activity-window { font-size: 13px; margin: -2px 0 14px; }
 </style>
 
 <script>
@@ -46,33 +45,25 @@ import NidoLayout from "../../../layouts/NidoLayout.astro";
   const skel = document.getElementById("activity-skeleton")!;
   const list = document.getElementById("activity-list")!;
   const empty = document.getElementById("activity-empty")!;
-  const note = document.getElementById("activity-note")!;
   const errBox = document.getElementById("activity-error")!;
-  const moreBtn = document.getElementById("activity-more") as HTMLButtonElement;
-  let cursor: string | null = null;
 
-  async function loadPage(first: boolean) {
+  async function load() {
     errBox.hidden = true;
-    if (first) skel.hidden = false;
-    moreBtn.disabled = true;
+    skel.hidden = false;
+    list.hidden = true;
     try {
-      const page = await loadActivityPage({ address: address!, cursor });
+      const page = await loadActivityPage({ address: address! });
       skel.hidden = true;
-      if (first && page.items.length === 0) { empty.hidden = false; return; }
-      list.insertAdjacentHTML("beforeend", page.items.map(rowHtml).join(""));
+      if (page.items.length === 0) { empty.hidden = false; return; }
+      empty.hidden = true;
+      list.innerHTML = page.items.map(rowHtml).join("");
       list.hidden = false;
-      note.hidden = !page.partial;
-      cursor = page.nextCursor;
-      moreBtn.hidden = page.nextCursor === null;
-      moreBtn.disabled = false;
     } catch {
       skel.hidden = true;
       errBox.hidden = false;
-      moreBtn.hidden = true;
     }
   }
 
-  moreBtn.addEventListener("click", () => loadPage(false));
-  document.getElementById("activity-retry")!.addEventListener("click", () => loadPage(cursor === null));
-  if (!address) { skel.hidden = true; empty.hidden = false; } else { loadPage(true); }
+  document.getElementById("activity-retry")!.addEventListener("click", load);
+  if (!address) { skel.hidden = true; empty.hidden = false; } else { load(); }
 </script>

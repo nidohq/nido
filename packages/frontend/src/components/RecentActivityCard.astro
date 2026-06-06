@@ -14,7 +14,6 @@
     </div>
     <div class="ra-list" hidden></div>
     <div class="empty ra-empty" hidden>No activity yet</div>
-    <div class="ra-note mut" hidden>Showing recent activity</div>
   </div>
 </section>
 
@@ -24,7 +23,6 @@
   .recent-activity .ra-all { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; }
   .recent-activity .ra-skeleton { display: grid; gap: 10px; }
   .recent-activity .ra-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
-  .recent-activity .ra-note { font-size: 12px; margin-top: 8px; }
 </style>
 
 <script>
@@ -51,7 +49,6 @@
     const skel = card.querySelector<HTMLElement>(".ra-skeleton")!;
     const list = card.querySelector<HTMLElement>(".ra-list")!;
     const empty = card.querySelector<HTMLElement>(".ra-empty")!;
-    const note = card.querySelector<HTMLElement>(".ra-note")!;
     const body = card.querySelector<HTMLElement>(".ra-body")!;
     const address = contractIdFromHostname(window.location.hostname);
     if (!address) { skel.hidden = true; empty.hidden = false; return; }
@@ -62,7 +59,6 @@
       if (top.length === 0) { empty.hidden = false; return; }
       list.innerHTML = top.map(rowHtml).join("");
       list.hidden = false;
-      if (page.partial) note.hidden = false;
       body.dataset.state = "ready";
     } catch {
       skel.hidden = true;

@@ -3,8 +3,12 @@ import { RPC_URL, NATIVE_SAC_ID } from "../network.js";
 import { groupTxRows } from "./classify.js";
 import type { ActivityPage, DecodedEvent, DecodedTx } from "./types.js";
 
-/** ~24h of testnet ledgers (≈5s/ledger). Stays within the public RPC retention window. */
-const RECENT_LEDGERS = 17_280;
+// The public testnet RPC retains roughly the last 7 days of events. We ask for a
+// window deliberately older than retention and let the range-error retry pin the
+// start to the oldest retained ledger, so we always cover the full available
+// window without hardcoding a fragile constant.
+const OVERSHOOT_LEDGERS = 200_000;
+const PAGE_LIMIT = 1000;
 
 type RawEvent = {
   contractId?: { toString(): string } | string;
@@ -14,7 +18,7 @@ type RawEvent = {
   ledgerClosedAt: string;
 };
 
-/** Decode one raw RPC event into a normalized DecodedEvent. */
+/** Decode one raw RPC event (already-parsed ScVals) into a normalized DecodedEvent. */
 function toDecoded(e: RawEvent): DecodedEvent {
   const cid = typeof e.contractId === "string" ? e.contractId : e.contractId?.toString?.() ?? null;
   return {
@@ -35,17 +39,30 @@ export function mapRpcEvents(raw: RawEvent[], self: string): ActivityPage {
   }
   const items = [...byTx.values()].flatMap((tx) => groupTxRows(tx, self));
   items.sort((a, b) => b.timestamp - a.timestamp);
-  return { items, nextCursor: null, source: "rpc", partial: true };
+  return { items };
 }
 
-/** Fetch the recent activity window for `address` from Soroban RPC. */
+/** Parse the oldest retained ledger out of the RPC "ledger range: A - B" error. */
+function oldestFromRangeError(err: unknown): number | null {
+  const msg = String((err as { message?: string })?.message ?? err);
+  const m = /ledger range:\s*(\d+)\s*-\s*\d+/.exec(msg);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Fetch the wallet's recent activity (the full retained ~7-day window) from
+ * Soroban RPC: the account's own admin events plus native-SAC `transfer` events
+ * to/from the account. This is the source of truth for the history feature —
+ * Stellar Expert's full-history `/tx` endpoint is gated to its own origin and is
+ * unusable cross-origin from this app.
+ */
 export async function fetchRpcRecent(address: string): Promise<ActivityPage> {
   const server = new rpc.Server(RPC_URL);
-  const latest = await server.getLatestLedger();
-  const startLedger = Math.max(1, latest.sequence - RECENT_LEDGERS);
+  const { sequence } = await server.getLatestLedger();
+  let startLedger = Math.max(1, sequence - OVERSHOOT_LEDGERS);
 
-  // EventFilter.topics is string[][] — each segment a base64 ScVal or "*" (any
-  // one segment). Protocol-23+ SAC `transfer` emits 4 topics: [transfer, from, to, asset].
+  // EventFilter.topics is string[][] — each segment a base64 ScVal or "*" (any one
+  // segment). Protocol-23+ SAC `transfer` emits 4 topics: [transfer, from, to, asset].
   const transferTopic = nativeToScVal("transfer", { type: "symbol" }).toXDR("base64");
   const selfTopic = Address.fromString(address).toScVal().toXDR("base64");
 
@@ -61,9 +78,19 @@ export async function fetchRpcRecent(address: string): Promise<ActivityPage> {
   const raw: RawEvent[] = [];
   for (const filter of filters) {
     try {
-      const res = await server.getEvents({ startLedger, filters: [filter], limit: 100 });
+      let res;
+      try {
+        res = await server.getEvents({ startLedger, filters: [filter], limit: PAGE_LIMIT });
+      } catch (e) {
+        // startLedger was older than retention — pin to the oldest retained ledger
+        // (for this and every subsequent filter) and retry once.
+        const oldest = oldestFromRangeError(e);
+        if (oldest === null) throw e;
+        startLedger = oldest;
+        res = await server.getEvents({ startLedger, filters: [filter], limit: PAGE_LIMIT });
+      }
       raw.push(...(res.events as unknown as RawEvent[]));
-    } catch { /* a single failing filter shouldn't sink the whole fallback */ }
+    } catch { /* a single failing filter shouldn't sink the whole fetch */ }
   }
   return mapRpcEvents(raw, address);
 }

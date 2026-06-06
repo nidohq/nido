@@ -45,7 +45,4 @@ export interface ActivityItem {
 
 export interface ActivityPage {
   items: ActivityItem[];
-  nextCursor: string | null;  // Expert paging_token; null when no more / on fallback
-  source: "expert" | "rpc";
-  partial: boolean;           // true on the RPC fallback (recent window only)
 }

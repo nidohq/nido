@@ -2,7 +2,41 @@
 
 **Date:** 2026-06-06
 **Branch:** `feat/transaction-history`
-**Status:** Approved design, pending spec review
+**Status:** Implemented — **amended** (see Addendum) after a real-world data-source finding.
+
+## Addendum (2026-06-06) — shipped as RPC-only "Recent activity"
+
+The original design below picked **Stellar Expert `/tx` as the full-history
+primary** with Soroban RPC `getEvents` as a fallback. Live verification during
+implementation showed Stellar Expert's `/tx` (and `/contract`) endpoints are
+**gated to stellar.expert's own origin**: CORS-blocked from any other browser
+origin, and `402 Payment Required` server-side. Only `/directory` is CORS-open.
+So `/tx` is **unusable from this app** — neither client-side (CORS) nor via a
+simple server proxy (402). (My earlier "it works" check was misleading: that was
+same-origin from inside stellar.expert's own SPA.)
+
+**Decision (user-approved):** ship as **RPC-only "Recent activity."** Soroban RPC
+`getEvents` is CORS-open and works from the app; the public testnet RPC retains
+roughly the **last 7 days** of events (measured: a ~120,959-ledger window). That
+is the source of truth.
+
+What this changes vs. the design below:
+- **Removed** the Stellar Expert source and the XDR-decode module (`expertSource`,
+  `decodeTx`, and the captured fixture) — dead code given the gating.
+- **`rpcSource` is the single source.** It queries the account's own admin events
+  plus native-SAC `transfer` events to/from the account over the full retained
+  window (start pinned to the oldest retained ledger via the RPC range-error).
+- **No cursor pagination / "Load more"** (the window is fetched at once);
+  `ActivityPage` is now just `{ items }`.
+- **UI reframed as "Recent activity" / "last 7 days"** rather than full history.
+- Everything else (the event classification, the snake_case OZ event mapping, the
+  two UI surfaces, the Nido styling, client-side address resolution) is unchanged.
+
+**Path to true full history (not done):** point `getEvents` at a full-history
+Soroban RPC provider (keyed) — the same `rpcSource`/`classify` code would then
+paginate the entire history via the RPC cursor. Deferred; needs a provider choice.
+
+The sections below describe the original (pre-pivot) design for context.
 
 ## 1. Goal
 
