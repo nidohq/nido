@@ -12,16 +12,17 @@ test.describe('@testnet send to a named nido', () => {
   // WebAuthn rpId matches the shim credential.
   async function createAccount(page: import('@playwright/test').Page) {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
-    await page.locator('#create-btn').click();
-    await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
-    const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
+    // Account creation lives in the My Nido menu: "Get started" opens it, then
+    // #mn-create-btn runs createNido (friendbot + factory) and navigates to the
+    // new account's C-address subdomain at /new-account/?key=<secret>.
+    await page.locator('#get-started-hero').click();
+    await expect(page.locator('#mynido')).toHaveClass(/mynido-open/);
+    await page.locator('#mn-create-btn').click();
+    await page.waitForURL(/\/new-account\/\?key=/, { timeout: 60_000 });
+    // The C-address is the first label of the (now navigated) subdomain host.
+    const host = new URL(page.url()).host;
+    const cAddress = host.split('.')[0].toUpperCase();
     expect(cAddress).toMatch(/^C[A-Z2-7]{55}$/);
-    const setupHref = await page.locator('#setup-link').getAttribute('href');
-    const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-    const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
-    await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
-      waitUntil: 'domcontentloaded',
-    });
     await page.locator('#register-btn').click();
     await expect(page.locator('#done-section')).toBeVisible({ timeout: 120_000 });
     return { cAddress, host };
