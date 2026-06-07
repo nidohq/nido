@@ -24,6 +24,7 @@ import Icon from "../../components/Icon.astro";
 import Qr from "../../components/Qr.astro";
 import Logo from "../../components/Logo.astro";
 import Nest from "../../components/Nest.astro";
+import RecentActivityCard from "../../components/RecentActivityCard.astro";
 ---
 
 <NidoLayout title="Your Nido">
@@ -151,6 +152,11 @@ import Nest from "../../components/Nest.astro";
         </button>
         <div id="send-result" class="mut mono" style="display:none; font-size:12.5px; margin-top:12px; text-align:center; line-height:1.5;"></div>
       </section>
+      </div>
+
+      <!-- ============ RECENT ACTIVITY ============ -->
+      <div class="grid-cell">
+        <RecentActivityCard />
       </div>
 
       <!-- ============ RECEIVE PANEL (display-only) ============ -->

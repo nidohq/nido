@@ -1,0 +1,75 @@
+---
+// packages/frontend/src/pages/account/activity/index.astro
+import NidoLayout from "../../../layouts/NidoLayout.astro";
+---
+<NidoLayout title="Activity" shell="app">
+  <section class="card">
+    <h1 class="section-label">Activity</h1>
+    <p class="mut activity-window">Your most recent wallet activity.</p>
+    <div id="activity-root">
+      <div id="activity-skeleton">
+        <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
+      </div>
+      <div id="activity-list" hidden></div>
+      <div class="empty" id="activity-empty" hidden>No recent activity</div>
+      <div class="alert danger" id="activity-error" hidden>
+        Couldn’t load activity. <button class="btn ghost" id="activity-retry">Retry</button>
+      </div>
+      <a id="full-history" class="full-history" target="_blank" rel="noopener noreferrer" hidden>
+        View full history on Stellar Expert ↗
+      </a>
+    </div>
+  </section>
+</NidoLayout>
+
+<style is:global>
+  /* :not([hidden]) so the `hidden` attribute can hide it — a bare `display: grid`
+     (id selector) out-specifies `[hidden] { display: none }`, leaving the skeleton
+     animating under the loaded rows. */
+  #activity-skeleton:not([hidden]) { display: grid; gap: 10px; }
+  #activity-skeleton .skeleton { height: 48px; border-radius: 10px; display: block; }
+  .activity-window { font-size: 13px; margin: -2px 0 14px; }
+  .full-history { display: inline-block; margin-top: 16px; font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; }
+  .full-history:hover { text-decoration: underline; }
+</style>
+
+<script>
+  import { loadActivityPage } from "../../../lib/activity/history.js";
+  import { activityRowHtml } from "../../../lib/activity/rowHtml.js";
+  import { EXPLORER_BASE } from "../../../lib/network.js";
+  import { contractIdFromHostname } from "@g2c/passkey-sdk";
+
+  const address = contractIdFromHostname(window.location.hostname);
+  const skel = document.getElementById("activity-skeleton")!;
+  const list = document.getElementById("activity-list")!;
+  const empty = document.getElementById("activity-empty")!;
+  const errBox = document.getElementById("activity-error")!;
+
+  // In-app history is limited to the RPC's ~1-week retention; the explorer shows
+  // the account's full lifetime history. Always offer the link when we have an address.
+  if (address) {
+    const fh = document.getElementById("full-history") as HTMLAnchorElement;
+    fh.href = `${EXPLORER_BASE}/contract/${address}`;
+    fh.hidden = false;
+  }
+
+  async function load() {
+    errBox.hidden = true;
+    skel.hidden = false;
+    list.hidden = true;
+    try {
+      const page = await loadActivityPage({ address: address! });
+      skel.hidden = true;
+      if (page.items.length === 0) { empty.hidden = false; return; }
+      empty.hidden = true;
+      list.innerHTML = page.items.map(activityRowHtml).join("");
+      list.hidden = false;
+    } catch {
+      skel.hidden = true;
+      errBox.hidden = false;
+    }
+  }
+
+  document.getElementById("activity-retry")!.addEventListener("click", load);
+  if (!address) { skel.hidden = true; empty.hidden = false; } else { load(); }
+</script>

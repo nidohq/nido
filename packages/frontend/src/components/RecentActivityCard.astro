@@ -1,0 +1,71 @@
+---
+// packages/frontend/src/components/RecentActivityCard.astro
+// No SSR address exists — the smart account is resolved client-side from the
+// hostname subdomain (same as account/index.astro and the sign/recover pages).
+---
+<section class="card recent-activity">
+  <header class="ra-head">
+    <span class="section-label">Recent activity</span>
+    <a class="ra-all" href="/account/activity/">View all →</a>
+  </header>
+  <div class="ra-body">
+    <div class="ra-skeleton">
+      <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
+    </div>
+    <div class="ra-list" hidden></div>
+    <div class="empty ra-empty" hidden>
+      <span class="ra-empty-text">No recent activity.</span> <a class="ra-fh" target="_blank" rel="noopener noreferrer" hidden>View full history ↗</a>
+    </div>
+  </div>
+</section>
+
+<style is:global>
+  /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach them. */
+  .recent-activity .ra-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .recent-activity .ra-all { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; }
+  /* :not([hidden]) so the `hidden` attribute can actually hide it — a bare
+     `display: grid` out-specifies the UA `[hidden] { display: none }` rule and
+     would leave the skeleton animating under the loaded rows. */
+  .recent-activity .ra-skeleton:not([hidden]) { display: grid; gap: 10px; }
+  .recent-activity .ra-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
+  .recent-activity .ra-fh { color: var(--acc-btn, #c2410c); text-decoration: none; white-space: nowrap; }
+  .recent-activity .ra-fh:hover { text-decoration: underline; }
+</style>
+
+<script>
+  import { loadActivityPage } from "../lib/activity/history.js";
+  import { activityRowHtml } from "../lib/activity/rowHtml.js";
+  import { EXPLORER_BASE } from "../lib/network.js";
+  import { contractIdFromHostname } from "@g2c/passkey-sdk";
+
+  async function init() {
+    const card = document.querySelector<HTMLElement>(".recent-activity");
+    if (!card) return;
+    const skel = card.querySelector<HTMLElement>(".ra-skeleton")!;
+    const list = card.querySelector<HTMLElement>(".ra-list")!;
+    const empty = card.querySelector<HTMLElement>(".ra-empty")!;
+    const emptyText = card.querySelector<HTMLElement>(".ra-empty-text")!;
+    const address = contractIdFromHostname(window.location.hostname);
+    if (!address) { skel.hidden = true; empty.hidden = false; return; }
+    // Full lifetime history lives on the explorer (RPC only retains ~1 week).
+    const fh = card.querySelector<HTMLAnchorElement>(".ra-fh")!;
+    fh.href = `${EXPLORER_BASE}/contract/${address}`;
+    fh.hidden = false;
+    try {
+      // The compact card only needs the newest few rows — scan a small window so
+      // it loads fast; the full /account/activity page scans the default depth.
+      const page = await loadActivityPage({ address, maxChunks: 2 });
+      skel.hidden = true;
+      const top = page.items.slice(0, 5);
+      if (top.length === 0) { empty.hidden = false; return; }
+      list.innerHTML = top.map(activityRowHtml).join("");
+      list.hidden = false;
+    } catch {
+      // Update only the text node so the "View full history" link survives.
+      skel.hidden = true;
+      emptyText.textContent = "Couldn’t load activity.";
+      empty.hidden = false;
+    }
+  }
+  init();
+</script>
