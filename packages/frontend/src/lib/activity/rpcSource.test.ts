@@ -64,20 +64,45 @@ describe("fetchRpcRecent", () => {
     expect(Array.isArray(page.items)).toBe(true);
   });
 
-  it("shrinks a chunk's span on a processing-limit error, then stops if even the smallest span fails", async () => {
+  it("shrinks the first chunk's span on a processing-limit error, then REJECTS if even the smallest span fails", async () => {
     const { fetchRpcRecent } = await import("./rpcSource.js");
     vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     // Always throw the dense-SAC processing-limit error.
-    const getEventsSpy = vi
-      .spyOn(rpc.Server.prototype, "getEvents")
-      .mockRejectedValue(new Error("[-32001] request exceeded processing limit threshold"));
+    const err = new Error("[-32001] request exceeded processing limit threshold");
+    const getEventsSpy = vi.spyOn(rpc.Server.prototype, "getEvents").mockRejectedValue(err);
 
-    const page = await fetchRpcRecent(SELF);
+    // Failing the NEWEST chunk is a real RPC failure, not an empty account → reject
+    // so the UI shows its error/retry state.
+    await expect(fetchRpcRecent(SELF)).rejects.toBe(err);
 
-    // Chunk 0 retries with shrinking spans 9000 → 3000 → 1000 (3 tries), then gives up; no chunk 1.
+    // Chunk 0 retries with shrinking spans 9000 → 3000 → 1000 (3 tries), then throws; no chunk 1.
     expect(getEventsSpy).toHaveBeenCalledTimes(3);
     const spans = getEventsSpy.mock.calls.map((c) => (c[0] as any).endLedger - (c[0] as any).startLedger + 1);
     expect(spans).toEqual([9000, 3000, 1000]);
-    expect(page.items).toEqual([]);
+  });
+
+  it("keeps the recent span (does not reject) when an OLDER chunk fails after the first succeeds", async () => {
+    const { fetchRpcRecent } = await import("./rpcSource.js");
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    let call = 0;
+    vi.spyOn(rpc.Server.prototype, "getEvents").mockImplementation((async () => {
+      call += 1;
+      if (call === 1) return { events: [], latestLedger: LATEST } as any; // chunk 0 ok
+      throw new Error("[-32001] request exceeded processing limit threshold"); // chunk 1 fails at every span
+    }) as any);
+
+    const page = await fetchRpcRecent(SELF);
+    expect(page.items).toEqual([]); // empty but resolved — we kept the (empty) recent span
+  });
+
+  it("honors maxChunks so the home card can scan a shallower window", async () => {
+    const { fetchRpcRecent } = await import("./rpcSource.js");
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    const getEventsSpy = vi
+      .spyOn(rpc.Server.prototype, "getEvents")
+      .mockResolvedValue({ events: [], latestLedger: LATEST } as any);
+
+    await fetchRpcRecent(SELF, 2);
+    expect(getEventsSpy).toHaveBeenCalledTimes(2);
   });
 });

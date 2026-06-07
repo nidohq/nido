@@ -77,17 +77,18 @@ function accountFilters(address: string): rpc.Api.EventFilter[] {
  * this app) and the public RPC can neither retain (~1 week) nor cheaply scan the
  * busy SAC far back. Older history is reached via the explorer link in the UI.
  */
-export async function fetchRpcRecent(address: string): Promise<ActivityPage> {
+export async function fetchRpcRecent(address: string, maxChunks = MAX_CHUNKS): Promise<ActivityPage> {
   const server = new rpc.Server(RPC_URL);
   const { sequence: latest } = await server.getLatestLedger();
   const filters = accountFilters(address);
 
   const raw: RawEvent[] = [];
   let endLedger = latest;
-  for (let chunk = 0; chunk < MAX_CHUNKS && endLedger > 1; chunk++) {
+  for (let chunk = 0; chunk < maxChunks && endLedger > 1; chunk++) {
     let span = CHUNK_LEDGERS;
     let fetched = false;
     let startLedger = Math.max(1, endLedger - span + 1);
+    let lastError: unknown;
     while (span >= MIN_CHUNK_LEDGERS) {
       startLedger = Math.max(1, endLedger - span + 1);
       try {
@@ -95,13 +96,21 @@ export async function fetchRpcRecent(address: string): Promise<ActivityPage> {
         raw.push(...(res.events as unknown as RawEvent[]));
         fetched = true;
         break;
-      } catch {
+      } catch (e) {
         // Most likely [-32001] (dense SAC in this range): shrink and retry. Any
         // other error (e.g. range older than retention) also ends this chunk.
+        lastError = e;
         span = Math.floor(span / 3);
       }
     }
-    if (!fetched) break; // even the smallest span failed → stop at the recent span we have
+    if (!fetched) {
+      // Couldn't fetch even the NEWEST chunk → this is a real RPC failure, not an
+      // empty account. Surface it so the UI shows its error/retry state instead of
+      // a misleading "no recent activity". Failures on an older chunk just stop the
+      // walk; we keep the recent span we already have.
+      if (chunk === 0) throw lastError instanceof Error ? lastError : new Error("getEvents failed");
+      break;
+    }
     endLedger = startLedger - 1; // chain to the next-older chunk with no gap
   }
   return mapRpcEvents(raw, address);

@@ -1,13 +1,21 @@
 import type { ActivityItem } from "./types.js";
 
+/** HTML-escape a value for safe interpolation into an innerHTML string. */
+function esc(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
+  );
+}
+
 /**
  * Render one ActivityItem as a Nido `.row` anchor (an HTML string for
  * `innerHTML`). Shared by the home "Recent activity" card and the full
  * `/account/activity` page so the row markup lives in exactly one place.
  *
- * All interpolated fields come from on-chain data with no HTML-significant
- * characters (hex tx hash, base32 strkey, formatted number, asset code) or from
- * a fixed title table — so they are safe to inject without escaping.
+ * Every interpolated field is `esc()`-escaped. On-chain data is expected to be
+ * HTML-inert (hex tx hash, base32 strkey, formatted number, alphanumeric asset
+ * code) but we don't rely on that invariant — escaping defends against an asset
+ * code or future field that isn't.
  */
 export function activityRowHtml(it: ActivityItem): string {
   const icon = it.kind === "payment" ? (it.direction === "in" ? "↓" : "↑") : "•";
@@ -16,8 +24,8 @@ export function activityRowHtml(it: ActivityItem): string {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   });
   const sign = it.kind === "payment" ? (it.direction === "in" ? "+" : "−") : "";
-  const amt = it.amount ? `<span class="ramt">${sign}${it.amount} <small>${it.asset}</small></span>` : "";
-  return `<a class="row" href="${it.explorerUrl}" target="_blank" rel="noopener noreferrer">
+  const amt = it.amount ? `<span class="ramt">${sign}${esc(it.amount)} <small>${esc(it.asset)}</small></span>` : "";
+  return `<a class="row" href="${esc(it.explorerUrl)}" target="_blank" rel="noopener noreferrer">
       <span class="ricon ${iconCls}">${icon}</span>
-      <span class="rmain"><span class="rtitle">${it.title}</span><span class="rsub">${it.subtitle ?? when}</span></span>${amt}</a>`;
+      <span class="rmain"><span class="rtitle">${esc(it.title)}</span><span class="rsub">${esc(it.subtitle ?? when)}</span></span>${amt}</a>`;
 }

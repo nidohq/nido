@@ -8,13 +8,13 @@
     <span class="section-label">Recent activity</span>
     <a class="ra-all" href="/account/activity/">View all →</a>
   </header>
-  <div class="ra-body" data-state="loading">
+  <div class="ra-body">
     <div class="ra-skeleton">
       <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
     </div>
     <div class="ra-list" hidden></div>
     <div class="empty ra-empty" hidden>
-      No recent activity. <a class="ra-fh" target="_blank" rel="noopener noreferrer" hidden>View full history ↗</a>
+      <span class="ra-empty-text">No recent activity.</span> <a class="ra-fh" target="_blank" rel="noopener noreferrer" hidden>View full history ↗</a>
     </div>
   </div>
 </section>
@@ -44,7 +44,7 @@
     const skel = card.querySelector<HTMLElement>(".ra-skeleton")!;
     const list = card.querySelector<HTMLElement>(".ra-list")!;
     const empty = card.querySelector<HTMLElement>(".ra-empty")!;
-    const body = card.querySelector<HTMLElement>(".ra-body")!;
+    const emptyText = card.querySelector<HTMLElement>(".ra-empty-text")!;
     const address = contractIdFromHostname(window.location.hostname);
     if (!address) { skel.hidden = true; empty.hidden = false; return; }
     // Full lifetime history lives on the explorer (RPC only retains ~1 week).
@@ -52,18 +52,19 @@
     fh.href = `${EXPLORER_BASE}/contract/${address}`;
     fh.hidden = false;
     try {
-      const page = await loadActivityPage({ address });
+      // The compact card only needs the newest few rows — scan a small window so
+      // it loads fast; the full /account/activity page scans the default depth.
+      const page = await loadActivityPage({ address, maxChunks: 2 });
       skel.hidden = true;
       const top = page.items.slice(0, 5);
       if (top.length === 0) { empty.hidden = false; return; }
       list.innerHTML = top.map(activityRowHtml).join("");
       list.hidden = false;
-      body.dataset.state = "ready";
     } catch {
+      // Update only the text node so the "View full history" link survives.
       skel.hidden = true;
-      empty.textContent = "Couldn’t load activity";
+      emptyText.textContent = "Couldn’t load activity.";
       empty.hidden = false;
-      body.dataset.state = "error";
     }
   }
   init();

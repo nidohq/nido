@@ -24,17 +24,25 @@ What this changes vs. the design below:
 - **Removed** the Stellar Expert source and the XDR-decode module (`expertSource`,
   `decodeTx`, and the captured fixture) — dead code given the gating.
 - **`rpcSource` is the single source.** It queries the account's own admin events
-  plus native-SAC `transfer` events to/from the account over the full retained
-  window (start pinned to the oldest retained ledger via the RPC range-error).
-- **No cursor pagination / "Load more"** (the window is fetched at once);
-  `ActivityPage` is now just `{ items }`.
-- **UI reframed as "Recent activity" / "last 7 days"** rather than full history.
+  plus native-SAC `transfer` events to/from the account.
+- **Tip-anchored chunked scan (NOT a single wide query).** `getEvents` only scans
+  ~9k ledgers ascending from `startLedger` per request and returns oldest-first,
+  and the busy native SAC trips a `[-32001]` processing limit over wide ranges. So
+  `fetchRpcRecent` walks fixed ~9k-ledger chunks **backward from the chain tip**
+  (newest first), each one bounded `startLedger`+`endLedger` request; it shrinks a
+  chunk's span on `[-32001]` and stops when even the smallest fails — so coverage
+  is the most recent contiguous span it can fetch (a few days at most, not 7), and
+  a failure on the *newest* chunk surfaces as an error (not a false "empty").
+- **No cursor pagination / "Load more"**; `ActivityPage` is just `{ items }`. The
+  home card scans a shallower window (`maxChunks`) than the full activity page.
+- **UI reframed as "Recent activity"** + a "View full history on Stellar Expert"
+  link (the explorer *page* renders full history; only its `/tx` API is gated).
 - Everything else (the event classification, the snake_case OZ event mapping, the
   two UI surfaces, the Nido styling, client-side address resolution) is unchanged.
 
 **Path to true full history (not done):** point `getEvents` at a full-history
 Soroban RPC provider (keyed) — the same `rpcSource`/`classify` code would then
-paginate the entire history via the RPC cursor. Deferred; needs a provider choice.
+page the entire history. Deferred; needs a provider choice.
 
 The sections below describe the original (pre-pivot) design for context.
 
