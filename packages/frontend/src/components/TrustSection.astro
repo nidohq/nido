@@ -1,0 +1,210 @@
+---
+// "Why it's safe" — the trust explainer on the landing page.
+//
+// Four alternating editorial rows, each pairing a decorative diagram with
+// a short headline + one sentence. Sits between the "Why Nido" feature trio and
+// the closing CTA band. Styles live in styles/nido.css (.lp-safe*, .td-*).
+//
+// The graphics are decorative: each is aria-hidden, because the adjacent
+// headline + body already carry the full meaning for assistive tech.
+import Icon from "./Icon.astro";
+---
+
+<section class="lp-safe" id="trust">
+  <div class="lp-safe-head">
+    <span class="section-label">Why it's safe</span>
+    <h2 class="disp lp-h2">You don't have to trust us.</h2>
+    <p class="lp-safe-lede">
+      Every password is a secret some company has to keep for you — and the
+      headlines are full of the ones who didn't. Nido has no password to leak,
+      and no account we can hold over you. Your face stays on your phone, your
+      account lives on an open blockchain, and anyone can check the math. Here's how.
+    </p>
+  </div>
+
+  <div class="lp-safe-rows">
+
+    <!-- 01 — biometrics never leave the device -->
+    <div class="lp-safe-row">
+      <div class="lp-safe-art" aria-hidden="true">
+        <div class="td-flow-row">
+          <div class="td-node">
+            <div class="td-ico" style="background: var(--acc-soft);">
+              <Icon name="faceid" size={30} color="var(--acc)" />
+            </div>
+            <div class="td-lbl disp">Your device</div>
+            <div class="td-sub">Secure enclave</div>
+          </div>
+          <div class="td-connector">
+            <div class="td-connector-tag">signed proof →</div>
+            <div class="td-line"></div>
+          </div>
+          <div class="td-node">
+            <div class="td-ico" style="background: var(--good-soft);">
+              <Icon name="shieldcheck" size={30} color="var(--good)" />
+            </div>
+            <div class="td-lbl disp">Nido</div>
+            <div class="td-sub">Verified ✓</div>
+          </div>
+        </div>
+      </div>
+      <div class="lp-safe-copy">
+        <span class="lp-safe-num">01</span>
+        <h3 class="lp-safe-h3">Your face never leaves your phone.</h3>
+        <p class="lp-safe-body">
+          Your fingerprint or face scan is sealed inside a secure chip on your
+          device. Nido never sees it. When you approve something, your phone signs
+          it inside that chip — and sends out only the signature, never your biometrics.
+        </p>
+      </div>
+    </div>
+
+    <!-- 02 — verified in the open on Stellar -->
+    <div class="lp-safe-row">
+      <div class="lp-safe-art" aria-hidden="true">
+        <div class="td-flow-row">
+          <div class="td-node">
+            <div class="td-ico" style="background: var(--chip);">
+              <Icon name="key" size={30} color="var(--ink-soft)" />
+            </div>
+            <div class="td-lbl disp">Private key</div>
+            <div class="td-sub">On your device</div>
+          </div>
+          <div class="td-connector">
+            <div class="td-connector-tag">↔ same protocol</div>
+            <div class="td-line"></div>
+          </div>
+          <div class="td-node">
+            <div class="td-ico" style="background: var(--acc-soft);">
+              <Icon name="key" size={30} color="var(--acc)" />
+            </div>
+            <div class="td-lbl disp">Public key</div>
+            <div class="td-sub">Stellar blockchain</div>
+          </div>
+        </div>
+      </div>
+      <div class="lp-safe-copy">
+        <span class="lp-safe-num">02</span>
+        <h3 class="lp-safe-h3">Checked in the open, by anyone.</h3>
+        <p class="lp-safe-body">
+          Your account lives on Stellar, a public blockchain built for one thing:
+          verifying signatures. It speaks the same open passkey standard your phone
+          already uses — so every approval is proven out in the open, by code anyone
+          can read. No secret server to trust.
+        </p>
+      </div>
+    </div>
+
+    <!-- 03 — you own it, not a row in a database -->
+    <div class="lp-safe-row">
+      <div class="lp-safe-art" aria-hidden="true">
+        <div class="td-trio">
+          <div class="td-trio-item">
+            <div class="td-ico td-ico--sm" style="background: #fbe7e2;">
+              <Icon name="lock" size={22} color="var(--danger)" />
+            </div>
+            <div class="td-lbl disp">Passwords</div>
+            <div class="td-sub">Shared secret</div>
+            <div class="td-badge td-badge--bad">✗ Dev sees it</div>
+          </div>
+          <div class="td-trio-item">
+            <div class="td-ico td-ico--sm" style="background: var(--warn-soft);">
+              <Icon name="lock" size={22} color="var(--warn)" />
+            </div>
+            <div class="td-lbl disp">Google / Apple</div>
+            <div class="td-sub">Delegated identity</div>
+            <div class="td-badge td-badge--mid">⚠ They control it</div>
+          </div>
+          <div class="td-trio-item">
+            <div class="td-ico td-ico--sm" style="background: var(--good-soft);">
+              <Icon name="lock" size={22} color="var(--good)" />
+            </div>
+            <div class="td-lbl disp">Nido</div>
+            <div class="td-sub">Your biometrics</div>
+            <div class="td-badge td-badge--good">✓ You control it</div>
+          </div>
+        </div>
+      </div>
+      <div class="lp-safe-copy">
+        <span class="lp-safe-num">03</span>
+        <h3 class="lp-safe-h3">It's yours — not a row in someone's database.</h3>
+        <p class="lp-safe-body">
+          A password trusts a stranger to guard it. "Sign in with Google" hands them
+          your identity. Your Nido is a smart-contract account that answers only to
+          your face — no landlord, no middleman, no off-switch anyone else can flip.
+        </p>
+      </div>
+    </div>
+
+    <!-- 04 — multiple devices + friend-quorum recovery -->
+    <div class="lp-safe-row">
+      <div class="lp-safe-art" aria-hidden="true">
+        <div class="td-recovery">
+          <div class="td-recovery-group">
+            <div class="td-recovery-row">
+              <div class="td-ico td-ico--sm" style="background: var(--chip);">
+                <Icon name="device" size={20} color="var(--ink-soft)" />
+              </div>
+              <div class="td-ico td-ico--sm" style="background: var(--chip);">
+                <Icon name="device" size={20} color="var(--ink-soft)" />
+              </div>
+              <div class="td-ico td-ico--sm" style="background: var(--chip);">
+                <Icon name="device" size={20} color="var(--ink-soft)" />
+              </div>
+            </div>
+          </div>
+          <div class="td-lbl disp">Your devices</div>
+          <div class="td-sub">Laptop · Phone · Tablet</div>
+          </div>
+          <div class="td-recovery-plus disp">+</div>
+          <div class="td-recovery-group">
+            <div class="td-recovery-row">
+              <div class="td-friend td-friend--on"></div>
+              <div class="td-friend td-friend--on"></div>
+              <div class="td-friend td-friend--on"></div>
+              <div class="td-friend"></div>
+              <div class="td-friend"></div>
+            </div>
+          <div class="td-lbl disp">Trusted friends</div>
+          <div class="td-sub">3 of 5 to recover</div>
+        </div>
+      </div>
+      <div class="lp-safe-copy">
+        <span class="lp-safe-num">04</span>
+        <h3 class="lp-safe-h3">Lose your phone, not your Nido.</h3>
+        <p class="lp-safe-body">
+          Add all your devices — phone, laptop, tablet. Then pick a few people you
+          trust who can let you back in, but only when enough of them agree: any
+          three of five, say. No one of them can act alone, and no one can lock you out.
+        </p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<script>
+  // Reveal each row as it scrolls into view. Pure progressive enhancement:
+  // the section's base state is fully visible, so a no-JS or reduced-motion
+  // render shows everything. We only add the hiding class (.reveal-ready) when
+  // JS runs AND motion is welcome — and because the section is below the fold,
+  // the initial hide happens off-screen, with no visible flash.
+  const section = document.querySelector(".lp-safe");
+  const motionOK = window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
+
+  if (section && motionOK && "IntersectionObserver" in window) {
+    section.classList.add("reveal-ready");
+    const observer = new IntersectionObserver(
+      (entries, obs) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-in");
+            obs.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0.18, rootMargin: "0px 0px -8% 0px" },
+    );
+    section.querySelectorAll(".lp-safe-row").forEach((row) => observer.observe(row));
+  }
+</script>
