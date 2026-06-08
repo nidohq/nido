@@ -136,7 +136,8 @@ import Nest from "../../components/Nest.astro";
         </p>
         <div class="field">
           <label for="send-to">To</label>
-          <input id="send-to" class="input" placeholder="C… or G…" autocomplete="off" spellcheck="false" />
+          <input id="send-to" class="input" placeholder="name, C…, or G…" autocomplete="off" spellcheck="false" />
+          <div id="send-resolve" class="mut mono" style="font-size:12px; margin-top:6px; min-height:16px;"></div>
         </div>
         <div class="field" style="margin-top:12px;">
           <label for="send-amount">Amount</label>
@@ -273,6 +274,8 @@ import Nest from "../../components/Nest.astro";
     saveAccountName,
     loadAccountName,
     fetchRegistryAddress,
+    resolveName,
+    lookupName,
   } from "@g2c/passkey-sdk";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
   import { toast } from "../../lib/toast";
@@ -281,7 +284,8 @@ import Nest from "../../components/Nest.astro";
   import { shortAddr } from "../../lib/address";
   import { formatXlm, xlmToStroops } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
-  import { sendXlm, validateRecipient } from "../../lib/sendXlm";
+  import { sendXlm } from "../../lib/sendXlm";
+  import { resolveSendRecipient } from "../../lib/recipientInput";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
@@ -637,6 +641,55 @@ import Nest from "../../components/Nest.astro";
     const $sendResult = document.getElementById("send-result")!;
     const $sendSubmit = document.getElementById("send-submit") as HTMLButtonElement;
 
+    const NAME_NETWORK = "Test SDF Network ; September 2015";
+    let _nameRegistryIdPromise: Promise<string> | null = null;
+    function nameRegistryId(): Promise<string> {
+      return (_nameRegistryIdPromise ??= fetchRegistryAddress("name-registry"));
+    }
+    // Always resolve FRESH (no cache) so a just-transferred name can't bind stale.
+    const resolveNameFresh = async (name: string): Promise<string | null> =>
+      resolveName(RPC_URL, await nameRegistryId(), name, NAME_NETWORK);
+
+    const $sendResolve = document.getElementById("send-resolve")!;
+    let resolveSeq = 0;
+    let resolveTimer: ReturnType<typeof setTimeout> | undefined;
+
+    $sendTo.addEventListener("input", () => {
+      clearTimeout(resolveTimer);
+      const raw = $sendTo.value;
+      if (!raw.trim()) {
+        resolveSeq++;            // invalidate any in-flight debounced resolve
+        $sendResolve.textContent = "";
+        return;
+      }
+      $sendResolve.textContent = "Resolving…";
+      resolveTimer = setTimeout(async () => {
+        const myId = ++resolveSeq;
+        try {
+          const res = await resolveSendRecipient(raw, { resolveName: resolveNameFresh });
+          if (myId !== resolveSeq) return; // a newer keystroke superseded us
+          if (!res) {
+            $sendResolve.textContent = "✗ No nido by that name (or invalid address)";
+            return;
+          }
+          if (res.kind === "name") {
+            $sendResolve.textContent = `✓ ${res.input} → ${shortAddr(res.address)}`;
+          } else {
+            let name: string | null = null;
+            try {
+              name = await lookupName(RPC_URL, await nameRegistryId(), res.address, NAME_NETWORK);
+            } catch { /* reverse name is best-effort */ }
+            if (myId !== resolveSeq) return;
+            $sendResolve.textContent = name
+              ? `✓ ${shortAddr(res.address)} (${name})`
+              : `✓ ${shortAddr(res.address)}`;
+          }
+        } catch {
+          if (myId === resolveSeq) $sendResolve.textContent = "✗ Couldn't resolve — try again";
+        }
+      }, 350);
+    });
+
     document.getElementById("send-max")!.addEventListener("click", () => {
       $sendAmount.value = currentBalanceXlm;
     });
@@ -647,11 +700,6 @@ import Nest from "../../components/Nest.astro";
 
       const to = $sendTo.value.trim();
       const amount = $sendAmount.value.trim();
-
-      if (!validateRecipient(to)) {
-        showError("Enter a valid address (starts with C… or G…).");
-        return;
-      }
 
       let stroops: bigint;
       try {
@@ -683,13 +731,26 @@ import Nest from "../../components/Nest.astro";
       try {
         $sendSubmit.disabled = true;
         $sendResult.style.display = "block";
-        $sendResult.textContent = `Confirm with ${passkey.label} to send ${amount} XLM…`;
+        $sendResult.textContent = "Resolving recipient…";
 
-        await sendXlm({ smartAccount: contractId, destination: to, stroops });
+        // Resolve FRESH at submit; sign over the concrete address (TOCTOU-safe).
+        const resolved = await resolveSendRecipient(to, { resolveName: resolveNameFresh });
+        if (!resolved) {
+          showError("Enter a valid nido name, C… or G… address.");
+          $sendResult.style.display = "none";
+          return;
+        }
+        const destination = resolved.address;
+        const toLabel = resolved.kind === "name" ? `${resolved.input} (${shortAddr(destination)})` : shortAddr(destination);
+
+        $sendResult.textContent = `Confirm with ${passkey.label} to send ${amount} XLM to ${toLabel}…`;
+
+        await sendXlm({ smartAccount: contractId, destination, stroops });
 
         toast({ msg: "Sent", icon: "check" });
         $sendResult.textContent = "Sent — updating your balance…";
         $sendTo.value = "";
+        $sendResolve.textContent = "";
         $sendAmount.value = "";
 
         const fresh = await fetchXlmBalance(contractId);
@@ -791,9 +852,14 @@ import Nest from "../../components/Nest.astro";
 
     $nameSection.classList.remove("hidden");
 
-    // Check if this account already has a name (from localStorage)
-    const existingName = loadAccountName(contractId);
+    // The name is known authoritatively when we arrived via a name subdomain
+    // (detectedName already resolved to THIS account); otherwise fall back to a
+    // locally-saved name. On a name subdomain, persist it so later contract-id
+    // visits in this browser show the name too. Either way: show the name (with
+    // the contract id in the account card above), never the claim card.
+    const existingName = detectedName ?? loadAccountName(contractId);
     if (existingName) {
+      if (detectedName) saveAccountName(contractId, detectedName);
       $nameDisplay.classList.remove("hidden");
       document.getElementById("account-name")!.textContent = existingName;
       // Reflect the claimed name in the top bar nickname too.

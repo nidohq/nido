@@ -49,7 +49,7 @@ export {
   RESERVED_DAPP_SUBDOMAINS,
 } from "./url.js";
 
-export { resolveName, resolveNameCached } from "./resolve.js";
+export { resolveName, resolveNameCached, lookupName } from "./resolve.js";
 
 export { fetchRegistryAddress, REGISTRY_FALLBACKS } from "./registry.js";
 export type { FetchRegistryAddressOptions } from "./registry.js";

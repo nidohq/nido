@@ -101,3 +101,42 @@ export async function resolveNameCached(
 
   return contractId;
 }
+
+/**
+ * Reverse lookup: the registered name for an address, or null. Read-only RPC
+ * simulation of the registry's `lookup(owner) -> Option<String>`. Best-effort —
+ * used only to display a canonical name next to a resolved address.
+ */
+export async function lookupName(
+  rpcUrl: string,
+  registryContractId: string,
+  address: string,
+  networkPassphrase: string
+): Promise<string | null> {
+  const server = new rpc.Server(rpcUrl);
+  const registry = new Contract(registryContractId);
+  const dummySource = new Account(DUMMY_SOURCE, "0");
+
+  const tx = new TransactionBuilder(dummySource, {
+    fee: "100",
+    networkPassphrase,
+  })
+    .addOperation(
+      registry.call("lookup", nativeToScVal(address, { type: "address" }))
+    )
+    .setTimeout(0)
+    .build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) return null;
+
+  const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
+  if (!successSim.result) return null;
+
+  try {
+    const result = scValToNative(successSim.result.retval);
+    return result || null;
+  } catch {
+    return null;
+  }
+}
