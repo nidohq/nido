@@ -11,12 +11,25 @@ import Sidebar from "../components/Sidebar.astro";
 
 interface Props {
   title: string;
+  /** Social-card description (og/twitter). Falls back to a generic Nido line. */
+  description?: string;
   /** Layout shell. `app` = sidebar+grid on desktop (default); `focused` =
    *  centered card; `bleed` = full-bleed (landing). */
   shell?: "app" | "focused" | "bleed";
 }
 
-const { title, shell = "app" } = Astro.props;
+const {
+  title,
+  description = "Your passkey-secured Stellar smart account.",
+  shell = "app",
+} = Astro.props;
+
+// Absolute URLs for social crawlers (iMessage, Slack, Discord, X, Facebook).
+// Crawlers don't run JS and won't resolve relative paths reliably, so these are
+// built against `site` (astro.config.mjs). The same generic card serves every
+// page/subdomain; per-name cards need an edge function (tracked separately).
+const ogImage = new URL("/og-image.png", Astro.site).href;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
 ---
 
 <!doctype html>
@@ -26,6 +39,22 @@ const { title, shell = "app" } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>{title}</title>
+    <meta name="description" content={description} />
+
+    <!-- Open Graph / Twitter card. Generic, build-time tags so a shared Nido
+         link renders a branded preview. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Nido" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
