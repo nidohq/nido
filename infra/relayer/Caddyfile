@@ -1,0 +1,25 @@
+:8080 {
+	@preflight {
+		method OPTIONS
+		path /relay
+	}
+	handle @preflight {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "POST, OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type"
+		respond 204
+	}
+	handle /relay {
+		header Access-Control-Allow-Origin "*"
+		request_header Authorization "Bearer {$API_KEY}"
+		request_header x-api-key "nido-wallet"
+		rewrite * /api/v1/plugins/channels/call
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle /api/v1/health {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle {
+		respond 404
+	}
+}
