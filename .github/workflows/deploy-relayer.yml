@@ -1,0 +1,34 @@
+name: deploy-relayer
+
+on:
+  push:
+    branches: [main, feat/72-relayer-gas-abstraction]  # branch entry is TEMPORARY for PR-phase deploys; drop before merge (plan Task 7)
+    paths: ['infra/relayer/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-relayer
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load Fly token from 1Password
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          FLY_API_TOKEN: op://theahaco/nido_fly_io/credential
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        run: flyctl deploy --config infra/relayer/fly.toml --remote-only --ha=false
