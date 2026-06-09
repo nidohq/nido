@@ -15,6 +15,13 @@ import {
   hex2buf,
 } from '@g2c/passkey-sdk';
 import { fetchVerifierAddress } from './policyChainFetch.js';
+import {
+  relayerEnabled,
+  extractFuncAndAuth,
+  submitSorobanTransaction,
+  waitForConfirmation,
+} from './relayerClient';
+import { RELAYER_SIM_SOURCE } from './network';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const FRIENDBOT_URL = 'https://friendbot.stellar.org';
@@ -76,10 +83,17 @@ export async function signAndSubmit(args: {
   const finalVerifierAddress =
     args.verifierAddress ?? (await fetchVerifierAddress(args.account));
 
-  // 1. Get the ephemeral submitter G-address; load its current sequence.
-  //    This is the tx source/fee-payer, NOT the smart account itself.
-  const submitter = await getSubmitter();
-  const sourceAccount = await server.getAccount(submitter.publicKey());
+  // 1. Pick the simulation source account. This is the tx source/fee-payer,
+  //    NOT the smart account itself.
+  //
+  //    Relayer mode: no ephemeral G is created or funded — recording-mode
+  //    simulation just needs SOME existing on-chain source account, so we use
+  //    the relayer's (public) fund address. It never signs and never pays here.
+  //    Classic mode: friendbot-funded ephemeral G as before.
+  const submitter = relayerEnabled() ? null : await getSubmitter();
+  const sourceAccount = submitter
+    ? await server.getAccount(submitter.publicKey())
+    : await server.getAccount(RELAYER_SIM_SOURCE);
 
   // 2. Build & simulate the un-signed tx.
   //
@@ -162,6 +176,27 @@ export async function signAndSubmit(args: {
     contextRuleIds,
   );
 
+  if (relayerEnabled()) {
+    // The Channels plugin re-simulates server-side in enforce mode, builds
+    // the footprint itself, and a channel account becomes the tx source with
+    // the fund account fee-bumping — the enforce re-sim + fee refit + G
+    // signature + RPC submission below are all its job now. We ship only the
+    // host function and the passkey-signed auth entry.
+    const { func, auth } = extractFuncAndAuth(assembled_tx);
+    const submitted = await submitSorobanTransaction({ func, auth });
+    if (!submitted.transactionId) {
+      throw new Error('Relayer accepted the transaction but returned no transaction id');
+    }
+    const confirmed = await waitForConfirmation(submitted.transactionId);
+    if (!confirmed.hash) throw new Error('Relayer confirmed without a transaction hash');
+    return {
+      status: 'PENDING',
+      hash: confirmed.hash,
+      latestLedger: 0,
+      latestLedgerCloseTime: 0,
+    } as unknown as rpc.Api.SendTransactionResponse;
+  }
+
   // 7. Re-simulate the now-signed tx in ENFORCE mode — both to verify
   //    the auth (surfaces bad sig / wrong rule before submit) AND to
   //    recompute the resource footprint to cover __check_auth's reads.
@@ -208,6 +243,7 @@ export async function signAndSubmit(args: {
   // auth entries on our InvokeHostFunction op). build() emits a new
   // Transaction with the right footprint AND our signature intact.
   const refitted_tx = refittedBuilder.build();
+  if (!submitter) throw new Error('unreachable: classic path without submitter');
   refitted_tx.sign(submitter);
   // 8. Submit and wait for chain confirmation. A successful enforce-mode
   //    sim isn't proof the tx lands — fee-bid races, ledger close failures,
