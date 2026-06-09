@@ -29,6 +29,10 @@ packages/frontend/.astro/
 # Stray archives
 *.zip
 
+# Generated design-export output (regenerate via scripts/export-design.mjs)
+packages/frontend/design-export/
+packages/frontend/*.design.html
+
 # Brainstorming visual-companion transient session files
 # (committed specs live under docs/superpowers/)
 .superpowers/

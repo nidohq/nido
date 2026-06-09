@@ -3,10 +3,13 @@
 import NidoLayout from "../../../layouts/NidoLayout.astro";
 ---
 <NidoLayout title="Activity" shell="app">
-  <section class="card">
-    <h1 class="section-label">Activity</h1>
-    <p class="mut activity-window">Your most recent wallet activity.</p>
-    <div id="activity-root">
+  <div class="col-scroll scroll-hide screen-in">
+    <!-- desktop frame header (≥1024); mobile keeps the in-card section label -->
+    <div class="dash-head"><h1 class="dash-head-title disp">Activity</h1></div>
+    <section class="card" style="padding:6px 18px 16px;">
+      <h1 class="section-label dash-hide-desktop">Activity</h1>
+      <p class="mut activity-window">Your most recent wallet activity.</p>
+      <div id="activity-root">
       <div id="activity-skeleton">
         <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
       </div>
@@ -18,8 +21,9 @@ import NidoLayout from "../../../layouts/NidoLayout.astro";
       <a id="full-history" class="full-history" target="_blank" rel="noopener noreferrer" hidden>
         View full history on Stellar Expert ↗
       </a>
-    </div>
-  </section>
+      </div>
+    </section>
+  </div>
 </NidoLayout>
 
 <style is:global>

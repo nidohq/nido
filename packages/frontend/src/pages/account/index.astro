@@ -87,21 +87,45 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
     <!-- ============================================================= -->
     <!-- HOME MODE                                                     -->
     <!-- ============================================================= -->
-    <div id="home-mode" class="hidden screen-in">
+    <div id="home-mode" class="hidden screen-in home-mode">
       <div class="card-grid">
-      <!-- balance — primary hero card, spans full width -->
-      <div class="span-all" style="padding:14px 22px 0; text-align:center;">
-        <div class="mut" style="font-size:13px; font-weight:700;">Balance</div>
-        <div class="disp" id="xlm-balance" style="font-weight:800; font-size:48px; letter-spacing:-.01em; line-height:1.04; margin-top:4px;">…</div>
-        <div class="mut" style="font-size:14px; font-weight:600; margin-top:2px;">In your Nido</div>
-        <div style="display:flex; justify-content:center; margin-top:14px;">
-          <button id="copy-btn" class="addr" title="Copy your address">
-            <code id="contract-id" style="background:none; padding:0;"></code>
-            <Icon name="copy" size={15} color="var(--ink-soft)" />
-          </button>
+      <!-- desktop greeting (≥1024 only): the account topbar is hidden at desktop
+           width, so this welcome line + network chip anchors the dashboard. -->
+      <div class="home-greeting">
+        <div>
+          <div class="mut home-greeting-eyebrow">Welcome back</div>
+          <h1 class="disp home-hello js-account-name">Your Nido</h1>
         </div>
-        <div style="margin-top:10px;">
-          <a id="explorer-link" class="link" target="_blank" rel="noopener" style="display:none; font-size:13px;">View on Stellar Expert</a>
+        <span class="chip acc"><span class="dot"></span> Testnet</span>
+      </div>
+
+      <!-- balance — primary hero. Mobile/tablet: centered balance + the circular
+           quick actions below. Desktop (≥1024): a horizontal card with balance +
+           address on the left and Send / Receive on the right. -->
+      <div class="span-all home-hero" style="padding:14px 22px 0; text-align:center;">
+        <div class="home-hero-bal">
+          <div class="mut" style="font-size:13px; font-weight:700;">Balance</div>
+          <div class="disp" id="xlm-balance" style="font-weight:800; font-size:48px; letter-spacing:-.01em; line-height:1.04; margin-top:4px;">…</div>
+          <div class="mut" style="font-size:14px; font-weight:600; margin-top:2px;">In your Nido</div>
+          <div class="home-addr-row" style="display:flex; justify-content:center; margin-top:14px;">
+            <button id="copy-btn" class="addr" title="Copy your address">
+              <code id="contract-id" style="background:none; padding:0;"></code>
+              <Icon name="copy" size={15} color="var(--ink-soft)" />
+            </button>
+          </div>
+          <div style="margin-top:10px;">
+            <a id="explorer-link" class="link" target="_blank" rel="noopener" style="display:none; font-size:13px;">View on Stellar Expert</a>
+          </div>
+        </div>
+        <!-- desktop-only hero actions; bound to the same panel toggles as the
+             mobile circular actions via the .js-send / .js-receive classes. -->
+        <div class="home-hero-actions-d">
+          <button type="button" class="btn acc js-send" style="width:auto; padding:0 24px;">
+            <Icon name="send" size={17} color="#fff" /> Send
+          </button>
+          <button type="button" class="btn soft js-receive" style="width:auto; padding:0 24px;">
+            <Icon name="receive" size={17} /> Receive
+          </button>
         </div>
       </div>
 
@@ -109,12 +133,12 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
            (H-02); "Prove" is demoted to neutral + renamed the concrete job it
            does, "Approve" (→ the focused /sign/ surface); "Settings" → "Security"
            with the shield glyph so the entry points agree on one label (K-03). -->
-      <div class="span-all" style="display:flex; gap:6px; padding:26px 30px 6px;">
-        <button id="send-action" class="qa" type="button">
+      <div class="span-all home-actions-mobile" style="display:flex; gap:6px; padding:26px 30px 6px;">
+        <button id="send-action" class="qa js-send" type="button">
           <div class="circ"><Icon name="send" size={24} color="#fff" /></div>
           <span>Send</span>
         </button>
-        <button id="receive-action" class="qa" type="button">
+        <button id="receive-action" class="qa js-receive" type="button">
           <div class="circ soft"><Icon name="receive" size={23} /></div>
           <span>Receive</span>
         </button>
@@ -129,7 +153,7 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
       </div>
 
       <!-- ============ SEND PANEL ============ -->
-      <div class="grid-cell">
+      <div class="grid-cell home-panel">
       <section id="send-section" class="hidden pad" style="padding-top:18px;">
         <span class="section-label" style="display:block; margin-bottom:12px;">Send XLM</span>
         <p class="mut" style="font-size:14px; line-height:1.5; margin:0 0 16px;">
@@ -156,12 +180,38 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
       </div>
 
       <!-- ============ RECENT ACTIVITY ============ -->
-      <div class="grid-cell">
+      <div class="grid-cell home-col-activity">
         <RecentActivityCard />
       </div>
 
+      <!-- ============ SECURITY AT-A-GLANCE (desktop dashboard, ≥1024) ============
+           A summary card beside Recent activity on the desktop Home. The chips
+           are filled from live on-chain policy data (fetchSecuritySummary), the
+           same source the full Security page renders. -->
+      <section class="card home-sec-card" style="padding:6px 22px 18px;">
+        <header style="display:flex; align-items:center; justify-content:space-between; padding:16px 0 8px;">
+          <span class="section-label">Security</span>
+          <a class="link" href="/security/" style="font-size:13.5px; font-weight:700;">Manage →</a>
+        </header>
+        <div class="row" style="border-top:none;">
+          <div class="rmain"><div class="rtitle">Passkey on this device</div><div class="rsub" style="font-family:var(--body);">You're the only one who gets in</div></div>
+          <span id="sec-passkey-chip" class="chip" style="flex:0 0 auto;">…</span>
+        </div>
+        <div class="row">
+          <div class="rmain"><div class="rtitle">Trusted friends</div><div class="rsub" style="font-family:var(--body);">Recover with people you trust</div></div>
+          <span id="sec-friends-chip" class="chip" style="flex:0 0 auto;">…</span>
+        </div>
+        <div class="row">
+          <div class="rmain"><div class="rtitle">Apps you've let in</div><div class="rsub" style="font-family:var(--body);">Acting on your behalf</div></div>
+          <span id="sec-apps-chip" class="chip" style="flex:0 0 auto;">…</span>
+        </div>
+        <a class="btn ghost" href="/security/" style="margin-top:18px; height:46px; font-size:14px;">
+          <Icon name="shield" size={16} /> Review who has access
+        </a>
+      </section>
+
       <!-- ============ RECEIVE PANEL (display-only) ============ -->
-      <div class="grid-cell">
+      <div class="grid-cell home-panel">
       <section id="receive-section" class="hidden pad" style="text-align:center; padding-top:18px;">
         <span class="section-label" style="display:block; text-align:left; margin-bottom:12px;">Receive</span>
         <p class="mut" style="font-size:14px; line-height:1.5; max-width:320px; margin:0 auto 18px;">
@@ -184,7 +234,7 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
       </div>
 
       <!-- ============ NAME SECTION ============ -->
-      <div class="grid-cell">
+      <div class="grid-cell home-panel">
       <section id="name-section" class="hidden pad" style="padding-top:18px;">
         <span class="section-label" style="display:block; margin-bottom:12px;">Your name</span>
 
@@ -216,7 +266,7 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
       </div>
 
       <!-- ============ REGISTER (when no passkey) ============ -->
-      <div class="grid-cell">
+      <div class="grid-cell home-panel">
       <section id="register-section" class="hidden pad" style="padding-top:18px;">
         <span class="section-label" style="display:block; margin-bottom:12px;">Set up your passkey</span>
         <div class="card" style="padding:16px;">
@@ -236,7 +286,7 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
            The status-message entry point will return as a link to a properly
            external dApp (tracked separately). -->
 
-      <div class="span-all" style="display:flex; justify-content:center; margin:8px 0 28px;">
+      <div class="span-all home-foot" style="display:flex; justify-content:center; margin:8px 0 28px;">
         <Logo size={18} mark markSize={24} />
       </div>
       </div>
@@ -284,6 +334,7 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
     lookupName,
   } from "@g2c/passkey-sdk";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
+  import { fetchSecuritySummary } from "../../lib/securitySummary";
   import { toast } from "../../lib/toast";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
@@ -614,14 +665,46 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
       document.getElementById("register-section")!.classList.remove("hidden");
     }
 
+    // Security at-a-glance card (desktop Home). Best-effort: filled from the same
+    // on-chain policy the Security page reads; on any failure the chips fall back
+    // to a neutral state rather than blocking the wallet.
+    void (async () => {
+      const passkeyChip = document.getElementById("sec-passkey-chip");
+      const friendsChip = document.getElementById("sec-friends-chip");
+      const appsChip = document.getElementById("sec-apps-chip");
+      if (!passkeyChip || !friendsChip || !appsChip || !contractId) return;
+      const setPasskey = (on: boolean) => {
+        passkeyChip.textContent = on ? "On" : "Off";
+        passkeyChip.classList.toggle("good", on);
+      };
+      try {
+        const summary = await fetchSecuritySummary(contractId);
+        setPasskey(summary.hasPasskey);
+        friendsChip.textContent = summary.recovery
+          ? `${summary.recovery.threshold} of ${summary.recovery.friends}`
+          : "Not set";
+        appsChip.textContent =
+          summary.delegations > 0 ? `${summary.delegations} active` : "None";
+      } catch {
+        // Passkey state is local, so it's still trustworthy on a fetch failure;
+        // the on-chain counts fall back to an em dash.
+        setPasskey(Boolean(cred));
+        friendsChip.textContent = "—";
+        appsChip.textContent = "—";
+      }
+    })();
+
     // Receive panel toggle (display-only)
     const $receiveSection = document.getElementById("receive-section")!;
-    document.getElementById("receive-action")!.addEventListener("click", () => {
-      const open = $receiveSection.classList.toggle("hidden");
-      if (!open) {
-        $receiveSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    });
+    // Both the mobile circular action and the desktop hero pill carry .js-receive.
+    document.querySelectorAll(".js-receive").forEach((el) =>
+      el.addEventListener("click", () => {
+        const open = $receiveSection.classList.toggle("hidden");
+        if (!open) {
+          $receiveSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }),
+    );
     // Receive copy button
     document.getElementById("receive-copy-btn")!.addEventListener("click", async () => {
       if (!contractId) return;
@@ -635,12 +718,15 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
 
     // --- Send panel ---
     const $sendSection = document.getElementById("send-section")!;
-    document.getElementById("send-action")!.addEventListener("click", () => {
-      const open = $sendSection.classList.toggle("hidden");
-      if (!open) {
-        $sendSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    });
+    // Both the mobile circular action and the desktop hero pill carry .js-send.
+    document.querySelectorAll(".js-send").forEach((el) =>
+      el.addEventListener("click", () => {
+        const open = $sendSection.classList.toggle("hidden");
+        if (!open) {
+          $sendSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }),
+    );
 
     const $sendTo = document.getElementById("send-to") as HTMLInputElement;
     const $sendAmount = document.getElementById("send-amount") as HTMLInputElement;
@@ -868,8 +954,11 @@ import RecentActivityCard from "../../components/RecentActivityCard.astro";
       if (detectedName) saveAccountName(contractId, detectedName);
       $nameDisplay.classList.remove("hidden");
       document.getElementById("account-name")!.textContent = existingName;
-      // Reflect the claimed name in the top bar nickname too.
+      // Reflect the claimed name in the top bar nickname + desktop greeting.
       document.getElementById("account-nickname")!.textContent = existingName;
+      document
+        .querySelectorAll(".js-account-name")
+        .forEach((el) => (el.textContent = existingName));
       const rootHost = stripSubdomain(window.location.host);
       const nameLink = document.getElementById("name-url") as HTMLAnchorElement;
       const nameHref = accountUrl(rootHost, existingName, "/account/");

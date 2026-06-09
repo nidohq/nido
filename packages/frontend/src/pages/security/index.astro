@@ -11,16 +11,18 @@ import Nest from '../../components/Nest.astro';
 ---
 <NidoLayout title="Security">
   <div class="col-scroll scroll-hide screen-in">
-    <div class="topbar">
+    <div class="topbar dash-hide-desktop">
       <div class="disp" style="font-weight:800;font-size:21px;">Keeping you safe</div>
     </div>
 
     <div class="pad" style="padding-top:8px;">
+      <!-- desktop frame header (≥1024); mobile keeps the compact topbar title -->
+      <div class="dash-head"><h1 class="dash-head-title disp">Keeping you safe</h1></div>
       <p class="mut" style="font-size:13.5px;margin:0 0 4px;line-height:1.5;">
         The people and devices that can help you get back in.
       </p>
 
-      <div class="card-grid">
+      <div class="card-grid" id="security-grid">
         <!-- ============ Trusted friends (recovery) ============ -->
         <div class="grid-cell">
           <section id="recovery-section">

@@ -30,6 +30,26 @@ Three contracts plus integration tests:
 
 **`crates/integration-tests`** — Cross-crate integration tests using synthetic P-256 keypairs to construct full WebAuthn assertions without a browser.
 
+## Frontend Design Export
+
+`packages/frontend/scripts/export-design.mjs` exports the built site into
+`packages/frontend/design-export/` as self-contained single-file HTML pages (CSS
+inlined, all `<script>` tags stripped, internal links rewritten to flat
+filenames). Use it to hand a page off for visual design editing (e.g. paste into
+a Claude.ai artifact) or browse the whole site's styling offline via
+`design-export/_index.html`.
+
+```bash
+cd packages/frontend && npm run build && node scripts/export-design.mjs
+```
+
+It's a static snapshot of *design*, not a running app: the landing page
+(`index.html`) is fully static, but the app screens are stateful views whose
+content JS injects at runtime — so dynamic data shows as placeholders/skeletons.
+Pages whose UI lives inside `class="hidden"` mode containers need their primary
+state revealed; the script's `reveal` map handles this (currently un-hides
+`#home-mode` on the account page). Add an entry there if another page exports blank.
+
 ## Testing Notes
 
 Tests use synthetic P-256 keypairs (`SigningKey::random()`) to construct full WebAuthn assertions without a browser. Contract test IDs use valid stellar-strkey encoded addresses.

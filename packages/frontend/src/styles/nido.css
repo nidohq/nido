@@ -597,7 +597,9 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
    (capped + centered) while grid pages use the full rail width. */
 @media (min-width: 1024px) {
   .col-app > .col-scroll { padding: 24px; }
-  .col-app > .col-scroll:not(:has(.card-grid)) { max-width: 600px; margin-inline: auto; }
+  /* width:100% so it fills up to the cap — without it the auto inline margins on
+     this column-flex child collapse the box to its content width. */
+  .col-app > .col-scroll:not(:has(.card-grid)) { width: 100%; max-width: 600px; margin-inline: auto; }
 }
 
 /* account topbar: brand mark left, account chip right; the sidebar carries BOTH
@@ -613,3 +615,79 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
 .dev-card[open] > summary { margin-bottom: 12px; }
 /* defensive: grid cells must not overflow on long content */
 .grid-cell { min-width: 0; }
+
+/* ===================================================================
+   Account Home — desktop dashboard (≥1024)
+   Mobile/tablet Home is unchanged (centered balance + circular quick actions +
+   stacked panels). At ≥1024 the SAME markup is re-laid-out into a deliberate
+   dashboard: greeting + balance hero (with inline Send/Receive) and a
+   two-column [Recent activity | Security] grid. The desktop-only elements
+   (.home-greeting, .home-hero-actions-d, .home-sec-card) stay hidden below.
+   =================================================================== */
+.home-greeting { display: none; }
+.home-hero-actions-d { display: none; }
+.home-sec-card { display: none; }
+
+@media (min-width: 1024px) {
+  .home-mode .card-grid {
+    grid-template-columns: 1.5fr 1.02fr;
+    gap: 20px;
+    align-items: start;
+  }
+  /* full-width rows: greeting, balance hero, and any open action panel */
+  .home-mode .card-grid > .home-greeting,
+  .home-mode .card-grid > .home-hero,
+  .home-mode .card-grid > .home-panel { grid-column: 1 / -1; }
+
+  /* greeting — welcome line + network chip (the topbar is hidden at desktop) */
+  .home-greeting {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; margin-bottom: 4px;
+  }
+  .home-greeting-eyebrow { font-size: 13.5px; font-weight: 700; letter-spacing: .01em; }
+  .home-hello { font-weight: 800; font-size: 28px; letter-spacing: -.015em; margin: 2px 0 0; }
+  .home-greeting .chip { align-self: center; }
+
+  /* balance hero → horizontal card: balance + address left, actions right */
+  .home-mode .home-hero {
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: var(--r-lg); box-shadow: var(--sh-2);
+    display: grid; grid-template-columns: 1.3fr auto; gap: 28px; align-items: center;
+    padding: 30px 34px !important; text-align: left !important;
+  }
+  .home-hero .home-addr-row { justify-content: flex-start !important; }
+  .home-hero #xlm-balance { font-size: 56px !important; }
+  .home-hero-actions-d { display: flex; gap: 12px; align-items: center; }
+
+  /* drop the mobile circular quick actions + the footer mark on desktop.
+     !important overrides the inline `display:flex` these carry for mobile. */
+  .home-mode .home-actions-mobile,
+  .home-mode .home-foot { display: none !important; }
+
+  /* two-column body: Recent activity (left) + Security at-a-glance (right).
+     A closed panel collapses so it never leaves an empty grid cell. */
+  .home-mode .card-grid > .home-panel:has(> .hidden) { display: none; }
+  .home-mode .card-grid > .home-col-activity { grid-column: 1; }
+  .home-mode .card-grid > .home-sec-card { display: block; grid-column: 2; }
+}
+
+/* ---------- shared app-page desktop header (Activity, Security) ----------
+   Mirrors the Home greeting's serif title so every app page gets the same
+   deliberate desktop frame instead of a thin/stranded topbar. Hidden below the
+   desktop breakpoint, where the compact topbar / section title is used. */
+.dash-head { display: none; }
+@media (min-width: 1024px) {
+  .dash-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; margin: 0 0 20px;
+  }
+  .dash-head-title { font-weight: 800; font-size: 28px; letter-spacing: -.015em; margin: 0; }
+  /* the mobile-only topbar/section title that .dash-head replaces on desktop */
+  .col-app .dash-hide-desktop { display: none !important; }
+
+  /* Security: deliberate two-column layout — the recovery + delegation lists
+     sit side by side, "This device" spans the full width below (was a stranded
+     half-width card under the generic auto-fit grid). */
+  #security-grid { grid-template-columns: 1fr 1fr; align-content: start; }
+  #security-grid > .grid-cell:has(#advanced-section) { grid-column: 1 / -1; }
+}
