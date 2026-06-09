@@ -101,9 +101,9 @@ Expected response: `OK`
 Relay plugin reachability — a nonexistent transaction id returns a structured error, which proves the plugin executes:
 
 ```bash
-curl -fsS -X POST https://nido-relayer.fly.dev/relay \
+curl -sS -X POST https://nido-relayer.fly.dev/relay \
   -H "Content-Type: application/json" \
-  -d '{"params":{"getTransaction":{"id":"0000000000000000000000000000000000000000000000000000000000000000"}}}'
+  -d '{"params":{"getTransaction":{"transactionId":"nonexistent"}}}'
 ```
 
 Expected: a JSON error body (not a 404 or connection refused). Any structured JSON response from the plugin counts as passing.
@@ -117,7 +117,7 @@ Expected: a JSON error body (not a 404 or connection refused). Any structured JS
 - **Memory**: the default 512 MB VM (`shared-cpu-1x`) may be tight once the ts-node Channels plugin is loaded. If the first plugin call OOMs, bump the machine to 1024 MB (`fly scale memory 1024 -a nido-relayer`).
 - **Rate limiting**: the rate limit (20 req/s, burst 60) is global across all origins and CORS is wildcard (`*`). Per-origin tightening is a mainnet TODO.
 - **Version pin**: pinned to OZ Relayer v1.5.0 deliberately — Stellar support is under active development and minor upgrades may be breaking. Review the changelog before bumping.
-- **Max fee**: the relayer's default `max_fee` is 1,000,000 stroops per transaction. Adjust in `config/networks/stellar.json` if needed.
+- **Max fee**: the relayer's default `max_fee` is 1,000,000 stroops per transaction. It is a per-relayer policy; override it in `config/config.json` if needed.
 - **Memos**: memos are not supported on Soroban operations; do not set memo fields in relay requests.
 - **Secret rotation**: before mainnet, replace the user-level Fly token with a scoped deploy token and migrate signers from local keystores to a KMS (e.g., AWS KMS or HashiCorp Vault).
-- **CI deploys**: deploys also run via GitHub Actions (`infra/relayer/.github/workflows/deploy-relayer.yml`, added in the next task) using the 1Password → Fly token chain. That workflow also passes `--ha=false`.
+- **CI deploys**: deploys also run via GitHub Actions (`.github/workflows/deploy-relayer.yml`, added in the next task) using the 1Password → Fly token chain. That workflow also passes `--ha=false`.
