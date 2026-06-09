@@ -3,7 +3,7 @@ name: deploy-relayer
 on:
   push:
     branches: [main, feat/72-relayer-gas-abstraction]  # branch entry is TEMPORARY for PR-phase deploys; drop before merge (plan Task 7)
-    paths: ['infra/relayer/**']
+    paths: ['infra/relayer/**', '.github/workflows/deploy-relayer.yml']  # self-path is TEMPORARY too; drop with the branch entry (plan Task 7)
   workflow_dispatch:
 
 permissions:
@@ -20,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
       - name: Load Fly token from 1Password
         uses: 1password/load-secrets-action@v2
         with:
@@ -28,7 +30,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           FLY_API_TOKEN: op://theahaco/nido_fly_io/credential
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
       - name: Deploy
         run: flyctl deploy --config infra/relayer/fly.toml --remote-only --ha=false
+
+      - name: Smoke check
+        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://nido-relayer.fly.dev/api/v1/health
