@@ -31,6 +31,7 @@ export function relayerEnabled(): boolean {
  *  {success, data: {...}}, while the relayer v1.5.0 example README shows
  *  {success, data: {result: {...}}}. */
 async function call(params: Record<string, unknown>, baseUrl: string): Promise<RelayerTxResponse> {
+  if (!baseUrl) throw new RelayerError("Relayer not configured (PUBLIC_RELAYER_URL is empty)");
   const resp = await fetch(`${baseUrl}/relay`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -38,7 +39,7 @@ async function call(params: Record<string, unknown>, baseUrl: string): Promise<R
   });
   let body: { success?: boolean; data?: unknown; error?: string | null };
   try {
-    body = await resp.json();
+    body = (await resp.json()) ?? {};
   } catch {
     throw new RelayerError(`Relayer returned non-JSON (HTTP ${resp.status})`);
   }
@@ -50,6 +51,9 @@ async function call(params: Record<string, unknown>, baseUrl: string): Promise<R
   const data = body.data as ({ result?: RelayerTxResponse } & RelayerTxResponse) | undefined;
   const payload = data?.result ?? data;
   if (!payload || typeof payload !== "object") throw new RelayerError("Relayer returned an empty payload");
+  if (!("transactionId" in payload) && !("status" in payload)) {
+    throw new RelayerError("Unrecognized relayer payload", undefined, body);
+  }
   return payload as RelayerTxResponse;
 }
 
@@ -77,19 +81,24 @@ export async function waitForConfirmation(
 ): Promise<RelayerTxResponse> {
   const interval = opts?.intervalMs ?? 1500;
   const maxAttempts = opts?.maxAttempts ?? 40;
+  let last: RelayerTxResponse | undefined;
   for (let i = 0; i < maxAttempts; i++) {
     const res = await getRelayerTransaction(transactionId, baseUrl);
+    last = res;
     if (res.status === "confirmed") return res;
     if (res.status === "failed" || res.status === "expired") {
       throw new RelayerError(`Relayer transaction ${res.status}`, "ONCHAIN_FAILED", res);
     }
-    await new Promise((r) => setTimeout(r, interval));
+    if (i < maxAttempts - 1) await new Promise((r) => setTimeout(r, interval));
   }
-  throw new RelayerError("Timed out waiting for relayer confirmation", "WAIT_TIMEOUT");
+  // The tx may still land after we give up (typically still "submitted") —
+  // attach the last poll so the UI can surface a hash if one exists.
+  throw new RelayerError("Timed out waiting for relayer confirmation", "WAIT_TIMEOUT", last);
 }
 
 /** Pull the base64 HostFunction + auth-entry XDRs off a built invoke tx —
- *  exactly the {func, auth} shape the Channels plugin consumes. */
+ *  exactly the {func, auth} shape the Channels plugin consumes.
+ *  Assumes a freshly built v1 single-op Soroban tx; the xdr accessors throw otherwise. */
 export function extractFuncAndAuth(tx: Transaction): { func: string; auth: string[] } {
   const op = tx.toEnvelope().v1().tx().operations()[0].body().invokeHostFunctionOp();
   return {

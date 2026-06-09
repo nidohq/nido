@@ -9,7 +9,8 @@ import { Account, Address, Networks, Operation, TransactionBuilder, nativeToScVa
 
 const BASE = "https://relayer.test";
 
-function mockFetchOnce(status: number, body: unknown) {
+/** Stub global fetch with a canned response (answers every call, not just one). */
+function stubFetch(status: number, body: unknown) {
   const fn = vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
@@ -25,7 +26,7 @@ afterEach(() => {
 
 describe("submitSorobanTransaction", () => {
   it("POSTs {params:{func,auth,skipWait}} to /relay and parses a flat data payload", async () => {
-    const fetchMock = mockFetchOnce(200, {
+    const fetchMock = stubFetch(200, {
       success: true,
       data: { transactionId: "tx_1", hash: null, status: "pending" },
       error: null,
@@ -33,6 +34,7 @@ describe("submitSorobanTransaction", () => {
     const res = await submitSorobanTransaction({ func: "AAA=", auth: ["BBB="] }, BASE);
     expect(fetchMock).toHaveBeenCalledWith(`${BASE}/relay`, expect.objectContaining({ method: "POST" }));
     const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.headers).toMatchObject({ "Content-Type": "application/json" });
     expect(JSON.parse(init.body as string)).toEqual({
       params: { func: "AAA=", auth: ["BBB="], skipWait: true },
     });
@@ -40,7 +42,7 @@ describe("submitSorobanTransaction", () => {
   });
 
   it("unwraps the v1.5.0 data.result nesting", async () => {
-    mockFetchOnce(200, {
+    stubFetch(200, {
       success: true,
       data: { result: { transactionId: "tx_2", hash: "abc", status: "confirmed" } },
       error: null,
@@ -51,11 +53,12 @@ describe("submitSorobanTransaction", () => {
   });
 
   it("throws RelayerError with the plugin code on success:false", async () => {
-    mockFetchOnce(400, {
+    stubFetch(400, {
       success: false,
       data: { code: "AUTH_EXPIRY_TOO_SHORT", details: { margin: 1 } },
       error: "Auth expiry too short",
     });
+    await expect(submitSorobanTransaction({ func: "AAA=", auth: [] }, BASE)).rejects.toBeInstanceOf(RelayerError);
     await expect(submitSorobanTransaction({ func: "AAA=", auth: [] }, BASE)).rejects.toMatchObject({
       name: "RelayerError",
       code: "AUTH_EXPIRY_TOO_SHORT",
@@ -75,6 +78,24 @@ describe("submitSorobanTransaction", () => {
     await expect(submitSorobanTransaction({ func: "AAA=", auth: [] }, BASE)).rejects.toMatchObject({
       name: "RelayerError",
     });
+  });
+
+  it("throws on an unrecognized payload shape instead of degrading silently", async () => {
+    stubFetch(200, { success: true, data: { somethingElse: true }, error: null });
+    await expect(submitSorobanTransaction({ func: "AAA=", auth: [] }, BASE)).rejects.toMatchObject({
+      name: "RelayerError",
+      message: "Unrecognized relayer payload",
+    });
+  });
+
+  it("throws 'Relayer not configured' on an empty baseUrl without fetching", async () => {
+    const fn = vi.fn();
+    vi.stubGlobal("fetch", fn);
+    await expect(submitSorobanTransaction({ func: "AAA=", auth: [] }, "")).rejects.toMatchObject({
+      name: "RelayerError",
+      message: "Relayer not configured (PUBLIC_RELAYER_URL is empty)",
+    });
+    expect(fn).not.toHaveBeenCalled();
   });
 });
 
@@ -98,16 +119,35 @@ describe("waitForConfirmation", () => {
   });
 
   it("throws ONCHAIN_FAILED on terminal failed status", async () => {
-    mockFetchOnce(200, { success: true, data: { transactionId: "tx_4", hash: null, status: "failed" }, error: null });
+    stubFetch(200, { success: true, data: { transactionId: "tx_4", hash: null, status: "failed" }, error: null });
     await expect(waitForConfirmation("tx_4", BASE, { intervalMs: 1, maxAttempts: 2 })).rejects.toMatchObject({
       code: "ONCHAIN_FAILED",
     });
   });
 
+  it("throws ONCHAIN_FAILED on terminal expired status", async () => {
+    stubFetch(200, { success: true, data: { transactionId: "tx_6", hash: null, status: "expired" }, error: null });
+    await expect(waitForConfirmation("tx_6", BASE, { intervalMs: 1, maxAttempts: 2 })).rejects.toMatchObject({
+      code: "ONCHAIN_FAILED",
+    });
+  });
+
   it("throws WAIT_TIMEOUT when attempts are exhausted", async () => {
-    mockFetchOnce(200, { success: true, data: { transactionId: "tx_5", hash: null, status: "pending" }, error: null });
+    stubFetch(200, { success: true, data: { transactionId: "tx_5", hash: null, status: "pending" }, error: null });
     await expect(waitForConfirmation("tx_5", BASE, { intervalMs: 1, maxAttempts: 2 })).rejects.toMatchObject({
       code: "WAIT_TIMEOUT",
+    });
+  });
+
+  it("attaches the last poll response to the WAIT_TIMEOUT error", async () => {
+    stubFetch(200, {
+      success: true,
+      data: { transactionId: "tx_7", hash: "feedface", status: "submitted" },
+      error: null,
+    });
+    await expect(waitForConfirmation("tx_7", BASE, { intervalMs: 1, maxAttempts: 2 })).rejects.toMatchObject({
+      code: "WAIT_TIMEOUT",
+      details: { transactionId: "tx_7", hash: "feedface", status: "submitted" },
     });
   });
 });
