@@ -1,3 +1,5 @@
+import { Keypair, rpc, xdr } from "@stellar/stellar-sdk";
+import { RPC_URL } from "../network.js";
 import type { AssetHolding } from "./types.js";
 
 /**
@@ -56,24 +58,46 @@ export function parseTomlCurrencies(toml: string): TomlCurrency[] {
 const cacheKey = (contractId: string) => `g2c:assets:icon:${contractId}`;
 
 /**
+ * The issuer account's on-chain home_domain. Curated lists often omit
+ * domains (stellar.expert's testnet top50 carries none at all), but classic
+ * issuers declare their domain on-chain — the canonical SEP-1 discovery
+ * path. Resolves undefined when the account doesn't exist or declares no
+ * domain (definite); throws on RPC failure (transient) so callers can avoid
+ * negative-caching it.
+ */
+export async function fetchIssuerHomeDomain(issuer: string, rpcUrl = RPC_URL): Promise<string | undefined> {
+  const server = new rpc.Server(rpcUrl);
+  const key = xdr.LedgerKey.account(
+    new xdr.LedgerKeyAccount({ accountId: Keypair.fromPublicKey(issuer).xdrAccountId() }),
+  );
+  const res = await server.getLedgerEntries(key);
+  const entry = res.entries[0];
+  if (!entry) return undefined;
+  const domain = entry.val.account().homeDomain().toString();
+  return domain || undefined;
+}
+
+/**
  * Resolve a verified holding's icon from its anchor's SEP-1 stellar.toml
  * (`https://{domain}/.well-known/stellar.toml` — the spec requires it be
  * served with `Access-Control-Allow-Origin: *`, so a static frontend can
- * fetch it). Runs as a lazy second pass after the rows render: only for
- * verified holdings that have a domain but no list-provided icon. Both hits
- * and misses are cached per contract, so each asset costs at most one toml
- * fetch per browser. Returns undefined when no matching currency entry
- * publishes a usable image.
+ * fetch it). Runs as a lazy second pass after the rows render, only for
+ * verified holdings without a list-provided icon. The domain comes from the
+ * curated list when present, else from the issuer's on-chain home_domain.
+ * Currency matching prefers exact code+issuer but falls back to code-only:
+ * anchors usually publish only their mainnet issuers (centre.io lists no
+ * testnet USDC), and the domain is the issuer's own declaration, so its
+ * images are trustworthy for its asset codes. Both hits and misses are
+ * cached per contract, so each asset costs at most one toml fetch per
+ * browser. Returns undefined when nothing usable resolves.
  */
 export async function resolveTomlIcon(
   holding: AssetHolding,
   fetchFn: typeof fetch = fetch,
+  lookupDomain: (issuer: string) => Promise<string | undefined> = fetchIssuerHomeDomain,
 ): Promise<string | undefined> {
-  const { contractId, code, issuer, domain, verified } = holding;
-  if (!verified || !domain || !code) return undefined;
-  // The domain comes from a curated list, but constrain it to hostname shape
-  // anyway before splicing it into a URL.
-  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(domain)) return undefined;
+  const { contractId, code, issuer, verified } = holding;
+  if (!verified || !code) return undefined;
 
   try {
     const cached = localStorage.getItem(cacheKey(contractId));
@@ -82,24 +106,53 @@ export async function resolveTomlIcon(
     /* storage blocked — fall through to a fresh fetch */
   }
 
+  const negativeCache = () => {
+    try {
+      // Cache misses as "" too: a toml without our currency won't grow one
+      // soon, and this keeps repeat loads at zero fetches.
+      localStorage.setItem(cacheKey(contractId), "");
+    } catch {
+      /* best-effort cache */
+    }
+  };
+
+  let domain = holding.domain;
+  if (!domain && issuer) {
+    try {
+      domain = await lookupDomain(issuer);
+    } catch {
+      return undefined; // RPC failure — retry next load
+    }
+    if (!domain) {
+      negativeCache(); // issuer declares no domain: definite miss
+      return undefined;
+    }
+  }
+  // The domain comes from a curated list or the issuer's account entry, but
+  // constrain it to hostname shape anyway before splicing it into a URL.
+  if (!domain || !/^[a-z0-9][a-z0-9.-]*$/i.test(domain)) return undefined;
+
   let icon: string | undefined;
   try {
     const res = await fetchFn(`https://${domain}/.well-known/stellar.toml`);
     if (!res.ok) return undefined; // transient? don't negative-cache
     const text = await res.text();
     if (text.length > MAX_TOML_BYTES) return undefined;
-    const match = parseTomlCurrencies(text).find(
-      (c) => c.code === code && (issuer === undefined || c.issuer === issuer),
-    );
+    const currencies = parseTomlCurrencies(text);
+    const match =
+      currencies.find((c) => c.code === code && c.issuer === issuer) ??
+      currencies.find((c) => c.code === code);
     icon = sanitizeIconUrl(match?.image);
   } catch {
     return undefined; // network failure — retry next load
   }
 
+  if (icon === undefined) {
+    negativeCache();
+    return undefined;
+  }
   try {
-    // Cache misses as "" too: a toml without our currency won't grow one soon,
-    // and this keeps repeat loads at zero toml fetches.
-    localStorage.setItem(cacheKey(contractId), icon ?? "");
+    localStorage.setItem(cacheKey(contractId), icon);
   } catch {
     /* best-effort cache */
   }

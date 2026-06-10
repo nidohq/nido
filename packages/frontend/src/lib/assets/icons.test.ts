@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { sanitizeIconUrl, parseTomlCurrencies, resolveTomlIcon } from "./icons.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { rpc } from "@stellar/stellar-sdk";
+import { sanitizeIconUrl, parseTomlCurrencies, resolveTomlIcon, fetchIssuerHomeDomain } from "./icons.js";
 import type { AssetHolding } from "./types.js";
 
 const holding = (extra: Partial<AssetHolding> = {}): AssetHolding => ({
@@ -78,8 +79,18 @@ describe("resolveTomlIcon", () => {
     expect(await resolveTomlIcon(holding(), fetchToml("UNUSED"))).toBe("https://example.com/usdc.png");
   });
 
-  it("requires the issuer to match when the holding has one", async () => {
-    expect(await resolveTomlIcon(holding({ issuer: "GDIFFERENT" }), fetchToml())).toBeUndefined();
+  it("prefers the exact code+issuer entry when several share a code", async () => {
+    const twoUsdc = fetchToml(
+      `[[CURRENCIES]]\ncode = "USDC"\nissuer = "GOTHER"\nimage = "https://example.com/other-usdc.png"\n` +
+        `[[CURRENCIES]]\ncode = "USDC"\nissuer = "${holding().issuer}"\nimage = "https://example.com/usdc.png"\n`,
+    );
+    expect(await resolveTomlIcon(holding(), twoUsdc)).toBe("https://example.com/usdc.png");
+  });
+
+  it("falls back to a code-only match when the issuer isn't listed (anchors rarely publish testnet issuers)", async () => {
+    expect(await resolveTomlIcon(holding({ issuer: "GDIFFERENT" }), fetchToml())).toBe(
+      "https://example.com/usdc.png",
+    );
   });
 
   it("negative-caches a toml without our currency", async () => {
@@ -90,12 +101,42 @@ describe("resolveTomlIcon", () => {
     expect(second).not.toHaveBeenCalled();
   });
 
-  it("skips unverified holdings, missing domains, and malformed domains", async () => {
+  it("skips unverified holdings, domainless+issuerless holdings, and malformed domains", async () => {
     const f = fetchToml();
     expect(await resolveTomlIcon(holding({ verified: false }), f)).toBeUndefined();
-    expect(await resolveTomlIcon(holding({ domain: undefined }), f)).toBeUndefined();
+    expect(await resolveTomlIcon(holding({ domain: undefined, issuer: undefined }), f)).toBeUndefined();
     expect(await resolveTomlIcon(holding({ domain: "evil.com/x?y=" }), f)).toBeUndefined();
     expect(f).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the issuer's on-chain home_domain when the list gave none", async () => {
+    const lookup = vi.fn().mockResolvedValue("centre.io");
+    const f = fetchToml();
+    expect(await resolveTomlIcon(holding({ domain: undefined }), f, lookup)).toBe(
+      "https://example.com/usdc.png",
+    );
+    expect(lookup).toHaveBeenCalledWith(holding().issuer);
+    expect(f).toHaveBeenCalledWith("https://centre.io/.well-known/stellar.toml");
+  });
+
+  it("negative-caches an issuer that declares no home_domain", async () => {
+    const lookup = vi.fn().mockResolvedValue(undefined);
+    expect(await resolveTomlIcon(holding({ domain: undefined }), fetchToml(), lookup)).toBeUndefined();
+    // cached: a later load does no lookup and no fetch
+    const lookup2 = vi.fn();
+    const f2 = fetchToml();
+    expect(await resolveTomlIcon(holding({ domain: undefined }), f2, lookup2)).toBeUndefined();
+    expect(lookup2).not.toHaveBeenCalled();
+    expect(f2).not.toHaveBeenCalled();
+  });
+
+  it("does not cache a failed home_domain lookup (transient RPC error)", async () => {
+    const failing = vi.fn().mockRejectedValue(new Error("rpc down"));
+    expect(await resolveTomlIcon(holding({ domain: undefined }), fetchToml(), failing)).toBeUndefined();
+    const lookup = vi.fn().mockResolvedValue("centre.io");
+    expect(await resolveTomlIcon(holding({ domain: undefined }), fetchToml(), lookup)).toBe(
+      "https://example.com/usdc.png",
+    );
   });
 
   it("does not negative-cache transient failures", async () => {
@@ -110,5 +151,36 @@ describe("resolveTomlIcon", () => {
   it("rejects non-https images", async () => {
     const f = fetchToml(`[[CURRENCIES]]\ncode = "USDC"\nissuer = "${holding().issuer}"\nimage = "http://example.com/usdc.png"\n`);
     expect(await resolveTomlIcon(holding(), f)).toBeUndefined();
+  });
+});
+
+describe("fetchIssuerHomeDomain", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const entry = (domain: string) => ({
+    val: { account: () => ({ homeDomain: () => domain }) },
+  });
+
+  it("reads the issuer account's home_domain from its ledger entry", async () => {
+    vi.spyOn(rpc.Server.prototype, "getLedgerEntries").mockResolvedValue({
+      latestLedger: 1,
+      entries: [entry("centre.io")],
+    } as never);
+    expect(await fetchIssuerHomeDomain(holding().issuer!)).toBe("centre.io");
+  });
+
+  it("resolves undefined for a missing account or an empty domain", async () => {
+    const spy = vi
+      .spyOn(rpc.Server.prototype, "getLedgerEntries")
+      .mockResolvedValueOnce({ latestLedger: 1, entries: [] } as never)
+      .mockResolvedValueOnce({ latestLedger: 1, entries: [entry("")] } as never);
+    expect(await fetchIssuerHomeDomain(holding().issuer!)).toBeUndefined();
+    expect(await fetchIssuerHomeDomain(holding().issuer!)).toBeUndefined();
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it("propagates RPC failures so callers can avoid negative-caching", async () => {
+    vi.spyOn(rpc.Server.prototype, "getLedgerEntries").mockRejectedValue(new Error("rpc down"));
+    await expect(fetchIssuerHomeDomain(holding().issuer!)).rejects.toThrow("rpc down");
   });
 });

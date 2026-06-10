@@ -49,10 +49,12 @@
   /**
    * Lazy second pass, off the render path: fill icons the curated lists
    * didn't have from each anchor's SEP-1 stellar.toml (cached per contract).
+   * A holding without a list domain still qualifies — its issuer's on-chain
+   * home_domain is looked up inside resolveTomlIcon.
    */
   function patchTomlIcons(list: HTMLElement, holdings: AssetHolding[]) {
     for (const h of holdings) {
-      if (!h.verified || h.icon || !h.domain) continue;
+      if (!h.verified || h.icon || (!h.domain && !h.issuer)) continue;
       resolveTomlIcon(h)
         .then((icon) => {
           if (!icon) return;
