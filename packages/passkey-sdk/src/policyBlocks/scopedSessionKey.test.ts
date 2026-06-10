@@ -95,6 +95,28 @@ describe('scopedSessionKeyModule', () => {
     });
   });
 
+  it('returns null for rules with two or more policies, even if one carries a limit', () => {
+    const limitPolicy = StrKey.encodeContract(new Uint8Array(32).fill(0x71));
+    const otherPolicy = StrKey.encodeContract(new Uint8Array(32).fill(0x72));
+    const rule: ChainRule = {
+      ruleId: 6,
+      contextType: { kind: 'call-contract', contract: TARGET },
+      name: 'session-key',
+      signers: [{ kind: 'external', verifier: VERIFIER, publicKey: new Uint8Array(65) }],
+      policies: [limitPolicy, otherPolicy],
+      validUntil: null,
+    };
+    const state = {
+      [limitPolicy]: { spendingLimit: { stroops: 50_000_000n, periodLedgers: 17280 } },
+      [otherPolicy]: {},
+    };
+    expect(
+      scopedSessionKeyModule.fromChain(rule, state, {
+        friendNicknames: {}, sessionKeyMaterial: {}, blockLabels: {},
+      }),
+    ).toBeNull();
+  });
+
   it('returns null when the attached policy has no spending-limit state', () => {
     const policyAddr = StrKey.encodeContract(new Uint8Array(32).fill(0x70));
     const rule: ChainRule = {
