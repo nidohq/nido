@@ -18,7 +18,7 @@ const NAV = [
 ---
 
 <aside class="nido-sidebar">
-  <a class="nido-sidebar-brand" href="/" aria-label="Nido home">
+  <a id="sidebar-home-link" class="nido-sidebar-brand" href="/" aria-label="Nido home">
     <Logo size={20} mark markSize={28} />
   </a>
   <nav class="nido-sidebar-nav">
@@ -38,3 +38,11 @@ const NAV = [
     <span class="nido-account-name">Your Nido</span>
   </a>
 </aside>
+
+<script>
+  import { stripSubdomain } from "@g2c/passkey-sdk";
+  // On an account subdomain, "/" redirects back to /account/, so the brand would
+  // loop. Point it at the apex home instead (mirrors the mobile #home-link fix).
+  const brand = document.getElementById("sidebar-home-link") as HTMLAnchorElement | null;
+  if (brand) brand.href = `//${stripSubdomain(window.location.host)}/`;
+</script>
