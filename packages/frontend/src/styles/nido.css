@@ -634,6 +634,10 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
     grid-template-columns: 1.5fr 1.02fr;
     gap: 20px;
     align-items: start;
+    /* dense: auto-placed cells (the Assets card) backfill holes instead of
+       stranding an empty cell beside themselves when a later sibling pins a
+       column (Activity -> col 1, Security -> col 2). */
+    grid-auto-flow: row dense;
   }
   /* full-width rows: greeting, balance hero, and any open action panel */
   .home-mode .card-grid > .home-greeting,

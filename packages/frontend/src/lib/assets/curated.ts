@@ -1,4 +1,4 @@
-import { NETWORK_NAME } from "../network.js";
+import { NATIVE_SAC_ID, NETWORK_NAME } from "../network.js";
 import { sanitizeDecimals } from "./balances.js";
 import { sanitizeIconUrl } from "./icons.js";
 import type { AssetCandidate } from "./types.js";
@@ -7,7 +7,8 @@ import type { AssetCandidate } from "./types.js";
  * SEP-42 curated asset lists. Two complementary CORS-open sources (unlike
  * Stellar Expert's balance and `/tx` APIs, which are origin-gated):
  * - Stellar Expert's top-50 (Freighter's default testnet list): the broad
- *   set, with home domains but no icons.
+ *   set — testnet entries carry NO domain or icon fields at all, so icon
+ *   resolution falls back to the issuer's on-chain home_domain (icons.ts).
  * - Soroswap's list: a smaller set that DOES carry icon URLs — including
  *   one for native XLM, whose entry merges into the always-present native
  *   candidate downstream.
@@ -89,14 +90,38 @@ async function fetchList(list: (typeof LISTS)[number]): Promise<AssetCandidate[]
   }
 }
 
+// One fetch pair per page load: the assets card AND both activity surfaces
+// consume the lists; Astro full-reloads between navigations, so module state
+// lives exactly one page view. (Never rejects, so no eviction needed.)
+let curatedPromise: Promise<AssetCandidate[]> | null = null;
+
 /**
  * Fetch the curated lists, falling back per-list to the last good copy
  * cached in localStorage. Order matters: top-50 entries come first so their
  * richer metadata wins merges, with Soroswap icons backfilling the gaps.
  * Returns [] when nothing is available — the assets card still shows XLM +
- * discovered tokens.
+ * discovered tokens. Memoized per page load.
  */
-export async function fetchCuratedAssets(): Promise<AssetCandidate[]> {
-  const groups = await Promise.all(LISTS.map(fetchList));
-  return groups.flat();
+export function fetchCuratedAssets(): Promise<AssetCandidate[]> {
+  curatedPromise ??= Promise.all(LISTS.map(fetchList)).then((groups) => groups.flat());
+  return curatedPromise;
+}
+
+/** Reset the per-page list memo (tests only). */
+export function clearCuratedAssetsCache(): void {
+  curatedPromise = null;
+}
+
+/**
+ * The SAC contract ids the curated lists vouch for, plus native XLM — the
+ * trust set the activity feed uses to tell the canonical "USDC" from a
+ * genuine-but-unknown issuer's SAC wearing the same code. Best-effort: when
+ * both lists are unavailable only XLM counts as curated (rows degrade to
+ * "unverified", never to silently trusted).
+ */
+export async function fetchCuratedSacIds(): Promise<Set<string>> {
+  const curated = await fetchCuratedAssets();
+  const ids = new Set(curated.filter((c) => c.sac).map((c) => c.contractId));
+  ids.add(NATIVE_SAC_ID);
+  return ids;
 }

@@ -3,6 +3,8 @@ import {
   parseAssetList,
   pluckSoroswapNetwork,
   fetchCuratedAssets,
+  fetchCuratedSacIds,
+  clearCuratedAssetsCache,
   CURATED_LIST_URL,
   SOROSWAP_LIST_URL,
 } from "./curated.js";
@@ -31,7 +33,10 @@ const SOROSWAP_DOC = [
   },
 ];
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  clearCuratedAssetsCache();
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("parseAssetList", () => {
@@ -81,15 +86,15 @@ describe("pluckSoroswapNetwork", () => {
   });
 });
 
-describe("fetchCuratedAssets", () => {
-  function routedFetch(routes: Record<string, unknown>) {
-    return vi.fn(async (url: string) => {
-      const doc = routes[url];
-      if (doc === undefined) return { ok: false, status: 404 };
-      return { ok: true, json: async () => doc };
-    });
-  }
+function routedFetch(routes: Record<string, unknown>) {
+  return vi.fn(async (url: string) => {
+    const doc = routes[url];
+    if (doc === undefined) return { ok: false, status: 404 };
+    return { ok: true, json: async () => doc };
+  });
+}
 
+describe("fetchCuratedAssets", () => {
   it("merges both lists (top50 first) and caches each document", async () => {
     vi.stubGlobal("fetch", routedFetch({ [CURATED_LIST_URL]: TOP50_DOC, [SOROSWAP_LIST_URL]: SOROSWAP_DOC }));
 
@@ -113,5 +118,29 @@ describe("fetchCuratedAssets", () => {
   it("returns [] when both network and cache are unavailable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503 }));
     expect(await fetchCuratedAssets()).toEqual([]);
+  });
+
+  it("is memoized per page load: a second consumer reuses the same fetch", async () => {
+    const fetchMock = routedFetch({ [CURATED_LIST_URL]: TOP50_DOC, [SOROSWAP_LIST_URL]: SOROSWAP_DOC });
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchCuratedAssets();
+    await fetchCuratedAssets();
+    expect(fetchMock).toHaveBeenCalledTimes(2); // once per list, not per caller
+  });
+});
+
+describe("fetchCuratedSacIds", () => {
+  it("collects the curated SAC ids plus native", async () => {
+    vi.stubGlobal("fetch", routedFetch({ [CURATED_LIST_URL]: TOP50_DOC, [SOROSWAP_LIST_URL]: SOROSWAP_DOC }));
+    const ids = await fetchCuratedSacIds();
+    expect(ids.has(USDC_SAC)).toBe(true);       // issuer-backed entry -> its SAC id
+    expect(ids.has(NATIVE_SAC_ID)).toBe(true);  // always trusted
+    // issuerless (non-SAC) entries can't emit verified SAC transfers
+    expect(ids.has("CCXLTPPNPNJ45QG4JG2YQWLOC4IMSRJ7KCF5RYF5BGT62SZGA3XDGKXQ")).toBe(false);
+  });
+
+  it("degrades to native-only when the lists are unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    expect([...(await fetchCuratedSacIds())]).toEqual([NATIVE_SAC_ID]);
   });
 });

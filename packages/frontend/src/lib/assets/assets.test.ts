@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Address, nativeToScVal, rpc, xdr } from "@stellar/stellar-sdk";
 import { loadAssets, mergeCandidates, sortHoldings } from "./assets.js";
 import { sacBalanceLedgerKey } from "./balances.js";
+import { clearCuratedAssetsCache } from "./curated.js";
 import { clearAccountEventsCache } from "../activity/rpcSource.js";
 import { NATIVE_SAC_ID } from "../network.js";
 import type { AssetCandidate, AssetHolding } from "./types.js";
@@ -9,7 +10,9 @@ import type { AssetCandidate, AssetHolding } from "./types.js";
 const SELF = "CCA2KXEUA4EQW3NL4QRCIZ2VRMA7V6A54DHXPA4RBTAGH72PCCYT5MSA";
 const ISSUER = "GCQZN6KXTEATCRNES3ZPTPZV4NNVK7CZKA6RHLMP2HPWP7SPDN7MFGBS";
 const USDC_SAC = "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
-const DEAD_SAC = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+// A distinct SAC-shaped contract id (NOT the native SAC — that would dedup
+// into the XLM candidate and make the zero-balance assertion vacuous).
+const DEAD_SAC = "CACAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAINCW";
 const SEP41_TOKEN = "CCXLTPPNPNJ45QG4JG2YQWLOC4IMSRJ7KCF5RYF5BGT62SZGA3XDGKXQ";
 const JUNK_TOKEN = "CABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFNSZ";
 
@@ -126,6 +129,7 @@ describe("loadAssets (wiring)", () => {
   beforeEach(() => {
     localStorage.clear();
     clearAccountEventsCache();
+    clearCuratedAssetsCache();
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -174,15 +178,16 @@ describe("loadAssets (wiring)", () => {
     expect(localStorage.getItem(`g2c:assets:known:${SELF}`) ?? "[]").not.toContain(USDC_SAC);
   });
 
-  it("probes non-SAC tokens, keeps confirmed holders, drops zeros and failures, persists confirmed finds", async () => {
+  it("probes non-SAC tokens, keeps confirmed holders, drops zeros and non-tokens, persists confirmed finds", async () => {
     // Curated list: one non-SAC entry (no issuer) that the account does NOT hold.
     const CURATED_SOBA = "CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ assets: [{ code: "SOBA", contract: CURATED_SOBA }] }),
     }));
-    // Events discover one real SEP-41 token (3-topic transfer); a junk token
-    // sits in the persisted store from a previous session and now fails.
+    // Events discover one real SEP-41 token (3-topic transfer); a junk
+    // non-token sits in the persisted store from a previous session and now
+    // DEFINITIVELY fails its balance simulation (sim-level error).
     localStorage.setItem(
       `g2c:assets:known:${SELF}`,
       JSON.stringify([{ contractId: JUNK_TOKEN, sac: false, source: "events" }]),
@@ -207,7 +212,7 @@ describe("loadAssets (wiring)", () => {
         decimals: nativeToScVal(6, { type: "u32" }),
         symbol: nativeToScVal("WERT", { type: "string" }),
       },
-      [JUNK_TOKEN]: { balance: "throw" },
+      [JUNK_TOKEN]: { balance: "error" },
     });
 
     const holdings = await loadAssets(SELF);
@@ -216,10 +221,75 @@ describe("loadAssets (wiring)", () => {
       ["XLM", "1", true],
       ["WERT", "42", false],  // probe symbol + 6 decimals, unverified
     ]);
-    // Confirmed find persisted; failed junk pruned.
+    // Confirmed find persisted; confirmed non-token pruned.
     const stored = localStorage.getItem(`g2c:assets:known:${SELF}`)!;
     expect(stored).toContain(SEP41_TOKEN);
     expect(stored).not.toContain(JUNK_TOKEN);
+  });
+
+  it("a transient probe failure keeps a stored holding (only confirmed absence prunes)", async () => {
+    localStorage.setItem(
+      `g2c:assets:known:${SELF}`,
+      JSON.stringify([{ contractId: SEP41_TOKEN, code: "WERT", sac: false, source: "events" }]),
+    );
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockRejectedValue(new Error("rpc down"));
+    vi.spyOn(rpc.Server.prototype, "getLedgerEntries").mockResolvedValue({
+      latestLedger: 1,
+      entries: [],
+    } as never);
+    // network-level simulation failure: thrown, NOT a simulation error
+    vi.spyOn(rpc.Server.prototype, "simulateTransaction").mockRejectedValue(new Error("Failed to fetch"));
+
+    const holdings = await loadAssets(SELF);
+
+    expect(holdings.map((h) => h.code)).toEqual(["XLM"]); // can't show what we can't read...
+    // ...but the confirmed holding survives in the store for the next load.
+    expect(localStorage.getItem(`g2c:assets:known:${SELF}`)).toContain(SEP41_TOKEN);
+  });
+
+  it("an event spray can't starve a stored holding out of the probe budget or the store", async () => {
+    const { StrKey } = await import("@stellar/stellar-sdk");
+    const spray = Array.from({ length: 25 }, (_, i) => {
+      const buf = Buffer.alloc(32);
+      buf.writeUInt32BE(i + 1000, 0);
+      return StrKey.encodeContract(buf);
+    });
+    localStorage.setItem(
+      `g2c:assets:known:${SELF}`,
+      JSON.stringify([{ contractId: SEP41_TOKEN, code: "WERT", sac: false, source: "events" }]),
+    );
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: 3_000_000 } as never);
+    vi.spyOn(rpc.Server.prototype, "getEvents").mockResolvedValue({
+      events: spray.map((cid) => transferEvent(cid, [
+        nativeToScVal("transfer", { type: "symbol" }),
+        Address.fromString(ISSUER).toScVal(),
+        Address.fromString(SELF).toScVal(),
+      ])),
+      latestLedger: 3_000_000,
+    } as never);
+    vi.spyOn(rpc.Server.prototype, "getLedgerEntries").mockResolvedValue({
+      latestLedger: 3_000_000,
+      entries: [],
+    } as never);
+    // Only the stored token routes; sprayed contracts hit the router's
+    // unexpected-simulate throw -> probe "error" -> never persisted.
+    mockSimulationRouter({
+      [SEP41_TOKEN]: {
+        balance: nativeToScVal(42_000_000n, { type: "i128" }),
+        decimals: nativeToScVal(6, { type: "u32" }),
+        symbol: nativeToScVal("WERT", { type: "string" }),
+      },
+    });
+
+    const holdings = await loadAssets(SELF);
+
+    // The stored holding was probed FIRST (before sprayed finds), so it's
+    // shown and retained; the spray persists nothing.
+    expect(holdings.map((h) => h.code)).toContain("WERT");
+    const stored = JSON.parse(localStorage.getItem(`g2c:assets:known:${SELF}`)!) as { contractId: string }[];
+    expect(stored.map((s) => s.contractId)).toEqual([SEP41_TOKEN]);
   });
 
   it("shows XLM at 0 when discovery and the curated list fail but the balance read is up", async () => {

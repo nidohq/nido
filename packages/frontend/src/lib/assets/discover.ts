@@ -50,11 +50,11 @@ const MAX_DISCOVERED = 100;
  * shallow home-card walk; RPC retention caps any walk at ~7 days) for token
  * contracts that moved value to/from the account. The walk is shared with
  * the activity feed (fetchAccountEvents memoizes per page load) — its
- * filters already cover every transfer shape involving the account, and
- * extractTokenCandidates ignores the extra own-contract events. The short
- * window is why confirmed finds are persisted (store.ts) and merged with
- * the curated list. Errors yield [] : discovery is additive and must never
- * blank the assets card.
+ * filters already cover every transfer shape involving the account (the
+ * pinned own-events walk is activity's own, separate request; see
+ * transferFilters). The short window is why confirmed finds are persisted
+ * (store.ts) and merged with the curated list. Errors yield [] : discovery
+ * is additive and must never blank the assets card.
  */
 export async function discoverFromEvents(address: string, maxChunks = 2): Promise<AssetCandidate[]> {
   try {

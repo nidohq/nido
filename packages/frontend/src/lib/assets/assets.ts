@@ -11,8 +11,10 @@ import type { AssetCandidate, AssetHolding } from "./types.js";
 export const SAC_DECIMALS = 7;
 
 // Bound the per-load simulation work: non-SAC candidates beyond the cap are
-// skipped this load (curated entries sort first in the merge, so a spray can
-// only starve other sprayed tokens), and probes run a few at a time.
+// skipped this load. Curated entries and previously-CONFIRMED holdings sort
+// before fresh event finds in the merge, so a spray can only starve other
+// unconfirmed finds — never a token the user verifiably holds. Probes run a
+// few at a time.
 const MAX_PROBES = 20;
 const PROBE_CONCURRENCY = 5;
 
@@ -73,13 +75,21 @@ function toHolding(c: AssetCandidate, raw: bigint, decimals: number): AssetHoldi
   };
 }
 
-/** Probe non-SAC candidates a few at a time; one failed probe never sinks the rest. */
-async function probeAll(candidates: AssetCandidate[], address: string): Promise<(TokenProbe | null)[]> {
-  const out: (TokenProbe | null)[] = new Array(candidates.length).fill(null);
+/**
+ * Probe non-SAC candidates a few at a time; one failed probe never sinks the
+ * rest. A thrown probe (network/RPC failure) maps to "error" — DISTINCT from
+ * null (the contract definitively isn't a holdable token) — because only
+ * definitive results may prune the persisted store.
+ */
+async function probeAll(
+  candidates: AssetCandidate[],
+  address: string,
+): Promise<(TokenProbe | null | "error")[]> {
+  const out: (TokenProbe | null | "error")[] = new Array(candidates.length).fill("error");
   for (let i = 0; i < candidates.length; i += PROBE_CONCURRENCY) {
     const batch = candidates.slice(i, i + PROBE_CONCURRENCY);
     const probes = await Promise.all(
-      batch.map((c) => probeSep41Token(c.contractId, address).catch(() => null)),
+      batch.map((c) => probeSep41Token(c.contractId, address).catch((): "error" => "error")),
     );
     probes.forEach((p, j) => {
       out[i + j] = p;
@@ -104,7 +114,9 @@ async function probeAll(candidates: AssetCandidate[], address: string): Promise<
  *
  * Zero balances are hidden, except XLM which anchors the list. Tokens are
  * only persisted AFTER a nonzero balance is confirmed, so sprayed junk
- * events can't accumulate in localStorage or future probe work.
+ * events can't accumulate in localStorage or future probe work — and a
+ * stored holding is only pruned when this load DEFINITIVELY confirmed it's
+ * gone (zero balance, or not a token); a starved or failed probe keeps it.
  */
 export async function loadAssets(address: string): Promise<AssetHolding[]> {
   const native: AssetCandidate = {
@@ -119,24 +131,37 @@ export async function loadAssets(address: string): Promise<AssetHolding[]> {
     discoverFromEvents(address),
   ]);
   const stored = loadKnownAssets(address);
-  const candidates = mergeCandidates([native], curated, discovered, stored);
+  // stored before discovered: confirmed holdings get probe priority, so an
+  // event spray can't starve them out of the MAX_PROBES budget.
+  const candidates = mergeCandidates([native], curated, stored, discovered);
 
   const sacs = candidates.filter((c) => c.sac);
   const others = candidates.filter((c) => !c.sac).slice(0, MAX_PROBES);
 
   const holdings: AssetHolding[] = [];
+  // Tokens this load PROVED the account doesn't hold (zero balance from a
+  // successful read, or not a token) — the only valid reasons to prune a
+  // stored entry.
+  const confirmedAbsent = new Set<string>();
 
   const sacBalances = await fetchSacBalances(sacs.map((c) => c.contractId), address);
   for (const c of sacs) {
     const raw = sacBalances.get(c.contractId) ?? 0n;
-    if (raw <= 0n && c.contractId !== NATIVE_SAC_ID) continue;
+    if (raw <= 0n && c.contractId !== NATIVE_SAC_ID) {
+      confirmedAbsent.add(c.contractId);
+      continue;
+    }
     holdings.push(toHolding(c, raw, SAC_DECIMALS));
   }
 
   const probes = await probeAll(others, address);
   others.forEach((c, i) => {
     const probe = probes[i];
-    if (!probe || probe.balance <= 0n) return;
+    if (probe === "error") return; // transient failure — unknown, not absent
+    if (!probe || probe.balance <= 0n) {
+      confirmedAbsent.add(c.contractId);
+      return;
+    }
     try {
       holdings.push(toHolding({ ...c, code: c.code || probe.symbol }, probe.balance, c.decimals ?? probe.decimals));
     } catch {
@@ -144,14 +169,20 @@ export async function loadAssets(address: string): Promise<AssetHolding[]> {
     }
   });
 
-  // Persist exactly the confirmed non-curated holdings: finds survive the
-  // short event window, sold/junk tokens prune themselves next load.
+  // Persist the confirmed non-curated holdings, plus previously-stored
+  // entries this load couldn't check (probe starved by the cap, or errored):
+  // finds survive the short event window, sold/junk tokens prune themselves
+  // on the next load that actually confirms their absence.
   const curatedIds = new Set(curated.map((c) => c.contractId));
   const held = new Set(holdings.map((h) => h.contractId));
   replaceKnownAssets(
     address,
-    mergeCandidates(discovered, stored).filter(
-      (c) => held.has(c.contractId) && !curatedIds.has(c.contractId) && c.contractId !== NATIVE_SAC_ID,
+    mergeCandidates(stored, discovered).filter(
+      (c) =>
+        !curatedIds.has(c.contractId) &&
+        c.contractId !== NATIVE_SAC_ID &&
+        (held.has(c.contractId) ||
+          (c.source === "stored" && !confirmedAbsent.has(c.contractId))),
     ),
   );
 

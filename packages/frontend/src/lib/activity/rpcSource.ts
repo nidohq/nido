@@ -35,7 +35,7 @@ function toDecoded(e: RawEvent): DecodedEvent {
 }
 
 /** Group raw RPC events by tx hash and classify them. Exposed for unit testing. */
-export function mapRpcEvents(raw: RawEvent[], self: string): ActivityPage {
+export function mapRpcEvents(raw: RawEvent[], self: string, knownSacIds?: Set<string>): ActivityPage {
   const byTx = new Map<string, DecodedTx>();
   for (const e of raw) {
     const ts = Math.floor(new Date(e.ledgerClosedAt).getTime() / 1000);
@@ -43,7 +43,7 @@ export function mapRpcEvents(raw: RawEvent[], self: string): ActivityPage {
     tx.events.push(toDecoded(e));
     byTx.set(e.txHash, tx);
   }
-  const items = [...byTx.values()].flatMap((tx) => groupTxRows(tx, self));
+  const items = [...byTx.values()].flatMap((tx) => groupTxRows(tx, self, knownSacIds));
   items.sort((a, b) => b.timestamp - a.timestamp);
   return { items };
 }
@@ -111,12 +111,22 @@ export async function walkEventChunks(filters: rpc.Api.EventFilter[], maxChunks 
       startLedger = Math.max(1, endLedger - span + 1);
       try {
         const res = await server.getEvents({ startLedger, endLedger, filters, limit: PAGE_LIMIT });
+        if (res.events.length >= PAGE_LIMIT) {
+          // A full page means the RPC truncated the chunk — and since events
+          // come ASCENDING, what's missing is the chunk's NEWEST span. With
+          // unpinned filters an event spray could fill the page budget to
+          // hide real payments, so never accept a truncated chunk: shrink it
+          // like a [-32001] until it fits (or the chunk fails honestly).
+          lastError = new Error("getEvents page overflow");
+          span = Math.floor(span / 3);
+          continue;
+        }
         raw.push(...(res.events as unknown as RawEvent[]));
         fetched = true;
         break;
       } catch (e) {
-        // Most likely [-32001] (dense SAC in this range): shrink and retry. Any
-        // other error (e.g. range older than retention) also ends this chunk.
+        // Most likely [-32001] (dense range): shrink and retry. Any other
+        // error (e.g. range older than retention) also ends this chunk.
         lastError = e;
         span = Math.floor(span / 3);
       }
@@ -149,6 +159,13 @@ export function fetchAccountEvents(address: string, maxChunks = MAX_CHUNKS): Pro
   let pending = eventsCache.get(key);
   if (!pending) {
     pending = walkEventChunks(transferFilters(address), maxChunks);
+    // Cache successes only: a memoized rejection would make the activity
+    // page's Retry button replay the same failure for the whole page view.
+    // (The .catch is an eviction side-observer — callers still see the
+    // original rejection through the returned promise.)
+    pending.catch(() => {
+      if (eventsCache.get(key) === pending) eventsCache.delete(key);
+    });
     eventsCache.set(key, pending);
   }
   return pending;
@@ -170,10 +187,14 @@ export function clearAccountEventsCache(): void {
  * this app) and the public RPC can neither retain (~1 week) nor cheaply scan
  * that far back. Older history is reached via the explorer link in the UI.
  */
-export async function fetchRpcRecent(address: string, maxChunks = MAX_CHUNKS): Promise<ActivityPage> {
+export async function fetchRpcRecent(
+  address: string,
+  maxChunks = MAX_CHUNKS,
+  knownSacIds?: Set<string>,
+): Promise<ActivityPage> {
   const [own, transfers] = await Promise.all([
     walkEventChunks(ownEventsFilter(address), maxChunks),
     fetchAccountEvents(address, maxChunks),
   ]);
-  return mapRpcEvents([...own, ...transfers], address);
+  return mapRpcEvents([...own, ...transfers], address, knownSacIds);
 }

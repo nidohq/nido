@@ -45,6 +45,16 @@ describe("groupTxRows", () => {
     expect(rows[0]).toMatchObject({
       kind: "payment", direction: "in", title: "Received", amount: "20", asset: "USDC",
     });
+    // without a curated set, a genuine-but-unknown SAC is flagged
+    expect(rows[0].assetUnverified).toBe(true);
+  });
+
+  it("clears the unverified flag only for curated SACs (and always for native)", () => {
+    const usdc = tx([{ contractId: USDC_SAC, topics: ["transfer", OTHER, SELF, `USDC:${OTHER}`], data: 1n }]);
+    expect(groupTxRows(usdc, SELF, new Set([USDC_SAC]))[0].assetUnverified).toBeUndefined();
+    expect(groupTxRows(usdc, SELF, new Set())[0].assetUnverified).toBe(true);
+    const native = tx([{ contractId: SAC, topics: ["transfer", OTHER, SELF, "native"], data: 1n }]);
+    expect(groupTxRows(native, SELF, new Set())[0].assetUnverified).toBeUndefined();
   });
 
   it("drops forged transfers: asset topic naming a SAC the emitter isn't", () => {

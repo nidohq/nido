@@ -34,8 +34,11 @@ export interface ActivityItem {
   direction?: "in" | "out";   // payments only
   title: string;              // "Received", "Sent", "Added a signer", ...
   subtitle?: string;          // counterparty (shortAddr) or detail
-  amount?: string;            // display XLM string (payments)
+  amount?: string;            // display amount string (payments)
   asset?: string;             // "XLM" or "CODE" (payments)
+  assetUnverified?: boolean;  // payment asset's SAC isn't native/curated — a
+                              // genuine but unknown issuer could be spoofing
+                              // a well-known code; the row must say so
   counterparty?: string;      // full address (copy / title attr)
   explorerUrl: string;        // `${EXPLORER_BASE}/tx/${txHash}`
 }

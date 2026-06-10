@@ -1,5 +1,5 @@
 import { Asset } from "@stellar/stellar-sdk";
-import { stroopsToXlm, formatXlm } from "../money.js";
+import { stroopsToXlm, formatDecimal } from "../money.js";
 import { shortAddr } from "../address.js";
 import { EXPLORER_BASE, NATIVE_SAC_ID, NETWORK_PASSPHRASE } from "../network.js";
 import type { ActivityItem, ActivityKind, DecodedEvent, DecodedTx } from "./types.js";
@@ -62,10 +62,24 @@ function transferAmount(data: unknown): bigint | null {
 /**
  * A single transfer event -> a payment row. Returns null if it doesn't
  * involve `self` or can't be verified as the named asset's own SAC
- * (see isVerifiedSacTransfer). SAC amounts are always 7-decimal, so the
- * XLM stroop formatter is exact for every verified asset.
+ * (see isVerifiedSacTransfer). SACs are always 7-decimal, so stroopsToXlm's
+ * conversion is exact for every verified asset; formatDecimal groups it
+ * without the Number round-trip that loses digits past 2^53.
+ *
+ * The SAC check proves the event is genuine, but anyone can ISSUE a real
+ * classic asset with a well-known code ("USDC" from a scam issuer) — so the
+ * asset code alone is only trustworthy when the emitting SAC is on the
+ * curated list (`knownSacIds`, native always included). Other rows carry
+ * assetUnverified so the UI can distinguish them from the canonical asset.
  */
-function paymentRow(e: DecodedEvent, idx: number, self: string, txHash: string, ts: number): ActivityItem | null {
+function paymentRow(
+  e: DecodedEvent,
+  idx: number,
+  self: string,
+  txHash: string,
+  ts: number,
+  knownSacIds?: Set<string>,
+): ActivityItem | null {
   if (!isVerifiedSacTransfer(e)) return null;
   const [, from, to, asset] = e.topics as [unknown, unknown, unknown, string];
   const fromS = String(from), toS = String(to);
@@ -74,7 +88,8 @@ function paymentRow(e: DecodedEvent, idx: number, self: string, txHash: string, 
   const amountRaw = transferAmount(e.data);
   if (amountRaw === null) return null;
   const counterparty = isOut ? toS : fromS;
-  const amount = formatXlm(stroopsToXlm(amountRaw));
+  const amount = formatDecimal(stroopsToXlm(amountRaw));
+  const curated = e.contractId === NATIVE_SAC_ID || knownSacIds?.has(e.contractId as string) === true;
   return {
     id: `${txHash}:transfer:${idx}`,
     txHash, timestamp: ts, kind: "payment",
@@ -82,6 +97,7 @@ function paymentRow(e: DecodedEvent, idx: number, self: string, txHash: string, 
     title: isOut ? "Sent" : "Received",
     subtitle: `${isOut ? "to" : "from"} ${shortAddr(counterparty, 4, 4)}`,
     amount, asset: assetLabel(asset), counterparty,
+    ...(curated ? {} : { assetUnverified: true }),
     explorerUrl: explorerUrl(txHash),
   };
 }
@@ -121,13 +137,13 @@ const PRIORITY: Record<ActivityKind, number> = {
  * anything else would let arbitrary contracts spam rows into the feed by
  * emitting transfer-shaped events naming this account.
  */
-export function groupTxRows(decoded: DecodedTx, self: string): ActivityItem[] {
+export function groupTxRows(decoded: DecodedTx, self: string, knownSacIds?: Set<string>): ActivityItem[] {
   const { txHash, ts, events } = decoded;
   const rows: ActivityItem[] = [];
 
   events.forEach((e, i) => {
     if (eventName(e) === "transfer") {
-      const r = paymentRow(e, i, self, txHash, ts);
+      const r = paymentRow(e, i, self, txHash, ts, knownSacIds);
       if (r) rows.push(r);
     }
   });

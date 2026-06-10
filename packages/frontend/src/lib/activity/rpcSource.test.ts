@@ -6,7 +6,7 @@ import {
   fetchAccountEvents,
   clearAccountEventsCache,
 } from "./rpcSource.js";
-import { rpc, nativeToScVal, Address } from "@stellar/stellar-sdk";
+import { rpc, nativeToScVal, Address, Asset, Networks } from "@stellar/stellar-sdk";
 
 const SELF = "CCA2KXEUA4EQW3NL4QRCIZ2VRMA7V6A54DHXPA4RBTAGH72PCCYT5MSA";
 const OTHER = "GCQZN6KXTEATCRNES3ZPTPZV4NNVK7CZKA6RHLMP2HPWP7SPDN7MFGBS";
@@ -93,6 +93,78 @@ describe("fetchRpcRecent", () => {
 
     await fetchAccountEvents(SELF, 3); // different depth -> its own walk
     expect(getEventsSpy).toHaveBeenCalledTimes(5);
+  });
+
+  it("does NOT memoize a failed walk — the activity page's Retry must actually retry", async () => {
+    const { fetchRpcRecent } = await import("./rpcSource.js");
+    const err = new Error("rpc blip");
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger")
+      .mockRejectedValueOnce(err) // own walk, first attempt
+      .mockRejectedValueOnce(err) // transfers walk, first attempt
+      .mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "getEvents").mockResolvedValue({ events: [], latestLedger: LATEST } as any);
+
+    await expect(fetchRpcRecent(SELF, 2)).rejects.toBe(err);
+    // the cached rejection was evicted, so the retry runs a fresh walk
+    await expect(fetchRpcRecent(SELF, 2)).resolves.toEqual({ items: [] });
+  });
+
+  it("never accepts a limit-truncated chunk: a full event page shrinks like a -32001", async () => {
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    const full = { events: Array.from({ length: 1000 }, () => ({})), latestLedger: LATEST };
+    const getEventsSpy = vi
+      .spyOn(rpc.Server.prototype, "getEvents")
+      .mockResolvedValueOnce(full as any) // 9000-ledger span overflows...
+      .mockResolvedValue({ events: [], latestLedger: LATEST } as any); // ...3000 fits
+
+    await expect(fetchAccountEvents(SELF, 1)).resolves.toEqual([]);
+
+    const spans = getEventsSpy.mock.calls.map((c) => (c[0] as any).endLedger - (c[0] as any).startLedger + 1);
+    expect(spans).toEqual([9000, 3000]);
+  });
+
+  it("merges both walks' events of one tx into one classified row group, newest first", async () => {
+    const { fetchRpcRecent } = await import("./rpcSource.js");
+    const USDC_SAC = new Asset("USDC", OTHER).contractId(Networks.TESTNET);
+    const transferEv = (txHash: string, ledgerClosedAt: string) => ({
+      contractId: { toString: () => USDC_SAC },
+      topic: [
+        nativeToScVal("transfer", { type: "symbol" }),
+        Address.fromString(OTHER).toScVal(),
+        Address.fromString(SELF).toScVal(),
+        nativeToScVal(`USDC:${OTHER}`, { type: "string" }),
+      ],
+      value: nativeToScVal(50000000n, { type: "i128" }),
+      txHash,
+      ledgerClosedAt,
+    });
+    const ownEv = (txHash: string, ledgerClosedAt: string) => ({
+      contractId: { toString: () => SELF },
+      topic: [nativeToScVal("signer_added", { type: "symbol" })],
+      value: nativeToScVal(1n, { type: "i128" }),
+      txHash,
+      ledgerClosedAt,
+    });
+    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "getEvents").mockImplementation((async (req: any) => ({
+      latestLedger: LATEST,
+      // own walk sees TXA's admin event; transfers walk sees TXA's payment
+      // (same tx!) plus an older TXB payment
+      events: req.filters[0].contractIds
+        ? [ownEv("TXA", "2026-06-10T12:00:00Z")]
+        : [transferEv("TXA", "2026-06-10T12:00:00Z"), transferEv("TXB", "2026-06-09T12:00:00Z")],
+    })) as any);
+
+    const page = await fetchRpcRecent(SELF, 1, new Set([USDC_SAC]));
+
+    // TXA groups across walks: a payment row AND the admin row — no spurious
+    // "Contract activity" filler — then TXB, older, last.
+    expect(page.items.map((i) => [i.txHash, i.kind, i.title])).toEqual([
+      ["TXA", "payment", "Received"],
+      ["TXA", "signer", "Added a signer"],
+      ["TXB", "payment", "Received"],
+    ]);
+    expect(page.items[0].assetUnverified).toBeUndefined(); // curated set passed through
   });
 
   it("shrinks the first chunk's span on a processing-limit error, then REJECTS if even the smallest span fails", async () => {

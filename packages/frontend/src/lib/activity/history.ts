@@ -1,4 +1,5 @@
 import { fetchRpcRecent } from "./rpcSource.js";
+import { fetchCuratedSacIds } from "../assets/curated.js";
 import type { ActivityItem, ActivityPage } from "./types.js";
 
 function dedupSort(items: ActivityItem[]): ActivityItem[] {
@@ -18,6 +19,10 @@ function dedupSort(items: ActivityItem[]): ActivityItem[] {
  * the source of truth for this feature.
  */
 export async function loadActivityPage(opts: { address: string; maxChunks?: number }): Promise<ActivityPage> {
-  const page = await fetchRpcRecent(opts.address, opts.maxChunks);
+  // Curated SAC ids let classify tag payment rows whose (genuine) SAC isn't
+  // the canonical one for its code — a scam "USDC" must not render like the
+  // real one. Best-effort: on list failure only XLM counts as curated.
+  const knownSacIds = await fetchCuratedSacIds();
+  const page = await fetchRpcRecent(opts.address, opts.maxChunks, knownSacIds);
   return { items: dedupSort(page.items) };
 }

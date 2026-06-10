@@ -18,7 +18,10 @@ export function activityRowHtml(it: ActivityItem): string {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   });
   const sign = it.kind === "payment" ? (it.direction === "in" ? "+" : "−") : "";
-  const amt = it.amount ? `<span class="ramt">${sign}${esc(it.amount)} <small>${esc(it.asset)}</small></span>` : "";
+  // An unverified asset (genuine SAC, but not the curated/native one for its
+  // code) must not render identically to the canonical asset — see classify.
+  const assetTag = `${esc(it.asset)}${it.assetUnverified ? " · unverified" : ""}`;
+  const amt = it.amount ? `<span class="ramt">${sign}${esc(it.amount)} <small>${assetTag}</small></span>` : "";
   return `<a class="row" href="${esc(it.explorerUrl)}" target="_blank" rel="noopener noreferrer">
       <span class="ricon ${iconCls}">${icon}</span>
       <span class="rmain"><span class="rtitle">${esc(it.title)}</span><span class="rsub">${esc(it.subtitle ?? when)}</span></span>${amt}</a>`;

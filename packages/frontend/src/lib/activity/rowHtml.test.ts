@@ -47,5 +47,19 @@ describe("activityRowHtml", () => {
     expect(html).toContain("Received");
     expect(html).toContain("9,990");
     expect(html).toContain("XLM");
+    expect(html).not.toContain("unverified");
+  });
+
+  it("tags payments whose asset SAC isn't curated, so a scam 'USDC' can't render like the real one", () => {
+    const html = activityRowHtml({
+      ...base,
+      kind: "payment",
+      direction: "in",
+      title: "Received",
+      amount: "1,000,000",
+      asset: "USDC",
+      assetUnverified: true,
+    });
+    expect(html).toContain("USDC · unverified");
   });
 });
