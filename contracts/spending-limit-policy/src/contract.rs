@@ -19,13 +19,27 @@ pub struct SpendingLimitPolicy;
 impl SpendingLimitPolicy {
     /// Read the installed params for a given account + rule. Returns None if
     /// not installed. (The OZ lib's `get_spending_limit_data` panics when
-    /// uninstalled; read its storage key directly instead.)
+    /// uninstalled; read its storage key directly instead. Archived entries
+    /// fail at simulation and need restore.)
     pub fn get_spending_limit(
         e: &Env,
         context_rule_id: u32,
         smart_account: Address,
     ) -> Option<SpendingLimitAccountParams> {
         spending_limit_params_for(e, context_rule_id, &smart_account)
+    }
+
+    /// Change the spending limit for an installed rule. Auth is enforced by
+    /// the OZ lib (`smart_account.require_auth()`). Changing the limit this
+    /// way preserves the rolling spending window, unlike uninstall/re-install
+    /// which resets it.
+    pub fn set_spending_limit(
+        e: &Env,
+        spending_limit: i128,
+        context_rule: ContextRule,
+        smart_account: Address,
+    ) {
+        spending_limit::set_spending_limit(e, spending_limit, &context_rule, &smart_account);
     }
 }
 
@@ -67,6 +81,9 @@ impl Policy for SpendingLimitPolicy {
 /// (`SpendingLimitStorageKey::AccountContext(account, rule_id)` →
 /// `SpendingLimitData`) and project it down to the install params. Both
 /// types are `pub` at the pinned rev, so no parallel bookkeeping is needed.
+/// Re-verify storage class/key construction in spending_limit.rs when
+/// bumping the stellar-accounts rev (the one drift mode the compiler can't
+/// catch).
 fn spending_limit_params_for(
     e: &Env,
     context_rule_id: u32,
@@ -129,8 +146,18 @@ mod test {
                 None
             );
             SpendingLimitPolicy::install(&env, params.clone(), rule.clone(), account.clone());
-            let stored = SpendingLimitPolicy::get_spending_limit(&env, rule_id, account);
+            let stored = SpendingLimitPolicy::get_spending_limit(&env, rule_id, account.clone());
             assert_eq!(stored, Some(params));
+        });
+
+        // Separate frame: a second require_auth in the same frame is rejected
+        // by the host ("frame is already authorized").
+        env.as_contract(&policy_addr, || {
+            SpendingLimitPolicy::uninstall(&env, rule, account.clone());
+            assert_eq!(
+                SpendingLimitPolicy::get_spending_limit(&env, rule_id, account),
+                None
+            );
         });
     }
 }
