@@ -207,8 +207,10 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
     btn!.setAttribute("aria-expanded", "true");
     panel!.setAttribute("aria-hidden", "false");
     // Move focus into the menu for keyboard users (preventScroll avoids a jump).
+    // Both render() states put an .mn-row or .mn-create-btn first; the create
+    // buttons carry .mn-create-btn, so no bare `button` fallback is needed.
     panel!
-      .querySelector<HTMLElement>("a.mn-row, .mn-create-btn, button")
+      .querySelector<HTMLElement>("a.mn-row, .mn-create-btn")
       ?.focus({ preventScroll: true });
   }
   function close() {
