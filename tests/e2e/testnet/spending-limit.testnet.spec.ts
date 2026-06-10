@@ -653,11 +653,14 @@ test.describe('@testnet spending-limit session key: delegate-page install + rela
 
     // The rejection must reference the policy enforcement failure. OZ's
     // SpendingLimitError::SpendingLimitExceeded = 3221, surfaced by the
-    // relayer's enforce-mode simulation as Error(Contract, #3221).
+    // relayer's enforce-mode simulation as Error(Contract, #3221). Pinned to
+    // the error code/name only — a looser "spending limit" text match could
+    // pass on a wrong-reason failure that merely mentions the words (e.g.
+    // #3220 SmartAccountNotInstalled's message).
     expect(
       rejectionText,
       `over-limit rejection does not reference the spending-limit policy failure: ${rejectionText}`,
-    ).toMatch(/3221|SpendingLimitExceeded|spending.?limit/i);
+    ).toMatch(/3221|SpendingLimitExceeded/i);
     annotate('overLimitRejection', rejectionText);
 
     expect(errors.filter((e) => /Buffer|is not defined|Unexpected token/.test(e))).toEqual([]);
