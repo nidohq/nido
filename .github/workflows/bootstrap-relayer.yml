@@ -1,0 +1,403 @@
+# TEMPORARY one-off bootstrap for the relayer (#72 plan Task 4).
+# Runs in CI because both credentials live here (OP_SERVICE_ACCOUNT_TOKEN repo
+# secret + Fly token at op://theahaco/nido_fly_io/credential) while local
+# machines have no 1Password access. Idempotent read-or-create at every step:
+# safe to rerun from any failure point. Automates infra/relayer/README.md
+# "One-time bootstrap" + "Fund + activate" + "Smoke test".
+# DELETE this file together with relayer-secrets-check.yml before merge.
+#
+# Public repo — public logs. Every secret value is ::add-mask::'d the moment it
+# exists, and no step ever echoes secret material. The only values printed are
+# G-addresses (public on-chain identifiers) and HTTP statuses.
+name: bootstrap-relayer
+
+on:
+  push:
+    branches: [feat/72-relayer-gas-abstraction]
+    paths: ['.github/workflows/bootstrap-relayer.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-relayer
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      OP_VAULT: theahaco
+      OP_ITEM: nido-relayer
+      FLY_APP: nido
+      FLY_ORG: aha-684
+      REDIS_NAME: nido-relayer-redis
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: superfly/flyctl-actions/setup-flyctl@v1
+
+      - name: Install 1Password CLI
+        run: |
+          set -euo pipefail
+          curl -sSfo /tmp/op.zip "https://cache.agilebits.com/dist/1P/op2/pkg/v2.34.0/op_linux_amd64_v2.34.0.zip"
+          unzip -oq /tmp/op.zip -d /tmp/opcli
+          sudo mv /tmp/opcli/op /usr/local/bin/op
+          op --version
+
+      - name: Load Fly token from 1Password
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          FLY_API_TOKEN: op://theahaco/nido_fly_io/credential
+
+      - name: 1Password write probe (before touching anything)
+        run: |
+          set -euo pipefail
+          if [ -z "${OP_SERVICE_ACCOUNT_TOKEN}" ]; then
+            echo "::error::OP_SERVICE_ACCOUNT_TOKEN secret is empty or unavailable"
+            exit 1
+          fi
+          # Best-effort cleanup of probe items orphaned by earlier failed runs
+          # (1Password allows duplicate titles, so delete by id).
+          op item list --vault "$OP_VAULT" --format json 2>/dev/null \
+            | jq -r '.[] | select(.title == "nido-relayer-write-probe") | .id' \
+            > /tmp/probe-leftovers || true
+          while IFS= read -r id; do
+            if [ -n "$id" ]; then
+              op item delete "$id" --vault "$OP_VAULT" || true
+            fi
+          done < /tmp/probe-leftovers
+          if ! PROBE_JSON=$(op item create --vault "$OP_VAULT" --category "Secure Note" \
+                --title "nido-relayer-write-probe" "notesPlain=probe" --format json 2>/tmp/op-probe-err); then
+            echo "::error::service account lacks write permission on vault $OP_VAULT — grant write access or run infra/relayer/README.md locally"
+            cat /tmp/op-probe-err
+            exit 1
+          fi
+          PROBE_ID=$(echo "$PROBE_JSON" | jq -r '.id')
+          op item delete "$PROBE_ID" --vault "$OP_VAULT"
+          echo "1Password write probe OK (vault $OP_VAULT is writable)"
+
+      - name: Secrets read-or-create (1Password item nido-relayer)
+        run: |
+          set -euo pipefail
+          FIELDS="API_KEY STORAGE_ENCRYPTION_KEY KEYSTORE_PASSPHRASE PLUGIN_ADMIN_SECRET KEYSTORE_FUND_B64 KEYSTORE_CHANNEL_001_B64 KEYSTORE_CHANNEL_002_B64"
+
+          # Mask every line of a secret value, then export it to later steps.
+          mask_and_export() {
+            local name="$1" value="$2" line
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then echo "::add-mask::$line"; fi
+            done <<< "$value"
+            {
+              echo "${name}<<__G2C_BOOTSTRAP_EOF__"
+              echo "$value"
+              echo "__G2C_BOOTSTRAP_EOF__"
+            } >> "$GITHUB_ENV"
+          }
+
+          # Distinguish "item missing" (take create branch) from any other op
+          # failure (abort — silently regenerating could orphan funded accounts).
+          if op item get "$OP_ITEM" --vault "$OP_VAULT" --format json >/dev/null 2>/tmp/op-get-err; then
+            ITEM_EXISTS=true
+          elif grep -qiE "isn't an item|not found|could not find|no item|doesn't exist" /tmp/op-get-err; then
+            ITEM_EXISTS=false
+          else
+            echo "::error::op item get '$OP_ITEM' failed for an unexpected reason (NOT treating as missing):"
+            cat /tmp/op-get-err
+            exit 1
+          fi
+
+          if [ "$ITEM_EXISTS" = true ]; then
+            echo "1Password item '$OP_ITEM' exists — reusing stored values (no new keystores generated)"
+            for f in $FIELDS; do
+              if ! v=$(op read "op://$OP_VAULT/$OP_ITEM/$f"); then
+                echo "::error::item '$OP_ITEM' exists but field '$f' is missing/unreadable — fix the item in 1Password (or delete it to regenerate everything) and rerun"
+                exit 1
+              fi
+              if [ -z "$v" ]; then
+                echo "::error::field '$f' on item '$OP_ITEM' is empty"
+                exit 1
+              fi
+              mask_and_export "$f" "$v"
+              if [ "$f" = "API_KEY" ] && [ "${#v}" -lt 32 ]; then
+                echo "::error::stored API_KEY is shorter than 32 chars — the relayer will panic; fix the 1Password item"
+                exit 1
+              fi
+              if [ "$f" = "KEYSTORE_PASSPHRASE" ] && [ "${#v}" -lt 12 ]; then
+                echo "::error::stored KEYSTORE_PASSPHRASE is shorter than 12 chars — create_key would have rejected it; fix the 1Password item"
+                exit 1
+              fi
+            done
+          else
+            echo "1Password item '$OP_ITEM' not found — generating fresh secrets and keystores"
+            API_KEY=$(openssl rand -hex 32)
+            PLUGIN_ADMIN_SECRET=$(openssl rand -hex 32)
+            STORAGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+            # base64 gives upper+lower+digit; the suffix guarantees all four classes.
+            KEYSTORE_PASSPHRASE="$(openssl rand -base64 24)Aa1!"
+            mask_and_export API_KEY "$API_KEY"
+            mask_and_export PLUGIN_ADMIN_SECRET "$PLUGIN_ADMIN_SECRET"
+            mask_and_export STORAGE_ENCRYPTION_KEY "$STORAGE_ENCRYPTION_KEY"
+            mask_and_export KEYSTORE_PASSPHRASE "$KEYSTORE_PASSPHRASE"
+
+            # Builds OZ relayer v1.5.0's create_key example — first build takes minutes.
+            KEYSTORE_PASSPHRASE="$KEYSTORE_PASSPHRASE" ./infra/relayer/scripts/create-keys.sh /tmp/relayer-keys
+
+            KEYSTORE_FUND_B64=$(base64 -w0 /tmp/relayer-keys/fund.json)
+            KEYSTORE_CHANNEL_001_B64=$(base64 -w0 /tmp/relayer-keys/channel-001.json)
+            KEYSTORE_CHANNEL_002_B64=$(base64 -w0 /tmp/relayer-keys/channel-002.json)
+            mask_and_export KEYSTORE_FUND_B64 "$KEYSTORE_FUND_B64"
+            mask_and_export KEYSTORE_CHANNEL_001_B64 "$KEYSTORE_CHANNEL_001_B64"
+            mask_and_export KEYSTORE_CHANNEL_002_B64 "$KEYSTORE_CHANNEL_002_B64"
+
+            # Save to 1Password BEFORE anything touches Fly — if this fails, no
+            # account has been funded yet, so a rerun safely regenerates.
+            # [password] field type = concealed custom field.
+            op item create --vault "$OP_VAULT" --category "Secure Note" --title "$OP_ITEM" \
+              "API_KEY[password]=$API_KEY" \
+              "STORAGE_ENCRYPTION_KEY[password]=$STORAGE_ENCRYPTION_KEY" \
+              "KEYSTORE_PASSPHRASE[password]=$KEYSTORE_PASSPHRASE" \
+              "PLUGIN_ADMIN_SECRET[password]=$PLUGIN_ADMIN_SECRET" \
+              "KEYSTORE_FUND_B64[password]=$KEYSTORE_FUND_B64" \
+              "KEYSTORE_CHANNEL_001_B64[password]=$KEYSTORE_CHANNEL_001_B64" \
+              "KEYSTORE_CHANNEL_002_B64[password]=$KEYSTORE_CHANNEL_002_B64" \
+              >/dev/null
+            rm -rf /tmp/relayer-keys
+            echo "All values saved to op://$OP_VAULT/$OP_ITEM"
+          fi
+
+      - name: Redis read-or-create
+        run: |
+          set -euo pipefail
+          mask_and_export() {
+            local name="$1" value="$2" line
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then echo "::add-mask::$line"; fi
+            done <<< "$value"
+            {
+              echo "${name}<<__G2C_BOOTSTRAP_EOF__"
+              echo "$value"
+              echo "__G2C_BOOTSTRAP_EOF__"
+            } >> "$GITHUB_ENV"
+          }
+          # Status/create output contains the private URL (embedded password):
+          # keep it in files, never cat them to the public log.
+          if flyctl redis status "$REDIS_NAME" > /tmp/redis-status.txt 2>&1; then
+            echo "Redis '$REDIS_NAME' exists — reusing"
+          else
+            echo "Redis '$REDIS_NAME' not found — creating"
+            if ! flyctl redis create --name "$REDIS_NAME" --org "$FLY_ORG" --region iad \
+                   --no-replicas --disable-eviction </dev/null > /tmp/redis-create.txt 2>&1; then
+              echo "::error::fly redis create failed (possibly an unsupported interactive prompt in CI) — create Redis manually: fly redis create --name $REDIS_NAME --org $FLY_ORG --region iad --no-replicas --disable-eviction — then rerun this workflow"
+              grep -v 'redis://' /tmp/redis-create.txt | tail -n 5 || true
+              exit 1
+            fi
+            flyctl redis status "$REDIS_NAME" > /tmp/redis-status.txt 2>&1
+          fi
+          REDIS_URL=$(grep -oE 'redis://[^[:space:]]+' /tmp/redis-status.txt | head -n1)
+          if [ -z "$REDIS_URL" ]; then
+            echo "::error::could not parse a redis:// URL from 'fly redis status $REDIS_NAME' output"
+            exit 1
+          fi
+          mask_and_export REDIS_URL "$REDIS_URL"
+          echo "Redis private URL captured (masked)"
+
+      - name: Set Fly secrets (all 8, one call)
+        run: |
+          set -euo pipefail
+          for v in REDIS_URL API_KEY STORAGE_ENCRYPTION_KEY KEYSTORE_PASSPHRASE PLUGIN_ADMIN_SECRET \
+                   KEYSTORE_FUND_B64 KEYSTORE_CHANNEL_001_B64 KEYSTORE_CHANNEL_002_B64; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::$v is empty — an earlier step failed to export it"
+              exit 1
+            fi
+          done
+          args=(
+            "REDIS_URL=$REDIS_URL"
+            "API_KEY=$API_KEY"
+            "STORAGE_ENCRYPTION_KEY=$STORAGE_ENCRYPTION_KEY"
+            "KEYSTORE_PASSPHRASE=$KEYSTORE_PASSPHRASE"
+            "PLUGIN_ADMIN_SECRET=$PLUGIN_ADMIN_SECRET"
+            "KEYSTORE_FUND_B64=$KEYSTORE_FUND_B64"
+            "KEYSTORE_CHANNEL_001_B64=$KEYSTORE_CHANNEL_001_B64"
+            "KEYSTORE_CHANNEL_002_B64=$KEYSTORE_CHANNEL_002_B64"
+          )
+          run_secrets_set() {  # tolerate flyctl's "no change detected" on reruns
+            local out
+            if out=$(flyctl secrets set "$@" -a "$FLY_APP" "${args[@]}" 2>&1); then
+              echo "$out" | tail -n 3
+              return 0
+            fi
+            if echo "$out" | grep -qi "no change"; then
+              echo "Secrets unchanged — nothing to set"
+              return 0
+            fi
+            echo "$out" | tail -n 5
+            return 1
+          }
+          # --stage: set without triggering a release (app may have no image yet)
+          if ! run_secrets_set --stage; then
+            echo "'fly secrets set --stage' failed — falling back to plain 'fly secrets set'"
+            run_secrets_set
+          fi
+
+      - name: Deploy
+        run: flyctl deploy infra/relayer --remote-only --ha=false
+
+      - name: Fund relayer accounts via Friendbot
+        run: |
+          set -euo pipefail
+          get_addr() {
+            flyctl logs --no-tail -a "$FLY_APP" 2>/dev/null \
+              | grep "Syncing sequence for relayer: $1 (" \
+              | grep -oE 'G[A-Z2-7]{55}' | tail -n1
+          }
+          collect() {
+            FUND_ADDR=$(get_addr channels-fund || true)
+            CH1_ADDR=$(get_addr channel-001 || true)
+            CH2_ADDR=$(get_addr channel-002 || true)
+            [ -n "$FUND_ADDR" ] && [ -n "$CH1_ADDR" ] && [ -n "$CH2_ADDR" ]
+          }
+          found=false
+          for i in $(seq 1 6); do
+            if collect; then found=true; break; fi
+            echo "addresses not in logs yet (attempt $i/6) — waiting 10s"
+            sleep 10
+          done
+          if [ "$found" != true ]; then
+            # Addresses are logged at boot; old boots scroll out of the log window.
+            echo "addresses still missing — restarting app so they are re-logged at boot"
+            flyctl apps restart "$FLY_APP"
+            for i in $(seq 1 6); do
+              if collect; then found=true; break; fi
+              echo "addresses not in logs yet after restart (attempt $i/6) — waiting 10s"
+              sleep 10
+            done
+          fi
+          if [ "$found" != true ]; then
+            echo "::error::could not find all three relayer G-addresses in 'fly logs --no-tail -a $FLY_APP'"
+            exit 1
+          fi
+          # G-addresses are public on-chain identifiers — safe to print.
+          echo "channels-fund: $FUND_ADDR"
+          echo "channel-001:   $CH1_ADDR"
+          echo "channel-002:   $CH2_ADDR"
+
+          fund() {
+            local name="$1" addr="$2" out
+            out=$(curl -sS --retry 3 --retry-delay 5 --max-time 60 "https://friendbot.stellar.org/?addr=$addr" || true)
+            if echo "$out" | grep -q '"hash"'; then
+              echo "$name: funded via friendbot"
+            elif echo "$out" | grep -qiE 'createAccountAlreadyExist|already'; then
+              echo "$name: already funded — ok"
+            else
+              echo "::error::friendbot funding failed for $name ($addr)"
+              echo "$out" | head -c 600; echo
+              exit 1
+            fi
+          }
+          fund channels-fund "$FUND_ADDR"
+          fund channel-001 "$CH1_ADDR"
+          fund channel-002 "$CH2_ADDR"
+
+          echo "restarting so the relayer picks up funded balances"
+          flyctl apps restart "$FLY_APP"
+          sleep 20
+
+          {
+            echo "FUND_ADDR=$FUND_ADDR"
+            echo "CH1_ADDR=$CH1_ADDR"
+            echo "CH2_ADDR=$CH2_ADDR"
+          } >> "$GITHUB_ENV"
+
+      - name: Activate channel pool (via fly proxy tunnel)
+        run: |
+          set -euo pipefail
+          # PLUGIN_ADMIN_SECRET is embedded in a JSON string below; generated
+          # values are hex, but a hand-edited 1Password value might not be.
+          case "$PLUGIN_ADMIN_SECRET" in
+            *[\"\\]*) echo '::error::PLUGIN_ADMIN_SECRET must not contain " or \'; exit 1;;
+          esac
+          flyctl proxy 8090:8090 -a "$FLY_APP" > /tmp/proxy.log 2>&1 &
+          PROXY_PID=$!
+          trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
+          ready=false
+          for i in $(seq 1 24); do
+            if curl -sf -o /dev/null --max-time 5 http://localhost:8090/api/v1/health; then
+              ready=true
+              break
+            fi
+            sleep 5
+          done
+          if [ "$ready" != true ]; then
+            echo "::error::relayer not reachable through 'fly proxy 8090:8090' after 120s"
+            tail -n 5 /tmp/proxy.log || true
+            exit 1
+          fi
+          HTTP_CODE=$(curl -sS -o /tmp/activate-body.json -w '%{http_code}' --max-time 60 \
+            -X POST http://localhost:8090/api/v1/plugins/channels/call \
+            -H "Authorization: Bearer $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"params\":{\"management\":{\"action\":\"setChannelAccounts\",\"adminSecret\":\"$PLUGIN_ADMIN_SECRET\",\"relayerIds\":[\"channel-001\",\"channel-002\"]}}}")
+          echo "activation HTTP status: $HTTP_CODE"
+          echo "activation response body:"
+          cat /tmp/activate-body.json; echo
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "::error::401 from the relayer — the API_KEY stored in 1Password does not match the API_KEY Fly secret (was one of them set out-of-band?)"
+            exit 1
+          fi
+          case "$HTTP_CODE" in
+            2*) echo "channel activation OK";;
+            *) echo "::error::channel activation failed (HTTP $HTTP_CODE)"; exit 1;;
+          esac
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          echo "health check:"
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://nido.fly.dev/api/v1/health
+          echo
+          BODY=$(curl -sS --retry 5 --retry-delay 5 --retry-all-errors --max-time 60 \
+            -X POST https://nido.fly.dev/relay \
+            -H "Content-Type: application/json" \
+            -d '{"params":{"getTransaction":{"transactionId":"nonexistent"}}}')
+          echo "relay probe response: $BODY"
+          # Any structured JSON object proves the plugin executed (expected: a
+          # success:false error envelope, NOT a Caddy 404/502). jq -e '.success'
+          # would exit 1 on a false value, so assert structure instead.
+          if ! echo "$BODY" | jq -e 'type == "object"' >/dev/null; then
+            echo "::error::relay probe did not return a JSON object — plugin is not executing"
+            exit 1
+          fi
+          echo "$BODY" | jq -r 'if has("success") then "plugin envelope detected (success=\(.success))" else "JSON object without a success key — inspect manually" end'
+
+      - name: Publish public outputs
+        run: |
+          set -euo pipefail
+          echo "=============================================================="
+          echo "PUBLIC_RELAYER_URL=https://nido.fly.dev"
+          echo "PUBLIC_RELAYER_SIM_SOURCE=$FUND_ADDR"
+          echo "=============================================================="
+          {
+            echo "## Relayer bootstrap complete"
+            echo ""
+            echo "| key | value |"
+            echo "| --- | --- |"
+            echo "| PUBLIC_RELAYER_URL | https://nido.fly.dev |"
+            echo "| PUBLIC_RELAYER_SIM_SOURCE (fund account) | \`$FUND_ADDR\` |"
+            echo "| channel-001 | \`$CH1_ADDR\` |"
+            echo "| channel-002 | \`$CH2_ADDR\` |"
+            echo ""
+            echo "Secret values live in 1Password: \`op://theahaco/nido-relayer\` (none are in this summary or the logs)."
+            echo ""
+            echo "This workflow is a TEMPORARY one-off — delete it together with relayer-secrets-check.yml before merge."
+          } >> "$GITHUB_STEP_SUMMARY"
