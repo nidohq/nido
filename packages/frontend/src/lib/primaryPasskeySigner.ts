@@ -33,7 +33,7 @@ const SUBMITTER_KEY = 'g2c:name-keypair';
  * The submitter has no privileges on the smart account; it only pays
  * fees. Auth is via the passkey on the auth entry, not the source.
  */
-async function getSubmitter(): Promise<Keypair> {
+export async function getSubmitter(): Promise<Keypair> {
   const stored = localStorage.getItem(SUBMITTER_KEY);
   if (stored) return Keypair.fromSecret(stored);
   const kp = Keypair.random();

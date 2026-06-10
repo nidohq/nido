@@ -1,13 +1,6 @@
-import {
-  Address,
-  Asset,
-  Networks,
-  Operation,
-  StrKey,
-  nativeToScVal,
-  xdr,
-} from "@stellar/stellar-sdk";
+import { Asset, Networks, StrKey, xdr } from "@stellar/stellar-sdk";
 import { signAndSubmit } from "./primaryPasskeySigner.js";
+import { buildSendOperation } from "./transfer/buildSend.js";
 
 /** Native-XLM Stellar Asset Contract id on testnet (same derivation as balance.ts). */
 const XLM_SAC_ID = Asset.native().contractId(Networks.TESTNET);
@@ -18,33 +11,19 @@ export function validateRecipient(addr: string): boolean {
 }
 
 /**
- * Build the unsigned operation for an outgoing native-XLM transfer.
- *
- * The smart account invokes its own `execute(target, target_fn, target_args)`
- * entrypoint to call the XLM SAC's `transfer(from, to, amount)`. The
- * `require_auth()` inside `execute` is the single auth entry the passkey signs
- * — the inner transfer's `require_auth(from = account)` is satisfied by the
- * call stack — so this op slots straight into `signAndSubmit`.
+ * Build the unsigned operation for an outgoing native-XLM transfer — the
+ * XLM-pinned special case of {@link buildSendOperation}.
  */
 export function buildSendXlmOperation(args: {
   smartAccount: string;
   destination: string;
   stroops: bigint;
 }): xdr.Operation {
-  const targetArgs = xdr.ScVal.scvVec([
-    Address.fromString(args.smartAccount).toScVal(), // from
-    Address.fromString(args.destination).toScVal(), // to
-    nativeToScVal(args.stroops, { type: "i128" }), // amount
-  ]);
-
-  return Operation.invokeContractFunction({
-    contract: args.smartAccount,
-    function: "execute",
-    args: [
-      Address.fromString(XLM_SAC_ID).toScVal(), // target = XLM SAC
-      nativeToScVal("transfer", { type: "symbol" }), // target_fn
-      targetArgs, // target_args: Vec<Val>
-    ],
+  return buildSendOperation({
+    smartAccount: args.smartAccount,
+    tokenContractId: XLM_SAC_ID,
+    destination: args.destination,
+    amount: args.stroops,
   });
 }
 
