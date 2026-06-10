@@ -1,9 +1,12 @@
 # TEMPORARY one-off bootstrap for the relayer (#72 plan Task 4).
-# Runs in CI because both credentials live here (OP_SERVICE_ACCOUNT_TOKEN repo
-# secret + Fly token at op://theahaco/nido_fly_io/credential) while local
-# machines have no 1Password access. Idempotent read-or-create at every step:
-# safe to rerun from any failure point. Automates infra/relayer/README.md
-# "One-time bootstrap" + "Fund + activate" + "Smoke test".
+# STATUS: the bootstrap was executed LOCALLY on 2026-06-10 (vault item
+# nido-relayer created, Redis nido-relayer-redis provisioned, secrets set,
+# deployed, accounts funded, channels activated, proof passed). This workflow
+# is kept dispatch-only as the documented rerun path (idempotent
+# read-or-create at every step — safe to rerun from any failure point).
+# NOTE if dispatched: the keystore-generation branch additionally needs
+# `sudo apt-get install -y libsodium-dev pkg-config` before cargo (create_key
+# links libsodium); the read-path (item exists) does not.
 # DELETE this file together with relayer-secrets-check.yml before merge.
 #
 # Public repo — public logs. Every secret value is ::add-mask::'d the moment it
@@ -12,9 +15,6 @@
 name: bootstrap-relayer
 
 on:
-  push:
-    branches: [feat/72-relayer-gas-abstraction]
-    paths: ['.github/workflows/bootstrap-relayer.yml']
   workflow_dispatch:
 
 permissions:
