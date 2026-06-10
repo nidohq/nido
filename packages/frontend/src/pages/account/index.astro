@@ -314,6 +314,7 @@ import AssetsCard from "../../components/AssetsCard.astro";
     loadAccountName,
     fetchRegistryAddress,
   } from "@g2c/passkey-sdk";
+  import { accountShareUrl, accountShareLabel } from "../../lib/accountLinks";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
   import { fetchSecuritySummary } from "../../lib/securitySummary";
   import { toast } from "../../lib/toast";
@@ -802,9 +803,8 @@ import AssetsCard from "../../components/AssetsCard.astro";
         .forEach((el) => (el.textContent = existingName));
       const rootHost = stripSubdomain(window.location.host);
       const nameLink = document.getElementById("name-url") as HTMLAnchorElement;
-      const nameHref = accountUrl(rootHost, existingName, "/account/");
-      nameLink.textContent = nameHref.replace(/^\/\//, "");
-      nameLink.href = nameHref;
+      nameLink.href = accountShareUrl(rootHost, existingName);
+      nameLink.textContent = accountShareLabel(rootHost, existingName);
     } else {
       $nameClaim.classList.remove("hidden");
     }
@@ -1034,7 +1034,7 @@ import AssetsCard from "../../components/AssetsCard.astro";
               // Redirect to the claimed name's subdomain
               const rootHost = stripSubdomain(window.location.host);
               $nameResult.textContent = `Your Nido is now "${pendingName}" — taking you there…`;
-              const nameUrl = accountUrl(rootHost, pendingName, "/account/");
+              const nameUrl = accountShareUrl(rootHost, pendingName);
               setTimeout(() => {
                 window.location.href = `${window.location.protocol}${nameUrl}`;
               }, 1500);
