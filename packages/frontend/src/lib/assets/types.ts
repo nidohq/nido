@@ -10,6 +10,7 @@ export interface AssetCandidate {
   issuer?: string;    // classic issuer G-address (SAC-backed assets only)
   domain?: string;    // asset home domain, when the curated list provides one
   decimals?: number;  // known decimals (curated list); SACs are always 7
+  icon?: string;      // https logo URL from a curated list (never from events)
   sac: boolean;       // SAC layout: batched Balance-entry read + 7 decimals
   source: AssetSource;
 }
@@ -24,5 +25,6 @@ export interface AssetHolding {
   raw: bigint;        // smallest-unit balance
   formatted: string;  // grouped display amount
   verified: boolean;  // native or curated-list asset — codes/domains trustworthy
+  icon?: string;      // https logo URL; only ever set for verified holdings
   explorerUrl: string;
 }

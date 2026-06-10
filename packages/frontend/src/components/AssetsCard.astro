@@ -29,14 +29,50 @@
      `display: grid` out-specifies the UA `[hidden] { display: none }` rule. */
   .assets-card .as-skeleton:not([hidden]) { display: grid; gap: 10px; }
   .assets-card .as-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
-  .assets-card .asset-initial { font-weight: 800; font-size: 15px; }
+  .assets-card .asset-initial { font-weight: 800; font-size: 15px; position: relative; overflow: hidden; }
+  /* logo sits over the letter chip; removing it (load error) reveals the letter */
+  .assets-card .asset-icon { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--paper-2); }
 </style>
 
 <script>
   import { loadAssets } from "../lib/assets/assets.js";
   import { assetRowHtml } from "../lib/assets/rowHtml.js";
+  import { resolveTomlIcon } from "../lib/assets/icons.js";
   import { EXPLORER_BASE } from "../lib/network.js";
   import { contractIdFromHostname } from "@g2c/passkey-sdk";
+  import type { AssetHolding } from "../lib/assets/types.js";
+
+  function onIconError(img: HTMLImageElement) {
+    img.addEventListener("error", () => img.remove(), { once: true });
+  }
+
+  /**
+   * Lazy second pass, off the render path: fill icons the curated lists
+   * didn't have from each anchor's SEP-1 stellar.toml (cached per contract).
+   */
+  function patchTomlIcons(list: HTMLElement, holdings: AssetHolding[]) {
+    for (const h of holdings) {
+      if (!h.verified || h.icon || !h.domain) continue;
+      resolveTomlIcon(h)
+        .then((icon) => {
+          if (!icon) return;
+          // contract ids are bare base32 strkeys — safe inside a selector.
+          const chip = list.querySelector<HTMLElement>(
+            `a[data-contract="${h.contractId}"] .asset-initial`,
+          );
+          if (!chip || chip.querySelector("img")) return;
+          const img = document.createElement("img");
+          img.className = "asset-icon";
+          img.alt = "";
+          img.loading = "lazy";
+          img.referrerPolicy = "no-referrer";
+          onIconError(img);
+          img.src = icon;
+          chip.appendChild(img);
+        })
+        .catch(() => {});
+    }
+  }
 
   async function init() {
     const card = document.querySelector<HTMLElement>(".assets-card");
@@ -59,6 +95,8 @@
       if (holdings.length === 0) { empty.hidden = false; return; }
       list.innerHTML = holdings.map(assetRowHtml).join("");
       list.hidden = false;
+      list.querySelectorAll<HTMLImageElement>("img.asset-icon").forEach(onIconError);
+      patchTomlIcons(list, holdings);
     } catch {
       // Update only the text node so the explorer link stays usable.
       skel.hidden = true;

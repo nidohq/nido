@@ -36,6 +36,7 @@ export function mergeCandidates(...groups: AssetCandidate[][]): AssetCandidate[]
               issuer: prev.issuer || c.issuer,
               domain: prev.domain || c.domain,
               decimals: prev.decimals ?? c.decimals,
+              icon: prev.icon || c.icon,
               sac: prev.sac || c.sac,
             }
           : c,
@@ -55,6 +56,7 @@ export function sortHoldings(items: AssetHolding[]): AssetHolding[] {
 }
 
 function toHolding(c: AssetCandidate, raw: bigint, decimals: number): AssetHolding {
+  const verified = c.source === "native" || c.source === "curated";
   return {
     contractId: c.contractId,
     code: c.code || shortAddr(c.contractId, 4, 4),
@@ -63,7 +65,10 @@ function toHolding(c: AssetCandidate, raw: bigint, decimals: number): AssetHoldi
     decimals,
     raw,
     formatted: formatDecimal(rawToDecimal(raw, decimals)),
-    verified: c.source === "native" || c.source === "curated",
+    verified,
+    // Icons only for verified assets: a spoofed "USDC" must not be able to
+    // wear the real logo (same posture as the unverified row tag).
+    icon: verified ? c.icon : undefined,
     explorerUrl: `${EXPLORER_BASE}/contract/${c.contractId}`,
   };
 }

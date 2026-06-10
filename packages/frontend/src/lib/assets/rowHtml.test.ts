@@ -35,6 +35,20 @@ describe("assetRowHtml", () => {
     expect(html).not.toContain("centre.io");
   });
 
+  it("renders the logo for verified holdings with an icon", () => {
+    const html = assetRowHtml({ ...base, icon: "https://x.test/usdc.png" });
+    expect(html).toContain('<img class="asset-icon" src="https://x.test/usdc.png"');
+    expect(html).toContain('referrerpolicy="no-referrer"');
+    expect(html).toContain(`data-contract="${base.contractId}"`);
+  });
+
+  it("never renders an icon on unverified rows, and escapes icon URLs", () => {
+    expect(assetRowHtml({ ...base, verified: false, icon: "https://x.test/spoof.png" })).not.toContain("<img");
+    expect(assetRowHtml(base)).not.toContain("<img"); // no icon set
+    const html = assetRowHtml({ ...base, icon: 'https://x.test/a.png"onload="alert(1)' });
+    expect(html).not.toContain('"onload=');
+  });
+
   it("escapes attacker-influenced fields (codes/domains come from lists and events)", () => {
     const html = assetRowHtml({
       ...base,

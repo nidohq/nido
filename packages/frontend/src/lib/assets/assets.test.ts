@@ -46,6 +46,14 @@ describe("mergeCandidates", () => {
     expect(merged[0].code).toBe("USDC");
   });
 
+  it("backfills icons from a later list entry (Soroswap icon onto the native candidate)", () => {
+    const merged = mergeCandidates(
+      [cand(NATIVE_SAC_ID, { code: "XLM", source: "native", sac: true })],
+      [cand(NATIVE_SAC_ID, { code: "XLM", source: "curated", icon: "https://x.test/xlm.png" })],
+    );
+    expect(merged[0]).toMatchObject({ source: "native", sac: true, icon: "https://x.test/xlm.png" });
+  });
+
   it("ORs the sac flag so an event-only SAC sighting upgrades a stored entry", () => {
     const merged = mergeCandidates(
       [cand(USDC_SAC, { source: "stored", sac: false })],
@@ -121,15 +129,20 @@ describe("loadAssets (wiring)", () => {
   });
 
   it("lists XLM (always) plus curated SACs with nonzero batched balances; zero-balance SACs are hidden", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    // top50 gives the asset set; soroswap contributes the XLM icon that
+    // backfills the native candidate.
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
       ok: true,
-      json: async () => ({
-        assets: [
-          { code: "USDC", issuer: ISSUER, contract: USDC_SAC, domain: "centre.io" },
-          { code: "DEAD", issuer: ISSUER, contract: DEAD_SAC },
-        ],
-      }),
-    }));
+      json: async () =>
+        url.includes("soroswap")
+          ? [{ network: "testnet", assets: [{ code: "XLM", contract: NATIVE_SAC_ID, icon: "https://x.test/xlm.png" }] }]
+          : {
+              assets: [
+                { code: "USDC", issuer: ISSUER, contract: USDC_SAC, domain: "centre.io" },
+                { code: "DEAD", issuer: ISSUER, contract: DEAD_SAC },
+              ],
+            },
+    })));
     vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: 3_000_000 } as never);
     vi.spyOn(rpc.Server.prototype, "getEvents").mockResolvedValue({
       events: [transferEvent(USDC_SAC, [
@@ -152,6 +165,7 @@ describe("loadAssets (wiring)", () => {
       ["XLM", "12.5", true],
       ["USDC", "25", true],
     ]);
+    expect(holdings[0].icon).toBe("https://x.test/xlm.png"); // soroswap backfill
     // Curated assets are not persisted — the list itself is the durable source.
     expect(localStorage.getItem(`g2c:assets:known:${SELF}`) ?? "[]").not.toContain(USDC_SAC);
   });
