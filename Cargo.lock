@@ -783,6 +783,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "g2c-spending-limit-policy"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "stellar-accounts",
+]
+
+[[package]]
 name = "g2c-status-message"
 version = "0.1.0"
 dependencies = [
