@@ -1,8 +1,8 @@
 ---
 // packages/frontend/src/components/AssetsCard.astro
 // Assets the smart account holds (issue #71). Same client-side resolution as
-// RecentActivityCard: the address comes from the hostname subdomain, so no
-// SSR address exists.
+// RecentActivityCard: the address comes from the hostname subdomain (name
+// subdomains resolve via the registry), so no SSR address exists.
 ---
 <section class="card assets-card">
   <header class="as-head">
@@ -39,7 +39,7 @@
   import { assetRowHtml } from "../lib/assets/rowHtml.js";
   import { resolveTomlIcon } from "../lib/assets/icons.js";
   import { EXPLORER_BASE } from "../lib/network.js";
-  import { contractIdFromHostname } from "@g2c/passkey-sdk";
+  import { resolveAccountAddress } from "../lib/resolveAccount.js";
   import type { AssetHolding } from "../lib/assets/types.js";
 
   function onIconError(img: HTMLImageElement) {
@@ -83,7 +83,7 @@
     const list = card.querySelector<HTMLElement>(".as-list")!;
     const empty = card.querySelector<HTMLElement>(".as-empty")!;
     const emptyText = card.querySelector<HTMLElement>(".as-empty-text")!;
-    const address = contractIdFromHostname(window.location.hostname);
+    const address = await resolveAccountAddress();
     if (!address) { skel.hidden = true; empty.hidden = false; return; }
     // Stellar Expert's contract page lists every held asset (its balances API
     // is origin-gated for us, but the human-facing page isn't) — so the

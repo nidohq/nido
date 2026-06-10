@@ -41,9 +41,9 @@ import NidoLayout from "../../../layouts/NidoLayout.astro";
   import { loadActivityPage } from "../../../lib/activity/history.js";
   import { activityRowHtml } from "../../../lib/activity/rowHtml.js";
   import { EXPLORER_BASE } from "../../../lib/network.js";
-  import { contractIdFromHostname } from "@g2c/passkey-sdk";
+  import { resolveAccountAddress } from "../../../lib/resolveAccount.js";
 
-  const address = contractIdFromHostname(window.location.hostname);
+  const address = await resolveAccountAddress();
   const skel = document.getElementById("activity-skeleton")!;
   const list = document.getElementById("activity-list")!;
   const empty = document.getElementById("activity-empty")!;
