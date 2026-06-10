@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { nativeToScVal, Address, rpc, xdr } from "@stellar/stellar-sdk";
-import { discoveryFilters, extractTokenCandidates, discoverFromEvents } from "./discover.js";
+import { extractTokenCandidates, discoverFromEvents } from "./discover.js";
 import { NATIVE_SAC_ID } from "../network.js";
-import type { RawEvent } from "../activity/rpcSource.js";
+import { transferFilters, clearAccountEventsCache, type RawEvent } from "../activity/rpcSource.js";
 
 const SELF = "CCA2KXEUA4EQW3NL4QRCIZ2VRMA7V6A54DHXPA4RBTAGH72PCCYT5MSA";
 const OTHER = "GCQZN6KXTEATCRNES3ZPTPZV4NNVK7CZKA6RHLMP2HPWP7SPDN7MFGBS";
@@ -21,23 +21,6 @@ function ev(contractId: string, topics: xdr.ScVal[], txHash = "TX"): RawEvent {
     ledgerClosedAt: "2026-06-01T00:00:00Z",
   };
 }
-
-describe("discoveryFilters", () => {
-  it("is one unpinned contract filter covering SAC and bare SEP-41 transfer shapes", () => {
-    const filters = discoveryFilters(SELF);
-    expect(filters).toHaveLength(1);
-    expect(filters[0].type).toBe("contract");
-    expect(filters[0].contractIds).toBeUndefined(); // unpinned: any token contract
-    const transferTopic = sym("transfer").toXDR("base64");
-    const selfTopic = addr(SELF).toXDR("base64");
-    expect(filters[0].topics).toEqual([
-      [transferTopic, "*", selfTopic, "*"],
-      [transferTopic, selfTopic, "*", "*"],
-      [transferTopic, "*", selfTopic],
-      [transferTopic, selfTopic, "*"],
-    ]);
-  });
-});
 
 describe("extractTokenCandidates", () => {
   it("extracts a SAC token with code/issuer from the 4-topic asset string", () => {
@@ -78,9 +61,10 @@ describe("extractTokenCandidates", () => {
 });
 
 describe("discoverFromEvents", () => {
+  beforeEach(() => clearAccountEventsCache());
   afterEach(() => vi.restoreAllMocks());
 
-  it("walks chunks with the discovery filters", async () => {
+  it("walks chunks with the shared transfer filters (one walk feeds activity AND discovery)", async () => {
     vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: 3_000_000 } as never);
     const spy = vi
       .spyOn(rpc.Server.prototype, "getEvents")
@@ -89,7 +73,7 @@ describe("discoverFromEvents", () => {
     expect(await discoverFromEvents(SELF)).toEqual([]);
 
     expect(spy).toHaveBeenCalledTimes(2); // default maxChunks
-    expect((spy.mock.calls[0][0] as { filters: unknown }).filters).toEqual(discoveryFilters(SELF));
+    expect((spy.mock.calls[0][0] as { filters: unknown }).filters).toEqual(transferFilters(SELF));
   });
 
   it("resolves [] when the walk fails — discovery must never blank the card", async () => {

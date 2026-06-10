@@ -1,10 +1,14 @@
 import { describe, it, expect } from "vitest";
+import { Asset, Networks } from "@stellar/stellar-sdk";
 import { groupTxRows } from "./classify.js";
 import type { DecodedTx } from "./types.js";
 
 const SELF = "CCA2KXEUA4EQW3NL4QRCIZ2VRMA7V6A54DHXPA4RBTAGH72PCCYT5MSA";
 const OTHER = "GCQZN6KXTEATCRNES3ZPTPZV4NNVK7CZKA6RHLMP2HPWP7SPDN7MFGBS";
 const SAC = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+// The genuine SAC id for USDC:OTHER — what a real USDC transfer event's
+// emitting contract must be.
+const USDC_SAC = new Asset("USDC", OTHER).contractId(Networks.TESTNET);
 
 function tx(events: DecodedTx["events"], extra: Partial<DecodedTx> = {}): DecodedTx {
   return { txHash: "HASH", ts: 1780258391, events, ...extra };
@@ -30,6 +34,31 @@ describe("groupTxRows", () => {
       SELF,
     );
     expect(rows[0]).toMatchObject({ kind: "payment", direction: "out", title: "Sent", amount: "0.5", asset: "XLM" });
+  });
+
+  it("classifies a non-XLM deposit when the emitter IS the named asset's SAC", () => {
+    const rows = groupTxRows(
+      tx([{ contractId: USDC_SAC, topics: ["transfer", OTHER, SELF, `USDC:${OTHER}`], data: 200000000n }]),
+      SELF,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: "payment", direction: "in", title: "Received", amount: "20", asset: "USDC",
+    });
+  });
+
+  it("drops forged transfers: asset topic naming a SAC the emitter isn't", () => {
+    // A scam contract emitting "you received 1,000,000 USDC" — the event
+    // filters are unpinned, so only the SAC-id check keeps this out.
+    const forged = tx([
+      { contractId: SAC /* not USDC's SAC */, topics: ["transfer", OTHER, SELF, `USDC:${OTHER}`], data: 10000000000000n },
+    ]);
+    expect(groupTxRows(forged, SELF)).toEqual([]); // no payment row, no generic fallback
+  });
+
+  it("drops bare 3-topic SEP-41 transfers (unverifiable; the assets card covers those tokens)", () => {
+    const bare = tx([{ contractId: USDC_SAC, topics: ["transfer", OTHER, SELF], data: 5n }]);
+    expect(groupTxRows(bare, SELF)).toEqual([]);
   });
 
   it("reads the amount from a muxed transfer's struct data { amount, to_muxed_id }", () => {
@@ -80,10 +109,15 @@ describe("groupTxRows", () => {
     expect(rec[0]).toMatchObject({ kind: "rule", title: "Created a rule" });
   });
 
-  it("falls back to a generic row for unrecognized events, never dropping a tx", () => {
-    expect(groupTxRows(tx([]), SELF)[0]).toMatchObject({ kind: "other", title: "Contract activity" });
+  it("falls back to a generic row for unrecognized events from trustworthy sources only", () => {
+    // own-contract event with an unknown name -> generic row
     const generic = groupTxRows(tx([{ contractId: SELF, topics: ["mystery_event"], data: {} }]), SELF);
     expect(generic).toHaveLength(1);
     expect(generic[0].kind).toBe("other");
+    // no trustworthy event at all (spam contract, or empty) -> the tx drops
+    expect(groupTxRows(tx([]), SELF)).toEqual([]);
+    expect(
+      groupTxRows(tx([{ contractId: SAC, topics: ["mystery_event"], data: {} }]), SELF),
+    ).toEqual([]);
   });
 });

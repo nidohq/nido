@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Address, nativeToScVal, rpc, xdr } from "@stellar/stellar-sdk";
 import { loadAssets, mergeCandidates, sortHoldings } from "./assets.js";
 import { sacBalanceLedgerKey } from "./balances.js";
+import { clearAccountEventsCache } from "../activity/rpcSource.js";
 import { NATIVE_SAC_ID } from "../network.js";
 import type { AssetCandidate, AssetHolding } from "./types.js";
 
@@ -122,7 +123,10 @@ function mockSimulationRouter(routes: Record<string, Record<string, xdr.ScVal | 
 }
 
 describe("loadAssets (wiring)", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    clearAccountEventsCache();
+  });
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
