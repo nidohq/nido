@@ -54,10 +54,32 @@ import Icon from '../../../components/Icon.astro';
             <div class="mut mono" style="font-size:11.5px;word-break:break-all;"><code id="pubkey-text" class="wrap"></code></div>
           </div>
         </div>
-        <div class="navrow" style="cursor:default;border-bottom:none;">
+        <div class="navrow" style="cursor:default;">
           <div style="flex:1;">
             <div style="font-weight:700;font-size:13.5px;">Expires</div>
             <div class="mut" id="expiry-text" style="font-size:12.5px;"></div>
+          </div>
+        </div>
+        <div class="navrow" style="cursor:default;border-bottom:none;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13.5px;">Spending limit</div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+              <input id="limit-amount" class="input" inputmode="decimal" placeholder="Amount"
+                     autocomplete="off" spellcheck="false"
+                     style="height:40px;font-size:13.5px;flex:1;min-width:0;" />
+              <span class="mut" style="font-size:12.5px;flex:0 0 auto;">XLM</span>
+              <select id="limit-period" class="input"
+                      style="height:40px;font-size:13.5px;flex:0 0 auto;width:auto;padding:0 10px;">
+                <option value="day">per day</option>
+                <option value="week">per week</option>
+                <option value="30d">per 30 days</option>
+              </select>
+            </div>
+            <label class="mut" style="display:flex;align-items:center;gap:7px;margin-top:10px;font-size:12.5px;cursor:pointer;">
+              <input id="limit-none" type="checkbox" />
+              No limit
+            </label>
+            <div class="mut" id="limit-summary" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
           </div>
         </div>
       </div>
@@ -83,8 +105,16 @@ import Icon from '../../../components/Icon.astro';
   import { contractIdFromHostname, extractXdrOperations, hex2buf } from '@g2c/passkey-sdk';
   import { Client as SmartAccountClient } from 'smart-account';
   import { Networks } from '@stellar/stellar-sdk';
-  import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
+  import { fetchRegistryAddress, fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
   import { signAndSubmit } from '../../../lib/primaryPasskeySigner.js';
+  import { stroopsToXlm } from '../../../lib/money.js';
+  import {
+    PERIOD_LEDGERS,
+    PERIOD_LABEL,
+    stroopsFromXlm,
+    spendingLimitParamsScVal,
+    type LimitPeriod,
+  } from '../../../lib/spendingLimitParams.js';
 
   const RPC_URL = 'https://soroban-testnet.stellar.org';
   const DURATIONS: Record<string, number | null> = {
@@ -99,6 +129,12 @@ import Icon from '../../../components/Icon.astro';
   const target = params.get('target') ?? '';
   const pubkeyHex = params.get('pubkey') ?? '';
   const duration = params.get('duration') ?? '24h';
+  // Optional spending limit: `limit` (decimal XLM string) + `limit_period`
+  // (day|week|30d, default day). Absent `limit` = no cap (today's behavior).
+  const limitParam = params.get('limit');
+  const limitPeriodParam = params.get('limit_period') ?? 'day';
+  const limitPeriodInitial: LimitPeriod =
+    limitPeriodParam in PERIOD_LEDGERS ? (limitPeriodParam as LimitPeriod) : 'day';
   const returnUrl = params.get('return') ?? '';
   const account = contractIdFromHostname(window.location.hostname);
 
@@ -117,6 +153,45 @@ import Icon from '../../../components/Icon.astro';
   const denyBtn = document.getElementById('deny')!;
   const approveBtn = document.getElementById('approve') as HTMLButtonElement;
   const status = document.getElementById('status')!;
+
+  // Spending-limit controls. "No limit" is checked when the dApp didn't ask
+  // for one; the user can always tighten (or loosen) before approving.
+  const limitAmount = document.getElementById('limit-amount') as HTMLInputElement;
+  const limitPeriod = document.getElementById('limit-period') as HTMLSelectElement;
+  const limitNone = document.getElementById('limit-none') as HTMLInputElement;
+  const limitSummary = document.getElementById('limit-summary')!;
+
+  limitAmount.value = limitParam ?? '';
+  limitPeriod.value = limitPeriodInitial;
+  limitNone.checked = limitParam == null;
+
+  function selectedPeriod(): LimitPeriod {
+    return limitPeriod.value in PERIOD_LEDGERS ? (limitPeriod.value as LimitPeriod) : 'day';
+  }
+
+  function syncLimitControls() {
+    const none = limitNone.checked;
+    limitAmount.disabled = none;
+    limitPeriod.disabled = none;
+    if (none) {
+      limitSummary.textContent =
+        'No cap — the app can move any amount this contract allows until the key expires.';
+      return;
+    }
+    try {
+      const stroops = stroopsFromXlm(limitAmount.value);
+      limitSummary.textContent =
+        `Token transfers in this contract are capped at ${stroopsToXlm(stroops)} XLM ` +
+        `${PERIOD_LABEL[selectedPeriod()]} (rolling window).`;
+    } catch (e) {
+      limitSummary.textContent = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  limitNone.addEventListener('change', syncLimitControls);
+  limitAmount.addEventListener('input', syncLimitControls);
+  limitPeriod.addEventListener('change', syncLimitControls);
+  syncLimitControls();
 
   // Return-URL must be the dApp origin (anti-redirect-abuse).
   function backToDapp(qs: string) {
@@ -160,6 +235,26 @@ import Icon from '../../../components/Icon.astro';
   approveBtn.addEventListener('click', async () => {
     approveBtn.disabled = true;
     try {
+      // Spending limit: validate + resolve the policy BEFORE any signing so
+      // we never install a rule missing the limit the user saw on screen.
+      // No limit → empty map, byte-identical to the pre-limit behavior.
+      let policies = new Map<string, ReturnType<typeof spendingLimitParamsScVal>>();
+      if (!limitNone.checked) {
+        const stroops = stroopsFromXlm(limitAmount.value); // throws a user-facing message
+        status.textContent = 'Resolving spending-limit policy…';
+        let policyAddr: string;
+        try {
+          policyAddr = await fetchRegistryAddress('spending-limit-policy');
+        } catch {
+          throw new Error(
+            'spending-limit policy unavailable — try again or approve without a limit',
+          );
+        }
+        policies = new Map([
+          [policyAddr, spendingLimitParamsScVal(stroops, PERIOD_LEDGERS[selectedPeriod()])],
+        ]);
+      }
+
       status.textContent = 'Resolving verifier address…';
       const verifierAddr = await fetchVerifierAddress(account!);
 
@@ -188,7 +283,7 @@ import Icon from '../../../components/Icon.astro';
             values: [verifierAddr, sessionPubkey as Buffer] as readonly [string, Buffer],
           },
         ],
-        policies: new Map(), // empty — session keys have no install params
+        policies, // empty unless the user kept a spending limit (see above)
       });
 
       // Re-encode the AssembledTransaction's operations into proper XDR
@@ -217,4 +312,6 @@ import Icon from '../../../components/Icon.astro';
 <style>
   .pad code { font-family: var(--mono); }
   code.wrap { word-break: break-all; }
+  .pad .input:disabled { opacity: 0.5; }
+  #limit-none { accent-color: var(--acc); }
 </style>
