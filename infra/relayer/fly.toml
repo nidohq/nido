@@ -1,4 +1,4 @@
-app = "nido-relayer"
+app = "nido"
 primary_region = "iad"
 
 [build]

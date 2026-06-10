@@ -26,7 +26,7 @@
  *   7. Asserts the user's balance and sequence are byte-identical to before.
  *
  * Usage:
- *   node scripts/relayer-proof.mjs [relayer-url]     # default https://nido-relayer.fly.dev
+ *   node scripts/relayer-proof.mjs [relayer-url]     # default https://nido.fly.dev
  *   node scripts/relayer-proof.mjs --self-test       # verify fee-bump extraction helper offline
  *   node scripts/relayer-proof.mjs --dry-run [url]   # stop after building the /relay request body
  *
@@ -53,7 +53,7 @@ import {
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
 const RPC_URL = "https://soroban-testnet.stellar.org";
 const FRIENDBOT_URL = "https://friendbot.stellar.org";
-const DEFAULT_RELAYER_URL = "https://nido-relayer.fly.dev";
+const DEFAULT_RELAYER_URL = "https://nido.fly.dev";
 const EXPLORER_TX_URL = "https://stellar.expert/explorer/testnet/tx";
 
 // Status Message demo contract (see DEPLOYED.md). Deployed from

@@ -2,7 +2,7 @@
 # One-time channel-pool activation (the plugin won't process transactions
 # until channel accounts are registered in its KV pool).
 # The relayer's authenticated port is not exposed through Caddy; tunnel first:
-#   fly proxy 8090:8090 -a nido-relayer
+#   fly proxy 8090:8090 -a nido
 # Usage: API_KEY=... PLUGIN_ADMIN_SECRET=... ./activate-channels.sh http://localhost:8090
 set -eu
 BASE="${1:?usage: activate-channels.sh <relayer-base-url>}"

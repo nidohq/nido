@@ -2,7 +2,7 @@
 
 ## What this is
 
-Self-hosted OpenZeppelin Relayer v1.5.0 with the Channels plugin and a Caddy sidecar running as a single Fly app `nido-relayer` (org `aha-684`, region `iad`). Browsers call `POST /relay` with no credentials; Caddy injects the relayer API key server-side, terminates CORS, and forwards to the plugin. The relayer's own authenticated API is never exposed publicly — management calls require a local tunnel. This setup provides gas abstraction for Nido smart accounts (issue #72): users sign only a `SorobanAuthorizationEntry`, channel accounts source the transaction, and the fund account fee-bumps it. The result is a zero-credential, zero-gas-setup flow for wallet users.
+Self-hosted OpenZeppelin Relayer v1.5.0 with the Channels plugin and a Caddy sidecar running as a single Fly app `nido` (org `aha-684`, region `iad`). Browsers call `POST /relay` with no credentials; Caddy injects the relayer API key server-side, terminates CORS, and forwards to the plugin. The relayer's own authenticated API is never exposed publicly — management calls require a local tunnel. This setup provides gas abstraction for Nido smart accounts (issue #72): users sign only a `SorobanAuthorizationEntry`, channel accounts source the transaction, and the fund account fee-bumps it. The result is a zero-credential, zero-gas-setup flow for wallet users.
 
 ## One-time bootstrap
 
@@ -10,7 +10,7 @@ Run from the repo root unless noted.
 
 ```bash
 # 1. Create the Fly app
-fly apps create nido-relayer --org aha-684
+fly apps create nido --org aha-684   # already done 2026-06-10 (app exists, status pending) — errors harmlessly if re-run
 
 # 2. Create the Redis instance (record the redis:// URL it prints — you need it for secrets)
 #    Lost the output? `fly redis status nido-relayer-redis` re-prints the connection string.
@@ -30,7 +30,7 @@ STORAGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
 
 # 5. Set all 8 Fly secrets in one call
 #    (macOS: BSD base64 has no -w flag — use `openssl base64 -A -in <file>` instead of `base64 -w0 <file>`)
-fly secrets set -a nido-relayer \
+fly secrets set -a nido \
   REDIS_URL="<redis-url-from-step-2>" \
   API_KEY="$API_KEY" \
   STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
@@ -52,7 +52,7 @@ rm -rf /tmp/relayer-keys
 
 ## Secret handling
 
-- **Fly secrets are write-only.** `fly secrets list` shows digests only and there is no `fly secrets get` — save every value to 1Password (vault `theahaco`) at the moment you generate it. Escape hatch if a value was lost after deploy: `fly ssh console -a nido-relayer -C "printenv API_KEY"` (works for any secret name).
+- **Fly secrets are write-only.** `fly secrets list` shows digests only and there is no `fly secrets get` — save every value to 1Password (vault `theahaco`) at the moment you generate it. Escape hatch if a value was lost after deploy: `fly ssh console -a nido -C "printenv API_KEY"` (works for any secret name).
 - **macOS base64**: BSD `base64` rejects `-w`; wherever this runbook says `base64 -w0 <file>`, macOS operators should use `openssl base64 -A -in <file>`.
 - **Shell history**: the commands above put secret material on the command line. Prefix them with a space (with `HISTCONTROL=ignorespace` set) so they stay out of history, or pull values directly from 1Password via `op read` instead of pasting.
 
@@ -69,10 +69,10 @@ Syncing sequence for relayer: channels-fund (G...)
 Retrieve them:
 
 ```bash
-fly logs -a nido-relayer --no-tail | grep "Syncing sequence"
+fly logs -a nido --no-tail | grep "Syncing sequence"
 ```
 
-If no lines appear, `fly apps restart nido-relayer` and re-run — the addresses are logged at boot.
+If no lines appear, `fly apps restart nido` and re-run — the addresses are logged at boot.
 
 Fund all three accounts on testnet via Friendbot:
 
@@ -85,14 +85,14 @@ curl "https://friendbot.stellar.org?addr=G<channel-002-address>"
 Restart so the relayer picks up the funded balances:
 
 ```bash
-fly apps restart nido-relayer
+fly apps restart nido
 ```
 
 Activate the channel pool (the plugin will not process transactions until this is done). Open two terminals:
 
 **Terminal 1** — open the management tunnel:
 ```bash
-fly proxy 8090:8090 -a nido-relayer
+fly proxy 8090:8090 -a nido
 ```
 
 **Terminal 2** — run the activation script:
@@ -109,7 +109,7 @@ A `200` response with a success body confirms the channel accounts are registere
 Health check (unauthenticated, through Caddy):
 
 ```bash
-curl https://nido-relayer.fly.dev/api/v1/health
+curl https://nido.fly.dev/api/v1/health
 ```
 
 Expected response: `OK`
@@ -117,7 +117,7 @@ Expected response: `OK`
 Relay plugin reachability — a nonexistent transaction id returns a structured error, which proves the plugin executes:
 
 ```bash
-curl -sS -X POST https://nido-relayer.fly.dev/relay \
+curl -sS -X POST https://nido.fly.dev/relay \
   -H "Content-Type: application/json" \
   -d '{"params":{"getTransaction":{"transactionId":"nonexistent"}}}'
 ```
@@ -130,7 +130,7 @@ Expected: a JSON error body (not a 404 or connection refused). Any structured JS
 
 ## Ops notes
 
-- **Memory**: the default 512 MB VM (`shared-cpu-1x`) may be tight once the ts-node Channels plugin is loaded. If the first plugin call OOMs, bump the machine to 1024 MB (`fly scale memory 1024 -a nido-relayer`).
+- **Memory**: the default 512 MB VM (`shared-cpu-1x`) may be tight once the ts-node Channels plugin is loaded. If the first plugin call OOMs, bump the machine to 1024 MB (`fly scale memory 1024 -a nido`).
 - **Rate limiting**: the rate limit (20 req/s, burst 60) is global across all origins and CORS is wildcard (`*`). Per-origin tightening is a mainnet TODO.
 - **Version pin**: pinned to OZ Relayer v1.5.0 deliberately — Stellar support is under active development and minor upgrades may be breaking. Review the changelog before bumping.
 - **Max fee**: the relayer's default `max_fee` is 1,000,000 stroops per transaction. It is a per-relayer policy; override it in `infra/relayer/config/config.json` if needed.

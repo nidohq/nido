@@ -34,4 +34,4 @@ jobs:
         run: flyctl deploy --config infra/relayer/fly.toml --remote-only --ha=false
 
       - name: Smoke check
-        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://nido-relayer.fly.dev/api/v1/health
+        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://nido.fly.dev/api/v1/health

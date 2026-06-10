@@ -20,7 +20,7 @@ done
 # One combined fly call below: three separate `fly secrets set` runs on a live app = three restarts.
 # macOS note: BSD base64 has no -w flag — use `openssl base64 -A -in <file>` instead of `base64 -w0 <file>`.
 echo "Keystores written to $OUT — store them in 1Password (vault theahaco), then:"
-echo "  fly secrets set -a nido-relayer \\"
+echo "  fly secrets set -a nido \\"
 echo "    KEYSTORE_FUND_B64=\"\$(base64 -w0 $OUT/fund.json)\" \\"
 echo "    KEYSTORE_CHANNEL_001_B64=\"\$(base64 -w0 $OUT/channel-001.json)\" \\"
 echo "    KEYSTORE_CHANNEL_002_B64=\"\$(base64 -w0 $OUT/channel-002.json)\""
