@@ -19,7 +19,7 @@ const NAV = [
 ---
 
 <aside class="nido-sidebar">
-  <a id="sidebar-home-link" class="nido-sidebar-brand" href="/" aria-label="Nido home">
+  <a id="sidebar-home-link" class="nido-sidebar-brand" href="/" data-home-apex aria-label="Nido home">
     <Logo size={20} mark markSize={28} />
   </a>
   <nav class="nido-sidebar-nav">
@@ -27,6 +27,7 @@ const NAV = [
       <a
         class:list={["nido-navitem", { "is-active": isActive(item.href) }]}
         href={item.href}
+        data-home-apex={item.href === "/" ? "" : undefined}
         aria-current={isActive(item.href) ? "page" : undefined}
       >
         <Icon name={item.icon} size={18} />
@@ -45,8 +46,12 @@ const NAV = [
 
 <script>
   import { stripSubdomain } from "@g2c/passkey-sdk";
-  // On an account subdomain, "/" redirects back to /account/, so the brand would
-  // loop. Point it at the apex home instead (mirrors the mobile #home-link fix).
-  const brand = document.getElementById("sidebar-home-link") as HTMLAnchorElement | null;
-  if (brand) brand.href = `//${stripSubdomain(window.location.host)}/`;
+  // On an account subdomain, "/" redirects back to /account/, so any "home" link
+  // (the brand mark AND the "Home" nav item) would loop. Point them at the apex
+  // home instead, mirroring the mobile #home-link fix. Activity/Security stay
+  // account-relative.
+  const apexHome = `//${stripSubdomain(window.location.host)}/`;
+  document
+    .querySelectorAll<HTMLAnchorElement>("[data-home-apex]")
+    .forEach((a) => (a.href = apexHome));
 </script>
