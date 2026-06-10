@@ -573,11 +573,13 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
 }
 .nido-navitem:hover { background: var(--chip); color: var(--ink); }
 .nido-navitem.is-active { background: var(--acc-soft); color: var(--acc); }
+/* the .mynido switcher wrapper is the flex child now, so it carries the bottom push */
+.nido-sidebar > .mynido { margin-top: auto; }
 .nido-sidebar-account {
-  margin-top: auto;
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 10px 12px; border-radius: var(--r-md);
-  text-decoration: none; color: var(--ink);
+  text-decoration: none; color: var(--ink); text-align: left;
+  background: none; border: none; cursor: pointer; font-family: var(--body); font-size: 14px;
 }
 .nido-sidebar-account:hover { background: var(--chip); }
 .nido-account-name { font-weight: 700; font-size: 14px; }

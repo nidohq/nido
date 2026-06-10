@@ -4,6 +4,7 @@
 import Logo from "./Logo.astro";
 import Avatar from "./Avatar.astro";
 import Icon from "./Icon.astro";
+import MyNidoMenu from "./MyNidoMenu.astro";
 
 const path = Astro.url.pathname;
 const isActive = (href: string) =>
@@ -33,10 +34,13 @@ const NAV = [
       </a>
     ))}
   </nav>
-  <a class="nido-sidebar-account" href="/account/" aria-label="Your account">
-    <Avatar seed="nido" size={32} class="js-avatar" />
-    <span class="nido-account-name">Your Nido</span>
-  </a>
+  <MyNidoMenu placement="up">
+    <button slot="trigger" type="button" class="nido-sidebar-account" data-mynido-trigger aria-haspopup="true" aria-expanded="false" aria-label="Switch Nido">
+      <Avatar seed="nido" size={32} class="js-avatar" />
+      <span class="nido-account-name js-account-name">Your Nido</span>
+      <span class="mynido-caret" aria-hidden="true" style="margin-left:auto;">▾</span>
+    </button>
+  </MyNidoMenu>
 </aside>
 
 <script>
