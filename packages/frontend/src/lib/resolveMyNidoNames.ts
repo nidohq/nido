@@ -9,11 +9,20 @@ import type { MyNidoRow } from "./myNidoModel.js";
  *
  * Independent of the DOM and the SDK: `lookup` is a contract-id → name resolver
  * (typically the registry reverse lookup) and `persist` writes the cache.
- * Best-effort — a row whose lookup rejects or returns null is left unchanged.
+ * Best-effort — a row whose lookup rejects, returns null, or returns a
+ * malformed name is left unchanged.
  *
  * @returns a map of the names newly resolved this pass (contractId → name),
  *   so the caller can patch just those rows in place.
  */
+
+// What the registry contract's validate_name can actually issue (same rule as
+// the SDK's G2C_NAME_RE and the claim form's pattern attribute). The resolved
+// name becomes a subdomain href and a localStorage entry, so a name from a
+// repointed registry or a lying RPC must not carry dots, slashes, or anything
+// else that could escape the apex domain.
+const VALID_NAME_RE = /^[a-z][a-z0-9]{0,14}$/;
+
 export async function resolveMissingNames(
   rows: MyNidoRow[],
   lookup: (contractId: string) => Promise<string | null>,
@@ -29,7 +38,7 @@ export async function resolveMissingNames(
     candidates.map(async (row) => {
       try {
         const name = await lookup(row.contractId);
-        if (name) {
+        if (name && VALID_NAME_RE.test(name)) {
           persist(row.contractId, name);
           resolved.set(row.contractId, name);
         }

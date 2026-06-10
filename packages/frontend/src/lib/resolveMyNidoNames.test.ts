@@ -90,4 +90,25 @@ describe("resolveMissingNames", () => {
     expect(persist).toHaveBeenCalledTimes(1);
     expect(persist).toHaveBeenCalledWith("CGOOD", "bob");
   });
+
+  it("rejects a name the registry contract could never have issued", async () => {
+    // The resolved name flows into a subdomain href and localStorage, so a
+    // lookup backed by a hostile registry/RPC must not get arbitrary strings
+    // through. Valid names are ^[a-z][a-z0-9]{0,14}$ (contract validate_name).
+    for (const hostile of [
+      "evil.example/x", // URL authority breakout via dot + slash
+      "ALICE", // uppercase — contract lowercases only
+      "0alice", // must start with a letter
+      "alicealicealice1", // 16 chars — over the 15-char cap
+      "ali ce", // whitespace
+    ]) {
+      const lookup = vi.fn().mockResolvedValue(hostile);
+      const persist = vi.fn();
+
+      const resolved = await resolveMissingNames([active("CABC")], lookup, persist);
+
+      expect(persist, hostile).not.toHaveBeenCalled();
+      expect(resolved.size, hostile).toBe(0);
+    }
+  });
 });
