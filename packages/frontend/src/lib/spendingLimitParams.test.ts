@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { xdr, scValToNative } from "@stellar/stellar-sdk";
+import { createRequire } from "node:module";
+import { xdr, nativeToScVal, scValToNative, Networks } from "@stellar/stellar-sdk";
+import { Client as SmartAccountClient } from "smart-account";
+import { Client as SpendingLimitPolicyClient } from "spending-limit-policy";
 import {
   PERIOD_LEDGERS,
   PERIOD_LABEL,
@@ -10,6 +13,32 @@ import {
 /** Encode the way the delegate page does: user XLM string + period. */
 function encode(xlm: string, period: keyof typeof PERIOD_LEDGERS): xdr.ScVal {
   return spendingLimitParamsScVal(stroopsFromXlm(xlm), PERIOD_LEDGERS[period]);
+}
+
+/** Any well-formed C-address — the clients below never touch the network;
+ *  they exist only to hand us their embedded contract `Spec`s. */
+const DUMMY_CONTRACT = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+const CLIENT_OPTS = {
+  contractId: DUMMY_CONTRACT,
+  networkPassphrase: Networks.TESTNET,
+  rpcUrl: "https://soroban-testnet.stellar.org",
+};
+
+/**
+ * Load the SDK's WEBPACK BROWSER BUNDLE (`dist/stellar-sdk.min.js`) as a
+ * SECOND, independent copy of the SDK — its classes are distinct from the
+ * `lib/` copy this test file imports. This is exactly the dual-copy situation
+ * vite creates in browser builds (`.` resolves via the `browser` condition to
+ * the bundle, `./contract` — what the generated bindings import — to `lib/`),
+ * reproduced under Node so vitest can pin the hazard. See the module doc of
+ * `spendingLimitParams.ts` for the full story (#72).
+ */
+function loadBrowserBundleSdk(): typeof import("@stellar/stellar-sdk") {
+  const require_ = createRequire(import.meta.url);
+  const libIndex = require_.resolve("@stellar/stellar-sdk"); // …/lib/index.js under Node
+  const minPath = libIndex.replace(/lib[/\\]index\.js$/, "dist/stellar-sdk.min.js");
+  // The UMD wrapper needs a `self` global (jsdom provides one in this config).
+  return require_(minPath) as typeof import("@stellar/stellar-sdk");
 }
 
 describe("spendingLimitParamsScVal", () => {
@@ -58,6 +87,75 @@ describe("spendingLimitParamsScVal", () => {
     expect(PERIOD_LABEL.day).toBe("per day");
     expect(PERIOD_LABEL.week).toBe("per week");
     expect(PERIOD_LABEL["30d"]).toBe("per 30 days");
+  });
+});
+
+describe("spendingLimitParamsScVal cross-copy domain (#72 browser hazard)", () => {
+  it("produces bytes identical to the previous hand-built scvMap", () => {
+    const v = encode("5", "day");
+    const manual = xdr.ScVal.scvMap([
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol("period_ledgers"),
+        val: xdr.ScVal.scvU32(17280),
+      }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol("spending_limit"),
+        val: nativeToScVal(50_000_000n, { type: "i128" }),
+      }),
+    ]);
+    expect(v.toXDR("base64")).toBe(manual.toXDR("base64"));
+  });
+
+  it("constructs the value in the SAME stellar-base copy as the Spec doing the encoding", () => {
+    // Negative control first: prove this process really holds two distinct
+    // SDK copies, i.e. an ScVal from the browser bundle is FOREIGN to the
+    // lib/ copy the bindings (and this test file, under Node) use.
+    const browserSdk = loadBrowserBundleSdk();
+    const foreign = browserSdk.xdr.ScVal.scvU32(1);
+    expect(foreign instanceof xdr.ScVal).toBe(false);
+
+    // A Spec living in the browser-bundle copy (built from the same entries
+    // the spending-limit-policy bindings embed).
+    const libSpec = new SpendingLimitPolicyClient(CLIENT_OPTS).spec;
+    const browserSpec = new browserSdk.contract.Spec(
+      libSpec.entries.map((e) => e.toXDR("base64")),
+    );
+
+    // The helper must build in whatever copy the GIVEN Spec belongs to —
+    // that is the whole fix: the value passes the `val instanceof xdr.ScVal`
+    // check inside that Spec's `funcArgsToScVals`, instead of falling
+    // through to stellar-base's nativeToScVal ("cannot interpret … value
+    // as ScVal") as the bare-`@stellar/stellar-sdk` xdr did in browser builds.
+    const viaBrowserSpec = spendingLimitParamsScVal(5_000_000n, 17280, browserSpec);
+    expect(viaBrowserSpec instanceof browserSdk.xdr.ScVal).toBe(true);
+    expect(viaBrowserSpec instanceof xdr.ScVal).toBe(false);
+    expect(viaBrowserSpec.toXDR("base64")).toBe(encode("0.5", "day").toXDR("base64"));
+  });
+
+  it("is accepted by the smart-account Spec's add_context_rule conversion; a foreign-copy ScVal is not", () => {
+    const saSpec = new SmartAccountClient(CLIENT_OPTS).spec;
+    const args = (params: xdr.ScVal) => ({
+      context_type: { tag: "CallContract", values: [DUMMY_CONTRACT] },
+      name: "session-key",
+      valid_until: undefined,
+      signers: [],
+      policies: new Map([[DUMMY_CONTRACT, params]]),
+    });
+
+    // The fixed helper's output sails through untouched.
+    expect(() => saSpec.funcArgsToScVals("add_context_rule", args(encode("5", "day")))).not.toThrow();
+
+    // The production failure, pinned: the same value built in the OTHER SDK
+    // copy is rejected exactly the way the delegate page failed in browsers.
+    const browserSdk = loadBrowserBundleSdk();
+    const libSpec = new SpendingLimitPolicyClient(CLIENT_OPTS).spec;
+    const browserSpec = new browserSdk.contract.Spec(
+      libSpec.entries.map((e) => e.toXDR("base64")),
+    );
+    const foreignParams = spendingLimitParamsScVal(5_000_000n, 17280, browserSpec);
+    expect(() => saSpec.funcArgsToScVals("add_context_rule", args(foreignParams))).toThrow(
+      /cannot interpret .* value as ScVal/,
+    );
   });
 });
 
