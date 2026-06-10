@@ -36,7 +36,7 @@
   import { loadActivityPage } from "../lib/activity/history.js";
   import { activityRowHtml } from "../lib/activity/rowHtml.js";
   import { EXPLORER_BASE } from "../lib/network.js";
-  import { contractIdFromHostname } from "@g2c/passkey-sdk";
+  import { resolveAccountAddress } from "../lib/resolveAccount.js";
 
   async function init() {
     const card = document.querySelector<HTMLElement>(".recent-activity");
@@ -45,7 +45,7 @@
     const list = card.querySelector<HTMLElement>(".ra-list")!;
     const empty = card.querySelector<HTMLElement>(".ra-empty")!;
     const emptyText = card.querySelector<HTMLElement>(".ra-empty-text")!;
-    const address = contractIdFromHostname(window.location.hostname);
+    const address = await resolveAccountAddress();
     if (!address) { skel.hidden = true; empty.hidden = false; return; }
     // Full lifetime history lives on the explorer (RPC only retains ~1 week).
     const fh = card.querySelector<HTMLAnchorElement>(".ra-fh")!;
