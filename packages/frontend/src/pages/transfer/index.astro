@@ -1,0 +1,651 @@
+---
+// Send any held asset from your Nido. Generalizes the old XLM-only inline Send
+// panel (retired from /account/) to every SAC / SEP-41 token the account holds,
+// with a human-readable review step before the passkey ceremony.
+//
+// Reused, not rewritten: loadAssets (#71) populates the asset dropdown with live
+// balances; resolveSendRecipient resolves name / C… / G… recipients;
+// buildSendOperation + signAndSubmit are the asset-agnostic transfer + passkey
+// plumbing; previewOperation validates and prices the transfer BEFORE we prompt
+// for the passkey; renderTransferReview is the same review card the /sign/ page
+// renders.
+import NidoLayout from "../../layouts/NidoLayout.astro";
+import Toast from "../../components/Toast.astro";
+import PasskeySheet from "../../components/PasskeySheet.astro";
+import Avatar from "../../components/Avatar.astro";
+import Icon from "../../components/Icon.astro";
+---
+
+<NidoLayout title="Send">
+  <div class="col-scroll scroll-hide screen-in">
+    <div class="topbar">
+      <a href="/account/" class="btn ghost sm" style="width:40px;height:40px;padding:0;border-radius:12px;" aria-label="Back to your Nido">
+        <Icon name="back" size={18} />
+      </a>
+      <div class="disp" style="font-weight:800;font-size:19px;">Send</div>
+      <span style="width:40px;"></span>
+    </div>
+
+    <div id="error-box" class="alert danger" style="display:none;margin:8px 22px;"></div>
+
+    <!-- ===================== STEP 1 · FORM ===================== -->
+    <section id="form-step" class="pad" style="padding-top:8px;">
+      <span class="section-label" style="display:block;margin-bottom:10px;">From</span>
+      <div class="card" style="display:flex;align-items:center;gap:12px;padding:14px 16px;margin-bottom:20px;">
+        <Avatar seed="nido" size={38} class="js-avatar" />
+        <div style="min-width:0;">
+          <div id="from-name" style="font-weight:700;font-size:14.5px;">Your Nido</div>
+          <code id="from-addr" class="mut mono" style="font-size:12px;"></code>
+        </div>
+      </div>
+
+      <div class="field tsend-wrap">
+        <label id="asset-label">Asset</label>
+        <button id="asset-select" type="button" class="tsend-select" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="asset-label" disabled>
+          <span class="tsend-skeleton skeleton" style="flex:1;height:20px;">&nbsp;</span>
+        </button>
+        <div id="asset-menu" class="tsend-menu hidden" role="listbox" aria-label="Choose an asset"></div>
+        <div id="asset-balance" class="mut" style="font-size:12px;margin-top:7px;min-height:16px;"></div>
+      </div>
+
+      <div class="field" style="margin-top:16px;">
+        <label for="to-input">To</label>
+        <input id="to-input" class="input" placeholder="name, C…, or G…" autocomplete="off" spellcheck="false" />
+        <div id="to-resolve" class="mut mono" style="font-size:12px;margin-top:6px;min-height:16px;"></div>
+      </div>
+
+      <div class="field" style="margin-top:16px;">
+        <label for="amount-input">Amount</label>
+        <input id="amount-input" class="input" inputmode="decimal" placeholder="0.0" autocomplete="off" />
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+          <span id="amount-hint" class="mut" style="font-size:12px;"></span>
+          <button id="max-btn" type="button" class="link" style="font-size:12px;background:none;border:none;cursor:pointer;padding:0;">Max</button>
+        </div>
+      </div>
+
+      <button id="review-btn" class="btn acc" style="margin-top:22px;">
+        <Icon name="send" size={18} color="#fff" /> Review
+      </button>
+    </section>
+
+    <!-- ===================== STEP 2 · REVIEW ===================== -->
+    <section id="review-step" class="pad hidden" style="padding-top:8px;">
+      <span class="section-label" style="display:block;margin-bottom:12px;">Review &amp; confirm</span>
+      <div id="review-body"></div>
+      <p class="mut" style="font-size:12.5px;line-height:1.5;margin:16px 0 0;">
+        Confirm with your passkey to send. This can't be undone.
+      </p>
+      <div class="btn-row" style="margin-top:18px;">
+        <button id="back-btn" type="button" class="btn ghost">Back</button>
+        <button id="confirm-btn" type="button" class="btn acc">
+          <Icon name="faceid" size={18} color="#fff" /> <span class="js-confirm-label">Confirm &amp; send</span>
+        </button>
+      </div>
+      <div id="review-status" class="mut mono" style="font-size:12.5px;margin-top:12px;text-align:center;line-height:1.5;"></div>
+    </section>
+
+    <!-- ===================== STEP 3 · RESULT ===================== -->
+    <section id="result-step" class="pad hidden" style="padding-top:18px;text-align:center;">
+      <div style="width:72px;height:72px;border-radius:20px;background:var(--good-soft);display:grid;place-items:center;margin:0 auto 14px;">
+        <Icon name="check" size={36} color="var(--good)" />
+      </div>
+      <div class="disp" style="font-weight:800;font-size:26px;">Sent</div>
+      <p id="result-detail" class="mut" style="font-size:14px;line-height:1.5;max-width:320px;margin:8px auto 0;"></p>
+      <a id="result-explorer" class="link" target="_blank" rel="noopener" style="display:inline-block;margin-top:14px;font-size:13.5px;">View on Stellar Expert →</a>
+      <div style="margin-top:24px;display:flex;flex-direction:column;gap:10px;">
+        <button id="again-btn" type="button" class="btn soft">Send something else</button>
+        <a href="/account/" class="btn ghost">Back to your Nido</a>
+      </div>
+    </section>
+  </div>
+
+  <Toast />
+  <PasskeySheet />
+</NidoLayout>
+
+<style is:global>
+  /* tsend-* are injected into the dropdown via innerHTML, so they must be global
+     (scoped styles never reach runtime-injected markup — same as AssetsCard). */
+  .tsend-wrap { position: relative; }
+  .tsend-select {
+    width: 100%; min-height: 56px; display: flex; align-items: center; gap: 11px;
+    padding: 0 14px; border: 1px solid var(--line); border-radius: var(--r-md);
+    background: var(--paper-2); cursor: pointer; text-align: left; font-family: var(--body);
+    transition: border .15s, box-shadow .15s;
+  }
+  .tsend-select:disabled { cursor: default; opacity: .8; }
+  .tsend-select:focus-visible { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .tsend-select[aria-expanded="true"] { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .tsend-ico {
+    width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto; display: grid; place-items: center;
+    background: var(--chip); color: var(--ink-soft); font-weight: 800; font-size: 14px;
+    position: relative; overflow: hidden;
+  }
+  .tsend-ico img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--paper-2); }
+  .tsend-code { font-weight: 700; font-size: 15px; }
+  .tsend-tag {
+    display: inline-block; margin-left: 7px; padding: 1px 7px; border-radius: var(--r-pill);
+    background: var(--chip); color: var(--ink-soft); font-size: 10px; font-weight: 700; vertical-align: middle;
+  }
+  .tsend-bal { margin-left: auto; font-size: 13px; text-align: right; white-space: nowrap; font-family: var(--mono); }
+  .tsend-chev { flex: 0 0 auto; color: var(--mut); transition: transform .18s; }
+  .tsend-select[aria-expanded="true"] .tsend-chev { transform: rotate(90deg); }
+  .tsend-menu {
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 40;
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--sh-2); padding: 6px; max-height: 288px; overflow-y: auto;
+  }
+  .tsend-opt {
+    width: 100%; display: flex; align-items: center; gap: 11px; padding: 10px;
+    border: none; background: none; border-radius: var(--r-sm); cursor: pointer;
+    text-align: left; font-family: var(--body);
+  }
+  .tsend-opt:hover { background: var(--paper-3); }
+  .tsend-opt:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+  .tsend-opt[aria-selected="true"] { background: var(--acc-soft); }
+  .tsend-opt-main { flex: 1; min-width: 0; }
+</style>
+
+<script>
+  import {
+    contractIdFromHostname,
+    nameFromHostname,
+    isContractId,
+    resolveNameCached,
+    stripSubdomain,
+    accountUrl,
+    loadAccountName,
+    fetchRegistryAddress,
+    resolveName,
+    lookupName,
+    type ResolvedFriend,
+  } from "@g2c/passkey-sdk";
+  import { loadAssets } from "../../lib/assets/assets.js";
+  import type { AssetHolding } from "../../lib/assets/types.js";
+  import { decimalToRaw, rawToDecimal } from "../../lib/money.js";
+  import { buildSendOperation } from "../../lib/transfer/buildSend.js";
+  import { previewOperation } from "../../lib/transfer/preview.js";
+  import { renderTransferReview, type TransferView } from "../../lib/transfer/review.js";
+  import { signAndSubmit } from "../../lib/primaryPasskeySigner.js";
+  import { resolveSendRecipient } from "../../lib/recipientInput.js";
+  import { withPasskeySheet } from "../../lib/passkeySheet";
+  import { detectPasskeyLabel } from "../../lib/passkeyLabel";
+  import { checkPasskeySupport } from "../../lib/passkeySupport";
+  import { toast } from "../../lib/toast";
+  import { shortAddr } from "../../lib/address";
+  import { esc } from "../../lib/html";
+  import { EXPLORER_BASE, RPC_URL } from "../../lib/network.js";
+
+  const NAME_NETWORK = "Test SDF Network ; September 2015";
+  const CHEVRON = `<svg class="tsend-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>`;
+
+  const passkey = detectPasskeyLabel();
+  const confirmLabel = `Confirm with ${passkey.label}`;
+  document.querySelectorAll<HTMLElement>(".js-confirm-label").forEach((el) => {
+    el.textContent = confirmLabel;
+  });
+
+  // --- element handles ---
+  const $errorBox = document.getElementById("error-box")!;
+  const $formStep = document.getElementById("form-step")!;
+  const $reviewStep = document.getElementById("review-step")!;
+  const $resultStep = document.getElementById("result-step")!;
+  const $assetSelect = document.getElementById("asset-select") as HTMLButtonElement;
+  const $assetMenu = document.getElementById("asset-menu")!;
+  const $assetBalance = document.getElementById("asset-balance")!;
+  const $to = document.getElementById("to-input") as HTMLInputElement;
+  const $toResolve = document.getElementById("to-resolve")!;
+  const $amount = document.getElementById("amount-input") as HTMLInputElement;
+  const $amountHint = document.getElementById("amount-hint")!;
+  const $reviewBtn = document.getElementById("review-btn") as HTMLButtonElement;
+  const $reviewBody = document.getElementById("review-body")!;
+  const $reviewStatus = document.getElementById("review-status")!;
+  const $confirmBtn = document.getElementById("confirm-btn") as HTMLButtonElement;
+
+  function showError(msg: string) {
+    $errorBox.textContent = msg;
+    $errorBox.style.display = "block";
+  }
+  function clearError() {
+    $errorBox.style.display = "none";
+  }
+  function passkeyBlockedHint() {
+    return `Passkey signing was blocked. If you're in an in-app browser (Twitter, Instagram, etc.), tap the menu (…) and choose "Open in Safari" or "Open in Browser".`;
+  }
+
+  // --- account resolution (signing needs the contract-id subdomain) ---
+  let contractId = contractIdFromHostname(window.location.hostname);
+
+  async function main() {
+    const detectedName = nameFromHostname(window.location.hostname);
+    if (detectedName && !isContractId(detectedName)) {
+      // The passkey ceremony binds to window.location.hostname, so the whole
+      // flow must run on the contract-id subdomain (mirrors /account/ signing).
+      try {
+        const resolved = await resolveNameCached(
+          RPC_URL,
+          await fetchRegistryAddress("name-registry"),
+          detectedName,
+          NAME_NETWORK,
+        );
+        if (resolved) {
+          const rootHost = stripSubdomain(window.location.host);
+          const target = accountUrl(rootHost, resolved, window.location.pathname + window.location.search);
+          window.location.replace(window.location.protocol + target);
+          return;
+        }
+        showError(`Name "${detectedName}" not found in the registry.`);
+        return;
+      } catch (err) {
+        showError(`Couldn't resolve that name: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
+
+    if (!contractId) {
+      showError("Open this page on your account's address to send.");
+      $reviewBtn.disabled = true;
+      return;
+    }
+
+    // From card.
+    const name = loadAccountName(contractId);
+    document.getElementById("from-name")!.textContent = name ?? "Your Nido";
+    document.getElementById("from-addr")!.textContent = shortAddr(contractId, 6, 6);
+
+    void initAssetPicker();
+    initRecipient();
+    initAmount();
+    initSteps();
+  }
+
+  // =====================
+  // ASSET PICKER
+  // =====================
+  let holdings: AssetHolding[] = [];
+  let selectedIdx = 0;
+
+  function iconChipHtml(h: AssetHolding): string {
+    const letter = esc((h.code[0] ?? "?").toUpperCase());
+    const img =
+      h.verified && h.icon
+        ? `<img src="${esc(h.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : "";
+    return `<span class="tsend-ico">${letter}${img}</span>`;
+  }
+
+  function renderSelected() {
+    const h = holdings[selectedIdx];
+    if (!h) return;
+    $assetSelect.innerHTML =
+      `${iconChipHtml(h)}<span class="tsend-code">${esc(h.code)}</span>` +
+      `<span class="tsend-bal mut">${esc(h.formatted)}</span>${CHEVRON}`;
+    $assetBalance.textContent = `Balance: ${h.formatted} ${h.code}`;
+    $amount.placeholder = "0.0";
+  }
+
+  function renderMenu() {
+    $assetMenu.innerHTML = holdings
+      .map((h, i) => {
+        const tag = h.verified ? "" : `<span class="tsend-tag">unverified</span>`;
+        return `<button class="tsend-opt" type="button" role="option" data-idx="${i}" aria-selected="${i === selectedIdx}">
+            ${iconChipHtml(h)}
+            <span class="tsend-opt-main"><span class="tsend-code">${esc(h.code)}</span>${tag}</span>
+            <span class="tsend-bal mut">${esc(h.formatted)}</span>
+          </button>`;
+      })
+      .join("");
+    // 404'd verified logos fall back to the letter chip.
+    $assetMenu.querySelectorAll<HTMLImageElement>("img").forEach((img) =>
+      img.addEventListener("error", () => img.remove(), { once: true }),
+    );
+  }
+
+  function openMenu(open: boolean) {
+    $assetMenu.classList.toggle("hidden", !open);
+    $assetSelect.setAttribute("aria-expanded", String(open));
+  }
+
+  function focusOption(i: number) {
+    const opts = $assetMenu.querySelectorAll<HTMLElement>(".tsend-opt");
+    if (opts.length) opts[Math.max(0, Math.min(i, opts.length - 1))]?.focus();
+  }
+
+  function selectAsset(i: number) {
+    selectedIdx = i;
+    renderSelected();
+    renderMenu();
+    openMenu(false);
+    $assetSelect.focus(); // return focus to the trigger (don't strand keyboard users)
+    $amount.value = "";
+    $amountHint.textContent = "";
+  }
+
+  async function initAssetPicker() {
+    $assetSelect.addEventListener("click", () => {
+      if ($assetSelect.disabled) return;
+      openMenu($assetMenu.classList.contains("hidden"));
+    });
+    $assetMenu.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>(".tsend-opt");
+      if (!btn) return;
+      selectAsset(Number(btn.dataset.idx));
+    });
+    // Close the menu when clicking elsewhere.
+    document.addEventListener("click", (e) => {
+      if (!$assetMenu.classList.contains("hidden") &&
+          !$assetMenu.contains(e.target as Node) &&
+          !$assetSelect.contains(e.target as Node)) {
+        openMenu(false);
+      }
+    });
+
+    // Keyboard: a custom role=listbox must be fully operable without a pointer.
+    // (Enter/Space on the trigger and on each option <button> select via their
+    // native click handlers; here we add open + arrow navigation + Escape.)
+    $assetSelect.addEventListener("keydown", (e) => {
+      if ($assetSelect.disabled) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        openMenu(true);
+        focusOption(e.key === "ArrowDown" ? 0 : holdings.length - 1);
+      }
+    });
+    $assetMenu.addEventListener("keydown", (e) => {
+      const opts = Array.from($assetMenu.querySelectorAll<HTMLElement>(".tsend-opt"));
+      if (!opts.length) return;
+      const curr = opts.indexOf(document.activeElement as HTMLElement);
+      if (e.key === "ArrowDown") { e.preventDefault(); opts[(curr + 1) % opts.length]?.focus(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); opts[(curr - 1 + opts.length) % opts.length]?.focus(); }
+      else if (e.key === "Home") { e.preventDefault(); opts[0]?.focus(); }
+      else if (e.key === "End") { e.preventDefault(); opts[opts.length - 1]?.focus(); }
+    });
+    // Escape closes (restoring focus to the trigger); tabbing focus out closes too.
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !$assetMenu.classList.contains("hidden")) {
+        openMenu(false);
+        $assetSelect.focus();
+      }
+    });
+    $assetMenu.addEventListener("focusout", (e) => {
+      const next = e.relatedTarget as Node | null;
+      if (next && ($assetMenu.contains(next) || next === $assetSelect)) return;
+      openMenu(false);
+    });
+
+    try {
+      const all = await loadAssets(contractId!);
+      // You can only send what you hold — drop zero balances (loadAssets keeps
+      // XLM even at zero; here a zero XLM balance is equally unsendable).
+      holdings = all.filter((h) => h.raw > 0n);
+      if (holdings.length === 0) {
+        $assetSelect.innerHTML = `<span class="mut" style="flex:1;">Nothing to send yet</span>`;
+        $assetBalance.textContent = "This Nido holds no assets with a balance.";
+        $reviewBtn.disabled = true;
+        return;
+      }
+      $assetSelect.disabled = false;
+      renderSelected();
+      renderMenu();
+    } catch {
+      $assetSelect.innerHTML = `<span class="mut" style="flex:1;">Couldn't load your assets</span>`;
+      $reviewBtn.disabled = true;
+    }
+  }
+
+  // =====================
+  // RECIPIENT
+  // =====================
+  let _registryIdPromise: Promise<string> | null = null;
+  function registryId(): Promise<string> {
+    return (_registryIdPromise ??= fetchRegistryAddress("name-registry"));
+  }
+  // Always FRESH (no cache) so a just-moved name can't bind to a stale address.
+  const resolveNameFresh = async (n: string): Promise<string | null> =>
+    resolveName(RPC_URL, await registryId(), n, NAME_NETWORK);
+
+  let resolveSeq = 0;
+  let resolveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function initRecipient() {
+    $to.addEventListener("input", () => {
+      clearTimeout(resolveTimer);
+      const raw = $to.value;
+      if (!raw.trim()) {
+        resolveSeq++;
+        $toResolve.textContent = "";
+        return;
+      }
+      $toResolve.textContent = "Resolving…";
+      resolveTimer = setTimeout(async () => {
+        const myId = ++resolveSeq;
+        try {
+          const res = await resolveSendRecipient(raw, { resolveName: resolveNameFresh });
+          if (myId !== resolveSeq) return;
+          if (!res) {
+            $toResolve.textContent = "✗ No nido by that name (or invalid address)";
+            return;
+          }
+          if (res.kind === "name") {
+            $toResolve.textContent = `✓ ${res.input} → ${shortAddr(res.address)}`;
+          } else {
+            let name: string | null = null;
+            try {
+              name = await lookupName(RPC_URL, await registryId(), res.address, NAME_NETWORK);
+            } catch { /* reverse name is best-effort */ }
+            if (myId !== resolveSeq) return;
+            $toResolve.textContent = name
+              ? `✓ ${shortAddr(res.address)} (${name})`
+              : `✓ ${shortAddr(res.address)}`;
+          }
+        } catch {
+          if (myId === resolveSeq) $toResolve.textContent = "✗ Couldn't resolve — try again";
+        }
+      }, 350);
+    });
+  }
+
+  // =====================
+  // AMOUNT
+  // =====================
+  function selectedHolding(): AssetHolding | undefined {
+    return holdings[selectedIdx];
+  }
+
+  /** Parse the amount field against the selected token's decimals; null if invalid. */
+  function parseAmount(): bigint | null {
+    const h = selectedHolding();
+    if (!h) return null;
+    try {
+      const raw = decimalToRaw($amount.value.trim(), h.decimals);
+      return raw > 0n ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function initAmount() {
+    document.getElementById("max-btn")!.addEventListener("click", () => {
+      const h = selectedHolding();
+      if (h) {
+        $amount.value = rawToDecimal(h.raw, h.decimals);
+        $amountHint.textContent = "";
+      }
+    });
+    // Inline validation feedback as you type, mirroring the To field's live resolve.
+    $amount.addEventListener("input", () => {
+      const h = selectedHolding();
+      const raw = $amount.value.trim();
+      if (!h || !raw) {
+        $amountHint.textContent = "";
+        return;
+      }
+      const parsed = parseAmount();
+      if (parsed === null) {
+        $amountHint.textContent = `Enter a valid amount (up to ${h.decimals} decimal${h.decimals === 1 ? "" : "s"})`;
+      } else if (parsed > h.raw) {
+        $amountHint.textContent = `More ${h.code} than you have`;
+      } else {
+        $amountHint.textContent = "";
+      }
+    });
+  }
+
+  // =====================
+  // STEPS: form → review → result
+  // =====================
+  // The exact transfer the user reviewed, carried into Confirm so the signed op
+  // is byte-identical to what was previewed (TOCTOU-safe).
+  let pending: { view: TransferView; operation: import("@stellar/stellar-sdk").xdr.Operation; amountLabel: string; toLabel: string } | null = null;
+
+  function showStep(step: "form" | "review" | "result") {
+    $formStep.classList.toggle("hidden", step !== "form");
+    $reviewStep.classList.toggle("hidden", step !== "review");
+    $resultStep.classList.toggle("hidden", step !== "result");
+  }
+
+  function initSteps() {
+    $reviewBtn.addEventListener("click", onReview);
+    document.getElementById("back-btn")!.addEventListener("click", () => {
+      pending = null; // discard the previewed op; the next Review rebuilds it fresh
+      $reviewStatus.textContent = "";
+      showStep("form");
+    });
+    $confirmBtn.addEventListener("click", onConfirm);
+    document.getElementById("again-btn")!.addEventListener("click", () => {
+      pending = null;
+      $to.value = "";
+      $toResolve.textContent = "";
+      $amount.value = "";
+      $amountHint.textContent = "";
+      clearError();
+      showStep("form");
+    });
+  }
+
+  async function onReview() {
+    clearError();
+    // Cancel any in-flight recipient debounce + invalidate its sequence so a
+    // late resolve can't paint stale text into the (now hidden) To feedback.
+    clearTimeout(resolveTimer);
+    resolveSeq++;
+    const h = selectedHolding();
+    if (!h || !contractId) return;
+
+    const amountRaw = parseAmount();
+    if (amountRaw === null) {
+      showError(`Enter a valid amount (up to ${h.decimals} decimal place${h.decimals === 1 ? "" : "s"}).`);
+      return;
+    }
+    if (amountRaw > h.raw) {
+      showError(`That's more ${h.code} than you have.`);
+      return;
+    }
+    const support = checkPasskeySupport();
+    if (!support.ok) {
+      showError(support.message!);
+      return;
+    }
+
+    $reviewBtn.disabled = true;
+    const original = $reviewBtn.innerHTML;
+    $reviewBtn.textContent = "Checking…";
+    try {
+      // Resolve FRESH and sign over the concrete address (TOCTOU-safe).
+      const res: ResolvedFriend | null = await resolveSendRecipient($to.value.trim(), {
+        resolveName: resolveNameFresh,
+      });
+      if (!res) {
+        showError("Enter a valid nido name, C… or G… address.");
+        return;
+      }
+      const destination = res.address;
+      // Best-effort human label for the recipient.
+      let toLabel: string | undefined;
+      if (res.kind === "name") {
+        toLabel = res.input;
+      } else {
+        try {
+          toLabel = (await lookupName(RPC_URL, await registryId(), destination, NAME_NETWORK)) ?? undefined;
+        } catch { /* best-effort */ }
+      }
+
+      const operation = buildSendOperation({
+        smartAccount: contractId,
+        tokenContractId: h.contractId,
+        destination,
+        amount: amountRaw,
+      });
+
+      // Validate + price the transfer before prompting for the passkey.
+      const preview = await previewOperation({ operation });
+      if (!preview.ok) {
+        showError(`This transfer can't go through: ${preview.error}`);
+        return;
+      }
+
+      const view: TransferView = {
+        token: h.contractId,
+        from: contractId,
+        to: destination,
+        amountRaw,
+        decimals: h.decimals,
+        code: h.code,
+        verified: h.verified,
+        icon: h.icon,
+        fromLabel: loadAccountName(contractId) ?? undefined,
+        toLabel,
+        feeStroops: preview.resourceFee,
+      };
+      $reviewBody.innerHTML = renderTransferReview(view);
+      $reviewBody.querySelectorAll<HTMLImageElement>("img").forEach((img) =>
+        img.addEventListener("error", () => img.remove(), { once: true }),
+      );
+
+      pending = {
+        view,
+        operation,
+        amountLabel: `${rawToDecimal(amountRaw, h.decimals)} ${h.code}`,
+        toLabel: toLabel ? `${toLabel} (${shortAddr(destination)})` : shortAddr(destination),
+      };
+      $reviewStatus.textContent = "";
+      showStep("review");
+    } catch (err) {
+      showError(`Couldn't prepare the transfer: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      $reviewBtn.disabled = false;
+      $reviewBtn.innerHTML = original;
+    }
+  }
+
+  async function onConfirm() {
+    if (!pending || !contractId) return;
+    clearError();
+    $confirmBtn.disabled = true;
+    $reviewStatus.textContent = `Confirm with ${passkey.label} to send ${pending.amountLabel} to ${pending.toLabel}…`;
+    try {
+      const sent = await withPasskeySheet(
+        () => signAndSubmit({ account: contractId!, operation: pending!.operation }),
+        { title: confirmLabel, sub: `Sending ${pending.amountLabel} to ${pending.toLabel}.` },
+      );
+
+      toast({ msg: "Sent", icon: "check" });
+      document.getElementById("result-detail")!.textContent =
+        `${pending.amountLabel} to ${pending.toLabel}.`;
+      const explorer = document.getElementById("result-explorer") as HTMLAnchorElement;
+      explorer.href = `${EXPLORER_BASE}/tx/${sent.hash}`;
+      showStep("result");
+    } catch (err) {
+      const e = err as { name?: string; message?: string };
+      if (e?.name === "NotAllowedError") {
+        showError(passkeyBlockedHint());
+      } else {
+        showError(`Couldn't send: ${e?.message ?? String(err)}`);
+      }
+      $reviewStatus.textContent = "";
+      $confirmBtn.disabled = false;
+    }
+  }
+
+  void main();
+</script>

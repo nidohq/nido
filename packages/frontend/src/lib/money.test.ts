@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { xlmToStroops, stroopsToXlm, rawToDecimal, formatDecimal } from "./money";
+import {
+  xlmToStroops,
+  stroopsToXlm,
+  rawToDecimal,
+  formatDecimal,
+  decimalToRaw,
+} from "./money";
 
 describe("formatDecimal", () => {
   it("groups exactly, without Number precision loss", () => {
@@ -77,5 +83,44 @@ describe("xlmToStroops", () => {
   it("round-trips with stroopsToXlm", () => {
     expect(stroopsToXlm(xlmToStroops("1.234567"))).toBe("1.234567");
     expect(xlmToStroops(stroopsToXlm(98_765_432n))).toBe(98_765_432n);
+  });
+});
+
+describe("decimalToRaw", () => {
+  it("converts with arbitrary decimals (generalizes xlmToStroops)", () => {
+    expect(decimalToRaw("1.5", 6)).toBe(1_500_000n);
+    expect(decimalToRaw("1.23", 2)).toBe(123n);
+    expect(decimalToRaw("123", 0)).toBe(123n);
+    expect(decimalToRaw("0", 9)).toBe(0n);
+  });
+
+  it("pads the fraction to the token's full precision", () => {
+    expect(decimalToRaw("1", 7)).toBe(10_000_000n);
+    expect(decimalToRaw("0.0000001", 7)).toBe(1n);
+    expect(decimalToRaw("2.5", 18)).toBe(2_500_000_000_000_000_000n);
+  });
+
+  it("round-trips with rawToDecimal", () => {
+    expect(decimalToRaw(rawToDecimal(123_456_789n, 6), 6)).toBe(123_456_789n);
+    expect(rawToDecimal(decimalToRaw("1.234567", 7), 7)).toBe("1.234567");
+  });
+
+  it("rejects more fraction digits than the token allows", () => {
+    expect(() => decimalToRaw("1.123", 2)).toThrow();
+    expect(() => decimalToRaw("1.1", 0)).toThrow();
+  });
+
+  it("rejects malformed input", () => {
+    for (const bad of ["", "abc", "1.2.3", "-1", ".5", "1.", "1e3"]) {
+      expect(() => decimalToRaw(bad, 7)).toThrow();
+    }
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(decimalToRaw("  2.5  ", 7)).toBe(25_000_000n);
+  });
+
+  it("agrees with xlmToStroops at 7 decimals", () => {
+    expect(decimalToRaw("12.5000000", 7)).toBe(xlmToStroops("12.5000000"));
   });
 });

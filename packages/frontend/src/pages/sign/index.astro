@@ -35,12 +35,17 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           <span class="rev-key mut">Account</span>
           <code class="rev-val mono" id="account-text"></code>
         </div>
-        <hr class="divider" />
-        <div class="rev-row col">
+        <hr class="divider" id="payload-divider" />
+        <div class="rev-row col" id="payload-row">
           <span class="rev-key mut" id="payload-label">Payload</span>
           <code class="rev-val mono wrap" id="payload-text"></code>
         </div>
       </div>
+
+      <!-- Decoded, human-readable transaction detail (tx kind only). When this
+           renders, the raw XDR row above collapses behind #toggle-raw. -->
+      <div id="tx-detail" class="hidden" style="margin-bottom:16px;"></div>
+      <button id="toggle-raw" type="button" class="hidden" style="background:none;border:none;color:var(--acc-ink);font-weight:700;cursor:pointer;font-size:12.5px;padding:0;margin:-2px 0 16px;">Show raw transaction</button>
 
       <div id="error-box" class="alert danger" style="display:none"></div>
 
@@ -111,6 +116,10 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { withPasskeySheet } from '../../lib/passkeySheet';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
   import { shortAddr } from '../../lib/address';
+  import { describeTransaction } from '../../lib/transfer/txSummary.js';
+  import { renderTransferReview, renderGenericOp, type TransferView } from '../../lib/transfer/review.js';
+  import { probeSep41Token } from '../../lib/assets/balances.js';
+  import { NATIVE_SAC_ID } from '../../lib/network.js';
 
   const params = new URLSearchParams(window.location.search);
   const kind = params.get('kind') ?? 'tx';
@@ -148,6 +157,95 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   document.getElementById('payload-label')!.textContent =
     kind === 'message' ? 'Message' : kind === 'tx' ? 'Transaction XDR' : 'Auth entry XDR';
   document.getElementById('payload-text')!.textContent = payload || '(missing)';
+
+  // For transactions, decode the XDR into human-readable detail so the user
+  // sees what they're approving, not a base64 blob. The raw XDR stays available
+  // behind a toggle. Best-effort: any decode/enrich failure leaves the raw
+  // payload visible, exactly as before this enhancement.
+  if (kind === 'tx' && payload && account) {
+    void renderTxDetail(payload, account);
+  }
+
+  async function renderTxDetail(txXdr: string, acct: string) {
+    const $detail = document.getElementById('tx-detail')!;
+    try {
+      // stellar-sdk's XDR parsing needs the Buffer global (same lazy polyfill
+      // the account page uses before any SDK call).
+      const { Buffer: B } = await import('buffer');
+      if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
+
+      const summary = describeTransaction(txXdr, network ?? 'Test SDF Network ; September 2015');
+      if (summary.ops.length === 0) return;
+
+      // decimals/symbol for non-native tokens, filled in by an async probe.
+      const meta = new Map<string, { decimals: number; symbol?: string }>();
+      const paint = () => {
+        $detail.innerHTML = summary.ops
+          .map((op) => {
+            if (op.kind === 'transfer') {
+              const native = op.token === NATIVE_SAC_ID;
+              const m = meta.get(op.token);
+              const view: TransferView = {
+                token: op.token,
+                from: op.from,
+                to: op.to,
+                amountRaw: op.amount,
+                decimals: native ? 7 : m?.decimals,
+                code: native ? 'XLM' : m?.symbol,
+                // Only native XLM is trusted here; everything else shows its
+                // contract id + an "unverified" tag (a dApp tx has no curated
+                // provenance to lean on).
+                verified: native,
+              };
+              return renderTransferReview(view);
+            }
+            return renderGenericOp(op);
+          })
+          .join('');
+        $detail.querySelectorAll<HTMLImageElement>('img').forEach((img) =>
+          img.addEventListener('error', () => img.remove(), { once: true }),
+        );
+      };
+
+      paint();
+      $detail.classList.remove('hidden');
+
+      // Now that there's a friendly view, collapse the raw XDR behind a toggle.
+      const $row = document.getElementById('payload-row')!;
+      const $divider = document.getElementById('payload-divider');
+      const $toggle = document.getElementById('toggle-raw') as HTMLButtonElement;
+      document.getElementById('payload-label')!.textContent = 'Raw transaction';
+      $row.classList.add('hidden');
+      $divider?.classList.add('hidden');
+      $toggle.classList.remove('hidden');
+      $toggle.addEventListener('click', () => {
+        const show = $row.classList.toggle('hidden') === false;
+        $divider?.classList.toggle('hidden', !show);
+        $toggle.textContent = show ? 'Hide raw transaction' : 'Show raw transaction';
+      });
+
+      // Enrich non-native token transfers (decimals/symbol), then repaint.
+      const tokens = [
+        ...new Set(
+          summary.ops.flatMap((op) =>
+            op.kind === 'transfer' && op.token !== NATIVE_SAC_ID ? [op.token] : [],
+          ),
+        ),
+      ];
+      if (tokens.length) {
+        await Promise.all(
+          tokens.map((t) =>
+            probeSep41Token(t, acct)
+              .then((p) => { if (p) meta.set(t, { decimals: p.decimals, symbol: p.symbol }); })
+              .catch(() => {}),
+          ),
+        );
+        paint();
+      }
+    } catch {
+      /* leave the raw payload visible (it's already shown) */
+    }
+  }
 
   // anti-redirect-abuse: only post back to the origin that asked.
   function validatedOrigin(): string | null {

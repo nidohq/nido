@@ -126,3 +126,29 @@ export function xlmToStroops(amount: string): bigint {
   const fracPadded = frac.padEnd(XLM_FRACTION_DIGITS, "0");
   return BigInt(whole) * STROOPS_PER_XLM + BigInt(fracPadded);
 }
+
+/**
+ * Convert a user-entered decimal string to an integer smallest-unit amount for
+ * a token with `decimals` decimal places. Generalizes {@link xlmToStroops}
+ * beyond XLM's fixed 7 (SACs are always 7; SEP-41 tokens choose their own,
+ * 0..=38). Accepts up to `decimals` fractional digits and throws on anything
+ * malformed so callers can surface a validation error. Inverse of
+ * {@link rawToDecimal}.
+ *
+ * @param amount    decimal string, e.g. "12.5" or "0.0000001"
+ * @param decimals  the token's decimal places (>= 0)
+ * @returns smallest-unit amount as a bigint
+ * @throws if `amount` is not a non-negative decimal with <= `decimals` fraction digits
+ */
+export function decimalToRaw(amount: string, decimals: number): bigint {
+  const d = Math.trunc(decimals);
+  if (d < 0) throw new Error(`Invalid decimals: ${decimals}`);
+  const trimmed = amount.trim();
+  const re = d === 0 ? /^\d+$/ : new RegExp(`^\\d+(\\.\\d{1,${d}})?$`);
+  if (!re.test(trimmed)) {
+    throw new Error(`Invalid amount: "${amount}"`);
+  }
+  const [whole, frac = ""] = trimmed.split(".");
+  const fracPadded = frac.padEnd(d, "0");
+  return BigInt(whole) * 10n ** BigInt(d) + BigInt(fracPadded || "0");
+}
