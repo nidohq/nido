@@ -66,9 +66,14 @@ test.describe('account page — UI only (no chain) @fast', () => {
     await expect(page.locator('#error-box')).toContainText('1-15 characters');
   });
 
-  test('send panel exposes a recipient resolve-status element @fast', () => {
-    // The send / recipient UI now lives on the /transfer/ page (multi-asset
-    // transfer, #78): the input is #to-input and its resolve-status is #to-resolve.
+});
+
+// The XLM-only inline Send panel was retired from the account page in #78 (the
+// multi-asset transfer rework): "Send" now opens the dedicated /transfer/ view,
+// so the recipient input + its live resolve-status element moved there (renamed
+// send-to → to-input, send-resolve → to-resolve). This UI-only check follows them.
+test.describe('transfer page — UI only (no chain) @fast', () => {
+  test('transfer view exposes a recipient resolve-status element @fast', () => {
     const html = readFileSync(join(DIST_DIR, 'transfer/index.html'), 'utf-8');
     expect(html).toContain('id="to-input"');
     expect(html).toContain('id="to-resolve"');
