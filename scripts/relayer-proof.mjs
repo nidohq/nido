@@ -2,24 +2,28 @@
 /**
  * Testnet gas-abstraction proof (#72).
  *
- * Claim: a user account AUTHORIZES a Soroban contract call but pays NOTHING.
- * The OZ Relayer (Channels plugin) sources the transaction with a channel
- * account and fee-bumps it with a fund account, so the user's balance is
- * untouched.
+ * Claim: a user account AUTHORIZES a Soroban contract call but pays NOTHING;
+ * a fee-bump from non-user accounts (the OZ Relayer Channels plugin: channel
+ * account as tx source, fund account as fee payer) sources and pays for it,
+ * so the user's balance and sequence are untouched.
  *
  * What this script does:
  *   1. Creates a fresh ed25519 keypair ("the user") and funds it via
  *      friendbot — it must exist on-chain to authorize, but it never spends.
- *   2. Records the user's native balance via Horizon.
+ *   2. Records the user's native balance and sequence via Horizon.
  *   3. Builds an invoke of the status-message demo contract and simulates it
  *      in recording mode against soroban-testnet RPC.
  *   4. Signs ONLY the resulting SorobanAuthorizationEntry with the user's key
  *      via stellar-sdk's authorizeEntry — exactly what the wallet does with a
  *      passkey.
  *   5. Ships {func, auth} to POST ${RELAYER}/relay and waits for "confirmed".
- *   6. Asserts on-chain: the landed envelope IS a fee-bump, and neither the
- *      fee source nor the inner tx source is the user.
- *   7. Asserts the user's balance is byte-identical to before.
+ *   6. Asserts on-chain: the landed envelope IS a fee-bump and neither the
+ *      fee source nor the inner tx source is the user; AND — chain of
+ *      custody — the landed inner tx carries THIS run's host function and
+ *      signed auth entry byte-for-byte. The per-run random nonce inside the
+ *      signed entry makes that an unforgeable link between the
+ *      relayer-returned hash and this run's authorization.
+ *   7. Asserts the user's balance and sequence are byte-identical to before.
  *
  * Usage:
  *   node scripts/relayer-proof.mjs [relayer-url]     # default https://nido-relayer.fly.dev
@@ -131,13 +135,16 @@ function selfTest() {
   if (innerSource.address !== innerKp.publicKey()) {
     fail(`self-test: innerSource ${innerSource.address} !== ${innerKp.publicKey()}`);
   }
-  // Also prove the negative path: a plain v1 envelope must be rejected.
+  // Also prove the negative path: a plain v1 envelope must be rejected with
+  // the dedicated diagnostic, not some incidental accessor error.
   const v1Envelope = xdr.TransactionEnvelope.fromXDR(innerTx.toEnvelope().toXDR("base64"), "base64");
   try {
     extractFeeBumpParties(v1Envelope);
     fail("self-test: extractFeeBumpParties accepted a non-fee-bump envelope");
-  } catch {
-    // expected
+  } catch (err) {
+    if (!String(err.message).includes("expected a fee-bump envelope")) {
+      fail(`self-test: non-fee-bump envelope rejected with the wrong error: ${err.message}`);
+    }
   }
   console.log("SELF-TEST OK: fee-bump extraction round-trips", {
     feeSource: feeSource.address,
@@ -145,7 +152,7 @@ function selfTest() {
   });
 }
 
-async function fetchNativeBalance(publicKey) {
+async function fetchAccountState(publicKey) {
   const resp = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
   if (!resp.ok) {
     throw new Error(`Horizon returned HTTP ${resp.status} for account ${publicKey}`);
@@ -153,7 +160,7 @@ async function fetchNativeBalance(publicKey) {
   const account = await resp.json();
   const native = (account.balances ?? []).find((b) => b.asset_type === "native");
   if (!native) throw new Error(`account ${publicKey} has no native balance entry`);
-  return native.balance;
+  return { balance: native.balance, sequence: account.sequence };
 }
 
 /** POST {params} to the relayer and unwrap the Channels-plugin envelope.
@@ -224,9 +231,11 @@ async function main() {
   }
   log("friendbot: funded");
 
-  // 2. Pre-call balance via Horizon.
-  const userBalanceBefore = await fetchNativeBalance(user.publicKey());
-  log(`balance before: ${userBalanceBefore} XLM`);
+  // 2. Pre-call balance + sequence via Horizon.
+  const { balance: userBalanceBefore, sequence: userSequenceBefore } = await fetchAccountState(
+    user.publicKey(),
+  );
+  log(`balance before: ${userBalanceBefore} XLM (sequence ${userSequenceBefore})`);
 
   // 3. Build the invoke op and simulate in recording mode.
   //
@@ -270,8 +279,11 @@ async function main() {
   }
   log(`simulated: latestLedger=${sim.latestLedger}, 1 address-credentialed auth entry for the user`);
 
-  // 4. The ONLY thing the user ever signs: the authorization entry.
+  // 4. The ONLY thing the user ever signs: the authorization entry. Its
+  //    base64 XDR (random nonce + signature included) is kept for the
+  //    chain-of-custody check against the landed transaction below.
   const signedEntry = await authorizeEntry(entry, user, sim.latestLedger + 600, Networks.TESTNET);
+  const signedEntryXdr = signedEntry.toXDR("base64");
 
   // 5. {func, auth} — the exact shape the Channels plugin consumes.
   const func = simTx
@@ -283,7 +295,7 @@ async function main() {
     .invokeHostFunctionOp()
     .hostFunction()
     .toXDR("base64");
-  const params = { func, auth: [signedEntry.toXDR("base64")], skipWait: false };
+  const params = { func, auth: [signedEntryXdr], skipWait: false };
 
   if (dryRun) {
     console.log(JSON.stringify({ dryRun: true, relayerUrl, body: { params } }, null, 2));
@@ -300,13 +312,22 @@ async function main() {
   }
   log(`relayer payload: ${JSON.stringify(payload)}`);
 
-  // 6. The relayer must report a confirmed transaction with a hash.
-  if (payload.status !== "confirmed") {
-    fail(`relayer status is "${payload.status}", expected "confirmed"`, payload);
+  // 6. The relayer must report a transaction hash on a non-failed status.
+  //    skipWait=false normally yields "confirmed", but under congestion the
+  //    plugin can still answer "submitted"/"sent" with a hash — the on-chain
+  //    getTransaction SUCCESS check below is the arbiter either way.
+  if (payload.status === "failed" || payload.status === "expired") {
+    fail(`relayer reported status "${payload.status}"`, payload);
+  }
+  if (!["confirmed", "submitted", "sent"].includes(payload.status)) {
+    fail(`relayer status is "${payload.status}", expected "confirmed" (or "submitted"/"sent" with a hash)`, payload);
   }
   const hash = payload.hash;
   if (!hash || typeof hash !== "string") {
-    fail("relayer reported confirmed but returned no transaction hash", payload);
+    fail(`relayer reported "${payload.status}" but returned no transaction hash`, payload);
+  }
+  if (payload.status !== "confirmed") {
+    log(`relayer status "${payload.status}" (not yet "confirmed") — deferring to on-chain verification`);
   }
 
   // 7. Independently verify on-chain success via RPC.
@@ -334,11 +355,40 @@ async function main() {
     fail(`inner tx source ${innerSource.address} is the user — the user sourced the transaction`);
   }
 
-  // 9. The user's balance must be byte-identical: not one stroop spent.
-  const userBalanceAfter = await fetchNativeBalance(user.publicKey());
-  log(`balance after:  ${userBalanceAfter} XLM`);
+  // 9. Chain of custody: the landed inner tx must carry THIS run's host
+  //    function and THIS run's signed auth entry byte-for-byte. The signed
+  //    entry embeds a per-run random nonce and the user's signature over it,
+  //    so a byte-equal match is an unforgeable link between the
+  //    relayer-returned hash and the authorization produced above — the
+  //    relayer cannot satisfy this with any prior transaction.
+  const innerOps = txResp.envelopeXdr.feeBump().tx().innerTx().v1().tx().operations();
+  if (innerOps.length !== 1) {
+    fail(`landed inner tx has ${innerOps.length} operations, expected exactly 1`);
+  }
+  const innerBody = innerOps[0].body();
+  if (innerBody.switch() !== xdr.OperationType.invokeHostFunction()) {
+    fail(`landed inner op is ${innerBody.switch().name}, expected invokeHostFunction`);
+  }
+  const landedOp = innerBody.invokeHostFunctionOp();
+  if (landedOp.hostFunction().toXDR("base64") !== func) {
+    fail("landed host function does not byte-match the one this run submitted");
+  }
+  if (!landedOp.auth().some((a) => a.toXDR("base64") === signedEntryXdr)) {
+    fail("landed inner tx does not contain this run's signed auth entry (byte-for-byte)");
+  }
+  log("chain of custody: landed inner tx carries this run's host function + signed auth entry");
+
+  // 10. The user's balance and sequence must be byte-identical: not one
+  //     stroop spent, not one transaction sourced.
+  const { balance: userBalanceAfter, sequence: userSequenceAfter } = await fetchAccountState(
+    user.publicKey(),
+  );
+  log(`balance after:  ${userBalanceAfter} XLM (sequence ${userSequenceAfter})`);
   if (userBalanceAfter !== userBalanceBefore) {
     fail(`user balance changed: ${userBalanceBefore} -> ${userBalanceAfter}`);
+  }
+  if (userSequenceAfter !== userSequenceBefore) {
+    fail(`user sequence changed: ${userSequenceBefore} -> ${userSequenceAfter}`);
   }
 
   console.log(
@@ -353,15 +403,23 @@ async function main() {
         feeBump: true,
         feeSource: feeSource.address,
         innerSource: innerSource.address,
+        hostFunctionMatchedOnChain: true,
+        authEntryMatchedOnChain: true,
         userBalanceBefore,
         userBalanceAfter,
+        userSequenceBefore,
+        userSequenceAfter,
         userPaidNothing: true,
       },
       null,
       2,
     ),
   );
-  console.log("PROOF OK: user authorized the call; relayer sourced and paid for it.");
+  console.log(
+    "PROOF OK: user authorized the call and paid nothing; a fee-bump from non-user accounts (the relayer's channel/fund) sourced and paid for it.",
+  );
 }
 
-main().catch((err) => fail(err.message ?? String(err)));
+// Deliberate assertion failures call fail() directly with clean messages;
+// anything that lands here is unexpected, so keep the stack for debugging.
+main().catch((err) => fail(err.stack ?? err.message ?? String(err)));
