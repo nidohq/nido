@@ -72,6 +72,23 @@ import Icon from '../../../components/Icon.astro';
 
         <p id="om-multi-rule" class="mut" style="font-size:12.5px;margin-top:12px;" hidden></p>
 
+        <!-- Repair mode (issue #87): rule 0 is multi-signer with no policy,
+             so EVERY passkey must co-sign every action — single-passkey
+             signing is bricked. Friends can authorize installing a 1-of-N
+             approval policy without touching any keys. -->
+        <div id="om-repair" hidden>
+          <div class="card" style="padding:18px;margin-top:14px;border:1px solid var(--warn-ink, #b45309);">
+            <div class="disp" style="font-weight:800;font-size:15px;margin-bottom:8px;">This account is locked</div>
+            <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 12px;" id="om-repair-text">
+              All of this account's passkeys currently have to approve together,
+              so signing with one passkey always fails. Your friends can fix
+              this — no keys change.
+            </p>
+            <button id="om-repair-btn" class="btn acc" type="button">Repair with my friends</button>
+            <p id="om-repair-status" class="mut" style="font-size:12.5px;margin-top:10px;"></p>
+          </div>
+        </div>
+
         <div id="om-stage">
           <span class="section-label" style="display:block;margin:22px 0 10px;">Step 1 · New passkey</span>
           <div class="card" style="padding:18px;">
@@ -142,6 +159,7 @@ import Icon from '../../../components/Icon.astro';
     addFriendSignature,
     submitRotation,
     signRotationAsFriend,
+    checkDefaultRuleRepair,
     getStaging,
     clearStaging,
     collectedCount,
@@ -178,7 +196,11 @@ import Icon from '../../../components/Icon.astro';
       btn.disabled = true;
       status.textContent = 'Signing…';
       try {
-        const { blob, description } = await signRotationAsFriend(account!, encoded);
+        const { blob, description } = await signRotationAsFriend(
+          account!,
+          encoded,
+          (m) => { status.textContent = m; },
+        );
         document.getElementById('fm-desc')!.textContent = description;
         (document.getElementById('fm-blob') as HTMLTextAreaElement).value = blob;
         document.getElementById('fm-result')!.hidden = false;
@@ -249,6 +271,47 @@ import Icon from '../../../components/Icon.astro';
       showCollect(existing.threshold);
       refreshProgress();
     }
+
+    // Issue #87: offer the repair path when rule 0 is multi-signer with no
+    // policy (single-passkey signing bricked). The repair is a recovery-
+    // authorized rotation that ONLY installs the 1-of-N approval policy.
+    void (async () => {
+      try {
+        const repair = await checkDefaultRuleRepair(account!);
+        if (!repair.needsRepair) return;
+        document.getElementById('om-repair')!.hidden = false;
+        document.getElementById('om-repair-text')!.textContent =
+          `All ${repair.signerCount} of this account's passkeys currently have to ` +
+          `approve together, so signing with one passkey always fails. Your ` +
+          `friends can fix this by installing a 1-of-${repair.signerCount} ` +
+          `approval policy — no keys change.`;
+      } catch { /* detection is best-effort; the normal flow still works */ }
+    })();
+
+    document.getElementById('om-repair-btn')!.addEventListener('click', async () => {
+      const btn = document.getElementById('om-repair-btn') as HTMLButtonElement;
+      const status = document.getElementById('om-repair-status')!;
+      btn.disabled = true;
+      status.textContent = 'Staging repair…';
+      try {
+        // Bare request: no key added or removed. planRotation sees the
+        // bricked rule state and plans the lone add_policy call.
+        const { handoffLink } = await prepareRotation({
+          account: account!,
+          recoveryRuleId: recoveryRuleId!,
+          friends,
+          threshold,
+          request: { defaultRuleId: 0 },
+        });
+        (document.getElementById('om-link') as HTMLTextAreaElement).value = handoffLink;
+        showCollect(threshold);
+        refreshProgress();
+        status.textContent = 'Staged. Share the link with your friends (Step 4 below).';
+      } catch (e) {
+        status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById('om-new-key')!.addEventListener('click', async () => {
       keyStatus.textContent = 'Creating passkey…';
@@ -342,7 +405,7 @@ import Icon from '../../../components/Icon.astro';
 
     function showCollect(_threshold: number) {
       document.getElementById('om-collect')!.hidden = false;
-      const link = getStaging(account!)?.txXdr;
+      const link = getStaging(account!)?.txs[0]?.txXdr;
       if (link && !(document.getElementById('om-link') as HTMLTextAreaElement).value) {
         // Reconstruct the share link from staging on resume.
         // (link param recomputed on next prepare; on resume we leave blank.)
