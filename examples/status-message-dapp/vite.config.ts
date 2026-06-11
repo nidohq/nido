@@ -7,8 +7,8 @@ import wasm from "vite-plugin-wasm"
 //
 // The base path is intentionally NOT set here because this app ships to two
 // targets with different bases:
-//   • GitHub Pages (live):  https://theahaco.github.io/g2c/  → base "/g2c/"
-//       built via `npm run build:pages` (vite build --base=/g2c/)
+//   • GitHub Pages (live): project URL for the current repository
+//       built via `npm run build:pages`
 //   • Cloudflare PR preview / local dev: served at an apex → base "/"
 //       built via the default `vite build`
 // Keeping base out of the config lets the default (`/`) stay correct for the

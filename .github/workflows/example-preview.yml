@@ -20,7 +20,7 @@ permissions:
 env:
   PAGES_PROJECT: mysoroban
   # Testnet runtime config (all public). base stays "/" — the preview sits at a
-  # subdomain apex, unlike the /g2c/ GitHub Pages path.
+  # subdomain apex, unlike the GitHub Pages project path.
   PUBLIC_STELLAR_NETWORK: TESTNET
   PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
   PUBLIC_STELLAR_RPC_URL: "https://soroban-testnet.stellar.org"
@@ -93,7 +93,8 @@ jobs:
             const prNum = context.payload.pull_request.number;
             const previewUrl = process.env.PREVIEW_URL
               || `https://example-pr-${prNum}.mysoroban.pages.dev`;
-            const body = `**Example dApp preview deployed!**\n\n${previewUrl}\n\nThe \`status-message\` example (testnet), wallet = THIS PR's preview (https://pr-${prNum}.nido.fyi). The live home is https://theahaco.github.io/g2c/ once merged.`;
+            const liveUrl = `https://${context.repo.owner}.github.io/${context.repo.repo}/`;
+            const body = `**Example dApp preview deployed!**\n\n${previewUrl}\n\nThe \`status-message\` example (testnet), wallet = THIS PR's preview (https://pr-${prNum}.nido.fyi). The live home is ${liveUrl} once merged.`;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,

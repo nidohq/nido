@@ -30,6 +30,7 @@ const {
 // page/subdomain; per-name cards need an edge function (tracked separately).
 const ogImage = new URL("/og-image.png", Astro.site).href;
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undefined;
 ---
 
 <!doctype html>
@@ -85,9 +86,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
           <main id="main-content" class="col col-app"><slot /></main>
         </div>
       )}
-      {shell !== "focused" && (
+      {shell !== "focused" && exampleDappUrl && (
         <footer class="site-footer">
-          <a href="https://theahaco.github.io/g2c/" target="_blank" rel="noopener">
+          <a href={exampleDappUrl} target="_blank" rel="noopener">
             Example app ↗
           </a>
         </footer>
@@ -161,11 +162,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
   // Preview banner
   const sub = window.location.hostname.split(".")[0];
   const match = sub.match(/(?:--)?pr-(\d+)$/);
-  if (match) {
+  const githubRepository = import.meta.env.PUBLIC_GITHUB_REPOSITORY;
+  if (match && githubRepository) {
     const prNum = match[1];
     const banner = document.getElementById("preview-banner") as HTMLAnchorElement;
     banner.textContent = `Preview PR #${prNum}`;
-    banner.href = `https://github.com/theahaco/g2c/pull/${prNum}`;
+    banner.href = `https://github.com/${githubRepository}/pull/${prNum}`;
     banner.style.display = "block";
   }
 

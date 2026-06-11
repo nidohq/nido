@@ -1,8 +1,8 @@
 name: Deploy Example to GitHub Pages
 
-# Deploys examples/status-message-dapp/ as a live testnet demo at
-# https://theahaco.github.io/g2c/. Independent of the Cloudflare deploy of the
-# main Nido frontend (see deploy.yml / preview.yml).
+# Deploys examples/status-message-dapp/ as a live testnet demo at the GitHub
+# Pages project URL for this repository. Independent of the Cloudflare deploy of
+# the main Nido frontend (see deploy.yml / preview.yml).
 
 on:
   push:
@@ -26,6 +26,7 @@ concurrency:
 # client is bound to the testnet contract id; these point the frontend at
 # testnet and at the production g2c passkey wallet.
 env:
+  PAGES_BASE_PATH: "/${{ github.event.repository.name }}/"
   PUBLIC_STELLAR_NETWORK: TESTNET
   PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
   PUBLIC_STELLAR_RPC_URL: "https://soroban-testnet.stellar.org"
@@ -54,12 +55,12 @@ jobs:
           npm run build -w @g2c/stellar-wallets-kit-module
           npm run build -w status_message
 
-      - name: Build the example (base=/g2c/)
+      - name: Build the example (GitHub Pages base)
         run: npm run build:pages
         working-directory: examples/status-message-dapp
 
       # GitHub Pages serves 404.html for unmatched paths; making it the SPA
-      # shell lets client-side routes (e.g. /g2c/debug) survive a direct reload.
+      # shell lets client-side routes under the project path survive a direct reload.
       - name: SPA fallback
         run: cp dist/index.html dist/404.html
         working-directory: examples/status-message-dapp
