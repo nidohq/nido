@@ -52,24 +52,39 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     <div id="signing-mode" class="hidden screen-in pad" style="padding-top:18px;">
       <div style="text-align:center; margin-bottom:18px;">
         <div style="width:72px; height:72px; border-radius:20px; background:var(--acc-soft); display:grid; place-items:center; margin:0 auto 14px;">
-          <Icon name="shieldcheck" size={36} color="var(--acc)" />
+          <span id="sign-icon-generic"><Icon name="shieldcheck" size={36} color="var(--acc)" /></span>
+          <span id="sign-icon-claim" class="hidden"><Icon name="sparkle" size={36} color="var(--acc)" /></span>
         </div>
-        <div class="disp" style="font-weight:800; font-size:26px;">Approve this request</div>
-        <p class="mut" style="font-size:14px; line-height:1.5; max-width:320px; margin:8px auto 0;">
+        <div id="sign-title" class="disp" style="font-weight:800; font-size:26px;">Approve this request</div>
+        <p id="sign-sub" class="mut" style="font-size:14px; line-height:1.5; max-width:320px; margin:8px auto 0;">
           A dApp is asking you to sign. Review it, then confirm with your passkey.
         </p>
       </div>
 
       <div class="card" style="padding:4px 16px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 0;">
+        <!-- Name row — shown only when this request is a recognized name claim
+             (the incoming hash matches the one the claim flow stashed). Default
+             hidden via inline display (NOT the .hidden class) because the row
+             also carries an inline display, and an inline style would otherwise
+             override the class and leak an empty row into the generic path. -->
+        <div id="sign-name-row" style="display:none; justify-content:space-between; align-items:center; gap:14px; padding:14px 0;">
+          <span class="mut" style="font-size:13.5px; font-weight:600; white-space:nowrap;">Name</span>
+          <code id="sign-name" class="mono" style="font-size:15px; font-weight:700; margin-left:auto; text-align:right; word-break:break-all; color:var(--acc-ink);"></code>
+        </div>
+        <div id="sign-from-row" style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 0;">
           <span class="mut" style="font-size:13.5px; font-weight:600; white-space:nowrap;">From</span>
           <span id="sign-origin" class="mono" style="font-size:13px; margin-left:auto; text-align:right; word-break:break-all;"></span>
         </div>
-        <div style="display:flex; justify-content:space-between; gap:14px; padding:14px 0; border-top:1px solid var(--line-soft);">
+        <div id="sign-hash-row" style="display:flex; justify-content:space-between; gap:14px; padding:14px 0; border-top:1px solid var(--line-soft);">
           <span class="mut" style="font-size:13.5px; font-weight:600; white-space:nowrap;">Hash</span>
           <code id="sign-hash" class="mono" style="font-size:11.5px; margin-left:auto; text-align:right; word-break:break-all;"></code>
         </div>
       </div>
+      <!-- For a recognized name claim the verifiable details (the decoded
+           transaction + the raw hash) are collapsed behind this toggle (mirrors
+           the /sign/ page's "Show raw transaction"). Populated by JS. -->
+      <button id="sign-toggle-tech" type="button" class="hidden" style="background:none; border:none; color:var(--acc-ink); font-weight:700; cursor:pointer; font-size:12.5px; padding:0; margin:10px 0 0;">Show technical details</button>
+      <div id="sign-tech" class="hidden" style="margin-top:12px;"></div>
 
       <div id="sign-needs-register" style="margin-top:18px;">
         <p class="mut" style="font-size:13.5px; line-height:1.5; text-align:center; margin:0 0 14px;">
@@ -323,6 +338,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
   import { fetchSecuritySummary } from "../../lib/securitySummary";
   import { toast } from "../../lib/toast";
+  import { describeSignRequest } from "../../lib/signRequestSummary";
+  import { describeTransaction } from "../../lib/transfer/txSummary";
+  import { renderNameRegister } from "../../lib/transfer/review";
+  import { esc } from "../../lib/html";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { shortAddr } from "../../lib/address";
@@ -523,6 +542,44 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   // SIGNING MODE
   // =====================
 
+  // The raw auth digest, as a labelled card — the irreducible "what you're
+  // signing" detail, shown inside the collapsible technical section.
+  function renderSignHashCard(hash: string): string {
+    return `<div class="card" style="padding:13px 16px;margin-top:10px;">
+      <div class="mut" style="font-size:12px;font-weight:600;margin-bottom:6px;">Signature hash</div>
+      <code class="mono" style="font-size:11.5px;word-break:break-all;line-height:1.5;">${esc(hash)}</code>
+    </div>`;
+  }
+
+  // Decode the transaction the claim flow stashed (same origin) and render it as
+  // human-readable detail, so "technical details" shows the actual register
+  // operation, not just the digest. Best-effort: any failure leaves the
+  // already-rendered hash card in place.
+  async function renderClaimTxDetails($tech: HTMLElement, signHash: string) {
+    const txXdr = localStorage.getItem("g2c:name-txXdr");
+    if (!txXdr) return;
+    try {
+      // stellar-sdk's XDR parsing needs the Buffer global (same lazy polyfill
+      // the claim/finalize paths use before any SDK call).
+      const { Buffer: B } = await import("buffer");
+      if (typeof globalThis.Buffer === "undefined") (globalThis as any).Buffer = B;
+
+      const summary = describeTransaction(txXdr, Networks.TESTNET);
+      const reg = summary.ops.find((o) => o.kind === "name-register");
+      if (!reg || reg.kind !== "name-register") return;
+
+      let fee: bigint | undefined;
+      try {
+        fee = BigInt(summary.fee);
+      } catch {
+        fee = undefined;
+      }
+      $tech.innerHTML = renderNameRegister(reg, fee) + renderSignHashCard(signHash);
+    } catch {
+      /* keep the hash-only card already shown */
+    }
+  }
+
   function initSigningMode() {
     document.getElementById("signing-mode")!.classList.remove("hidden");
 
@@ -544,6 +601,44 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     }
     document.getElementById("sign-origin")!.textContent = originDisplay;
     document.getElementById("sign-hash")!.textContent = signHashParam;
+
+    // If this request is the name claim the user just started, surface what
+    // they're actually approving — the name — instead of only the raw hash.
+    // describeSignRequest binds that friendly copy to the exact hash (the claim
+    // flow stashed both), so a mismatched/forged request can't borrow it.
+    const summary = describeSignRequest({
+      signHash: signHashParam!,
+      claimHash: localStorage.getItem("g2c:name-claim-hash"),
+      claimName: localStorage.getItem("g2c:name-pending"),
+    });
+    if (summary.kind === "name-claim") {
+      document.getElementById("sign-icon-generic")!.classList.add("hidden");
+      document.getElementById("sign-icon-claim")!.classList.remove("hidden");
+      document.getElementById("sign-title")!.textContent = "Claim your name";
+      document.getElementById("sign-sub")!.textContent =
+        `You're claiming the name "${summary.name}" for your Nido. Confirm with your passkey to lock it in.`;
+
+      document.getElementById("sign-name")!.textContent = summary.name;
+      document.getElementById("sign-name-row")!.style.display = "flex";
+      // The "From" origin and the in-card raw-hash row are noise for a
+      // self-initiated claim — hide both. The verifiable details (the decoded
+      // transaction + the hash) move into the collapsible block below.
+      document.getElementById("sign-from-row")!.style.display = "none";
+      document.getElementById("sign-hash-row")!.style.display = "none";
+
+      const $tech = document.getElementById("sign-tech")!;
+      // Show the hash immediately so the toggle works even before the async
+      // decode finishes; enrich with the full decoded transaction when ready.
+      $tech.innerHTML = renderSignHashCard(signHashParam!);
+      void renderClaimTxDetails($tech, signHashParam!);
+
+      const $toggle = document.getElementById("sign-toggle-tech")!;
+      $toggle.classList.remove("hidden");
+      $toggle.addEventListener("click", () => {
+        const shown = $tech.classList.toggle("hidden") === false;
+        $toggle.textContent = shown ? "Hide technical details" : "Show technical details";
+      });
+    }
 
     const cred = loadCredential();
     if (cred) {
@@ -904,6 +999,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         localStorage.setItem("g2c:name-txXdr", assembled.toXDR());
         localStorage.setItem("g2c:name-lastLedger", lastLedger.toString());
         localStorage.setItem("g2c:name-pending", name);
+        // Bind the friendly "claiming <name>" copy shown on the signing surface
+        // to the exact hash we're about to ask the user to sign. The signing
+        // mode (same origin) reads this back and only shows the name when the
+        // incoming ?sign= hash matches — see describeSignRequest.
+        localStorage.setItem("g2c:name-claim-hash", authHashHex);
 
         $nameResult.textContent = "Taking you to confirm with your passkey…";
 
@@ -1036,6 +1136,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
               localStorage.removeItem("g2c:name-txXdr");
               localStorage.removeItem("g2c:name-lastLedger");
               localStorage.removeItem("g2c:name-pending");
+              localStorage.removeItem("g2c:name-claim-hash");
 
               // Redirect to the claimed name's subdomain
               const rootHost = stripSubdomain(window.location.host);

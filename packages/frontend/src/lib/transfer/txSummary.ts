@@ -8,6 +8,7 @@ import { Address, TransactionBuilder, scValToNative, xdr } from "@stellar/stella
  */
 export type OpSummary =
   | { kind: "transfer"; token: string; from: string; to: string; amount: bigint }
+  | { kind: "name-register"; contract: string; account: string; name: string }
   | { kind: "invoke"; contract: string; fn: string; argsCount: number }
   | { kind: "other"; type: string };
 
@@ -51,6 +52,17 @@ function describeInvokeContract(ic: xdr.InvokeContractArgs): OpSummary {
         to: to as string,
         amount: BigInt(amount as bigint),
       };
+    }
+
+    // name-registry register(account: Address, name: String) — the call the
+    // wallet's own name-claim flow builds. Surfaced so the signing surface can
+    // show "register the name <name>" rather than a generic "register (2 args)".
+    if (fn === "register" && args.length === 2) {
+      const account = scValToNative(args[0]);
+      const name = scValToNative(args[1]);
+      if (typeof account === "string" && typeof name === "string") {
+        return { kind: "name-register", contract, account, name };
+      }
     }
   } catch {
     /* fall through to the generic invoke summary */

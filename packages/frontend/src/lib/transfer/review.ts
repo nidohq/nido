@@ -94,16 +94,45 @@ export function renderTransferReview(v: TransferView): string {
 }
 
 /**
+ * Render a name-registry `register(account, name)` as a Nido review card: the
+ * action, the name being claimed, the account it binds to, the registry
+ * contract, and an optional network-fee line. HTML string for innerHTML
+ * injection; every interpolated field is `esc()`-escaped because the name and
+ * account are decoded from transaction XDR (untrusted on the dApp signing path).
+ */
+export function renderNameRegister(
+  op: Extract<OpSummary, { kind: "name-register" }>,
+  feeStroops?: bigint,
+): string {
+  const feeRow =
+    feeStroops != null
+      ? row(
+          "Network fee",
+          `≈ ${esc(formatDecimal(rawToDecimal(feeStroops, 7)))} XLM <span class="mut" style="font-weight:500;">· paid for you</span>`,
+        )
+      : "";
+  return `<div class="card" style="padding:2px 16px;">
+    ${row("Action", "Register a name", true)}
+    ${row("Name", `<code class="mono">${esc(op.name)}</code>`)}
+    ${row("For account", `<span class="mono">${esc(shortAddr(op.account))}</span>`)}
+    ${row("Registry", `<span class="mono">${esc(shortAddr(op.contract))}</span>`)}
+    ${feeRow}
+  </div>`;
+}
+
+/**
  * One-line summary for a non-transfer operation (a contract call we don't
  * special-case, or a classic operation) — used by the signing page so even an
  * unrecognized transaction reads as something better than a raw XDR blob.
  */
 export function renderGenericOp(op: OpSummary): string {
   const line =
-    op.kind === "invoke"
-      ? `Calls <code class="mono">${esc(op.fn)}</code> on <code class="mono">${esc(shortAddr(op.contract))}</code> (${op.argsCount} arg${op.argsCount === 1 ? "" : "s"})`
-      : op.kind === "other"
-        ? `<code class="mono">${esc(op.type)}</code> operation`
-        : "";
+    op.kind === "name-register"
+      ? `Registers the name <code class="mono">${esc(op.name)}</code>`
+      : op.kind === "invoke"
+        ? `Calls <code class="mono">${esc(op.fn)}</code> on <code class="mono">${esc(shortAddr(op.contract))}</code> (${op.argsCount} arg${op.argsCount === 1 ? "" : "s"})`
+        : op.kind === "other"
+          ? `<code class="mono">${esc(op.type)}</code> operation`
+          : "";
   return `<div class="card" style="padding:13px 16px;"><span style="font-size:13.5px;font-weight:600;">${line}</span></div>`;
 }

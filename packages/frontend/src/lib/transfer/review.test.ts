@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { StrKey } from "@stellar/stellar-sdk";
-import { renderTransferReview, renderGenericOp, type TransferView } from "./review";
+import { renderTransferReview, renderGenericOp, renderNameRegister, type TransferView } from "./review";
 import type { OpSummary } from "./txSummary";
 
 const TOKEN = StrKey.encodeContract(Buffer.alloc(32, 0xee));
 const FROM = StrKey.encodeContract(Buffer.alloc(32, 0xaa));
 const TO = StrKey.encodeContract(Buffer.alloc(32, 0xbb));
+const REGISTRY = StrKey.encodeContract(Buffer.alloc(32, 0x12));
 
 const base: TransferView = {
   token: TOKEN,
@@ -105,5 +106,35 @@ describe("renderGenericOp", () => {
     const html = renderGenericOp(op);
     expect(html).not.toContain("<script>x</script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("summarizes a name-register op by its name", () => {
+    const op: OpSummary = { kind: "name-register", contract: REGISTRY, account: FROM, name: "alice" };
+    const html = renderGenericOp(op);
+    expect(html).toContain("alice");
+    expect(html.toLowerCase()).toContain("name");
+  });
+});
+
+describe("renderNameRegister", () => {
+  const op = { kind: "name-register" as const, contract: REGISTRY, account: FROM, name: "alice" };
+
+  it("shows the name being registered and the account it's bound to", () => {
+    const html = renderNameRegister(op);
+    expect(html).toContain("alice");
+    expect(html).toContain(FROM.slice(0, 4)); // account address surfaced (shortened)
+  });
+
+  it("renders a network-fee line only when a fee is given", () => {
+    expect(renderNameRegister(op)).not.toContain("Network fee");
+    const withFee = renderNameRegister(op, 1_234_500n);
+    expect(withFee).toContain("Network fee");
+    expect(withFee).toContain("0.12345"); // 1,234,500 stroops = 0.12345 XLM
+  });
+
+  it("escapes the name so a hostile decoded value can't inject markup", () => {
+    const html = renderNameRegister({ ...op, name: `<img src=x onerror=alert(1)>` });
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img");
   });
 });

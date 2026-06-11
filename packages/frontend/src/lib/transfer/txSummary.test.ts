@@ -15,6 +15,7 @@ import { buildSendOperation } from "./buildSend";
 const SMART = StrKey.encodeContract(Buffer.alloc(32, 0xaa));
 const DEST = StrKey.encodeContract(Buffer.alloc(32, 0xbb));
 const TOKEN = StrKey.encodeContract(Buffer.alloc(32, 0xee));
+const REGISTRY = StrKey.encodeContract(Buffer.alloc(32, 0x12));
 const G = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x11));
 
 describe("describeOperation", () => {
@@ -64,6 +65,40 @@ describe("describeOperation", () => {
       contract: TOKEN,
       fn: "mint",
       argsCount: 1,
+    });
+  });
+
+  it("decodes a name-registry register(account, name) into a name-register summary", () => {
+    const op = Operation.invokeContractFunction({
+      contract: REGISTRY,
+      function: "register",
+      args: [
+        Address.fromString(SMART).toScVal(),
+        nativeToScVal("alice", { type: "string" }),
+      ],
+    });
+    expect(describeOperation(op)).toEqual({
+      kind: "name-register",
+      contract: REGISTRY,
+      account: SMART,
+      name: "alice",
+    });
+  });
+
+  it("falls back to a generic invoke when register's args aren't (address, string)", () => {
+    const op = Operation.invokeContractFunction({
+      contract: REGISTRY,
+      function: "register",
+      args: [
+        Address.fromString(SMART).toScVal(),
+        nativeToScVal(42n, { type: "i128" }), // not a name string
+      ],
+    });
+    expect(describeOperation(op)).toEqual({
+      kind: "invoke",
+      contract: REGISTRY,
+      fn: "register",
+      argsCount: 2,
     });
   });
 
