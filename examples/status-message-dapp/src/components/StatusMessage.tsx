@@ -18,6 +18,7 @@ import {
 	hasSessionKey,
 	XLM_SAC_ID,
 } from "../lib/nidoSign"
+import { checkSessionKeyStatus } from "../lib/sessionKeyStatus"
 import { G2C_ID, g2cBase } from "../util/wallet"
 import styles from "./StatusMessage.module.css"
 
@@ -25,6 +26,8 @@ type SaveState = "idle" | "loading" | "success" | "failure"
 /** Tips add a terminal "pending": the relayer stopped answering but the tx
  *  may still land — neither success nor a retry-inviting failure. */
 type TipState = SaveState | "pending"
+type SessionKeyUiState = "missing" | "checking" | "live"
+type SetSessionKeyUiState = (state: SessionKeyUiState) => void
 
 /** Survives the enable-tipping redirect to the wallet and back, so the tip
  *  row can re-attach to the author the user was about to tip. */
@@ -67,6 +70,49 @@ const describeTipError = (e: unknown): string => {
 	return msg
 }
 
+const isRevokedSessionKeyError = (message: string): boolean =>
+	/session passkey is not installed|delegation never committed|was revoked/i.test(
+		message,
+	)
+
+function useSessionKeyUiState(
+	account: string | null,
+	targetContract: string,
+): [SessionKeyUiState, SetSessionKeyUiState] {
+	const [state, setState] = useState<SessionKeyUiState>("missing")
+
+	useEffect(() => {
+		let cancelled = false
+		if (!account) {
+			setState("missing")
+			return
+		}
+		if (!hasSessionKey(account, targetContract)) {
+			setState("missing")
+			return
+		}
+
+		setState("checking")
+		void checkSessionKeyStatus(account, targetContract)
+			.then((status) => {
+				if (cancelled) return
+				setState(status === "live" ? "live" : "missing")
+			})
+			.catch((err) => {
+				console.error(err)
+				if (cancelled) return
+				// Do not strand users behind an RPC blip; signing still re-checks before use.
+				setState("live")
+			})
+
+		return () => {
+			cancelled = true
+		}
+	}, [account, targetContract])
+
+	return [state, setState]
+}
+
 /**
  * Read and write an account's on-chain status message via the scaffold-generated
  * `status_message` contract client.
@@ -88,7 +134,8 @@ const describeTipError = (e: unknown): string => {
 export const StatusMessage = () => {
 	const { address, walletId, signTransaction } = useWallet()
 	const isNido = walletId === G2C_ID
-	const nidoAccount = isNido && address && isContractId(address) ? address : null
+	const nidoAccount =
+		isNido && address && isContractId(address) ? address : null
 
 	const [draft, setDraft] = useState("")
 	const [saveState, setSaveState] = useState<SaveState>("idle")
@@ -107,10 +154,24 @@ export const StatusMessage = () => {
 	const [tipProgress, setTipProgress] = useState<string>()
 	const [tipHash, setTipHash] = useState<string>()
 
-	// Session material for the XLM SAC (the tipping scope). Checked at render
-	// time: enabling tipping is a full-page round-trip to the wallet, so a fresh
-	// render always re-reads localStorage.
-	const canTip = nidoAccount ? hasSessionKey(nidoAccount, XLM_SAC_ID) : false
+	const [statusSession] = useSessionKeyUiState(nidoAccount, CONTRACT_ID)
+	const [tipSession, setTipSession] = useSessionKeyUiState(
+		nidoAccount,
+		XLM_SAC_ID,
+	)
+	const hasLocalStatusSession = nidoAccount
+		? hasSessionKey(nidoAccount, CONTRACT_ID)
+		: false
+	const hasLocalTipSession = nidoAccount
+		? hasSessionKey(nidoAccount, XLM_SAC_ID)
+		: false
+	const statusSessionUi =
+		hasLocalStatusSession && statusSession === "missing"
+			? "checking"
+			: statusSession
+	const tipSessionUi =
+		hasLocalTipSession && tipSession === "missing" ? "checking" : tipSession
+	const canTip = tipSessionUi === "live"
 
 	// Pre-fill the lookup field with the connected account so you can read your
 	// own status immediately. Only fills when empty, so it never clobbers typing.
@@ -136,7 +197,9 @@ export const StatusMessage = () => {
 			// Only restore on an INSTALLED delegation — a cancelled return must
 			// not auto-surface a Tip row for a session key that never landed.
 			const author =
-				status === "ok" && raw ? (JSON.parse(raw) as { author?: string }).author : undefined
+				status === "ok" && raw
+					? (JSON.parse(raw) as { author?: string }).author
+					: undefined
 			if (author) {
 				setLookupAddr(author)
 				void readStatus(author)
@@ -175,19 +238,19 @@ export const StatusMessage = () => {
 	// one-shot flag is set at connect time (util/wallet); consuming it here —
 	// before any redirect — is what prevents a loop on a cancelled return.
 	useEffect(() => {
-		if (!nidoAccount) return
+		if (!nidoAccount || statusSessionUi === "checking") return
 		const flagged = consumeAutoStartDelegation()
 		if (
 			shouldAutoStartDelegation({
 				account: nidoAccount,
 				flaggedAccount: flagged,
-				hasSessionKey: hasSessionKey(nidoAccount, CONTRACT_ID),
+				hasSessionKey: statusSessionUi === "live",
 			})
 		) {
 			void delegate()
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [nidoAccount])
+	}, [nidoAccount, statusSessionUi])
 
 	// Read an account's on-chain status (read-only simulation) into the lookup card.
 	const readStatus = async (author: string) => {
@@ -270,7 +333,10 @@ export const StatusMessage = () => {
 			// Persist the tip target across the redirect (the wallet replaces our
 			// query string, and the remount resets lookupAuthor).
 			if (lookupAuthor) {
-				sessionStorage.setItem(TIP_CONTEXT_KEY, JSON.stringify({ author: lookupAuthor }))
+				sessionStorage.setItem(
+					TIP_CONTEXT_KEY,
+					JSON.stringify({ author: lookupAuthor }),
+				)
 			}
 			await startDelegation({
 				walletOrigin: accountOrigin(g2cBase(), nidoAccount),
@@ -320,12 +386,14 @@ export const StatusMessage = () => {
 				setTipState("pending")
 				return
 			}
+			const message = describeTipError(e)
+			if (isRevokedSessionKeyError(message)) setTipSession("missing")
 			setTipState("failure")
 			// Relayer / policy rejections (e.g. over the 5 XLM/day limit) arrive as
 			// error messages — surface them readably, with the relayer's code and
 			// details appended when present. The session material is KEPT: the rule
 			// may still allow smaller amounts, or the window may roll over.
-			setTipError(`Tip rejected: ${describeTipError(e)}`)
+			setTipError(`Tip rejected: ${message}`)
 		} finally {
 			setTipProgress(undefined)
 		}
@@ -395,8 +463,8 @@ export const StatusMessage = () => {
 					Look up a status
 				</Text>
 				<Text as="p" size="sm">
-					Read any account&apos;s on-chain status. Pre-filled with your connected
-					account; leave it to read your own.
+					Read any account&apos;s on-chain status. Pre-filled with your
+					connected account; leave it to read your own.
 				</Text>
 				<div className={styles.row}>
 					<Input
@@ -435,7 +503,11 @@ export const StatusMessage = () => {
 					lookupAuthor !== nidoAccount && (
 						<>
 							<div className={styles.tipRow}>
-								{canTip ? (
+								{tipSessionUi === "checking" ? (
+									<Button variant="tertiary" size="md" disabled>
+										Checking tipping
+									</Button>
+								) : canTip ? (
 									<Button
 										variant="tertiary"
 										size="md"
@@ -457,9 +529,11 @@ export const StatusMessage = () => {
 									</Button>
 								)}
 								<Text as="span" size="sm" addlClassName={styles.tipHint}>
-									{canTip
-										? "Gasless — sent through the Nido relayer."
-										: "Adds a tipping passkey capped at 5 XLM per day."}
+									{tipSessionUi === "checking"
+										? "Verifying the tipping passkey on-chain."
+										: canTip
+											? "Gasless — sent through the Nido relayer."
+											: "Adds a tipping passkey capped at 5 XLM per day."}
 								</Text>
 							</div>
 							{tipState === "loading" && tipProgress && (
@@ -470,7 +544,11 @@ export const StatusMessage = () => {
 							{tipState === "success" && tipHash && (
 								<Text as="div" size="sm" addlClassName={styles.success}>
 									<Icon.CheckCircle size="sm" /> Tipped 1 XLM.{" "}
-									<a href={explorerTxUrl(tipHash)} target="_blank" rel="noreferrer">
+									<a
+										href={explorerTxUrl(tipHash)}
+										target="_blank"
+										rel="noreferrer"
+									>
 										View transaction
 									</a>
 								</Text>
@@ -479,7 +557,11 @@ export const StatusMessage = () => {
 								<Text as="div" size="sm" addlClassName={styles.progress}>
 									Tip submitted — still confirming.{" "}
 									{tipHash && (
-										<a href={explorerTxUrl(tipHash)} target="_blank" rel="noreferrer">
+										<a
+											href={explorerTxUrl(tipHash)}
+											target="_blank"
+											rel="noreferrer"
+										>
 											Check the transaction
 										</a>
 									)}{" "}
