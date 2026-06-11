@@ -170,22 +170,11 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
   function wireCreate() {
     const cbtn = panel!.querySelector<HTMLButtonElement>(".mn-create-btn");
     if (!cbtn) return;
-    cbtn.addEventListener("click", async () => {
-      const errEl = panel!.querySelector<HTMLElement>(".mn-err")!;
-      errEl.style.display = "none";
+    cbtn.addEventListener("click", (e) => {
+      e.stopPropagation();
       cbtn.disabled = true;
-      const label = cbtn.textContent ?? "";
-      cbtn.textContent = "Reserving your Nido…";
-      try {
-        const url = await createNido(window.location.host);
-        cbtn.textContent = "Taking you in…";
-        window.location.href = url;
-      } catch (err: any) {
-        errEl.textContent = err?.message || String(err);
-        errEl.style.display = "block";
-        cbtn.disabled = false;
-        cbtn.textContent = label;
-      }
+      cbtn.textContent = "Opening setup…";
+      window.location.href = createNido(window.location.host);
     });
   }
 

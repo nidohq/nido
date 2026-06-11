@@ -32,18 +32,18 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     <!-- ===================== STEP 1 · LOCK IT TO YOU ===================== -->
     <section id="passkey-section">
       <div style="display:grid; place-items:center; margin:10px 0 22px;">
-        <Nest size={104} />
+        <span id="passkey-nest"><Nest size={104} /></span>
       </div>
       <div class="disp" style="font-weight:800; font-size:28px; line-height:1.06; text-align:center;">
         Lock it to you
       </div>
-      <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;">
+      <p id="passkey-intro" class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;">
         Use your passkey so only you can get into your Nido.
         Nothing to memorize, nothing to write down.
       </p>
 
-      <div style="display:flex; flex-direction:column; gap:14px; margin-top:26px;">
-        <div style="display:flex; gap:13px; align-items:flex-start;">
+      <div id="lock-info-list" style="display:flex; flex-direction:column; gap:14px; margin-top:26px;">
+        <div class="lock-info-row" style="display:flex; gap:13px; align-items:flex-start;">
           <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
             <Icon name="lock" size={19} color="var(--ink-soft)" />
           </div>
@@ -52,7 +52,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
             <div class="mut" style="font-size:13px; line-height:1.45;">Your face never leaves this device, and can't be faked.</div>
           </div>
         </div>
-        <div style="display:flex; gap:13px; align-items:flex-start;">
+        <div class="lock-info-row" style="display:flex; gap:13px; align-items:flex-start;">
           <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
             <Icon name="refresh" size={19} color="var(--ink-soft)" />
           </div>
@@ -61,7 +61,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
             <div class="mut" style="font-size:13px; line-height:1.45;">Set up once and it follows you to your phone and laptop.</div>
           </div>
         </div>
-        <div style="display:flex; gap:13px; align-items:flex-start;">
+        <div class="lock-info-row" style="display:flex; gap:13px; align-items:flex-start;">
           <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
             <Icon name="shieldcheck" size={19} color="var(--ink-soft)" />
           </div>
@@ -136,25 +136,43 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   <Toast />
 </NidoLayout>
 
-<style>
+<style is:global>
   /* Visibility is owned by the `.hidden` toggle. The deploy step needs a flex
      column layout, but an inline `display:flex` would beat `.hidden` (which is
      not !important) and leave it rendered on top of the passkey step — the
      "two cards" bug. Apply the flex layout only while the section is shown. */
   #deploy-section:not(.hidden) { display: flex; flex-direction: column; }
+  #passkey-section.setup-reserving #passkey-nest svg { animation: spin 1.1s linear infinite; }
+  #passkey-section.setup-reserving #register-btn { pointer-events: none; }
+  #passkey-section.setup-reserving #register-btn:disabled { opacity: 1; }
+  @media (prefers-reduced-motion: no-preference) {
+    #passkey-section.setup-reserving .lock-info-row {
+      animation: lock-info-cycle 2.4s ease-in-out infinite;
+      transform-origin: left center;
+    }
+    #passkey-section.setup-reserving .lock-info-row:nth-child(2) { animation-delay: .22s; }
+    #passkey-section.setup-reserving .lock-info-row:nth-child(3) { animation-delay: .44s; }
+  }
+  @keyframes lock-info-cycle {
+    0%, 100% { opacity: .84; transform: translateY(0); }
+    38%, 64% { opacity: 1; transform: translateY(-2px); }
+  }
 </style>
 
 <script>
   import { Keypair, Networks, TransactionBuilder, Operation, Address, Account, rpc, xdr, nativeToScVal } from "@stellar/stellar-sdk";
   import { Buffer } from "buffer";
+  import { Client } from "factory";
   import {
     parseRegistration,
     buf2hex,
     buf2base64url,
     contractIdFromHostname,
     saveCredential as sdkSaveCredential,
+    savePendingAccount,
     activateAccount,
     fetchRegistryAddress,
+    accountUrl,
   } from "@g2c/passkey-sdk";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
@@ -171,6 +189,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
   const params = new URLSearchParams(window.location.search);
   const secretKey = params.get("key");
+  const isSetupReservation = params.get("setup") === "1";
 
   let passkeyPublicKey: Uint8Array | null = null;
   let credentialIdBytes: Uint8Array | null = null;
@@ -182,6 +201,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const $errorBox = document.getElementById("error-box")!;
   const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
   const $passkeySection = document.getElementById("passkey-section")!;
+  const $passkeyIntro = document.getElementById("passkey-intro")!;
   const $deploySection = document.getElementById("deploy-section")!;
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
   const $deployNestStatic = document.getElementById("deploy-nest-static")!;
@@ -236,7 +256,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   // Show a shortened address so the 56-char contract ID never overflows the
   // quiet pill chip (full ID stays in the URL / localStorage). The chip carries
   // a title with the full value for hover/inspection.
-  $contractIdEl.textContent = contractId ? shortAddr(contractId, 6, 6) : "(unknown)";
+  $contractIdEl.textContent = isSetupReservation ? "Preparing..." : contractId ? shortAddr(contractId, 6, 6) : "(unknown)";
   if (contractId) $accountChip.title = contractId;
   // First step is in progress.
   $step1.classList.add("on");
@@ -244,12 +264,49 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   renderCheck(1, "pending");
   renderCheck(2, "pending");
 
-  if (!contractId) {
+  if (!contractId && !isSetupReservation) {
     showError("That link looks off. Please start again from the home page.");
   }
 
   if (!secretKey) {
     showError("We're missing some setup data. Please start again from the home page.");
+  }
+
+  if (isSetupReservation && secretKey) {
+    $passkeySection.classList.add("setup-reserving");
+    $registerBtn.disabled = true;
+    $registerBtn.querySelector("span")!.textContent = "Preparing your Nido...";
+    $passkeyIntro.textContent = "Your Nido address is being prepared. Read what's protected here while setup finishes.";
+    void reserveNidoAddress();
+  }
+
+  async function reserveNidoAddress() {
+    clearError();
+    try {
+      const keypair = Keypair.fromSecret(secretKey!);
+      const publicKey = keypair.publicKey();
+
+      const res = await fetch(`https://friendbot.stellar.org?addr=${publicKey}`);
+      if (!res.ok) throw new Error(`Funding failed: ${res.status}`);
+
+      const client = new Client({
+        contractId: await fetchRegistryAddress("factory"),
+        networkPassphrase: Networks.TESTNET,
+        rpcUrl: RPC_URL,
+        publicKey,
+      });
+
+      const tx = await client.get_c_address({ funder: publicKey });
+      const cAddress = tx.result;
+      savePendingAccount(cAddress, secretKey!);
+
+      window.location.replace(accountUrl(window.location.host, cAddress, `/new-account/?key=${encodeURIComponent(secretKey!)}`));
+    } catch (err: any) {
+      $passkeySection.classList.remove("setup-reserving");
+      $registerBtn.disabled = true;
+      $registerBtn.querySelector("span")!.textContent = "Setup paused";
+      showError(`Couldn't prepare your Nido: ${err.message}`);
+    }
   }
 
   // --- Step 1 · Lock it to you (register passkey) ---
