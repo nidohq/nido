@@ -20,10 +20,16 @@ export function renderSessionKeyCard(
   const limitText =
     block.limitStroops != null && block.limitPeriodLedgers != null
       ? ` · limit ${formatSpendingLimit(block.limitStroops, block.limitPeriodLedgers)}`
-      : '';
+      : block.limitUnreadable
+        ? ' · limit unavailable (couldn’t read the policy — revoke still works)'
+        : '';
+  // Two live rules on the same target render near-identical cards; a key
+  // suffix is the only way to tell the stale one from the live one.
+  const pubkeyHex = Array.from(block.sessionPubkey, (b) => b.toString(16).padStart(2, '0')).join('');
+  const keySuffix = pubkeyHex ? ` · key …${pubkeyHex.slice(-8)}` : '';
   div.innerHTML = `
     <strong>${escape(block.label ?? shortAddr(target, 8, 4))}</strong>
-    <span class="muted"> · ${escape(expiryText)}</span>
+    <span class="muted"> · ${escape(expiryText)}${escape(keySuffix)}</span>
     <p class="muted small scope-line">Can act on
       <a class="contract-link mono" target="_blank" rel="noopener noreferrer"
          href="${EXPLORER_BASE}/contract/${encodeURIComponent(target)}">${escape(shortAddr(target, 8, 4))}</a>${escape(limitText)}
@@ -39,8 +45,9 @@ export function renderSessionKeyCard(
     btn.disabled = true;
     try {
       // Signs remove_context_rule with the primary passkey; revokeSessionKey
-      // already forgets the local session-key material — no extra cleanup.
-      await revokeSessionKey(account, block.ruleId, block.targetContract);
+      // forgets the local session-key material only when this rule's pubkey
+      // owns it (same-target re-delegation keeps the newer key's material).
+      await revokeSessionKey(account, block.ruleId, block.targetContract, block.sessionPubkey);
       div.remove();
       toast({ msg: 'Session key revoked', icon: 'check' });
       onRevoked?.();
