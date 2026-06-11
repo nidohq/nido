@@ -130,7 +130,6 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   // Reskin copy: detected platform passkey label drives the confirm voice.
   const passkey = detectPasskeyLabel();
 
-  document.getElementById('dapp-origin')!.textContent = dappOrigin || '(unknown)';
   document.getElementById('account-text')!.textContent = account ? shortAddr(account, 6, 6) : '(missing)';
 
   if (network) {
@@ -256,6 +255,9 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   }
 
   const origin = validatedOrigin();
+  // Write the validated origin to the DOM (only after validation, so a
+  // malicious ?dapp= value is never displayed as a trusted-looking name).
+  document.getElementById('dapp-origin')!.textContent = origin ?? '(unknown)';
 
   function finish(search: string) {
     if (!origin) return;
@@ -265,7 +267,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   function validate(): string | null {
     if (!account) return 'This page must be opened on an account subdomain.';
     if (!payload) return 'Missing payload to sign.';
-    if (!origin) return 'Invalid dApp origin / return URL.';
+    if (!origin) return 'Invalid app origin / return URL.';
     if (!loadCredential(account)) {
       document.getElementById('needs-register')!.classList.remove('hidden');
       return 'No passkey registered for this account on this device.';
@@ -276,7 +278,10 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   const err = validate();
   if (err) { showError(err); approve.disabled = true; }
 
-  cancel.addEventListener('click', () => finish('?g2c_sign=cancelled'));
+  cancel.addEventListener('click', () => {
+    if (!origin) { window.location.href = '/account/'; return; }
+    finish('?g2c_sign=cancelled');
+  });
 
   approve.addEventListener('click', async () => {
     approve.disabled = true;
@@ -298,7 +303,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         },
         { title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` },
       );
-      $status.textContent = 'Done — returning to dApp…';
+      $status.textContent = 'Done — returning to app…';
       const qs = new URLSearchParams({ g2c_signed: signed, kind });
       setTimeout(() => finish(`?${qs.toString()}`), 300);
     } catch (e) {

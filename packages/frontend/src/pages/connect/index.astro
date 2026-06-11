@@ -10,7 +10,7 @@ import Logo from '../../components/Logo.astro';
 import Icon from '../../components/Icon.astro';
 import Toast from '../../components/Toast.astro';
 ---
-<NidoLayout title="Connect to dApp" shell="focused">
+<NidoLayout title="Connect to app" shell="focused">
   <div class="topbar">
     <Logo mark size={20} />
     <span class="chip good"><span class="dot"></span> Read-only</span>
@@ -112,7 +112,6 @@ import Toast from '../../components/Toast.astro';
   const $err = document.getElementById('error-box')!;
   const $list = document.getElementById('accounts-list')!;
   const $none = document.getElementById('no-accounts')!;
-  document.getElementById('dapp-origin')!.textContent = dappOrigin || '(unknown)';
 
   function showError(msg: string) {
     $err.textContent = msg;
@@ -141,6 +140,8 @@ import Toast from '../../components/Toast.astro';
   }
 
   const ret = validatedReturn();
+  // Write only the validated origin to the DOM — never the raw ?dapp= value.
+  document.getElementById('dapp-origin')!.textContent = ret ? ret.origin : '(unknown)';
 
   function finish(search: string) {
     if (!ret) return;
@@ -148,6 +149,7 @@ import Toast from '../../components/Toast.astro';
   }
 
   document.getElementById('cancel')!.addEventListener('click', () => {
+    if (!ret) { window.location.href = '/account/'; return; }
     finish('?g2c_connect=cancelled');
   });
 

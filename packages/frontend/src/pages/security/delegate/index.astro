@@ -304,7 +304,7 @@ import Icon from '../../../components/Icon.astro';
         verifierAddress: verifierAddr,
       });
 
-      status.textContent = 'Done — redirecting back to dApp…';
+      status.textContent = 'Done — redirecting back to app…';
       setTimeout(() => backToDapp('?delegation=ok'), 500);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

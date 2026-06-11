@@ -20,7 +20,7 @@ interface Props {
 
 const {
   title,
-  description = "Your passkey-secured Stellar smart account.",
+  description = "A safe place for everything you own — secured by your passkey on Stellar.",
   shell = "app",
 } = Astro.props;
 
@@ -85,11 +85,13 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
           <main id="main-content" class="col col-app"><slot /></main>
         </div>
       )}
-      <footer class="site-footer">
-        <a href="https://theahaco.github.io/g2c/" target="_blank" rel="noopener">
-          Example dApp ↗
-        </a>
-      </footer>
+      {shell !== "focused" && (
+        <footer class="site-footer">
+          <a href="https://theahaco.github.io/g2c/" target="_blank" rel="noopener">
+            Example app ↗
+          </a>
+        </footer>
+      )}
     </div>
   </body>
 </html>
@@ -136,7 +138,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
     margin: 0.25rem 0;
   }
 
-  /* Global link to the live example dApp (status-message on GitHub Pages). */
+  /* Global link to the live example app (status-message on GitHub Pages). */
   .site-footer {
     text-align: center;
     padding: 1.25rem 1rem 2rem;
