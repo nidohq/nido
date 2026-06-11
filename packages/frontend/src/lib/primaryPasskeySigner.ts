@@ -22,6 +22,7 @@ import {
   waitForConfirmation,
 } from './relayerClient';
 import { RELAYER_SIM_SOURCE } from './network';
+import { assertDefaultRuleSinglePasskeySignable } from './defaultRuleSigning.js';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const FRIENDBOT_URL = 'https://friendbot.stellar.org';
@@ -88,6 +89,7 @@ export async function signAndSubmit(args: {
 }): Promise<rpc.Api.SendTransactionResponse> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
+  await assertDefaultRuleSinglePasskeySignable(args.account);
 
   const server = new rpc.Server(RPC_URL);
 

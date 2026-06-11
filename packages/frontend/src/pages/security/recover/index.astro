@@ -72,6 +72,20 @@ import Icon from '../../../components/Icon.astro';
 
         <p id="om-multi-rule" class="mut" style="font-size:12.5px;margin-top:12px;" hidden></p>
 
+        <div id="om-repair" hidden>
+          <div class="card" style="padding:18px;margin-top:14px;">
+            <div style="display:flex;align-items:center;gap:11px;margin-bottom:12px;">
+              <div style="width:40px;height:40px;border-radius:12px;background:var(--warn-soft);display:grid;place-items:center;">
+                <Icon name="shieldcheck" size={20} color="var(--warn)" />
+              </div>
+              <div class="disp" style="font-weight:800;font-size:17px;">Passkey repair needed</div>
+            </div>
+            <p id="om-repair-copy" class="mut" style="font-size:13px;line-height:1.55;margin:0 0 12px;"></p>
+            <button id="om-repair-start" class="btn acc" type="button">Repair passkey signing</button>
+            <p id="om-repair-status" class="mut" style="font-size:12.5px;margin-top:10px;"></p>
+          </div>
+        </div>
+
         <div id="om-stage">
           <span class="section-label" style="display:block;margin:22px 0 10px;">Step 1 · New passkey</span>
           <div class="card" style="padding:18px;">
@@ -134,10 +148,18 @@ import Icon from '../../../components/Icon.astro';
 </NidoLayout>
 
 <script>
-  import { contractIdFromHostname, createSessionPasskey, buf2hex } from '@g2c/passkey-sdk';
+  import {
+    accountUrl,
+    contractIdFromHostname,
+    createSessionPasskey,
+    decodeRotationHandoff,
+    buf2hex,
+  } from '@g2c/passkey-sdk';
   import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
   import {
     findRecoveryRules,
+    getDefaultRuleRepairInfo,
+    prepareDefaultThresholdRepair,
     prepareRotation,
     addFriendSignature,
     submitRotation,
@@ -164,14 +186,29 @@ import Icon from '../../../components/Icon.astro';
   async function runFriendMode(encoded: string) {
     friendMode.hidden = false;
     const status = document.getElementById('fm-status')!;
-    if (!account) {
-      status.textContent = 'Open this link on your own account subdomain so your passkey can sign.';
+    let decoded;
+    try {
+      decoded = decodeRotationHandoff(encoded);
+      document.getElementById('fm-account')!.textContent = decoded.account;
+      document.getElementById('fm-desc')!.textContent = decoded.description;
+    } catch (e) {
+      status.textContent = 'Invalid recovery request: ' + (e instanceof Error ? e.message : String(e));
+      (document.getElementById('fm-sign') as HTMLButtonElement).disabled = true;
       return;
     }
-    try {
-      // Lazily peek at the description by decoding via the helper inside sign.
-      document.getElementById('fm-account')!.textContent = account;
-    } catch { /* ignore */ }
+    if (!account) {
+      status.textContent = 'Open this link on your own account subdomain so your passkey can sign.';
+      renderFriendHostLinks(status, decoded.friends, encoded);
+      return;
+    }
+    if (!decoded.friends.includes(account)) {
+      const btn = document.getElementById('fm-sign') as HTMLButtonElement;
+      btn.disabled = true;
+      status.textContent =
+        'This link is open on the wrong account subdomain. Open it from one of the trusted friend accounts below.';
+      renderFriendHostLinks(status, decoded.friends, encoded);
+      return;
+    }
 
     document.getElementById('fm-sign')!.addEventListener('click', async () => {
       const btn = document.getElementById('fm-sign') as HTMLButtonElement;
@@ -194,6 +231,24 @@ import Icon from '../../../components/Icon.astro';
     });
   }
 
+  function renderFriendHostLinks(container: HTMLElement, friends: string[], encoded: string) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-top:10px;display:grid;gap:7px;';
+    for (const friend of friends) {
+      const a = document.createElement('a');
+      a.className = 'link mono';
+      a.href = accountUrl(
+        window.location.host,
+        friend,
+        `/security/recover/?handoff=${encodeURIComponent(encoded)}`,
+      );
+      a.textContent = friend;
+      a.style.cssText = 'word-break:break-all;font-size:12px;';
+      wrap.appendChild(a);
+    }
+    container.appendChild(wrap);
+  }
+
   // ---- Originator mode ----------------------------------------------------
   async function runOriginatorMode() {
     originatorMode.hidden = false;
@@ -208,6 +263,7 @@ import Icon from '../../../components/Icon.astro';
     let recoveryRuleId: number | null = null;
     let friends: string[] = [];
     let threshold = 1;
+    let needsThresholdRepair = false;
 
     const keyStatus = document.getElementById('om-key-status')!;
     const prepareBtn = document.getElementById('om-prepare') as HTMLButtonElement;
@@ -235,6 +291,19 @@ import Icon from '../../../components/Icon.astro';
       // fall back to a heuristic if the policy could not be read.
       threshold =
         rules[0].threshold ?? Math.max(1, Math.ceil(friends.length / 2));
+
+      const repair = await getDefaultRuleRepairInfo(account);
+      needsThresholdRepair = repair.needsThresholdPolicy;
+      if (repair.needsThresholdPolicy) {
+        const repairBox = document.getElementById('om-repair')!;
+        repairBox.hidden = false;
+        document.getElementById('om-repair-copy')!.textContent = repair.signerCount > 1
+          ? `This account has ${repair.signerCount} passkeys on its default rule, but no ` +
+            'threshold policy. Normal signing needs every passkey at once. Repair installs ' +
+            'a 1-of-N threshold policy so any one passkey can sign again.'
+          : 'Before adding a recovered passkey, install a 1-of-N threshold policy. ' +
+            'That keeps signing usable after this account has more than one passkey.';
+      }
     } catch (e) {
       document.getElementById('om-stage')!.innerHTML =
         '<p class="muted">Failed to read recovery rule: ' +
@@ -267,11 +336,36 @@ import Icon from '../../../components/Icon.astro';
       }
     });
 
+    document.getElementById('om-repair-start')!.addEventListener('click', async () => {
+      const btn = document.getElementById('om-repair-start') as HTMLButtonElement;
+      btn.disabled = true;
+      const status = document.getElementById('om-repair-status')!;
+      status.textContent = 'Staging repair…';
+      try {
+        const { handoffLink } = await prepareDefaultThresholdRepair({
+          account: account!,
+          recoveryRuleId: recoveryRuleId!,
+          friends,
+          threshold,
+        });
+        (document.getElementById('om-link') as HTMLTextAreaElement).value = handoffLink;
+        showCollect(threshold);
+        refreshProgress();
+        status.textContent = 'Repair staged. Share the link below.';
+      } catch (e) {
+        status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+        btn.disabled = false;
+      }
+    });
+
     prepareBtn.addEventListener('click', async () => {
       prepareBtn.disabled = true;
       const status = document.getElementById('om-prepare-status')!;
       status.textContent = 'Staging…';
       try {
+        if (newPublicKey && needsThresholdRepair) {
+          throw new Error('Install the 1-of-N threshold policy first, then add the recovered passkey.');
+        }
         const verifierAddress = await fetchVerifierAddress(account!);
         const removeRaw = (document.getElementById('om-remove-id') as HTMLInputElement).value;
         const removeSignerId = removeRaw === '' ? undefined : Number(removeRaw);
@@ -326,8 +420,15 @@ import Icon from '../../../components/Icon.astro';
       const status = document.getElementById('om-submit-status')!;
       status.textContent = 'Submitting…';
       try {
+        const description = getStaging(account!)?.description ?? '';
         const hash = await submitRotation(account!);
-        status.textContent = 'Rotation submitted: ' + hash + '. Your new passkey is now active.';
+        if (/default-rule signing/i.test(description)) {
+          status.textContent =
+            'Repair submitted: ' + hash +
+            '. The 1-of-N policy is installed. Refresh this page, then add the recovered passkey.';
+        } else {
+          status.textContent = 'Rotation submitted: ' + hash + '. Your new passkey is now active.';
+        }
       } catch (e) {
         status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
         btn.disabled = false;

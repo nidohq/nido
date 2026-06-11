@@ -7,6 +7,7 @@ import {
 } from './multisigRotation.js';
 
 const VERIFIER = StrKey.encodeContract(new Uint8Array(32).fill(0x56));
+const MULTISIG_POLICY = StrKey.encodeContract(new Uint8Array(32).fill(0x77));
 
 function newPubkey(): Uint8Array {
   const p = new Uint8Array(65);
@@ -37,6 +38,30 @@ describe('planRotation', () => {
     expect(plan.calls.length).toBe(1);
     expect(plan.calls[0].method).toBe('remove_signer');
     expect(plan.calls[0].signerId).toBe(3);
+  });
+
+  it('emits an add_policy call for default-rule threshold repair', () => {
+    const plan = planRotation({
+      defaultRuleId: 0,
+      installDefaultThreshold: { policyAddress: MULTISIG_POLICY },
+    });
+    expect(plan.calls.length).toBe(1);
+    const c = plan.calls[0];
+    expect(c.method).toBe('add_policy');
+    expect(c.contextRuleId).toBe(0);
+    expect(c.policyAddress).toBe(MULTISIG_POLICY);
+    const entries = c.installParam.map();
+    expect(entries?.[0].key().sym().toString()).toBe('threshold');
+    expect(entries?.[0].val().u32()).toBe(1);
+  });
+
+  it('rejects invalid threshold repair params', () => {
+    expect(() =>
+      planRotation({
+        defaultRuleId: 0,
+        installDefaultThreshold: { policyAddress: MULTISIG_POLICY, threshold: 0 },
+      }),
+    ).toThrow(/positive integer/);
   });
 
   it('emits both add and remove when rotating', () => {
@@ -80,5 +105,13 @@ describe('describeRotation', () => {
     const d = describeRotation(plan);
     expect(d).toMatch(/add/i);
     expect(d).toMatch(/remove/i);
+  });
+
+  it('describes threshold repair', () => {
+    const plan = planRotation({
+      defaultRuleId: 0,
+      installDefaultThreshold: { policyAddress: MULTISIG_POLICY },
+    });
+    expect(describeRotation(plan)).toMatch(/1-of-N default-rule/i);
   });
 });

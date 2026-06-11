@@ -39,6 +39,7 @@ import {
   hex2buf,
 } from '@g2c/passkey-sdk';
 import { fetchVerifierAddress } from './policyChainFetch.js';
+import { assertDefaultRuleSinglePasskeySignable } from './defaultRuleSigning.js';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 
@@ -67,6 +68,7 @@ export async function signTransactionXdr(args: {
   const networkPassphrase = args.networkPassphrase ?? Networks.TESTNET;
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
+  await assertDefaultRuleSinglePasskeySignable(args.account);
 
   const parsed = TransactionBuilder.fromXDR(args.txXdr, networkPassphrase);
   if (parsed instanceof FeeBumpTransaction) {

@@ -193,6 +193,26 @@ export interface RecoveryRuleInfo {
   friends: string[];
 }
 
+export interface DefaultRuleRepairInfo {
+  needsThresholdPolicy: boolean;
+  signerCount: number;
+  policyCount: number;
+}
+
+export async function getDefaultRuleRepairInfo(
+  account: string,
+): Promise<DefaultRuleRepairInfo> {
+  const defaultRule = (await fetchAllChainRules(account)).find((r) => r.ruleId === 0);
+  if (!defaultRule) {
+    return { needsThresholdPolicy: false, signerCount: 0, policyCount: 0 };
+  }
+  return {
+    needsThresholdPolicy: defaultRule.policies.length === 0,
+    signerCount: defaultRule.signers.length,
+    policyCount: defaultRule.policies.length,
+  };
+}
+
 export async function findRecoveryRules(account: string): Promise<RecoveryRuleInfo[]> {
   const rules = await fetchAllChainRules(account);
   const out: RecoveryRuleInfo[] = [];
@@ -225,6 +245,22 @@ export async function findRecoveryRules(account: string): Promise<RecoveryRuleIn
   return out;
 }
 
+export async function prepareDefaultThresholdRepair(args: {
+  account: string;
+  recoveryRuleId: number;
+  friends: string[];
+  threshold: number;
+}): Promise<{ staging: RotationStaging; handoff: RotationHandoff; handoffLink: string }> {
+  const policyAddress = await fetchRegistryAddress('multisig-policy');
+  return prepareRotation({
+    ...args,
+    request: {
+      defaultRuleId: 0,
+      installDefaultThreshold: { policyAddress, threshold: 1 },
+    },
+  });
+}
+
 /**
  * Stage a rotation: build the (unsigned) rotation transaction, simulate it to
  * derive the parent auth digest the friends must authorize, and persist the
@@ -247,13 +283,12 @@ export async function prepareRotation(args: {
   });
 
   // Soroban permits only one InvokeHostFunction op per transaction, so a
-  // combined add+remove cannot ride a single rotation tx. First cut: one
-  // operation per rotation. Callers wanting both run two rotations in
-  // sequence (add the new key first, then remove the old one).
+  // combined add+remove/repair cannot ride a single rotation tx. First cut:
+  // one operation per rotation.
   if (built.operations.length !== 1) {
     throw new Error(
-      'prepareRotation: a rotation must be a single operation (add OR remove). ' +
-        'Run two rotations to do both.',
+      'prepareRotation: a rotation must be a single operation. ' +
+        'Run one recovery request per account change.',
     );
   }
 

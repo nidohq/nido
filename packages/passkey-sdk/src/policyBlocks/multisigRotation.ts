@@ -18,6 +18,7 @@
  */
 
 import { Buffer } from 'buffer';
+import { xdr } from '@stellar/stellar-sdk';
 import { Client as SmartAccountClient } from 'smart-account';
 import type { Signer } from 'smart-account';
 import { extractXdrOperations } from '../assembledTx.js';
@@ -44,6 +45,14 @@ export interface RotationRequest {
   addPasskey?: NewPasskeySigner;
   /** Existing signer id to remove (the lost key). */
   removeSignerId?: number;
+  /**
+   * Install a 1-of-N simple-threshold policy on the default rule. This repairs
+   * accounts that already have multiple default-rule signers but no policy.
+   */
+  installDefaultThreshold?: {
+    policyAddress: string;
+    threshold?: number;
+  };
 }
 
 /** A single contract call making up a rotation. */
@@ -57,6 +66,12 @@ export type RotationCall =
       method: 'remove_signer';
       contextRuleId: number;
       signerId: number;
+    }
+  | {
+      method: 'add_policy';
+      contextRuleId: number;
+      policyAddress: string;
+      installParam: xdr.ScVal;
     };
 
 export interface RotationPlan {
@@ -70,6 +85,19 @@ export interface RotationPlan {
  */
 export function planRotation(req: RotationRequest): RotationPlan {
   const calls: RotationCall[] = [];
+
+  if (req.installDefaultThreshold) {
+    const threshold = req.installDefaultThreshold.threshold ?? 1;
+    if (threshold < 1 || !Number.isInteger(threshold)) {
+      throw new Error('planRotation: threshold policy must use a positive integer threshold');
+    }
+    calls.push({
+      method: 'add_policy',
+      contextRuleId: req.defaultRuleId,
+      policyAddress: req.installDefaultThreshold.policyAddress,
+      installParam: simpleThresholdParams(threshold),
+    });
+  }
 
   if (req.addPasskey) {
     if (req.addPasskey.publicKey.length !== 65) {
@@ -99,7 +127,9 @@ export function planRotation(req: RotationRequest): RotationPlan {
   }
 
   if (calls.length === 0) {
-    throw new Error('planRotation: nothing to rotate (no add or remove specified)');
+    throw new Error(
+      'planRotation: nothing to rotate or repair (no add, remove, or threshold policy specified)',
+    );
   }
 
   return { calls };
@@ -110,9 +140,19 @@ export function describeRotation(plan: RotationPlan): string {
   const parts: string[] = [];
   for (const c of plan.calls) {
     if (c.method === 'add_signer') parts.push('add a new passkey');
-    else parts.push(`remove signer #${c.signerId}`);
+    else if (c.method === 'remove_signer') parts.push(`remove signer #${c.signerId}`);
+    else parts.push('install 1-of-N default-rule signing');
   }
   return `Recovery rotation: ${parts.join(' and ')}`;
+}
+
+function simpleThresholdParams(threshold: number): xdr.ScVal {
+  return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol('threshold'),
+      val: xdr.ScVal.scvU32(threshold),
+    }),
+  ]);
 }
 
 export interface BuildRotationArgs {
@@ -160,10 +200,16 @@ export async function buildRotation(args: BuildRotationArgs): Promise<RotationTx
         context_rule_id: call.contextRuleId,
         signer: call.signer,
       });
-    } else {
+    } else if (call.method === 'remove_signer') {
       tx = await client.remove_signer({
         context_rule_id: call.contextRuleId,
         signer_id: call.signerId,
+      });
+    } else {
+      tx = await client.add_policy({
+        context_rule_id: call.contextRuleId,
+        policy: call.policyAddress,
+        install_param: call.installParam,
       });
     }
     operations.push(...extractXdrOperations(tx, 'multisig-rotation'));
