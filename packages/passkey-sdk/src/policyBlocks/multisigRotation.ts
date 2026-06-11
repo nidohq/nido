@@ -18,6 +18,7 @@
  */
 
 import { Buffer } from 'buffer';
+import { xdr } from '@stellar/stellar-sdk';
 import { Client as SmartAccountClient } from 'smart-account';
 import type { Signer } from 'smart-account';
 import { extractXdrOperations } from '../assembledTx.js';
@@ -33,6 +34,17 @@ export interface NewPasskeySigner {
   publicKey: Uint8Array;
 }
 
+/**
+ * Current on-chain state of the rule being rotated, as far as the planner
+ * needs it. Callers read this from `get_context_rule(defaultRuleId)`.
+ */
+export interface RotationRuleState {
+  /** Number of signers currently on the rule. */
+  signerCount: number;
+  /** Number of policies currently attached to the rule. */
+  policyCount: number;
+}
+
 /** The rotation the owner wants performed. */
 export interface RotationRequest {
   /**
@@ -44,6 +56,24 @@ export interface RotationRequest {
   addPasskey?: NewPasskeySigner;
   /** Existing signer id to remove (the lost key). */
   removeSignerId?: number;
+  /**
+   * Current state of the rule (issue #87). When provided together with
+   * `thresholdPolicyAddress`, the planner appends an
+   * `add_policy(defaultRuleId, thresholdPolicyAddress, threshold=1)` call
+   * whenever the rotation would leave the rule with MORE THAN ONE signer and
+   * NO policy. OZ semantics make a policy-less multi-signer rule N-of-N:
+   * every signer must co-sign every ceremony, which bricks single-passkey
+   * wallets. Installing a 1-of-N simple-threshold policy turns multi-device
+   * into a feature instead of a brick.
+   *
+   * When omitted, the planner emits no policy call (legacy behavior).
+   */
+  ruleState?: RotationRuleState;
+  /**
+   * Address of the multisig (simple-threshold) policy contract to install
+   * when the rotation leaves the rule N-of-N. See `ruleState`.
+   */
+  thresholdPolicyAddress?: string;
 }
 
 /** A single contract call making up a rotation. */
@@ -57,6 +87,13 @@ export type RotationCall =
       method: 'remove_signer';
       contextRuleId: number;
       signerId: number;
+    }
+  | {
+      method: 'add_policy';
+      contextRuleId: number;
+      policyAddress: string;
+      /** Simple-threshold M (we always install 1 — see `RotationRequest.ruleState`). */
+      threshold: number;
     };
 
 export interface RotationPlan {
@@ -67,9 +104,40 @@ export interface RotationPlan {
  * Turn a rotation request into an ordered list of contract calls. Pure — no
  * RPC, no client. `add_signer` is emitted before `remove_signer` so the
  * account never transiently has zero signers on the rule.
+ *
+ * Threshold-policy auto-install (issue #87): when `ruleState` +
+ * `thresholdPolicyAddress` are provided and the rotation would leave the rule
+ * with >1 signer and no policy, an `add_policy(…, threshold: 1)` call is
+ * emitted FIRST. Ordering matters: each call rides its own transaction
+ * (Soroban allows one InvokeHostFunction op per tx), so installing the policy
+ * before `add_signer` means there is never an intermediate N-of-N state —
+ * and a 1-of-1 threshold on a single-signer rule is harmless if the sequence
+ * stops early. A rotation that brings the rule back DOWN to one signer leaves
+ * any existing policy in place (1-of-1 is harmless too).
+ *
+ * A request with NEITHER add nor remove but a bricked `ruleState`
+ * (multi-signer, no policy) is valid: it plans the repair-only
+ * `add_policy` call.
  */
 export function planRotation(req: RotationRequest): RotationPlan {
   const calls: RotationCall[] = [];
+
+  if (req.ruleState && req.thresholdPolicyAddress) {
+    const adds = req.addPasskey ? 1 : 0;
+    const removes = typeof req.removeSignerId === 'number' ? 1 : 0;
+    const resultingSigners = req.ruleState.signerCount + adds - removes;
+    if (req.ruleState.policyCount === 0 && resultingSigners > 1) {
+      calls.push({
+        method: 'add_policy',
+        contextRuleId: req.defaultRuleId,
+        policyAddress: req.thresholdPolicyAddress,
+        // 1-of-N: any single signer can authorize. The simple-threshold
+        // install validates threshold <= current signer count, and the rule
+        // always has >= 1 signer, so installing 1 first is always valid.
+        threshold: 1,
+      });
+    }
+  }
 
   if (req.addPasskey) {
     if (req.addPasskey.publicKey.length !== 65) {
@@ -110,7 +178,8 @@ export function describeRotation(plan: RotationPlan): string {
   const parts: string[] = [];
   for (const c of plan.calls) {
     if (c.method === 'add_signer') parts.push('add a new passkey');
-    else parts.push(`remove signer #${c.signerId}`);
+    else if (c.method === 'remove_signer') parts.push(`remove signer #${c.signerId}`);
+    else parts.push(`install a ${c.threshold}-of-N approval policy`);
   }
   return `Recovery rotation: ${parts.join(' and ')}`;
 }
@@ -160,10 +229,25 @@ export async function buildRotation(args: BuildRotationArgs): Promise<RotationTx
         context_rule_id: call.contextRuleId,
         signer: call.signer,
       });
-    } else {
+    } else if (call.method === 'remove_signer') {
       tx = await client.remove_signer({
         context_rule_id: call.contextRuleId,
         signer_id: call.signerId,
+      });
+    } else {
+      tx = await client.add_policy({
+        context_rule_id: call.contextRuleId,
+        policy: call.policyAddress,
+        // The binding erases the install param to `any` (it is a Val on
+        // chain); hand it a pre-encoded ScVal — the generated client passes
+        // ScVal instances through untouched. SimpleThresholdAccountParams
+        // is a one-field struct → ScMap with a single Symbol key.
+        install_param: xdr.ScVal.scvMap([
+          new xdr.ScMapEntry({
+            key: xdr.ScVal.scvSymbol('threshold'),
+            val: xdr.ScVal.scvU32(call.threshold),
+          }),
+        ]),
       });
     }
     operations.push(...extractXdrOperations(tx, 'multisig-rotation'));

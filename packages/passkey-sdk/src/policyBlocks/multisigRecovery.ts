@@ -16,6 +16,7 @@ export {
 } from './multisigRotation.js';
 export type {
   RotationRequest,
+  RotationRuleState,
   RotationPlan,
   RotationCall,
   RotationTxBuild,

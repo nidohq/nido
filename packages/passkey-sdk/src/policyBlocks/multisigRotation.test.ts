@@ -7,6 +7,7 @@ import {
 } from './multisigRotation.js';
 
 const VERIFIER = StrKey.encodeContract(new Uint8Array(32).fill(0x56));
+const POLICY = StrKey.encodeContract(new Uint8Array(32).fill(0x77));
 
 function newPubkey(): Uint8Array {
   const p = new Uint8Array(65);
@@ -59,6 +60,84 @@ describe('planRotation', () => {
         addPasskey: { verifierAddress: VERIFIER, publicKey: new Uint8Array(33) },
       }),
     ).toThrow(/65/);
+  });
+});
+
+describe('planRotation threshold-policy auto-install (#87)', () => {
+  it('installs a 1-of-N policy BEFORE add_signer when the add leaves a policy-less rule N-of-N', () => {
+    const plan = planRotation({
+      defaultRuleId: 0,
+      addPasskey: { verifierAddress: VERIFIER, publicKey: newPubkey() },
+      ruleState: { signerCount: 1, policyCount: 0 },
+      thresholdPolicyAddress: POLICY,
+    });
+    expect(plan.calls.map((c) => c.method)).toEqual(['add_policy', 'add_signer']);
+    const policyCall = plan.calls[0];
+    if (policyCall.method !== 'add_policy') throw new Error('expected add_policy');
+    expect(policyCall.contextRuleId).toBe(0);
+    expect(policyCall.policyAddress).toBe(POLICY);
+    expect(policyCall.threshold).toBe(1);
+  });
+
+  it('emits no policy call when the rule already has a policy', () => {
+    const plan = planRotation({
+      defaultRuleId: 0,
+      addPasskey: { verifierAddress: VERIFIER, publicKey: newPubkey() },
+      ruleState: { signerCount: 1, policyCount: 1 },
+      thresholdPolicyAddress: POLICY,
+    });
+    expect(plan.calls.map((c) => c.method)).toEqual(['add_signer']);
+  });
+
+  it('emits no policy call when the rotation leaves a single signer', () => {
+    // add + remove on a 1-signer rule: 1 + 1 - 1 = 1 → no policy needed.
+    const plan = planRotation({
+      defaultRuleId: 0,
+      addPasskey: { verifierAddress: VERIFIER, publicKey: newPubkey() },
+      removeSignerId: 0,
+      ruleState: { signerCount: 1, policyCount: 0 },
+      thresholdPolicyAddress: POLICY,
+    });
+    expect(plan.calls.map((c) => c.method)).toEqual(['add_signer', 'remove_signer']);
+  });
+
+  it('leaves an existing policy in place when removing back down to one signer', () => {
+    const plan = planRotation({
+      defaultRuleId: 0,
+      removeSignerId: 3,
+      ruleState: { signerCount: 2, policyCount: 1 },
+      thresholdPolicyAddress: POLICY,
+    });
+    expect(plan.calls.map((c) => c.method)).toEqual(['remove_signer']);
+  });
+
+  it('plans a repair-only add_policy for an already-bricked rule', () => {
+    // No add, no remove — but the rule is multi-signer with no policy
+    // (the #87 brick). The plan is the lone policy install.
+    const plan = planRotation({
+      defaultRuleId: 0,
+      ruleState: { signerCount: 2, policyCount: 0 },
+      thresholdPolicyAddress: POLICY,
+    });
+    expect(plan.calls.map((c) => c.method)).toEqual(['add_policy']);
+  });
+
+  it('still throws "nothing to rotate" when the rule is healthy and nothing is requested', () => {
+    expect(() =>
+      planRotation({
+        defaultRuleId: 0,
+        ruleState: { signerCount: 1, policyCount: 0 },
+        thresholdPolicyAddress: POLICY,
+      }),
+    ).toThrow(/nothing to rotate/i);
+  });
+
+  it('emits no policy call when rule state is not provided (legacy behavior)', () => {
+    const plan = planRotation({
+      defaultRuleId: 0,
+      addPasskey: { verifierAddress: VERIFIER, publicKey: newPubkey() },
+    });
+    expect(plan.calls.map((c) => c.method)).toEqual(['add_signer']);
   });
 });
 
