@@ -652,22 +652,15 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
    Mobile/tablet Home is unchanged (centered balance + circular quick actions +
    stacked panels). At ≥1024 the SAME markup is re-laid-out into a deliberate
    dashboard: greeting + balance hero (with inline Send/Receive) and a
-   two-column [Recent activity | Security] grid. The desktop-only elements
-   (.home-greeting, .home-hero-actions-d, .home-sec-card) stay hidden below.
+   single-column card grid. The desktop-only elements
+   (.home-greeting, .home-hero-actions-d) stay hidden below.
    =================================================================== */
 .home-greeting { display: none; }
 .home-hero-actions-d { display: none; }
-.home-sec-card { display: none; }
 
 @media (min-width: 1024px) {
   .home-mode .card-grid {
-    grid-template-columns: 1.5fr 1.02fr;
     gap: 20px;
-    align-items: start;
-    /* dense: auto-placed cells (the Assets card) backfill holes instead of
-       stranding an empty cell beside themselves when a later sibling pins a
-       column (Activity -> col 1, Security -> col 2). */
-    grid-auto-flow: row dense;
   }
   /* full-width rows: greeting, balance hero, and any open action panel */
   .home-mode .card-grid > .home-greeting,
@@ -699,11 +692,8 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
   .home-mode .home-actions-mobile,
   .home-mode .home-foot { display: none !important; }
 
-  /* two-column body: Recent activity (left) + Security at-a-glance (right).
-     A closed panel collapses so it never leaves an empty grid cell. */
+  /* A closed panel collapses so it never leaves an empty grid cell. */
   .home-mode .card-grid > .home-panel:has(> .hidden) { display: none; }
-  .home-mode .card-grid > .home-col-activity { grid-column: 1; }
-  .home-mode .card-grid > .home-sec-card { display: block; grid-column: 2; }
 }
 
 /* ---------- shared app-page desktop header (Activity, Security) ----------

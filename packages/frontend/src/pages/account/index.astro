@@ -116,6 +116,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         <div>
           <div class="mut home-greeting-eyebrow">Welcome back</div>
           <h1 class="disp home-hello js-account-name">Your Nido</h1>
+          <button id="claim-name-top-btn" class="btn soft sm hidden" style="margin-top:8px; font-size:13px;" type="button">
+            Claim a name
+          </button>
         </div>
         <span class="chip acc"><span class="dot"></span> Testnet</span>
       </div>
@@ -154,6 +157,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
            (H-02); "Prove" is demoted to neutral + renamed the concrete job it
            does, "Approve" (→ the focused /sign/ surface); "Settings" → "Security"
            with the shield glyph so the entry points agree on one label (K-03). -->
+      <div class="span-all" id="claim-name-mobile-banner" style="display:none; padding:0 22px 0; margin-top:-10px;">
+        <button id="claim-name-mobile-btn" class="btn soft" style="width:100%; font-size:13.5px;" type="button">
+          Claim a name for your Nido
+        </button>
+      </div>
+
       <div class="span-all home-actions-mobile" style="display:flex; gap:6px; padding:26px 30px 6px;">
         <button id="send-action" class="qa js-send" type="button">
           <div class="circ"><Icon name="send" size={24} color="#fff" /></div>
@@ -182,32 +191,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       <div class="grid-cell home-col-activity">
         <RecentActivityCard />
       </div>
-
-      <!-- ============ SECURITY AT-A-GLANCE (desktop dashboard, ≥1024) ============
-           A summary card beside Recent activity on the desktop Home. The chips
-           are filled from live on-chain policy data (fetchSecuritySummary), the
-           same source the full Security page renders. -->
-      <section class="card home-sec-card" style="padding:6px 22px 18px;">
-        <header style="display:flex; align-items:center; justify-content:space-between; padding:16px 0 8px;">
-          <span class="section-label">Security</span>
-          <a class="link" href="/security/" style="font-size:13.5px; font-weight:700;">Manage →</a>
-        </header>
-        <div class="row" style="border-top:none;">
-          <div class="rmain"><div class="rtitle">Passkey on this device</div><div class="rsub" style="font-family:var(--body);">You're the only one who gets in</div></div>
-          <span id="sec-passkey-chip" class="chip" style="flex:0 0 auto;">…</span>
-        </div>
-        <div class="row">
-          <div class="rmain"><div class="rtitle">Trusted friends</div><div class="rsub" style="font-family:var(--body);">Recover with people you trust</div></div>
-          <span id="sec-friends-chip" class="chip" style="flex:0 0 auto;">…</span>
-        </div>
-        <div class="row">
-          <div class="rmain"><div class="rtitle">Apps you've let in</div><div class="rsub" style="font-family:var(--body);">Acting on your behalf</div></div>
-          <span id="sec-apps-chip" class="chip" style="flex:0 0 auto;">…</span>
-        </div>
-        <a class="btn ghost" href="/security/" style="margin-top:18px; height:46px; font-size:14px;">
-          <Icon name="shield" size={16} /> Review who has access
-        </a>
-      </section>
 
       <!-- ============ RECEIVE PANEL (display-only) ============ -->
       <div class="grid-cell home-panel">
@@ -332,7 +315,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   } from "@g2c/passkey-sdk";
   import { accountShareUrl, accountShareLabel } from "../../lib/accountLinks";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
-  import { fetchSecuritySummary } from "../../lib/securitySummary";
   import { toast } from "../../lib/toast";
   import { describeSignRequest } from "../../lib/signRequestSummary";
   import { describeTransaction } from "../../lib/transfer/txSummary";
@@ -744,35 +726,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       document.getElementById("register-section")!.classList.remove("hidden");
     }
 
-    // Security at-a-glance card (desktop Home). Best-effort: filled from the same
-    // on-chain policy the Security page reads; on any failure the chips fall back
-    // to a neutral state rather than blocking the wallet.
-    void (async () => {
-      const passkeyChip = document.getElementById("sec-passkey-chip");
-      const friendsChip = document.getElementById("sec-friends-chip");
-      const appsChip = document.getElementById("sec-apps-chip");
-      if (!passkeyChip || !friendsChip || !appsChip || !contractId) return;
-      const setPasskey = (on: boolean) => {
-        passkeyChip.textContent = on ? "On" : "Off";
-        passkeyChip.classList.toggle("good", on);
-      };
-      try {
-        const summary = await fetchSecuritySummary(contractId);
-        setPasskey(summary.hasPasskey);
-        friendsChip.textContent = summary.recovery
-          ? `${summary.recovery.threshold} of ${summary.recovery.friends}`
-          : "Not set";
-        appsChip.textContent =
-          summary.delegations > 0 ? `${summary.delegations} active` : "None";
-      } catch {
-        // Passkey state is local, so it's still trustworthy on a fetch failure;
-        // the on-chain counts fall back to an em dash.
-        setPasskey(Boolean(cred));
-        friendsChip.textContent = "—";
-        appsChip.textContent = "—";
-      }
-    })();
-
     // Receive panel toggle (display-only)
     const $receiveSection = document.getElementById("receive-section")!;
     // Both the mobile circular action and the desktop hero pill carry .js-receive.
@@ -914,6 +867,18 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       nameLink.textContent = accountShareLabel(rootHost, existingName);
     } else {
       $nameClaim.classList.remove("hidden");
+      // Show the claim-a-name shortcut buttons at the top of the dashboard
+      const topBtn = document.getElementById("claim-name-top-btn") as HTMLButtonElement | null;
+      const mobileBanner = document.getElementById("claim-name-mobile-banner") as HTMLElement | null;
+      if (topBtn) topBtn.classList.remove("hidden");
+      if (mobileBanner) mobileBanner.style.display = "";
+      // Both shortcut buttons open the name panel and scroll to it
+      const openNamePanel = () => {
+        $nameSection.classList.remove("hidden");
+        $nameSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+      topBtn?.addEventListener("click", openNamePanel);
+      document.getElementById("claim-name-mobile-btn")?.addEventListener("click", openNamePanel);
     }
 
 
