@@ -124,10 +124,25 @@ export const wallet = {
 	getAddress: () => StellarWalletsKit.getAddress(),
 	getNetwork: () => StellarWalletsKit.getNetwork(),
 	disconnect: () => StellarWalletsKit.disconnect(),
-	signTransaction: (
+	signTransaction: async (
 		xdr: string,
 		opts?: { networkPassphrase?: string; address?: string; path?: string },
-	) => StellarWalletsKit.signTransaction(xdr, opts),
+	) => {
+		try {
+			return await StellarWalletsKit.signTransaction(xdr, opts)
+		} catch (e) {
+			// The Nido sign popup's "Use a different account" button rejects with
+			// this typed error: the wallet has already dropped its cached account,
+			// so drop our session too — the next Connect reopens the picker.
+			if (e instanceof Error && e.name === "ACCOUNT_SWITCH_REQUESTED") {
+				await disconnectWallet()
+				throw new Error(
+					"You chose to use a different account. Connect again, pick the account you want, then retry.",
+				)
+			}
+			throw e
+		}
+	},
 }
 
 function getHorizonHost(mode: string) {
