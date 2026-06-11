@@ -22,6 +22,13 @@ import { G2C_ID, g2cBase } from "../util/wallet"
 import styles from "./StatusMessage.module.css"
 
 type SaveState = "idle" | "loading" | "success" | "failure"
+/** Tips add a terminal "pending": the relayer stopped answering but the tx
+ *  may still land — neither success nor a retry-inviting failure. */
+type TipState = SaveState | "pending"
+
+/** Survives the enable-tipping redirect to the wallet and back, so the tip
+ *  row can re-attach to the author the user was about to tip. */
+const TIP_CONTEXT_KEY = "g2c:tipContext"
 
 /** The deployed status-message contract id (baked into the generated client). */
 const CONTRACT_ID = statusMessage.options.contractId
@@ -95,7 +102,7 @@ export const StatusMessage = () => {
 	// the tip affordance attaches to THIS address, not the still-editable input.
 	const [lookupAuthor, setLookupAuthor] = useState<string | null>(null)
 
-	const [tipState, setTipState] = useState<SaveState>("idle")
+	const [tipState, setTipState] = useState<TipState>("idle")
 	const [tipError, setTipError] = useState<string>()
 	const [tipProgress, setTipProgress] = useState<string>()
 	const [tipHash, setTipHash] = useState<string>()
@@ -112,13 +119,28 @@ export const StatusMessage = () => {
 	}, [address]) // eslint-disable-line react-hooks/exhaustive-deps
 
 	// On return from the wallet's delegate page, clear the stored request and
-	// drop the ?delegation param so a reload doesn't re-trigger anything.
+	// drop the ?delegation param so a reload doesn't re-trigger anything. If
+	// the round trip was enable-tipping, restore the tip context: re-read the
+	// author the user was about to tip so the (now enabled) Tip button
+	// reappears instead of silently vanishing until a manual re-read.
 	useEffect(() => {
 		if (!readDelegationReturn()) return
 		consumePendingDelegation()
 		const clean = new URL(window.location.href)
 		clean.searchParams.delete("delegation")
 		window.history.replaceState({}, "", clean.toString())
+		try {
+			const raw = sessionStorage.getItem(TIP_CONTEXT_KEY)
+			sessionStorage.removeItem(TIP_CONTEXT_KEY)
+			const author = raw ? (JSON.parse(raw) as { author?: string }).author : undefined
+			if (author) {
+				setLookupAddr(author)
+				void readStatus(author)
+			}
+		} catch {
+			// best-effort restore only
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [])
 
 	const delegate = async () => {
@@ -241,6 +263,11 @@ export const StatusMessage = () => {
 		// a second passkey whose material orphans the first's.
 		setTipState("loading")
 		try {
+			// Persist the tip target across the redirect (the wallet replaces our
+			// query string, and the remount resets lookupAuthor).
+			if (lookupAuthor) {
+				sessionStorage.setItem(TIP_CONTEXT_KEY, JSON.stringify({ author: lookupAuthor }))
+			}
 			await startDelegation({
 				walletOrigin: accountOrigin(g2cBase(), nidoAccount),
 				account: nidoAccount,
@@ -275,6 +302,17 @@ export const StatusMessage = () => {
 			setTipState("success")
 		} catch (e) {
 			console.error(e)
+			if (e instanceof RelayerError && e.code === "WAIT_TIMEOUT") {
+				// The relayer stopped answering but the tx may STILL land —
+				// "rejected" plus a re-enabled button here is a double-tip
+				// invitation. Park the row in a terminal pending state with the
+				// explorer link when the relayer returned a hash.
+				const last = e.details as { hash?: string | null } | undefined
+				if (last?.hash) setTipHash(last.hash)
+				setTipError(undefined)
+				setTipState("pending")
+				return
+			}
 			setTipState("failure")
 			// Relayer / policy rejections (e.g. over the 5 XLM/day limit) arrive as
 			// error messages — surface them readably, with the relayer's code and
@@ -394,7 +432,7 @@ export const StatusMessage = () => {
 									<Button
 										variant="tertiary"
 										size="md"
-										disabled={tipState === "loading"}
+										disabled={tipState === "loading" || tipState === "pending"}
 										isLoading={tipState === "loading"}
 										onClick={() => void tip()}
 									>
@@ -428,6 +466,17 @@ export const StatusMessage = () => {
 									<a href={explorerTxUrl(tipHash)} target="_blank" rel="noreferrer">
 										View transaction
 									</a>
+								</Text>
+							)}
+							{tipState === "pending" && (
+								<Text as="div" size="sm" addlClassName={styles.progress}>
+									Tip submitted — still confirming.{" "}
+									{tipHash && (
+										<a href={explorerTxUrl(tipHash)} target="_blank" rel="noreferrer">
+											Check the transaction
+										</a>
+									)}{" "}
+									Verify it before tipping again.
 								</Text>
 							)}
 							{tipState === "failure" && tipError && (
