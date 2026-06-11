@@ -153,42 +153,44 @@ import TrustSection from "../components/TrustSection.astro";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
 
-  // --- Reserved dApp subdomain redirect ---
-  const hostname = window.location.hostname;
-  const dappPath = dappPathFromHostname(hostname);
-  if (dappPath) {
-    window.location.replace(dappPath);
-  }
+  if (location.pathname === '/') {
+    // --- Reserved dApp subdomain redirect ---
+    const hostname = window.location.hostname;
+    const dappPath = dappPathFromHostname(hostname);
+    if (dappPath) {
+      window.location.replace(dappPath);
+    }
 
-  // --- Bare contract-ID subdomain redirect ---
-  // Visiting cabc….<base> directly lands on this root page; send it straight
-  // to the account view on the same subdomain rather than showing the landing
-  // page. (Name subdomains are handled below after registry resolution.)
-  const subdomainContractId = contractIdFromHostname(hostname);
-  if (subdomainContractId && isContractId(subdomainContractId)) {
-    window.location.replace("/account/");
-  }
+    // --- Bare contract-ID subdomain redirect ---
+    // Visiting cabc….<base> directly lands on this root page; send it straight
+    // to the account view on the same subdomain rather than showing the landing
+    // page. (Name subdomains are handled below after registry resolution.)
+    const subdomainContractId = contractIdFromHostname(hostname);
+    if (subdomainContractId && isContractId(subdomainContractId)) {
+      window.location.replace("/account/");
+    }
 
-  // --- Name resolution redirect (if visiting via name subdomain) ---
-  const detectedName = nameFromHostname(hostname);
-  if (detectedName && !isContractId(detectedName)) {
-    fetchRegistryAddress("name-registry")
-      .then((nameRegistryId) =>
-        resolveNameCached(
-          RPC_URL,
-          nameRegistryId,
-          detectedName,
-          "Test SDF Network ; September 2015",
-        ),
-      )
-      .then((resolved) => {
-        if (resolved) {
-          window.location.replace("/account/");
-        }
-      })
-      .catch(() => {
-        // Name not found — continue showing the home page
-      });
+    // --- Name resolution redirect (if visiting via name subdomain) ---
+    const detectedName = nameFromHostname(hostname);
+    if (detectedName && !isContractId(detectedName)) {
+      fetchRegistryAddress("name-registry")
+        .then((nameRegistryId) =>
+          resolveNameCached(
+            RPC_URL,
+            nameRegistryId,
+            detectedName,
+            "Test SDF Network ; September 2015",
+          ),
+        )
+        .then((resolved) => {
+          if (resolved) {
+            window.location.replace("/account/");
+          }
+        })
+        .catch(() => {
+          // Name not found — continue showing the home page
+        });
+    }
   }
 
   // --- "Get started" buttons open the My Nido menu ---

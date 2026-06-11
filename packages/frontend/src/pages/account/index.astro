@@ -144,7 +144,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           <button type="button" class="btn acc js-send" style="width:auto; padding:0 24px;">
             <Icon name="send" size={17} color="#fff" /> Send
           </button>
-          <button type="button" class="btn soft js-receive" style="width:auto; padding:0 24px;">
+          <button type="button" class="btn soft js-receive" style="width:auto; padding:0 24px;" aria-expanded="false" aria-controls="receive-section">
             <Icon name="receive" size={17} /> Receive
           </button>
         </div>
@@ -159,7 +159,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           <div class="circ"><Icon name="send" size={24} color="#fff" /></div>
           <span>Send</span>
         </button>
-        <button id="receive-action" class="qa js-receive" type="button">
+        <button id="receive-action" class="qa js-receive" type="button" aria-expanded="false" aria-controls="receive-section">
           <div class="circ soft"><Icon name="receive" size={23} /></div>
           <span>Receive</span>
         </button>
@@ -786,6 +786,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         if (!open) {
           $receiveSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }
+        // Update aria-expanded on all receive toggle buttons
+        document.querySelectorAll('[aria-controls="receive-section"]').forEach(btn => {
+          btn.setAttribute('aria-expanded', String(!open));
+        });
       }),
     );
     // Receive copy button

@@ -403,8 +403,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       const accountUrl = `${protocol}//${host}/account/`;
       $explorerLink.href = `https://stellar.expert/explorer/testnet/contract/${contractId}`;
 
-      toast({ msg: "Your Nido is ready", icon: "check" });
-
       // Brief beat so the final check lands before the reveal.
       await new Promise((r) => setTimeout(r, 700));
       $deploySection.classList.add("hidden");

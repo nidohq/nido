@@ -637,7 +637,6 @@ import Icon from "../../components/Icon.astro";
         { title: confirmLabel, sub: `Sending ${pending.amountLabel} to ${pending.toLabel}.` },
       );
 
-      toast({ msg: "Sent", icon: "check" });
       document.getElementById("result-detail")!.textContent =
         `${pending.amountLabel} to ${pending.toLabel}.`;
       const explorer = document.getElementById("result-explorer") as HTMLAnchorElement;

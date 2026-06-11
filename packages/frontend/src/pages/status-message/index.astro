@@ -13,7 +13,7 @@ import Icon from "../../components/Icon.astro";
 <NidoLayout title="Status Message">
   <div class="col-scroll screen-in pad">
     <div class="topbar">
-      <Logo mark size={20} />
+      <a href="/" class="topbar-mark"><Logo mark size={20} /></a>
       <div class="header-links">
         <a id="account-link" class="chip hidden">Open wallet</a>
         <a id="home-link" class="chip" href="/">Home</a>
@@ -29,7 +29,7 @@ import Icon from "../../components/Icon.astro";
       </p>
     </header>
 
-    <div id="error-box" class="sm-error" style="display:none"></div>
+    <div id="error-box" class="alert danger" style="display:none"></div>
 
     <!-- Delegation status banner -->
     <div id="delegation-status"></div>
@@ -158,12 +158,6 @@ import Icon from "../../components/Icon.astro";
     font-family: var(--mono); font-size: 0.88em;
     background: var(--chip); color: var(--ink-soft);
     padding: 1px 5px; border-radius: var(--r-sm);
-  }
-
-  .sm-error {
-    background: var(--acc-soft); color: var(--danger);
-    border: 1px solid var(--acc-glow); border-radius: var(--r-md);
-    padding: 12px 14px; margin: 0 0 16px; font-size: 14px; font-weight: 600;
   }
 
   .sm-display {
