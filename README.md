@@ -1,11 +1,10 @@
-# g2c / Nido
+# Nido
 
 **Passkey-native smart accounts for Stellar.**
 
-g2c is the open-source account abstraction stack behind
-[Nido](https://nido.fyi): a browser wallet, Soroban smart contracts, and
-developer tooling that help users move from classic Stellar G-addresses to
-passkey-secured smart accounts (C-addresses).
+Nido is an open-source account abstraction stack for Stellar: a browser wallet,
+Soroban smart contracts, and developer tooling that help users move from
+classic Stellar G-addresses to passkey-secured smart accounts (C-addresses).
 
 The goal is simple: make a Stellar smart account feel like a modern app login.
 Users create or recover an account with a passkey, dApps can request signatures
@@ -19,16 +18,16 @@ on-chain.
 
 - **Passkey-secured C-addresses:** WebAuthn/P-256 signatures are verified by
   Soroban contracts, not by a custodial backend.
-- **G-to-C onboarding:** The factory contract deterministically deploys a smart
-  account from a funded G-address and installs the user's passkey as the first
-  signer.
+- **Classic-to-smart-account onboarding:** The factory contract deterministically
+  deploys a smart account from a funded G-address and installs the user's
+  passkey as the first signer.
 - **Nido wallet app:** An Astro frontend for account creation, account
   management, sending, transaction signing, recovery, and scoped delegation.
 - **Developer SDK:** TypeScript helpers for WebAuthn parsing, smart-account
   authorization hashes, signature injection, deployment, recovery, and session
   key workflows.
 - **Wallet selector integration:** A Stellar Wallets Kit module lets dApps add
-  g2c/Nido next to Freighter, xBull, Albedo, and other Stellar wallets.
+  Nido next to Freighter, xBull, Albedo, and other Stellar wallets.
 - **Policy-ready accounts:** Recovery, session keys, spending limits, name
   registry support, and example dApp integrations are included in the repo.
 
@@ -37,7 +36,6 @@ on-chain.
 | Link | Purpose |
 | --- | --- |
 | [nido.fyi](https://nido.fyi) | Hosted testnet wallet |
-| [Status Message dApp](https://theahaco.github.io/g2c/) | Example dApp using the g2c wallet selector |
 | [Architecture](./ARCHITECTURE.md) | Detailed system design, data flows, and security model |
 | [Deployments](./DEPLOYED.md) | Current testnet contract addresses |
 
@@ -76,13 +74,13 @@ limited-scope signing.
 
 | Contract | Purpose |
 | --- | --- |
-| `g2c-factory` | Deploys smart accounts, resolves shared policy/verifier contracts, and computes deterministic C-addresses |
-| `g2c-smart-account` | OpenZeppelin-based account contract with passkey auth, execution entry point, context rules, and policy enforcement |
-| `g2c-webauthn-verifier` | Stateless P-256/WebAuthn verifier shared by smart accounts |
-| `g2c-name-registry` | Human-readable account name registry |
-| `g2c-multisig-policy` | Threshold-based recovery and delegated policy support |
-| `g2c-spending-limit-policy` | Scoped spending-limit policy for smart-account calls |
-| `g2c-status-message` | Small demo contract used by the example dApp |
+| Factory | Deploys smart accounts, resolves shared policy/verifier contracts, and computes deterministic C-addresses |
+| Smart Account | OpenZeppelin-based account contract with passkey auth, execution entry point, context rules, and policy enforcement |
+| WebAuthn Verifier | Stateless P-256/WebAuthn verifier shared by smart accounts |
+| Name Registry | Human-readable account name registry |
+| Multisig Policy | Threshold-based recovery and delegated policy support |
+| Spending Limit Policy | Scoped spending-limit policy for smart-account calls |
+| Status Message | Small demo contract used by the example dApp |
 
 All account contracts build on
 [OpenZeppelin Stellar Contracts](https://docs.openzeppelin.com/stellar-contracts/accounts/smart-account)
@@ -109,7 +107,7 @@ npm install
 ```bash
 just dev              # Build the SDK, then run the Nido frontend locally
 just build-astro      # Build the Astro frontend
-just build-ts         # Build @g2c/passkey-sdk
+just build-ts         # Build the passkey SDK
 just build-contracts  # Build and optimize Soroban contracts
 just test             # Run Rust workspace tests
 just check            # cargo fmt --check + clippy
@@ -119,17 +117,17 @@ just fmt              # Format Rust code
 Package-level checks are also available through npm workspaces:
 
 ```bash
-npm run build -w @g2c/passkey-sdk
-npm test -w @g2c/passkey-sdk
-npm run build -w @g2c/stellar-wallets-kit-module
-npm test -w @g2c/stellar-wallets-kit-module
-npm run test -w @g2c/frontend
+npm run build -w packages/passkey-sdk
+npm test -w packages/passkey-sdk
+npm run build -w packages/stellar-wallets-kit-module
+npm test -w packages/stellar-wallets-kit-module
+npm run test -w packages/frontend
 ```
 
 ## Run the Example dApp
 
 The status-message example demonstrates a third-party dApp connecting through
-the Stellar Wallets Kit picker with g2c listed as a wallet option.
+the Stellar Wallets Kit picker with Nido listed as a wallet option.
 
 ```bash
 cd examples/status-message-dapp
