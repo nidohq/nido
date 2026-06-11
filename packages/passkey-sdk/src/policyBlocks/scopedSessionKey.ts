@@ -63,15 +63,27 @@ export const scopedSessionKeyModule: PolicyBlockModule<ScopedSessionKeyBlock> = 
     // A bare session key has no policies. One with a spending limit carries
     // exactly the spending-limit policy, whose fetched params arrive through
     // the PolicyState the loader provides (same wiring as the multisig
-    // threshold: frontend fetch → state[policyAddr] → fromChain). Rules with
-    // any other policy attached are not ours.
+    // threshold: frontend fetch → state[policyAddr] → fromChain). A rule whose
+    // single policy answers get_threshold is a multisig-style rule — not ours.
+    // But a single-policy rule whose state is UNREADABLE (registry blip,
+    // archived params entry, registry repoint orphaning the old policy
+    // address) must still be claimed: this CallContract + one-external-signer
+    // shape is a session key, and dropping it would drop the only Revoke path.
     let limit: { stroops: bigint; periodLedgers: number } | undefined;
+    let limitUnreadable = false;
     if (rule.policies.length === 1) {
       const ps = state[rule.policies[0]] as
-        | { spendingLimit?: { stroops: bigint; periodLedgers: number } }
+        | {
+            spendingLimit?: { stroops: bigint; periodLedgers: number } | 'unreadable';
+            threshold?: number;
+          }
         | undefined;
-      if (!ps?.spendingLimit) return null;
-      limit = ps.spendingLimit;
+      if (ps?.threshold !== undefined) return null;
+      if (ps?.spendingLimit != null && ps.spendingLimit !== 'unreadable') {
+        limit = ps.spendingLimit;
+      } else {
+        limitUnreadable = true;
+      }
     } else if (rule.policies.length > 0) {
       return null;
     }
@@ -90,6 +102,7 @@ export const scopedSessionKeyModule: PolicyBlockModule<ScopedSessionKeyBlock> = 
       ...(limit !== undefined
         ? { limitStroops: limit.stroops, limitPeriodLedgers: limit.periodLedgers }
         : {}),
+      ...(limitUnreadable ? { limitUnreadable: true } : {}),
     };
   },
 

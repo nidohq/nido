@@ -49,6 +49,16 @@ export async function simulateView(
   return result.retval;
 }
 
+/** OZ's SmartAccountError::ContextRuleNotFound surfaces from a failed
+ *  simulation as `Error(Contract, #3000)`. Rule ids are MONOTONIC and never
+ *  reused (`NextId`), while `get_context_rules_count` only counts live rules —
+ *  so any revoke that isn't the newest rule leaves an id gap that panics
+ *  `get_context_rule`. Enumerators must treat this error as "skip". */
+export function isRuleNotFound(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Error\(Contract, #3000\)|ContextRuleNotFound/.test(msg);
+}
+
 /** Read all installed context rules from a smart account.
  *
  *  Decodes rules RAW (`scValToNative` with no type hint) rather than through the
@@ -67,14 +77,24 @@ export async function fetchAllChainRules(account: string): Promise<ChainRule[]> 
   const count = scValToNative(countRv) as number;
 
   const out: ChainRule[] = [];
-  for (let i = 0; i < count; i++) {
-    const ruleRv = await simulateView(
-      server,
-      contract,
-      'get_context_rule',
-      nativeToScVal(i, { type: 'u32' }),
-    );
+  // Scan ids upward, skipping revoke-created gaps, until `count` rules are
+  // found. The scan bound only guards a pathological account (more than 100
+  // revoked rules below the live ones) from looping forever.
+  for (let id = 0, found = 0; found < count && id < count + 100; id++) {
+    let ruleRv;
+    try {
+      ruleRv = await simulateView(
+        server,
+        contract,
+        'get_context_rule',
+        nativeToScVal(id, { type: 'u32' }),
+      );
+    } catch (err) {
+      if (isRuleNotFound(err)) continue;
+      throw err;
+    }
     out.push(parseRule(scValToNative(ruleRv)));
+    found++;
   }
   return out;
 }
@@ -93,7 +113,10 @@ export async function fetchPolicyState(
   for (const policyAddr of rule.policies) {
     if (policyAddr === limitPolicyAddr) {
       const limit = await fetchSpendingLimit(account, rule);
-      state[policyAddr] = limit ? { spendingLimit: limit } : {};
+      // 'unreadable' (not {}): the rule verifiably carries the spending-limit
+      // policy, so an unreadable limit must not make the whole block vanish
+      // from the UI (and with it the only Revoke path).
+      state[policyAddr] = limit ? { spendingLimit: limit } : { spendingLimit: 'unreadable' };
       continue;
     }
     try {
@@ -196,8 +219,8 @@ export async function fetchRegistryAddress(name: string): Promise<string> {
  *  delegation install transaction never actually committed, or the rule
  *  has been revoked).
  *
- *  Queries each rule sequentially via `get_context_rule(i)` up to
- *  `get_context_rules_count()`. Used to discover which rule_id our session
+ *  Scans rule ids (gap-tolerant) until `get_context_rules_count()` rules
+ *  have been seen. Used to discover which rule_id our session
  *  passkey lives under so the signing-side AuthPayload + computed digest
  *  both reference the correct rule. */
 export async function findRuleForPubkey(
@@ -208,13 +231,21 @@ export async function findRuleForPubkey(
   const countRv = await simulateView(server, new Contract(account), 'get_context_rules_count');
   const count = scValToNative(countRv) as number;
   const lowerHex = pubkeyHex.toLowerCase();
-  for (let i = 0; i < count; i++) {
-    const ruleRv = await simulateView(
-      server,
-      new Contract(account),
-      'get_context_rule',
-      nativeToScVal(i, { type: 'u32' }),
-    );
+  // Gap-tolerant id scan — see isRuleNotFound for why ids aren't contiguous.
+  for (let id = 0, found = 0; found < count && id < count + 100; id++) {
+    let ruleRv;
+    try {
+      ruleRv = await simulateView(
+        server,
+        new Contract(account),
+        'get_context_rule',
+        nativeToScVal(id, { type: 'u32' }),
+      );
+    } catch (err) {
+      if (isRuleNotFound(err)) continue;
+      throw err;
+    }
+    found++;
     const native = scValToNative(ruleRv) as { id?: number; signers?: unknown[] };
     for (const s of native.signers ?? []) {
       // ["External", verifier, pubkey_bytes_as_array_or_buffer]
@@ -240,7 +271,7 @@ export async function findRuleForPubkey(
           }
         }
         if (candidateHex && candidateHex.toLowerCase() === lowerHex) {
-          return native.id ?? i;
+          return native.id ?? id;
         }
       }
     }

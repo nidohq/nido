@@ -54,6 +54,16 @@ async function simulateView(
 	return result.retval
 }
 
+/** OZ's SmartAccountError::ContextRuleNotFound surfaces from a failed
+ *  simulation as `Error(Contract, #3000)`. Rule ids are MONOTONIC and never
+ *  reused, while `get_context_rules_count` only counts live rules — so any
+ *  revoke that isn't the newest rule leaves an id gap that panics
+ *  `get_context_rule`. Enumerators must treat this error as "skip". */
+function isRuleNotFound(err: unknown): boolean {
+	const msg = err instanceof Error ? err.message : String(err)
+	return /Error\(Contract, #3000\)|ContextRuleNotFound/.test(msg)
+}
+
 /**
  * Find the context-rule id on `account` whose External signer carries the given
  * public key (hex). Returns `null` if no such rule exists — e.g. the delegation
@@ -71,20 +81,30 @@ export async function findRuleForPubkey(
 	const countRv = await simulateView(server, new Contract(account), "get_context_rules_count")
 	const count = scValToNative(countRv) as number
 	const lowerHex = pubkeyHex.toLowerCase()
-	for (let i = 0; i < count; i++) {
-		const ruleRv = await simulateView(
-			server,
-			new Contract(account),
-			"get_context_rule",
-			nativeToScVal(i, { type: "u32" }),
-		)
+	// Gap-tolerant id scan — revoking any non-newest rule leaves an id gap
+	// (see isRuleNotFound). The bound only stops a pathological account from
+	// looping forever.
+	for (let id = 0, found = 0; found < count && id < count + 100; id++) {
+		let ruleRv: xdr.ScVal
+		try {
+			ruleRv = await simulateView(
+				server,
+				new Contract(account),
+				"get_context_rule",
+				nativeToScVal(id, { type: "u32" }),
+			)
+		} catch (err) {
+			if (isRuleNotFound(err)) continue
+			throw err
+		}
+		found++
 		const native = scValToNative(ruleRv) as { id?: number; signers?: unknown[] }
 		for (const s of native.signers ?? []) {
 			// ["External", verifier, pubkey_bytes_as_array_or_buffer]
 			if (Array.isArray(s) && s[0] === "External") {
 				const candidateHex = bytesToHex(s[2])
 				if (candidateHex && candidateHex === lowerHex) {
-					return native.id ?? i
+					return native.id ?? id
 				}
 			}
 		}

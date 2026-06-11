@@ -40,6 +40,10 @@ export interface ScopedSessionKeyBlock {
   limitStroops?: bigint;
   /** Rolling-window length of the spending limit, in ledgers. */
   limitPeriodLedgers?: number;
+  /** True when the rule carries a policy whose limit could not be read
+   *  (registry blip, archived params entry, redeployed policy address).
+   *  The block must still render — hiding it would hide the Revoke path. */
+  limitUnreadable?: boolean;
 }
 
 /** Parsed chain payload for one rule: the ContextRule plus any policy state. */
