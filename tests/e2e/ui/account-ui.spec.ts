@@ -25,7 +25,7 @@ test.describe('account page — UI only (no chain) @fast', () => {
   test('built HTML contains name section elements @fast', () => {
     const html = readFileSync(join(DIST_DIR, 'account/index.html'), 'utf-8');
     expect(html).toContain('id="name-section"');
-    expect(html).toContain('id="name-claim"');
+    expect(html).toContain('id="claim-name-inline"');
     expect(html).toContain('id="claim-name-btn"');
     expect(html).toContain('id="name-input"');
   });
@@ -55,10 +55,13 @@ test.describe('account page — UI only (no chain) @fast', () => {
     await expect(page.locator('#home-mode')).toBeVisible();
 
     // SHOW_NAME_SECTION is on: on a contract subdomain the JS reveals the
-    // name section and the claim form (no chain required). The claim button is
-    // wired to client-side validation — an empty name surfaces the 1-15 chars
-    // error before any network call.
-    await expect(page.locator('#name-section')).toBeVisible();
+    // claim-name button in the desktop greeting (no chain required). Clicking it
+    // reveals the inline form. The claim button is wired to client-side
+    // validation — an empty name surfaces the 1-15 chars error before any
+    // network call.
+    await expect(page.locator('#claim-name-top-btn')).toBeVisible();
+    await page.locator('#claim-name-top-btn').click();
+    await expect(page.locator('#claim-name-inline')).toBeVisible();
     await expect(page.locator('#claim-name-btn')).toBeVisible();
 
     await page.locator('#claim-name-btn').click();
