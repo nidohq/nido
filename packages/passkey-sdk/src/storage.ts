@@ -41,7 +41,12 @@ export interface PendingAccount {
 
 export function savePendingAccount(contractId: string, setupKey: string): void {
   const pending: PendingAccount[] = JSON.parse(localStorage.getItem("g2c:pending") || "[]");
-  if (!pending.some((p) => p.contractId === contractId)) {
+  const existing = pending.find((p) => p.contractId === contractId);
+  if (existing) {
+    existing.setupKey = setupKey;
+    delete existing.secretKey;
+    localStorage.setItem("g2c:pending", JSON.stringify(pending));
+  } else {
     pending.push({ contractId, setupKey });
     localStorage.setItem("g2c:pending", JSON.stringify(pending));
   }

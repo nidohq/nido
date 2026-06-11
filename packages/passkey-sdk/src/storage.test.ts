@@ -3,6 +3,7 @@ import {
   saveFriendNickname, loadFriendNicknames,
   saveSessionKeyMaterial, loadSessionKeyMaterial, forgetSessionKeyMaterial,
   saveBlockLabel, loadBlockLabels,
+  savePendingAccount, loadPendingAccounts,
 } from './storage.js';
 
 const ACC = 'C' + 'A'.repeat(55); // Just an identifier here — never validated.
@@ -46,5 +47,13 @@ describe('policy storage', () => {
   it('round-trips block labels', () => {
     saveBlockLabel(ACC, 7, 'Recovery');
     expect(loadBlockLabels(ACC)).toEqual({ 7: 'Recovery' });
+  });
+
+  it('updates pending setup keys and migrates old secret-key rows', () => {
+    localStorage.setItem("g2c:pending", JSON.stringify([{ contractId: ACC, secretKey: "SOLD" }]));
+    expect(loadPendingAccounts()).toEqual([{ contractId: ACC, secretKey: "SOLD", setupKey: "SOLD" }]);
+
+    savePendingAccount(ACC, "salt-1");
+    expect(loadPendingAccounts()).toEqual([{ contractId: ACC, setupKey: "salt-1" }]);
   });
 });

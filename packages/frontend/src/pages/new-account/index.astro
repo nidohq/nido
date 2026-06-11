@@ -170,6 +170,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     contractIdFromHostname,
     saveCredential as sdkSaveCredential,
     savePendingAccount,
+    loadPendingAccounts,
     activateAccount,
     fetchRegistryAddress,
     accountUrl,
@@ -189,8 +190,12 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const rpId = hostname;
 
   const params = new URLSearchParams(window.location.search);
-  const saltHex = params.get("salt");
+  let saltHex = params.get("salt");
   const isSetupReservation = params.get("setup") === "1";
+
+  if (!saltHex && contractId) {
+    saltHex = loadPendingAccounts().find((p) => p.contractId === contractId)?.setupKey ?? null;
+  }
 
   let passkeyPublicKey: Uint8Array | null = null;
   let credentialIdBytes: Uint8Array | null = null;
