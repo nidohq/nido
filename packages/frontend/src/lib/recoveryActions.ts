@@ -210,7 +210,8 @@ export async function findRecoveryRules(account: string): Promise<RecoveryRuleIn
     try {
       const state = await fetchPolicyState(account, r);
       for (const policyAddr of r.policies) {
-        const t = state[policyAddr]?.threshold;
+        const policyState = state[policyAddr] as { threshold?: unknown } | undefined;
+        const t = policyState?.threshold;
         if (typeof t === 'number') {
           threshold = t;
           break;
