@@ -29,32 +29,32 @@ describe("buildMyNidoModel", () => {
   it("lists active rows before pending rows and carries the resume key", () => {
     const m = buildMyNidoModel(
       ["CABC"],
-      [{ contractId: "CPEND", secretKey: "S123" }],
+      [{ contractId: "CPEND", setupKey: "abc123" }],
       nameOf({ CABC: "alice" }),
     );
     expect(m.state).toBe("multi"); // 1 active + 1 pending = 2 rows
     expect(m.rows).toEqual([
       { contractId: "CABC", name: "alice", status: "active" },
-      { contractId: "CPEND", name: null, status: "pending", resumeKey: "S123" },
+      { contractId: "CPEND", name: null, status: "pending", resumeKey: "abc123" },
     ]);
   });
 
   it("shows the create-card (empty) but still lists pending-only accounts", () => {
     const m = buildMyNidoModel(
       [],
-      [{ contractId: "CPEND", secretKey: "S123" }],
+      [{ contractId: "CPEND", setupKey: "abc123" }],
       () => null,
     );
     expect(m.state).toBe("empty");
     expect(m.rows).toEqual([
-      { contractId: "CPEND", name: null, status: "pending", resumeKey: "S123" },
+      { contractId: "CPEND", name: null, status: "pending", resumeKey: "abc123" },
     ]);
   });
 
   it("does not duplicate a pending account that is also active", () => {
     const m = buildMyNidoModel(
       ["CABC"],
-      [{ contractId: "CABC", secretKey: "S123" }],
+      [{ contractId: "CABC", setupKey: "abc123" }],
       () => null,
     );
     expect(m.state).toBe("single");

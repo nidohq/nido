@@ -34,19 +34,22 @@ export function loadAccounts(): string[] {
 
 export interface PendingAccount {
   contractId: string;
-  secretKey: string;
+  setupKey: string;
+  /** @deprecated old onboarding stored a temporary G secret here. */
+  secretKey?: string;
 }
 
-export function savePendingAccount(contractId: string, secretKey: string): void {
+export function savePendingAccount(contractId: string, setupKey: string): void {
   const pending: PendingAccount[] = JSON.parse(localStorage.getItem("g2c:pending") || "[]");
   if (!pending.some((p) => p.contractId === contractId)) {
-    pending.push({ contractId, secretKey });
+    pending.push({ contractId, setupKey });
     localStorage.setItem("g2c:pending", JSON.stringify(pending));
   }
 }
 
 export function loadPendingAccounts(): PendingAccount[] {
-  return JSON.parse(localStorage.getItem("g2c:pending") || "[]");
+  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("g2c:pending") || "[]");
+  return pending.map((p) => ({ ...p, setupKey: p.setupKey ?? p.secretKey ?? "" }));
 }
 
 export function removePendingAccount(contractId: string): void {

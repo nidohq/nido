@@ -28,7 +28,7 @@ export function accountShareLabel(host: string, nameOrId: string): string {
  *  `//bob.alice.localhost/`); production hosts are unaffected. */
 export function nidoRowHref(host: string, row: MyNidoRow): string {
   if (row.status === "pending") {
-    return accountUrl(host, row.contractId, `/new-account/?key=${row.resumeKey}`);
+    return accountUrl(host, row.contractId, `/new-account/?salt=${encodeURIComponent(row.resumeKey ?? "")}`);
   }
   return accountShareUrl(host, row.name ?? row.contractId);
 }

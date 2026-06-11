@@ -5,8 +5,6 @@ use soroban_sdk::{
 use soroban_sdk_tools::{contractstorage, InstanceItem};
 use stellar_accounts::smart_account::Signer;
 
-use crate::xlm;
-
 mod smart_account {
     //! Embeds the smart-account contract wasm so the factory no longer
     //! hardcodes its wasm hash. The mechanism:
@@ -81,7 +79,6 @@ pub struct Contract;
 #[contractimpl]
 impl Contract {
     pub fn __constructor(e: &Env, admin: Address) {
-        xlm::register(e, &e.current_contract_address());
         Config::new(e).admin.set(&admin);
     }
 
@@ -107,23 +104,17 @@ impl Contract {
         e.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
-    ///Deploy an account contract and add a passkey to it. Lastly transfer funds to the contract's account.
-    ///
-    pub fn create_account(e: &Env, funder: &Address, key: BytesN<65>, amount: &i128) -> Address {
-        funder.require_auth();
-        let new_account = Self::deploy_account_contract(e, funder, key.to_bytes());
-        let xlm_sac = xlm::stellar_asset_client(e);
-        xlm_sac.transfer(funder, &new_account, amount);
-        new_account
+    /// Deploy an account contract and add its initial passkey signer.
+    pub fn create_account(e: &Env, salt: &BytesN<32>, key: BytesN<65>) -> Address {
+        Self::deploy_account_contract(e, salt, key.to_bytes())
     }
 
-    pub fn get_c_address(e: &Env, funder: &Address) -> Address {
-        Self::deployer(e, funder).deployed_address()
+    pub fn get_c_address(e: &Env, salt: &BytesN<32>) -> Address {
+        Self::deployer(e, salt).deployed_address()
     }
 
-    fn deployer(e: &Env, funder: &Address) -> DeployerWithAddress {
-        e.deployer()
-            .with_address(funder.clone(), BytesN::from_array(e, &[0; 32]))
+    fn deployer(e: &Env, salt: &BytesN<32>) -> DeployerWithAddress {
+        e.deployer().with_current_contract(salt.clone())
     }
 
     fn resolve(env: &Env, name: &str) -> Address {
@@ -137,13 +128,13 @@ impl Contract {
         addr
     }
 
-    fn deploy_account_contract(e: &Env, funder: &Address, key: Bytes) -> Address {
+    fn deploy_account_contract(e: &Env, salt: &BytesN<32>, key: Bytes) -> Address {
         let verifier_addr = Self::resolve(e, "verifier");
         let signer = Signer::External(verifier_addr, key);
         let signers = soroban_sdk::vec![e, signer];
         let policies: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val> =
             soroban_sdk::Map::new(e);
-        Self::deployer(e, funder).deploy_v2(Self::account_wasm_hash(e), (&signers, &policies))
+        Self::deployer(e, salt).deploy_v2(Self::account_wasm_hash(e), (&signers, &policies))
     }
 
     /// SHA-256 of the embedded smart-account wasm — equal to the installed
@@ -215,6 +206,23 @@ mod test {
         let second = env.as_contract(&factory_addr, || Contract::resolve(&env, "verifier"));
         assert_eq!(first, expected);
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn get_c_address_uses_random_salt() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let factory_addr = env.register(Contract, (admin,));
+        let salt_a = BytesN::from_array(&env, &[1; 32]);
+        let salt_b = BytesN::from_array(&env, &[2; 32]);
+
+        let first = env.as_contract(&factory_addr, || Contract::get_c_address(&env, &salt_a));
+        let second = env.as_contract(&factory_addr, || Contract::get_c_address(&env, &salt_b));
+        let first_again = env.as_contract(&factory_addr, || Contract::get_c_address(&env, &salt_a));
+
+        assert_ne!(first, second);
+        assert_eq!(first, first_again);
     }
 
     /// The property that actually matters: the hash the factory hands to

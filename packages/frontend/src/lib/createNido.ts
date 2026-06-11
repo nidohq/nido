@@ -1,5 +1,4 @@
-import { Keypair } from "@stellar/stellar-sdk";
-import { stripSubdomain } from "@g2c/passkey-sdk";
+import { buf2hex, stripSubdomain } from "@g2c/passkey-sdk";
 
 function setupHost(host: string): string {
   const hostname = host.split(":")[0];
@@ -10,7 +9,7 @@ function setupHost(host: string): string {
 }
 
 export function createNido(host: string): string {
-  const keypair = Keypair.random();
-  const secret = keypair.secret();
-  return `//${setupHost(host)}/new-account/?key=${encodeURIComponent(secret)}&setup=1`;
+  const salt = new Uint8Array(32);
+  crypto.getRandomValues(salt);
+  return `//${setupHost(host)}/new-account/?salt=${buf2hex(salt)}&setup=1`;
 }

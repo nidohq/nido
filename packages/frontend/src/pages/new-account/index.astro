@@ -36,7 +36,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       </div>
       <h1 class="disp" style="font-weight:800; font-size:28px; line-height:1.06; text-align:center;">
         Lock it to you
-      </div>
+      </h1>
       <p id="passkey-intro" class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;">
         Use your passkey so only you can get into your Nido.
         Nothing to memorize, nothing to write down.
@@ -160,13 +160,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 </style>
 
 <script>
-  import { Keypair, Networks, TransactionBuilder, Operation, Address, Account, rpc, xdr, nativeToScVal } from "@stellar/stellar-sdk";
+  import { Networks, TransactionBuilder, Operation, Address, Account, rpc, xdr } from "@stellar/stellar-sdk";
   import { Buffer } from "buffer";
-  import { Client } from "factory";
   import {
     parseRegistration,
     buf2hex,
     buf2base64url,
+    hex2buf,
     contractIdFromHostname,
     saveCredential as sdkSaveCredential,
     savePendingAccount,
@@ -176,8 +176,9 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   } from "@g2c/passkey-sdk";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
-  import { toast } from "../../lib/toast";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
+  import { RELAYER_SIM_SOURCE, RELAYER_URL } from "../../lib/network";
+  import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
 
@@ -188,7 +189,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const rpId = hostname;
 
   const params = new URLSearchParams(window.location.search);
-  const secretKey = params.get("key");
+  const saltHex = params.get("salt");
   const isSetupReservation = params.get("setup") === "1";
 
   let passkeyPublicKey: Uint8Array | null = null;
@@ -286,11 +287,11 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     showError("That link looks off. Please start again from the home page.");
   }
 
-  if (!secretKey) {
+  if (!saltHex) {
     showError("We're missing some setup data. Please start again from the home page.");
   }
 
-  if (isSetupReservation && secretKey) {
+  if (isSetupReservation && saltHex) {
     $passkeySection.classList.add("setup-reserving");
     $registerBtn.disabled = true;
     $registerBtn.querySelector("span")!.textContent = "Preparing your Nido...";
@@ -298,29 +299,49 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     void reserveNidoAddress();
   }
 
+  function saltBytes(): Uint8Array {
+    if (!saltHex || !/^[0-9a-fA-F]{64}$/.test(saltHex)) {
+      throw new Error("Setup salt is missing or invalid. Please start again from the home page.");
+    }
+    return hex2buf(saltHex);
+  }
+
   async function reserveNidoAddress() {
     clearError();
     try {
-      const keypair = Keypair.fromSecret(secretKey!);
-      const publicKey = keypair.publicKey();
+      if (!RELAYER_URL || !RELAYER_SIM_SOURCE) {
+        throw new Error("Relayer is not configured for account setup.");
+      }
+      const simulationSource = RELAYER_SIM_SOURCE;
+      const server = new rpc.Server(RPC_URL);
+      const sourceAccount = await waitForSourceAccount(server, simulationSource);
 
-      const res = await fetch(`https://friendbot.stellar.org?addr=${publicKey}`);
-      if (!res.ok) throw new Error(`Funding failed: ${res.status}`);
-
-      await waitForSourceAccount(new rpc.Server(RPC_URL), publicKey);
-
-      const client = new Client({
-        contractId: await fetchRegistryAddress("factory"),
+      const simTxn = new TransactionBuilder(sourceAccount, {
+        fee: "100",
         networkPassphrase: Networks.TESTNET,
-        rpcUrl: RPC_URL,
-        publicKey,
-      });
+      })
+        .addOperation(
+          Operation.invokeContractFunction({
+            contract: await fetchRegistryAddress("factory"),
+            function: "get_c_address",
+            args: [
+              xdr.ScVal.scvBytes(Buffer.from(saltBytes())),
+            ],
+          })
+        )
+        .setTimeout(0)
+        .build();
 
-      const tx = await client.get_c_address({ funder: publicKey });
-      const cAddress = tx.result;
-      savePendingAccount(cAddress, secretKey!);
+      const sim = await server.simulateTransaction(simTxn);
+      if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
+        throw new Error(`Simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
+      }
 
-      window.location.replace(accountUrl(window.location.host, cAddress, `/new-account/?key=${encodeURIComponent(secretKey!)}`));
+      if (!sim.result) throw new Error("Address reservation returned no result.");
+      const cAddress = Address.fromScVal(sim.result.retval).toString();
+      savePendingAccount(cAddress, saltHex!);
+
+      window.location.replace(accountUrl(window.location.host, cAddress, `/new-account/?salt=${encodeURIComponent(saltHex!)}`));
     } catch (err: any) {
       $passkeySection.classList.remove("setup-reserving");
       $registerBtn.disabled = true;
@@ -407,8 +428,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
   async function deploy() {
     clearError();
-    if (!passkeyPublicKey || !secretKey) {
-      showError("Register a passkey first and ensure ?key= is set.");
+    if (!passkeyPublicKey || !saltHex) {
+      showError("Register a passkey first and ensure setup data is present.");
       return;
     }
 
@@ -416,10 +437,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // 1 · "Locked to you" is already done by the time we get here.
       setCheckProgress(1, 1);
 
-      const keypair = Keypair.fromSecret(secretKey);
+      if (!RELAYER_URL || !RELAYER_SIM_SOURCE) {
+        throw new Error("Relayer is not configured for account setup.");
+      }
+      const simulationSource = RELAYER_SIM_SOURCE;
       const server = new rpc.Server(RPC_URL);
 
-      const sourceAccount = await waitForSourceAccount(server, keypair.publicKey());
+      const sourceAccount = await waitForSourceAccount(server, simulationSource);
 
       const simTxn = new TransactionBuilder(sourceAccount, {
         fee: "100",
@@ -430,9 +454,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
             contract: await fetchRegistryAddress("factory"),
             function: "create_account",
             args: [
-              Address.fromString(keypair.publicKey()).toScVal(),
+              xdr.ScVal.scvBytes(Buffer.from(saltBytes())),
               xdr.ScVal.scvBytes(Buffer.from(passkeyPublicKey)),
-              nativeToScVal(1_000_000_0 * 9990, { type: "i128" }),
             ],
           })
         )
@@ -445,23 +468,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       }
 
       const transaction = rpc.assembleTransaction(simTxn, sim).setTimeout(0).build();
-      transaction.sign(keypair);
-
-      const sendResponse = await server.sendTransaction(transaction);
-      if (sendResponse.status === "ERROR") {
-        throw new Error(`Transaction submission failed: ${sendResponse.status}`);
+      const { func, auth } = extractFuncAndAuth(transaction);
+      const submitted = await submitSorobanTransaction({ func, auth });
+      if (!submitted.transactionId) {
+        throw new Error("Relayer accepted account setup but returned no transaction id");
       }
-
-      // Poll for completion
-      let getResponse = await server.getTransaction(sendResponse.hash);
-      while (getResponse.status === "NOT_FOUND") {
-        await new Promise((r) => setTimeout(r, 1000));
-        getResponse = await server.getTransaction(sendResponse.hash);
-      }
-
-      if (getResponse.status !== "SUCCESS") {
-        throw new Error(`Transaction failed: ${getResponse.status}`);
-      }
+      const confirmed = await waitForConfirmation(submitted.transactionId);
+      if (!confirmed.hash) throw new Error("Relayer confirmed account setup without a transaction hash");
 
       activateAccount(contractId!);
 

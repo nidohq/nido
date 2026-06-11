@@ -32,9 +32,9 @@ describe("nidoRowHref", () => {
     expect(nidoRowHref("nido.fyi", row)).toBe("//cabcdef.nido.fyi/");
   });
   it("pending row → resume setup at /new-account/, no /account/ suffix", () => {
-    const row: MyNidoRow = { contractId: "CABCDEF", name: null, status: "pending", resumeKey: "S123" };
+    const row: MyNidoRow = { contractId: "CABCDEF", name: null, status: "pending", resumeKey: "abc123" };
     const href = nidoRowHref("nido.fyi", row);
-    expect(href).toContain("/new-account/?key=S123");
+    expect(href).toContain("/new-account/?salt=abc123");
     expect(href).not.toContain("/account/");
   });
 });
