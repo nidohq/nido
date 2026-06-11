@@ -363,8 +363,8 @@ test.describe('@testnet spending-limit session key: delegate-page install + rela
     // -----------------------------------------------------------------
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#get-started-hero').click();
-    await expect(page.locator('#mynido')).toHaveClass(/mynido-open/);
-    await page.locator('#mn-create-btn').click();
+    await expect(page.locator('[data-mynido]')).toHaveClass(/mynido-open/);
+    await page.locator('.mn-create-btn').click();
     await page.waitForURL(/\/new-account\/\?key=/, { timeout: 60_000 });
     const host = new URL(page.url()).host;
     const cAddress = host.split('.')[0].toUpperCase();
@@ -653,14 +653,15 @@ test.describe('@testnet spending-limit session key: delegate-page install + rela
 
     // The rejection must reference the policy enforcement failure. OZ's
     // SpendingLimitError::SpendingLimitExceeded = 3221, surfaced by the
-    // relayer's enforce-mode simulation as Error(Contract, #3221). Pinned to
-    // the error code/name only — a looser "spending limit" text match could
-    // pass on a wrong-reason failure that merely mentions the words (e.g.
-    // #3220 SmartAccountNotInstalled's message).
+    // relayer's enforce-mode simulation as Error(Contract, #3221). Anchored
+    // with the `#` (matching the Rust twin's needle): a bare /3221/ also
+    // matches digit runs inside tx hashes, UUIDs, fees, and ledger numbers
+    // in the serialized body — which would let the deliverable's key
+    // assertion pass with zero policy involvement.
     expect(
       rejectionText,
       `over-limit rejection does not reference the spending-limit policy failure: ${rejectionText}`,
-    ).toMatch(/3221|SpendingLimitExceeded/i);
+    ).toMatch(/Error\(Contract, #3221\)|#3221\b|SpendingLimitExceeded/i);
     annotate('overLimitRejection', rejectionText);
 
     expect(errors.filter((e) => /Buffer|is not defined|Unexpected token/.test(e))).toEqual([]);
