@@ -509,6 +509,10 @@ import Icon from "../../components/Icon.astro";
     document.getElementById("back-btn")!.addEventListener("click", () => {
       pending = null; // discard the previewed op; the next Review rebuilds it fresh
       $reviewStatus.textContent = "";
+      // The WAIT_TIMEOUT lock is scoped to the timed-out attempt: going Back
+      // discards it, and the next Review→Confirm signs a fresh nonce well past
+      // the 60s channel-tx validity window — safe to confirm again.
+      $confirmBtn.disabled = false;
       showStep("form");
     });
     $confirmBtn.addEventListener("click", onConfirm);
@@ -621,7 +625,11 @@ import Icon from "../../components/Icon.astro";
   async function onConfirm() {
     if (!pending || !contractId) return;
     clearError();
+    const $backBtn = document.getElementById("back-btn") as HTMLButtonElement;
     $confirmBtn.disabled = true;
+    // Lock Back too: leaving the review step mid-flight would hide the status
+    // line (and the explorer link a timeout writes there).
+    $backBtn.disabled = true;
     $reviewStatus.textContent = `Confirm with ${passkey.label} to send ${pending.amountLabel} to ${pending.toLabel}…`;
     try {
       const sent = await withPasskeySheet(
@@ -634,15 +642,18 @@ import Icon from "../../components/Icon.astro";
         `${pending.amountLabel} to ${pending.toLabel}.`;
       const explorer = document.getElementById("result-explorer") as HTMLAnchorElement;
       explorer.href = `${EXPLORER_BASE}/tx/${sent.hash}`;
+      $backBtn.disabled = false;
       showStep("result");
     } catch (err) {
       const e = err as { name?: string; message?: string; code?: string; details?: { hash?: string | null } };
+      $backBtn.disabled = false;
       if (e?.name === "NotAllowedError") {
         showError(passkeyBlockedHint());
       } else if (e?.name === "RelayerError" && e?.code === "WAIT_TIMEOUT") {
         // The relayer stopped answering (or we out-polled it) but the tx may
         // STILL land — re-enabling Confirm here is a double-send invitation.
-        // Keep it disabled and point at the explorer instead.
+        // Keep THIS attempt's Confirm disabled (Back resets it for the next
+        // one) and point at the explorer instead.
         showError("Still waiting for the network — this transfer may yet go through. Check the result before sending again.");
         const hash = e.details?.hash;
         $reviewStatus.innerHTML = hash && /^[0-9a-f]{64}$/i.test(hash)

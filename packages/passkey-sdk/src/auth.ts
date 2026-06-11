@@ -16,7 +16,7 @@ const DEFAULT_EXPIRATION_OFFSET = 10000;
  * @param authEntry - The SorobanAuthorizationEntry from simulation
  * @param networkPassphrase - Stellar network passphrase
  * @param lastLedger - Current ledger sequence number
- * @param expirationLedgerOffset - How many ledgers the signature is valid for (default 100)
+ * @param expirationLedgerOffset - How many ledgers the signature is valid for (default 10000 ≈ 14h)
  */
 export function buildAuthHash(
   authEntry: xdr.SorobanAuthorizationEntry,
@@ -132,7 +132,7 @@ export function parseAssertionResponse(assertionResponse: {
  * @param verifierAddress - Address of the WebAuthn verifier contract
  * @param publicKey - 65-byte uncompressed P-256 public key
  * @param lastLedger - Current ledger sequence number
- * @param expirationLedgerOffset - How many ledgers the signature is valid for (default 100)
+ * @param expirationLedgerOffset - How many ledgers the signature is valid for (default 10000 ≈ 14h)
  * @param contextRuleIds - Context-rule IDs authorizing each auth context (index-aligned).
  *                        Defaults to `[0]` — the Default rule that ships with every
  *                        smart account and authorizes self-modification.

@@ -150,6 +150,39 @@ describe("waitForConfirmation", () => {
       details: { transactionId: "tx_7", hash: "feedface", status: "submitted" },
     });
   });
+
+  it("rides out transient poll failures and resumes (tx already in flight)", async () => {
+    let calls = 0;
+    const fn = vi.fn().mockImplementation(async () => {
+      calls++;
+      if (calls <= 4) throw new TypeError("fetch failed");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: { transactionId: "tx_8", hash: "cafebabe", status: "confirmed" },
+          error: null,
+        }),
+      };
+    });
+    vi.stubGlobal("fetch", fn);
+    const res = await waitForConfirmation("tx_8", BASE, { intervalMs: 1, maxAttempts: 10 });
+    expect(res.hash).toBe("cafebabe");
+    expect(fn).toHaveBeenCalledTimes(5);
+  });
+
+  it("gives up as WAIT_TIMEOUT after 5 consecutive poll failures", async () => {
+    const fn = vi.fn().mockImplementation(async () => {
+      throw new TypeError("fetch failed");
+    });
+    vi.stubGlobal("fetch", fn);
+    await expect(waitForConfirmation("tx_9", BASE, { intervalMs: 1, maxAttempts: 50 })).rejects.toMatchObject({
+      code: "WAIT_TIMEOUT",
+      message: expect.stringMatching(/Lost contact/),
+    });
+    expect(fn).toHaveBeenCalledTimes(5);
+  });
 });
 
 describe("extractFuncAndAuth", () => {

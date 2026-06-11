@@ -51,13 +51,18 @@ test.describe('@testnet send to a named nido', () => {
     await expect(page.locator('#home-mode')).toBeVisible({ timeout: 30_000 });
 
     // 3) "Send" navigates to the /transfer/ view (#78 retired the inline
-    //    panel). Type the recipient's NAME and confirm it resolves.
-    await page.locator('#send-action').click();
+    //    panel). #send-action lives in .home-actions-mobile, which is
+    //    display:none at the desktop viewport these projects run — click
+    //    whichever .js-send control is visible in the current layout.
+    await page.locator('.js-send:visible').first().click();
     await page.waitForURL('**/transfer/**', { timeout: 30_000 });
     await page.locator('#to-input').fill(name);
     await expect(page.locator('#to-resolve')).toContainText(`${name} →`, { timeout: 30_000 });
 
     // 4) Review, then confirm with the passkey (shim get() auto-approves).
+    //    Review silently no-ops until the asset picker has loaded holdings
+    //    (curated-list fetches + ledger probes) — wait for it to enable.
+    await expect(page.locator('#asset-select')).toBeEnabled({ timeout: 60_000 });
     await page.locator('#amount-input').fill('1');
     await page.locator('#review-btn').click();
     await expect(page.locator('#confirm-btn')).toBeVisible({ timeout: 60_000 });
@@ -69,7 +74,9 @@ test.describe('@testnet send to a named nido', () => {
     await expect(page.locator('#result-explorer')).toHaveAttribute('href', /\/tx\/[0-9a-f]{64}$/i);
 
     // 5) Assert the recipient received it: balance on its name subdomain is > 0.
+    //    (#xlm-balance is the hero balance element; it renders "…" until the
+    //    on-chain read completes, so a digit is the durable signal.)
     await page.goto(`http://${name}.localhost:${PORT}/account/`, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#balance')).toContainText(/\d/, { timeout: 60_000 });
+    await expect(page.locator('#xlm-balance')).toContainText(/\d/, { timeout: 60_000 });
   });
 });
