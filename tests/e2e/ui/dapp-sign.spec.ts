@@ -34,4 +34,18 @@ test.describe('@fast dapp sign (message)', () => {
     await page.locator('#cancel').click();
     await page.waitForURL('**/cb?g2c_sign=cancelled**', { timeout: 10_000 });
   });
+
+  // #89: the ceremony is bound to one account; the page must say WHICH and
+  // offer a way out for users who meant to use a different one.
+  test('shows the bound account identity prominently', async ({ page }) => {
+    await gotoSign(page, 'kind=message&message=hi');
+    // No friendly name stored on this origin → the short address is the title.
+    await expect(page.locator('#id-name')).toContainText('CDLZFC');
+  });
+
+  test('"Use a different account" returns g2c_sign=switch-account', async ({ page }) => {
+    await gotoSign(page, 'kind=message&message=hi');
+    await page.locator('#switch-account').click();
+    await page.waitForURL('**/cb?g2c_sign=switch-account**', { timeout: 10_000 });
+  });
 });
