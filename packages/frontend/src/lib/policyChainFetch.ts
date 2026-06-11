@@ -326,6 +326,64 @@ export async function fetchVerifierAddress(account: string): Promise<string> {
   return fetchRegistryAddress('verifier');
 }
 
+/** What the wallet's sign ceremony needs to know about the default rule
+ *  (id 0) before running WebAuthn (issue #87). */
+export interface DefaultRuleAuthInfo {
+  /** External (passkey) signers on rule 0. */
+  externalSigners: { verifier: string; publicKey: Uint8Array }[];
+  /** Delegated (account-address) signers on rule 0. */
+  delegatedCount: number;
+  /** Number of policies attached to rule 0. */
+  policyCount: number;
+  /** Simple-threshold M, when one of the policies exposes `get_threshold`
+   *  (> 0 means installed); null when no policy reports a threshold. */
+  threshold: number | null;
+}
+
+/** Read rule 0's signers, policies, and (if installed) the simple-threshold
+ *  M. Drives the sign-ceremony preflight: a policy-less multi-signer rule is
+ *  N-of-N under OZ semantics, so the ceremony must collect N signatures (or
+ *  bail out with a human-readable explanation) instead of letting the
+ *  enforce-simulation fail with a raw #3002 HostError. */
+export async function fetchDefaultRuleAuthInfo(account: string): Promise<DefaultRuleAuthInfo> {
+  const server = new rpc.Server(RPC_URL);
+  const rv = await simulateView(
+    server,
+    new Contract(account),
+    'get_context_rule',
+    nativeToScVal(0, { type: 'u32' }),
+  );
+  const rule = parseRule(scValToNative(rv) as RawContextRule);
+
+  const externalSigners = rule.signers
+    .filter((s): s is { kind: 'external'; verifier: string; publicKey: Uint8Array } => s.kind === 'external')
+    .map((s) => ({ verifier: s.verifier, publicKey: s.publicKey }));
+  const delegatedCount = rule.signers.length - externalSigners.length;
+
+  let threshold: number | null = null;
+  if (rule.policies.length > 0) {
+    try {
+      const state = await fetchPolicyState(account, rule);
+      for (const policyAddr of rule.policies) {
+        const t = (state[policyAddr] as { threshold?: unknown } | undefined)?.threshold;
+        if (typeof t === 'number' && t > 0) {
+          threshold = t;
+          break;
+        }
+      }
+    } catch {
+      // leave threshold null on read failure
+    }
+  }
+
+  return {
+    externalSigners,
+    delegatedCount,
+    policyCount: rule.policies.length,
+    threshold,
+  };
+}
+
 // --- Internal parsers ------------------------------------------------------
 
 /** Raw `scValToNative` shape of one ContextRule: a Soroban struct decodes to a

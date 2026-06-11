@@ -292,7 +292,14 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       const signed: string = await withPasskeySheet(
         async () => {
           if (kind === 'tx') {
-            return await signTransactionXdr({ account: account!, txXdr: payload, networkPassphrase: network });
+            // onStatus surfaces multi-passkey progress ("signature 1 of 2…")
+            // for accounts whose rule 0 needs several approvals (issue #87).
+            return await signTransactionXdr({
+              account: account!,
+              txXdr: payload,
+              networkPassphrase: network,
+              onStatus: (m) => { $status.textContent = m; },
+            });
           } else if (kind === 'message') {
             return await signMessageRaw({ account: account!, message: payload });
           } else if (kind === 'authEntry') {
