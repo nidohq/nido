@@ -49,8 +49,7 @@ builds the contract, deploys it to the network selected by `STELLAR_SCAFFOLD_ENV
 (`development` by default), and generates the client into `packages/status_message`
 + `src/contracts/status_message.ts`. Vite serves the app.
 
-> **Committed client for the live demo.** So the [GitHub Pages
-> deployment](https://theahaco.github.io/g2c/) can build with a plain
+> **Committed client for the live demo.** So the GitHub Pages deployment can build with a plain
 > `npm ci && vite build` (no Rust, no scaffold, no live RPC), the generated
 > client for the deployed testnet contract is checked in: the `staging`
 > environment binds `status_message` by id

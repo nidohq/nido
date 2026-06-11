@@ -7,7 +7,7 @@
     "dev": "npm start",
     "start": "concurrently --kill-others-on-fail --names stellar,vite -c gray,green --pad-prefix \"stellar scaffold watch --build-clients\" \"vite\"",
     "build": "tsc -b && vite build",
-    "build:pages": "vite build --base=/g2c/",
+    "build:pages": "node scripts/build-pages.mjs",
     "install:contracts": "npm install --workspaces && npm run build --workspaces",
     "preview": "vite preview",
     "lint": "eslint .",
