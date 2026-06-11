@@ -1,5 +1,7 @@
-import { hash, xdr, rpc, Operation, Address } from "@stellar/stellar-sdk";
+import { hash, xdr, rpc, Operation } from "@stellar/stellar-sdk";
 import { derToCompact } from "./signature.js";
+import { buildAuthPayloadScVal } from "./multiSigner.js";
+import type { SignerSignature } from "./multiSigner.js";
 import type { PasskeySignature } from "./types.js";
 
 /** Default ledger offset for signature expiration. */
@@ -146,6 +148,33 @@ export function injectPasskeySignature(
   expirationLedgerOffset: number = DEFAULT_EXPIRATION_OFFSET,
   contextRuleIds: readonly number[] = [0],
 ): void {
+  injectSignedAuthPayload(
+    transaction,
+    [{ kind: "external", verifierAddress, publicKey, passkeySignature }],
+    lastLedger,
+    expirationLedgerOffset,
+    contextRuleIds,
+  );
+}
+
+/**
+ * Inject a (possibly multi-signer) `AuthPayload` into a transaction's first
+ * Soroban auth entry. Generalization of {@link injectPasskeySignature} for
+ * rules that need SEVERAL signatures in one ceremony — e.g. a policy-less
+ * multi-signer default rule, which OZ treats as N-of-N (issue #87), or an
+ * M-of-N simple-threshold rule with M > 1.
+ *
+ * Every `external` signer's `passkeySignature` must be an assertion over the
+ * SAME auth digest (`computeAuthDigest(signature_payload, contextRuleIds)`),
+ * since the contract verifies each map entry against that one digest.
+ */
+export function injectSignedAuthPayload(
+  transaction: { operations: readonly Operation[] },
+  signers: readonly SignerSignature[],
+  lastLedger: number,
+  expirationLedgerOffset: number = DEFAULT_EXPIRATION_OFFSET,
+  contextRuleIds: readonly number[] = [0],
+): void {
   // Mutate via clone-and-replace, not in-place. The canonical
   // `authorizeEntry` helper in stellar-base does the same — and for good
   // reason: through `assembleTransaction(...).build()`, `op.auth[i]` is
@@ -163,57 +192,7 @@ export function injectPasskeySignature(
   const creds = signedEntry.credentials().address();
 
   creds.signatureExpirationLedger(lastLedger + expirationLedgerOffset);
-
-  // WebAuthnSigData struct (field names must match the contract type).
-  // Soroban struct → ScMap with Symbol keys in alphabetical order.
-  const sigDataScVal = xdr.ScVal.scvMap([
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol("authenticator_data"),
-      val: xdr.ScVal.scvBytes(Buffer.from(passkeySignature.authenticatorData)),
-    }),
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol("client_data"),
-      val: xdr.ScVal.scvBytes(Buffer.from(passkeySignature.clientDataJson)),
-    }),
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol("signature"),
-      val: xdr.ScVal.scvBytes(Buffer.from(passkeySignature.signature)),
-    }),
-  ]);
-  const sigDataBytes = sigDataScVal.toXDR();
-
-  // Signer::External(verifier_address, public_key) enum variant
-  // → Vec[Symbol("External"), Address, Bytes]
-  const signerScVal = xdr.ScVal.scvVec([
-    xdr.ScVal.scvSymbol("External"),
-    Address.fromString(verifierAddress).toScVal(),
-    xdr.ScVal.scvBytes(Buffer.from(publicKey)),
-  ]);
-
-  // signers: Map<Signer, Bytes> with our single passkey entry
-  const signersMap = xdr.ScVal.scvMap([
-    new xdr.ScMapEntry({
-      key: signerScVal,
-      val: xdr.ScVal.scvBytes(sigDataBytes),
-    }),
-  ]);
-
-  const contextRuleIdsVec = xdr.ScVal.scvVec(
-    contextRuleIds.map((id) => xdr.ScVal.scvU32(id)),
-  );
-  // ScMap with Symbol keys in alphabetical order (context_rule_ids < signers).
-  creds.signature(
-    xdr.ScVal.scvMap([
-      new xdr.ScMapEntry({
-        key: xdr.ScVal.scvSymbol("context_rule_ids"),
-        val: contextRuleIdsVec,
-      }),
-      new xdr.ScMapEntry({
-        key: xdr.ScVal.scvSymbol("signers"),
-        val: signersMap,
-      }),
-    ]),
-  );
+  creds.signature(buildAuthPayloadScVal({ contextRuleIds, signers }));
 
   // Replace the original auth entry with the freshly-constructed signed
   // entry. `op.auth` is the same array referenced by the inner XDR

@@ -19,7 +19,10 @@ export {
   getAuthEntry,
   parseAssertionResponse,
   injectPasskeySignature,
+  injectSignedAuthPayload,
 } from "./auth.js";
+
+export { identifyAssertionSigner } from "./assertionMatch.js";
 
 export { buildAuthPayloadScVal } from "./multiSigner.js";
 export type { SignerSignature, AuthPayloadSpec } from "./multiSigner.js";
