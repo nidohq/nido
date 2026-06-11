@@ -132,6 +132,7 @@ Expected: a JSON error body (not a 404 or connection refused). Any structured JS
 
 - **Memory**: the default 512 MB VM (`shared-cpu-1x`) may be tight once the ts-node Channels plugin is loaded. If the first plugin call OOMs, bump the machine to 1024 MB (`fly scale memory 1024 -a nido`).
 - **Rate limiting**: the rate limit (20 req/s, burst 60) is global across all origins and CORS is wildcard (`*`). Per-origin tightening is a mainnet TODO.
+- **Fee budget**: `FEE_LIMIT` (100 XLM) + `FEE_RESET_PERIOD_SECONDS` (24h) in `fly.toml` cap the fund account's total fee spend — without `FEE_LIMIT` the plugin's fee tracking is disabled entirely. Caddy stamps a single shared `x-api-key` on all traffic, so this is one global budget, not per-user; per-client keys through Caddy (plus origin-locked CORS) are mainnet prerequisites.
 - **Version pin**: pinned to OZ Relayer v1.5.0 deliberately — Stellar support is under active development and minor upgrades may be breaking. Review the changelog before bumping.
 - **Max fee**: the relayer's default `max_fee` is 1,000,000 stroops per transaction. It is a per-relayer policy; override it in `infra/relayer/config/config.json` if needed.
 - **Memos**: memos are not supported on Soroban operations; do not set memo fields in relay requests.
