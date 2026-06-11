@@ -48,7 +48,7 @@ All contracts are `#![no_std]` and delegate core logic to OpenZeppelin's `stella
 
 | Contract | Source | Description |
 |----------|--------|-------------|
-| `g2c-factory` | `contracts/factory/` | Deployment orchestrator. `create_account(funder, key)` deploys a SmartAccount with a WebAuthn signer. `get_c_address(funder)` pre-computes the deterministic C-address. Uses `deployer.with_address(funder, salt=0x00..00)` so each funder maps to exactly one C-address. Lazy-deploys a shared WebAuthn verifier via try-invoke pattern (attempts `verify()` on the expected address; deploys if it fails). Hardcoded WASM hashes for deterministic deployment. |
+| `g2c-factory` | `contracts/factory/` | Deployment orchestrator. `create_account(funder, key, amount)` deploys a SmartAccount with a WebAuthn signer and transfers `amount` XLM from the funder into it. `get_c_address(funder)` pre-computes the deterministic C-address. Uses `deployer.with_address(funder, salt=0x00..00)` so each funder maps to exactly one C-address. Resolves the shared WebAuthn verifier from the Stellar Registry (`fetch_contract_id("verifier")`, cached in instance storage). Embeds the smart-account WASM via `include_bytes!` and computes its `sha256` at runtime (cached) to hand to `deploy_v2` — no hand-maintained WASM hash. |
 | `g2c-smart-account` | `contracts/smart-account/` | Implements OZ `CustomAccountInterface` + `SmartAccount` + `ExecutionEntryPoint`. Constructor takes `signers` and `policies`, creates a default `ContextRule` with the initial passkey signer. `__check_auth` delegates to `do_check_auth` from stellar-accounts. `execute(target, target_fn, target_args)` provides a generic entry point for arbitrary contract calls. All signer/policy mutations require the account's own auth. |
 | `g2c-webauthn-verifier` | `contracts/webauthn-verifier/` | Stateless OZ `Verifier` for secp256r1/P-256 passkey signatures. `KeyData = BytesN<65>` (uncompressed public key), `SigData = WebAuthnSigData` (signature, authenticator_data, client_data). Deploy once, shared across all smart accounts. |
 
@@ -67,9 +67,9 @@ Cross-contract integration tests using synthetic P-256 keypairs (`p256::ecdsa::S
 5. **Wallet** links the user to `<C-address>.mysoroban.xyz/new-account/?key=<G_temp_secret>`.
 6. **User** creates a passkey via `navigator.credentials.create()` with RP ID = `<C-address>.mysoroban.xyz`.
 7. **Wallet** extracts the 65-byte uncompressed P-256 public key from the registration response.
-8. **Wallet** constructs a transaction invoking `Factory.create_account(G_temp, pubkey)`:
-   - Factory lazy-deploys the shared WebAuthn verifier (if not yet deployed).
-   - Factory deploys a new SmartAccount with the passkey as the initial `External` signer.
+8. **Wallet** constructs a transaction invoking `Factory.create_account(G_temp, pubkey, amount)`:
+   - Factory resolves the shared WebAuthn verifier from the Stellar Registry (cached after the first lookup).
+   - Factory deploys a new SmartAccount with the passkey as the initial `External` signer, then transfers `amount` XLM from `G_temp` into it.
 9. **Wallet** simulates, assembles, signs with `G_temp`, and submits to the Stellar network.
 10. **Result:** SmartAccount is live at the deterministic C-address, passkey is the owner. User is redirected to `<C-address>.mysoroban.xyz/account/`.
 
@@ -101,7 +101,7 @@ The cross-app signing protocol uses URL redirects with query parameters:
 |-----------|----------|---------|
 | Web App | Cloudflare Pages | Static Astro build. Deploy via `just cloudflare-deploy`. |
 | Subdomain Proxy | Cloudflare Worker | Route `*.mysoroban.xyz/*` proxied to the Pages site. Enables subdomain-per-account. |
-| Contracts | Stellar Testnet | Factory deployed at `CBE3XJK5CLGHPHD46LQSSLHO5R5TIUWBODETEHOLLTMBKK33P3XSJLTZ`. WASM hashes hardcoded in factory. |
+| Contracts | Stellar Testnet | Factory embeds the smart-account WASM (`include_bytes!` + runtime `sha256`) and resolves the verifier / multisig-policy from the Stellar Registry. Current testnet addresses live in [`DEPLOYED.md`](./DEPLOYED.md). |
 | Contract Builds | `just build-contracts` | `stellar contract build --optimize --profile contract` producing wasm32 artifacts. |
 
 ## 5. Security Considerations
@@ -139,7 +139,7 @@ graph TB
         SmartAccount["g2c-smart-account"]
         Verifier["g2c-webauthn-verifier"]
         Factory -- "deploys" --> SmartAccount
-        Factory -- "lazy-deploys" --> Verifier
+        Factory -- "resolves (registry)" --> Verifier
         SmartAccount -- "verify()" --> Verifier
     end
 
@@ -177,12 +177,12 @@ sequenceDiagram
     WebAuthn-->>Wallet: Registration response (P-256 public key)
 
     Wallet->>Wallet: Extract 65-byte uncompressed pubkey
-    Wallet->>Wallet: Build TX: Factory.create_account(G_temp, pubkey)
+    Wallet->>Wallet: Build TX: Factory.create_account(G_temp, pubkey, amount)
     Wallet->>Stellar: Simulate + Assemble + Sign with G_temp + Submit
 
-    Stellar->>Factory: create_account(G_temp, pubkey)
-    Factory->>WV: Try verify() — deploy if absent
-    Factory->>SA: Deploy with passkey as External signer
+    Stellar->>Factory: create_account(G_temp, pubkey, amount)
+    Factory->>WV: Resolve verifier from registry (cached)
+    Factory->>SA: Deploy with passkey as External signer + transfer amount
 
     Stellar-->>Wallet: TX confirmed
     Wallet-->>User: Redirect to <C-addr>.mysoroban.xyz/account/
@@ -241,9 +241,9 @@ sequenceDiagram
 ```mermaid
 graph LR
     subgraph "One-time Setup"
-        Install["stellar contract install<br/>(WASM → hashes)"]
-        Deploy["Deploy g2c-factory<br/>(hardcoded WASM hashes)"]
-        Install --> Deploy
+        Publish["Publish verifier + multisig-policy<br/>to Stellar Registry"]
+        Deploy["Deploy g2c-factory<br/>(embeds smart-account WASM)"]
+        Publish --> Deploy
     end
 
     subgraph "Per-User (via Factory)"
@@ -252,9 +252,9 @@ graph LR
         CAddr["SmartAccount<br/>at deterministic C-address"]
         VerifierC["WebAuthn Verifier<br/>(shared singleton)"]
 
-        Funder -- "create_account(funder, pubkey)" --> FactoryC
+        Funder -- "create_account(funder, pubkey, amount)" --> FactoryC
         FactoryC -- "deploy_v2<br/>salt=0x00..00" --> CAddr
-        FactoryC -- "lazy-deploy<br/>(try-invoke pattern)" --> VerifierC
+        FactoryC -- "resolves from registry<br/>(cached)" --> VerifierC
     end
 
     Deploy --> FactoryC
