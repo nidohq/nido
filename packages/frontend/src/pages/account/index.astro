@@ -180,9 +180,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       <!-- Inline name-claim form — shared by the desktop greeting button and the
            mobile quick action. Hidden until JS reveals it (unclaimed accounts only). -->
       <div class="span-all hidden" id="claim-name-inline" style="padding:0 22px 6px;">
+        <p class="mut" style="font-size:13px; line-height:1.45; margin:0 0 8px;">
+          Use 1-15 lowercase letters and digits, starting with a letter. After it is claimed, we'll open the new domain address and register its passkey because browsers lock passkeys to the domain shown.
+        </p>
         <div style="display:flex; gap:6px; align-items:center;">
           <input id="name-input" class="input" placeholder="e.g. alice" maxlength="15" pattern="[a-z][a-z0-9]*" style="font-size:13px; min-width:0; flex:1;" />
-          <button id="claim-name-btn" class="btn acc sm" type="button" style="font-size:13px;">Claim</button>
+          <button id="claim-name-btn" class="btn acc sm" type="button" style="font-size:13px;">Claim + passkey</button>
         </div>
         <div id="name-result" role="status" aria-live="polite" class="mut mono" style="display:none; font-size:12.5px; margin-top:8px; line-height:1.5;"></div>
       </div>
@@ -250,11 +253,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       <section id="register-section" class="hidden pad" style="padding-top:18px;">
         <span class="section-label" style="display:block; margin-bottom:12px;">Set up your passkey</span>
         <div class="card" style="padding:16px;">
-          <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+          <p id="register-copy" class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
             Create a passkey bound to this Nido. It's how you'll prove it's you — no seed phrase, no password.
           </p>
           <button id="register-btn" class="btn acc">
-            <Icon name="key" size={20} color="#fff" /> Set up your passkey
+            <Icon name="key" size={20} color="#fff" /> <span id="register-label">Set up your passkey</span>
           </button>
         </div>
       </section>
@@ -305,6 +308,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     resolveNameCached,
     stripSubdomain,
     accountUrl,
+    saveAccount,
     saveCredential as sdkSaveCredential,
     loadCredential as sdkLoadCredential,
     saveAccountName,
@@ -346,6 +350,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   const signHashParam = params.get("sign");
   const callbackUrl = params.get("callback");
   const isSigningMode = signHashParam && callbackUrl;
+  const shouldRegisterNamePasskey = params.get("namepasskey") === "1";
 
   // --- State ---
 
@@ -498,6 +503,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     return `Passkey ${action} was blocked. If you're using an in-app browser (Twitter, Instagram, etc.), tap the menu (…) and choose "Open in Safari" or "Open in Browser".`;
   }
 
+  function clearNamePasskeyParam() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("namepasskey");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   function initAccountCard() {
     const display = contractId ? shortAddr(contractId, 6, 6) : "(unknown)";
     document.getElementById("contract-id")!.textContent = display;
@@ -531,6 +542,30 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       <div class="mut" style="font-size:12px;font-weight:600;margin-bottom:6px;">Signature hash</div>
       <code class="mono" style="font-size:11.5px;word-break:break-all;line-height:1.5;">${esc(hash)}</code>
     </div>`;
+  }
+
+  function renderStoredNameClaimDetails(name: string, signHash: string): string {
+    const account = contractId;
+    const registry = localStorage.getItem("g2c:name-registry-id");
+    const row = (label: string, valueHtml: string, first = false) => {
+      const border = first ? "" : "border-top:1px solid var(--line-soft);";
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 0;${border}">
+        <span class="mut" style="font-size:13px;font-weight:600;white-space:nowrap;">${label}</span>
+        <span style="font-size:13.5px;font-weight:600;text-align:right;min-width:0;word-break:break-word;">${valueHtml}</span>
+      </div>`;
+    };
+    const accountRow = account
+      ? row("For account", `<span class="mono">${esc(shortAddr(account))}</span>`)
+      : "";
+    const registryRow = registry
+      ? row("Registry", `<span class="mono">${esc(shortAddr(registry))}</span>`)
+      : "";
+    return `<div class="card" style="padding:2px 16px;">
+      ${row("Action", "Register a name", true)}
+      ${row("Name", `<code class="mono">${esc(name)}</code>`)}
+      ${accountRow}
+      ${registryRow}
+    </div>${renderSignHashCard(signHash)}`;
   }
 
   // Decode the transaction the claim flow stashed (same origin) and render it as
@@ -593,6 +628,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       claimHash: localStorage.getItem("g2c:name-claim-hash"),
       claimName: localStorage.getItem("g2c:name-pending"),
     });
+    const signingNameClaim = summary.kind === "name-claim" ? summary.name : null;
     if (summary.kind === "name-claim") {
       document.getElementById("sign-icon-generic")!.classList.add("hidden");
       document.getElementById("sign-icon-claim")!.classList.remove("hidden");
@@ -609,9 +645,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       document.getElementById("sign-hash-row")!.style.display = "none";
 
       const $tech = document.getElementById("sign-tech")!;
-      // Show the hash immediately so the toggle works even before the async
-      // decode finishes; enrich with the full decoded transaction when ready.
-      $tech.innerHTML = renderSignHashCard(signHashParam!);
+      // Show hash-bound name-claim details immediately so the toggle is useful
+      // even if async XDR decoding fails; enrich with the decoded transaction
+      // when ready.
+      $tech.innerHTML = renderStoredNameClaimDetails(summary.name, signHashParam!);
       void renderClaimTxDetails($tech, signHashParam!);
 
       const $toggle = document.getElementById("sign-toggle-tech")!;
@@ -672,10 +709,18 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       try {
         btn.disabled = true;
 
-        const result = await withPasskeySheet(() => signHash(signHashParam!), {
-          title: confirmLabel,
-          sub: "Approving the request from the app.",
-        });
+        const result = await withPasskeySheet(
+          () => signHash(signHashParam!),
+          signingNameClaim
+            ? {
+                title: "Claim your name",
+                sub: `Confirm with ${passkey.label} to register "${signingNameClaim}" for this Nido.`,
+              }
+            : {
+                title: confirmLabel,
+                sub: "Approving the request from the app.",
+              },
+        );
 
         const $result = document.getElementById("sign-mode-result")!;
         $result.style.display = "block";
@@ -720,8 +765,20 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     document.getElementById("home-mode")!.classList.remove("hidden");
 
     const cred = loadCredential();
+    const $registerSection = document.getElementById("register-section")!;
+    const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
+    const $registerCopy = document.getElementById("register-copy");
+    const $registerLabel = document.getElementById("register-label");
+
     if (!cred) {
-      document.getElementById("register-section")!.classList.remove("hidden");
+      $registerSection.classList.remove("hidden");
+      if (detectedName && $registerCopy) {
+        $registerCopy.textContent =
+          `Your Nido now opens at ${detectedName}. Browsers bind passkeys to each domain address, so register a passkey here before approving from this name.`;
+        if ($registerLabel) $registerLabel.textContent = `Register passkey for ${detectedName}`;
+      }
+    } else if (shouldRegisterNamePasskey) {
+      clearNamePasskeyParam();
     }
 
     // Receive panel toggle (display-only)
@@ -768,11 +825,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     }
 
     // Register passkey (when none exists yet)
-    const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
-    $registerBtn.addEventListener("click", async () => {
+    async function runPasskeyRegistration(options?: { namePasskey?: boolean }) {
       clearError();
       const support = checkPasskeySupport();
       if (!support.ok) {
+        if (options?.namePasskey) clearNamePasskeyParam();
         showError(support.message!);
         return;
       }
@@ -782,14 +839,18 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         await withPasskeySheet(
           () => registerPasskey(),
           {
-            title: "Set up your passkey",
-            sub: `Confirm with ${passkey.label} to create it.`,
+            title: options?.namePasskey ? "Register this name's passkey" : "Set up your passkey",
+            sub: options?.namePasskey && detectedName
+              ? `${detectedName} is a new domain address. Passkeys are locked to the domain shown, so confirm once to use this name.`
+              : `Confirm with ${passkey.label} to create it.`,
           },
         );
 
-        document.getElementById("register-section")!.classList.add("hidden");
-        toast({ msg: "Passkey ready", icon: "check" });
+        $registerSection.classList.add("hidden");
+        if (options?.namePasskey) clearNamePasskeyParam();
+        toast({ msg: options?.namePasskey ? "Passkey ready for this name" : "Passkey ready", icon: "check" });
       } catch (err: any) {
+        if (options?.namePasskey) clearNamePasskeyParam();
         if (err.name === "NotAllowedError") {
           showError(passkeyBlockedHint("registration"));
         } else {
@@ -798,7 +859,18 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       } finally {
         $registerBtn.disabled = false;
       }
+    }
+
+    $registerBtn.addEventListener("click", () => {
+      void runPasskeyRegistration();
     });
+
+    if (!cred && shouldRegisterNamePasskey && detectedName && !isSigningMode) {
+      $registerSection.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => {
+        void runPasskeyRegistration({ namePasskey: true });
+      }, 250);
+    }
   }
 
   // --- Init ---
@@ -811,6 +883,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   if (isSigningMode) {
     initSigningMode();
   } else {
+    if (contractId) saveAccount(contractId);
     initHomeMode();
   }
 
@@ -924,13 +997,14 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           .getAccount(keypair.publicKey())
           .then((res: Account) => new Account(res.accountId(), res.sequenceNumber()));
 
+        const nameRegistryId = await fetchRegistryAddress("name-registry");
         const simTx = new TransactionBuilder(sourceAccount, {
           fee: "10000000",
           networkPassphrase: Networks.TESTNET,
         })
           .addOperation(
             Operation.invokeContractFunction({
-              contract: await fetchRegistryAddress("name-registry"),
+              contract: nameRegistryId,
               function: "register",
               args: [
                 Address.fromString(contractId).toScVal(),
@@ -970,6 +1044,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         localStorage.setItem("g2c:name-txXdr", assembled.toXDR());
         localStorage.setItem("g2c:name-lastLedger", lastLedger.toString());
         localStorage.setItem("g2c:name-pending", name);
+        localStorage.setItem("g2c:name-registry-id", nameRegistryId);
         // Bind the friendly "claiming <name>" copy shown on the signing surface
         // to the exact hash we're about to ask the user to sign. The signing
         // mode (same origin) reads this back and only shows the name when the
@@ -1108,11 +1183,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
               localStorage.removeItem("g2c:name-lastLedger");
               localStorage.removeItem("g2c:name-pending");
               localStorage.removeItem("g2c:name-claim-hash");
+              localStorage.removeItem("g2c:name-registry-id");
 
               // Redirect to the claimed name's subdomain
               const rootHost = stripSubdomain(window.location.host);
-              $nameResult.textContent = `Your Nido is now "${pendingName}" — taking you there…`;
-              const nameUrl = accountShareUrl(rootHost, pendingName);
+              $nameResult.textContent = `Your Nido is now "${pendingName}" — opening it so you can register the passkey for that new domain address…`;
+              const nameUrl = accountUrl(rootHost, pendingName, "/account/?namepasskey=1");
               setTimeout(() => {
                 window.location.href = `${window.location.protocol}${nameUrl}`;
               }, 1500);
