@@ -41,3 +41,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Edge proxy for *.nido.fyi -> the nido Pages origin (PR-preview subdomain
+      # rewrites + reserved dApp subdomains). Lives here, not its own repo, because
+      # its origin and RESERVED_DAPP_SUBDOMAINS version with the frontend it fronts.
+      # Requires the CF API token to include Workers Scripts:Edit (not just Pages).
+      - name: Deploy nido.fyi proxy worker
+        run: npx wrangler deploy --config frontend/worker-proxy-nido/wrangler.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
