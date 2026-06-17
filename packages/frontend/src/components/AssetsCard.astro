@@ -3,35 +3,106 @@
 // Assets the smart account holds (issue #71). Same client-side resolution as
 // RecentActivityCard: the address comes from the hostname subdomain (name
 // subdomains resolve via the registry), so no SSR address exists.
+//
+// The Ledger redesign: this is no longer a bordered card. It renders as a calm,
+// borderless full-width SUMMARY ROW (.ledger-summary) directly on --paper — a
+// stacked-avatar cluster + "Assets" + a holdings count + a chevron. Tapping it
+// reveals the EXISTING injected row list (assetRowHtml, untouched) inside a soft
+// --paper-3 "well". The toggle is self-contained (a tiny inline script flips an
+// .open class), so it works without the page's main script.
 ---
-<section class="card assets-card">
-  <header class="as-head">
-    <span class="section-label">Assets</span>
-    <a class="as-explorer" target="_blank" rel="noopener noreferrer" hidden>View on explorer →</a>
-  </header>
-  <div class="as-body">
-    <div class="as-skeleton">
-      <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
-    </div>
-    <div class="as-list" hidden></div>
-    <div class="empty as-empty" hidden>
-      <span class="as-empty-text">No assets yet.</span>
+<section class="ledger assets-card" data-open="false">
+  <button type="button" class="ledger-summary as-toggle" aria-expanded="false" aria-controls="as-well">
+    <span class="ls-left as-cluster" aria-hidden="true"></span>
+    <span class="ls-label">Assets</span>
+    <span class="ls-right">
+      <span class="ls-meta as-count"></span>
+      <span class="ls-chev" aria-hidden="true">›</span>
+    </span>
+  </button>
+  <div class="ledger-well" id="as-well" hidden>
+    <header class="as-head">
+      <span class="section-label">Holdings</span>
+      <a class="as-explorer" target="_blank" rel="noopener noreferrer" hidden>View on explorer →</a>
+    </header>
+    <div class="as-body">
+      <div class="as-skeleton">
+        <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
+      </div>
+      <div class="as-list" hidden></div>
+      <div class="empty as-empty" hidden>
+        <span class="as-empty-text">No assets yet.</span>
+      </div>
     </div>
   </div>
 </section>
 
 <style is:global>
-  /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach them. */
-  .assets-card .as-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach
+     them — and the .ledger-summary / cluster markup is partly built by the inline
+     script below, so it lives in global scope too. Selectors are namespaced under
+     .ledger / .assets-card so other pages don't regress. */
+
+  /* ---- borderless summary row (shared look) ---- */
+  .ledger { display: block; }
+  .ledger .ledger-summary {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    padding: 16px 6px; background: transparent; border: none; border-radius: var(--r-md);
+    cursor: pointer; text-align: left; font-family: var(--body); color: var(--ink);
+    transition: background .14s;
+  }
+  .ledger .ledger-summary:hover { background: var(--paper-3); }
+  .ledger .ledger-summary:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  .ledger .ls-label { font-weight: 800; font-size: 15.5px; letter-spacing: -.01em; }
+  .ledger .ls-right { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; min-width: 0; }
+  .ledger .ls-meta { font-size: 13px; color: var(--mut); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ledger .ls-chev {
+    font-size: 22px; line-height: 1; color: var(--mut); flex: 0 0 auto;
+    transition: transform .18s ease; transform-origin: 50% 50%;
+  }
+  .ledger[data-open="true"] .ls-chev { transform: rotate(90deg); }
+  @media (prefers-reduced-motion: reduce) {
+    .ledger .ls-chev { transition: none; }
+  }
+
+  /* ---- the expandable "well" ---- */
+  .ledger .ledger-well {
+    background: var(--paper-3); border-radius: var(--r-lg);
+    padding: 4px 16px 8px; margin-top: 6px;
+  }
+  .ledger .ledger-well:not([hidden]) { display: block; }
+
+  /* ---- assets: stacked-avatar cluster ---- */
+  .assets-card .as-cluster { display: inline-flex; align-items: center; flex: 0 0 auto; }
+  .assets-card .as-cluster .asset-initial {
+    width: 26px; height: 26px; border-radius: 9px; font-size: 11px; font-weight: 800;
+    border: 2px solid var(--paper); margin-left: -8px; box-shadow: var(--sh-1);
+  }
+  .assets-card .as-cluster .asset-initial:first-child { margin-left: 0; }
+  .assets-card .as-cluster .as-more {
+    display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 9px;
+    margin-left: -8px; border: 2px solid var(--paper); background: var(--chip);
+    color: var(--ink-soft); font-size: 11px; font-weight: 800;
+  }
+  /* placeholder dot before holdings load, so the row never looks broken */
+  .assets-card .as-cluster:empty::before {
+    content: ""; width: 26px; height: 26px; border-radius: 9px; background: var(--chip);
+    display: inline-block;
+  }
+
+  /* ---- well contents (the existing header + injected rows) ---- */
+  .assets-card .as-head { display: flex; justify-content: space-between; align-items: baseline; margin: 6px 0 2px; }
   .assets-card .as-explorer { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; white-space: nowrap; }
   .assets-card .as-explorer:hover { text-decoration: underline; }
   /* :not([hidden]) so the `hidden` attribute can actually hide it — a bare
      `display: grid` out-specifies the UA `[hidden] { display: none }` rule. */
   .assets-card .as-skeleton:not([hidden]) { display: grid; gap: 10px; }
   .assets-card .as-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
-  .assets-card .asset-initial { font-weight: 800; font-size: 15px; position: relative; overflow: hidden; }
+  .assets-card .as-list .asset-initial { font-weight: 800; font-size: 15px; position: relative; overflow: hidden; }
   /* logo sits over the letter chip; removing it (load error) reveals the letter */
   .assets-card .asset-icon { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--paper-2); }
+  /* injected asset rows shouldn't draw a divider against the soft well */
+  .assets-card .ledger-well .row { border-top-color: var(--line); }
 </style>
 
 <script>
@@ -40,6 +111,7 @@
   import { resolveTomlIcon } from "../lib/assets/icons.js";
   import { EXPLORER_BASE } from "../lib/network.js";
   import { resolveAccountAddress } from "../lib/resolveAccount.js";
+  import { esc } from "../lib/html.js";
   import type { AssetHolding } from "../lib/assets/types.js";
 
   function onIconError(img: HTMLImageElement) {
@@ -76,15 +148,49 @@
     }
   }
 
+  /**
+   * The Ledger summary's left edge: up to 3 overlapping asset chips, then a
+   * "+N" pill for the remainder. Reuses the same letter+logo chip as the rows.
+   */
+  function renderCluster(cluster: HTMLElement, holdings: AssetHolding[]) {
+    const top = holdings.slice(0, 3);
+    const more = holdings.length - top.length;
+    const chips = top
+      .map((h) => {
+        const initial = (h.code[0] ?? "?").toUpperCase();
+        const img = h.verified && h.icon
+          ? `<img class="asset-icon" src="${esc(h.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+          : "";
+        return `<span class="ricon asset-initial">${esc(initial)}${img}</span>`;
+      })
+      .join("");
+    const moreChip = more > 0 ? `<span class="as-more">+${more}</span>` : "";
+    cluster.innerHTML = chips + moreChip;
+    cluster.querySelectorAll<HTMLImageElement>("img.asset-icon").forEach(onIconError);
+  }
+
   async function init() {
     const card = document.querySelector<HTMLElement>(".assets-card");
     if (!card) return;
+    const toggle = card.querySelector<HTMLButtonElement>(".as-toggle")!;
+    const well = card.querySelector<HTMLElement>(".ledger-well")!;
+    const cluster = card.querySelector<HTMLElement>(".as-cluster")!;
+    const count = card.querySelector<HTMLElement>(".as-count")!;
     const skel = card.querySelector<HTMLElement>(".as-skeleton")!;
     const list = card.querySelector<HTMLElement>(".as-list")!;
     const empty = card.querySelector<HTMLElement>(".as-empty")!;
     const emptyText = card.querySelector<HTMLElement>(".as-empty-text")!;
+
+    // Expand/collapse is self-contained — no dependency on the page script.
+    toggle.addEventListener("click", () => {
+      const open = card.getAttribute("data-open") !== "true";
+      card.setAttribute("data-open", String(open));
+      toggle.setAttribute("aria-expanded", String(open));
+      well.hidden = !open;
+    });
+
     const address = await resolveAccountAddress();
-    if (!address) { skel.hidden = true; empty.hidden = false; return; }
+    if (!address) { skel.hidden = true; empty.hidden = false; count.textContent = ""; return; }
     // Stellar Expert's contract page lists every held asset (its balances API
     // is origin-gated for us, but the human-facing page isn't) — so the
     // explorer link doubles as the full, indexer-backed view.
@@ -94,7 +200,9 @@
     try {
       const holdings = await loadAssets(address);
       skel.hidden = true;
-      if (holdings.length === 0) { empty.hidden = false; return; }
+      if (holdings.length === 0) { empty.hidden = false; count.textContent = "None yet"; return; }
+      renderCluster(cluster, holdings);
+      count.textContent = `${holdings.length} held`;
       list.innerHTML = holdings.map(assetRowHtml).join("");
       list.hidden = false;
       list.querySelectorAll<HTMLImageElement>("img.asset-icon").forEach(onIconError);
@@ -104,6 +212,7 @@
       skel.hidden = true;
       emptyText.textContent = "Couldn’t load assets.";
       empty.hidden = false;
+      count.textContent = "—";
     }
   }
   init();

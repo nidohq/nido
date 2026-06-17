@@ -195,12 +195,16 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
            buttons navigate there in initHomeMode). -->
 
       <!-- ============ ASSETS ============ -->
-      <div class="grid-cell">
+      <!-- The Ledger redesign: these two cells span all grid columns and render
+           as borderless full-width summary rows (.ledger-summary) that expand on
+           demand. v1 keeps .card-grid in place (the full single-column rewrite is
+           deferred); .span-all makes them stack calmly across the rail. -->
+      <div class="grid-cell span-all">
         <AssetsCard />
       </div>
 
       <!-- ============ RECENT ACTIVITY ============ -->
-      <div class="grid-cell home-col-activity">
+      <div class="grid-cell span-all home-col-activity">
         <RecentActivityCard />
       </div>
 
