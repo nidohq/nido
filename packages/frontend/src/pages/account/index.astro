@@ -328,8 +328,22 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { formatXlm } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
+  import {
+    relayerEnabled,
+    extractFuncAndAuth,
+    submitSorobanTransaction,
+    waitForConfirmation,
+  } from "../../lib/relayerClient";
+  import { RELAYER_SIM_SOURCE } from "../../lib/network";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
+
+  // Signature validity in relayer mode: ~2 min. The SDK default (≈14h) is fine
+  // when the signed entry never leaves the browser, but the relayer is an
+  // external holder of the body — keep the window tight (channel tx lifetime is
+  // 60s). MUST match between buildAuthHash and injectPasskeySignature or the
+  // digest won't verify. Mirrors primaryPasskeySigner.RELAYER_EXPIRATION_OFFSET.
+  const RELAYER_EXPIRATION_OFFSET = 120;
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
   // round-trip was broken (bug #3); re-enabled now that the finalize flow signs
@@ -987,14 +1001,24 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           (globalThis as any).Buffer = B;
         }
 
-        $nameResult.textContent = "Funding transaction keypair…";
-        const keypair = await getNameKeypair();
+        const useRelayer = relayerEnabled();
+        if (useRelayer && !RELAYER_SIM_SOURCE) {
+          throw new Error("Relayer misconfigured: PUBLIC_RELAYER_URL is set but PUBLIC_RELAYER_SIM_SOURCE is not.");
+        }
         const server = new rpc.Server(RPC_URL);
+
+        // Relayer mode: no ephemeral G is minted or funded — recording-mode
+        // simulation just needs SOME existing on-chain source account, so use the
+        // relayer's (public) fund address. It never signs and never pays here.
+        // Classic mode: friendbot-funded ephemeral G as before.
+        if (!useRelayer) $nameResult.textContent = "Funding transaction keypair…";
+        const keypair = useRelayer ? null : await getNameKeypair();
+        const srcAddr = keypair ? keypair.publicKey() : RELAYER_SIM_SOURCE;
 
         $nameResult.textContent = "Building transaction…";
 
         const sourceAccount = await server
-          .getAccount(keypair.publicKey())
+          .getAccount(srcAddr)
           .then((res: Account) => new Account(res.accountId(), res.sequenceNumber()));
 
         const nameRegistryId = await fetchRegistryAddress("name-registry");
@@ -1033,7 +1057,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         // flow) defaults contextRuleIds=[0], so sign computeAuthDigest(payload,
         // [0]) to match — mirrors walletSign.ts. Signing the bare payload makes
         // __check_auth trap with Auth/InvalidAction.
-        const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
+        const expirationOffset = useRelayer ? RELAYER_EXPIRATION_OFFSET : undefined;
+        const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger, expirationOffset);
         const authHashHex = buf2hex(computeAuthDigest(signaturePayload, [0]));
 
         // Assemble the transaction with simulation results so auth entries
@@ -1088,14 +1113,18 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
             const txXdr = localStorage.getItem("nido:name-txXdr");
             const lastLedgerStr = localStorage.getItem("nido:name-lastLedger");
             const pendingName = localStorage.getItem("nido:name-pending");
+            const useRelayer = relayerEnabled();
             const keypairSecret = localStorage.getItem("nido:name-keypair");
 
-            if (!txXdr || !lastLedgerStr || !keypairSecret || !pendingName) {
+            // Classic mode submits with the ephemeral keypair; relayer mode never
+            // minted one, so don't require it there.
+            if (!txXdr || !lastLedgerStr || !pendingName || (!useRelayer && !keypairSecret)) {
               throw new Error("Missing stored transaction data. Please try again.");
             }
 
             const lastLedger = parseInt(lastLedgerStr, 10);
-            const keypair = Keypair.fromSecret(keypairSecret);
+            const keypair = keypairSecret ? Keypair.fromSecret(keypairSecret) : null;
+            const expirationOffset = useRelayer ? RELAYER_EXPIRATION_OFFSET : undefined;
             // Read the verifier from the account's actual on-chain rule-0 signer.
             // Computing it from a hardcoded WASM hash yields a stale address that
             // won't match the registered signer, so __check_auth can't validate
@@ -1115,8 +1144,50 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
               },
               verifierAddr,
               hex2buf(publicKeyHex),
-              lastLedger
+              lastLedger,
+              expirationOffset,
+              [0]
             );
+
+            const finishClaim = (claimedName: string) => {
+              saveAccountName(contractId, claimedName);
+              // Clean up stored transaction data
+              localStorage.removeItem("nido:name-txXdr");
+              localStorage.removeItem("nido:name-lastLedger");
+              localStorage.removeItem("nido:name-pending");
+              localStorage.removeItem("nido:name-claim-hash");
+              localStorage.removeItem("nido:name-registry-id");
+              // Redirect to the claimed name's subdomain
+              const rootHost = stripSubdomain(window.location.host);
+              $nameResult.textContent = `Your Nido is now "${claimedName}" — opening it so you can register the passkey for that new domain address…`;
+              const nameUrl = accountUrl(rootHost, claimedName, "/account/?namepasskey=1");
+              setTimeout(() => {
+                window.location.href = `${window.location.protocol}${nameUrl}`;
+              }, 1500);
+            };
+
+            const server = new rpc.Server(RPC_URL);
+
+            if (useRelayer) {
+              // The Channels plugin re-simulates server-side in enforce mode,
+              // builds the footprint itself, and a channel account becomes the tx
+              // source with the fund account fee-bumping. We ship only the host
+              // function and the passkey-signed auth entry. Mirrors signAndSubmit.
+              $nameResult.textContent = "Submitting transaction…";
+              const { func, auth } = extractFuncAndAuth(authTxn);
+              if (auth.length > 1) {
+                throw new Error(`Expected a single auth entry, got ${auth.length} — only the first is passkey-signed.`);
+              }
+              const submitted = await submitSorobanTransaction({ func, auth });
+              if (!submitted.transactionId) {
+                throw new Error("Relayer accepted the transaction but returned no transaction id");
+              }
+              $nameResult.textContent = "Waiting for confirmation…";
+              const confirmed = await waitForConfirmation(submitted.transactionId);
+              if (!confirmed.hash) throw new Error("Relayer confirmed without a transaction hash");
+              finishClaim(pendingName);
+              return;
+            }
 
             // Re-simulate the now-signed tx in ENFORCE mode. This both verifies
             // the passkey auth before submit AND recomputes the resource
@@ -1128,7 +1199,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
             // pass "enforce" so the simulator runs __check_auth against it.
             // (Mirrors primaryPasskeySigner.signAndSubmit / walletSign.)
             $nameResult.textContent = "Simulating signed transaction…";
-            const server = new rpc.Server(RPC_URL);
             const sim = await server.simulateTransaction(authTxn, undefined, "enforce");
 
             if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
@@ -1157,6 +1227,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
               sorobanData: newSorobanData,
               networkPassphrase: Networks.TESTNET,
             }).build();
+            if (!keypair) throw new Error("unreachable: classic path without a keypair");
             finalTx.sign(keypair);
 
             // Submit
@@ -1176,22 +1247,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
             }
 
             if (getResult.status === "SUCCESS") {
-              saveAccountName(contractId, pendingName);
-
-              // Clean up stored transaction data
-              localStorage.removeItem("nido:name-txXdr");
-              localStorage.removeItem("nido:name-lastLedger");
-              localStorage.removeItem("nido:name-pending");
-              localStorage.removeItem("nido:name-claim-hash");
-              localStorage.removeItem("nido:name-registry-id");
-
-              // Redirect to the claimed name's subdomain
-              const rootHost = stripSubdomain(window.location.host);
-              $nameResult.textContent = `Your Nido is now "${pendingName}" — opening it so you can register the passkey for that new domain address…`;
-              const nameUrl = accountUrl(rootHost, pendingName, "/account/?namepasskey=1");
-              setTimeout(() => {
-                window.location.href = `${window.location.protocol}${nameUrl}`;
-              }, 1500);
+              finishClaim(pendingName);
             } else {
               throw new Error(`Transaction failed: ${getResult.status}`);
             }
