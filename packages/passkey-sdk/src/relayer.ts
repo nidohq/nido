@@ -78,7 +78,13 @@ export async function getRelayerTransaction(
 export async function waitForConfirmation(
   transactionId: string,
   baseUrl: string,
-  opts?: { intervalMs?: number; maxAttempts?: number },
+  opts?: {
+    intervalMs?: number;
+    maxAttempts?: number;
+    /** Fired after every successful poll, so callers can surface a live
+     *  status/attempt ticker during the wait. Never fired on a poll failure. */
+    onPoll?: (info: { status: RelayerStatus | null; attempt: number; maxAttempts: number }) => void;
+  },
 ): Promise<RelayerTxResponse> {
   const interval = opts?.intervalMs ?? 1500;
   // The channel tx's own validity window is build-time + 60s (the plugin's
@@ -94,6 +100,7 @@ export async function waitForConfirmation(
       const res = await getRelayerTransaction(transactionId, baseUrl);
       last = res;
       pollFailures = 0;
+      opts?.onPoll?.({ status: res.status, attempt: i + 1, maxAttempts });
       if (res.status === "confirmed") return res;
       if (res.status === "failed" || res.status === "expired") {
         throw new RelayerError(`Relayer transaction ${res.status}`, "ONCHAIN_FAILED", res);
