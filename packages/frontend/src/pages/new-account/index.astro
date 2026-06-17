@@ -114,11 +114,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
           </div>
         </div>
       </div>
-
-      <div style="display:flex; gap:9px; align-items:center; justify-content:center; color:var(--mut); padding-bottom:8px;">
-        <Icon name="sparkle" size={16} color="var(--acc)" />
-        <span id="deploy-foot" style="font-size:13px; line-height:1.4; text-align:center;">Almost there — taking you in…</span>
-      </div>
     </section>
 
     <!-- ===================== DONE ===================== -->
@@ -234,7 +229,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const $deploySection = document.getElementById("deploy-section")!;
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
   const $deployNestStatic = document.getElementById("deploy-nest-static")!;
-  const $deployFoot = document.getElementById("deploy-foot")!;
   const $doneSection = document.getElementById("done-section")!;
   const $explorerLink = document.getElementById("explorer-link") as HTMLAnchorElement;
   const $step1 = document.getElementById("step-1")!;
@@ -572,7 +566,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // 0 · "Locked to you" is already done; 1 · "Preparing transaction" begins
       // (load source account, build + simulate + assemble the factory call).
       setCheckProgress(1, 1);
-      $deployFoot.textContent = "Preparing transaction…";
 
       if (!RELAYER_URL || !RELAYER_SIM_SOURCE) {
         throw new Error("Relayer is not configured for account setup.");
@@ -609,7 +602,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
       // 1 · prepared; 2 · "Submitting to Stellar" begins (hand off to the relayer).
       setCheckProgress(2, 2);
-      $deployFoot.textContent = "Submitting to Stellar…";
       const submitted = await submitSorobanTransaction({ func, auth });
       if (!submitted.transactionId) {
         throw new Error("Relayer accepted account setup but returned no transaction id");
@@ -618,7 +610,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // 2 · submitted; 3 · "Confirming on-chain" begins — the long wait, polling
       // the relayer until the transaction is confirmed on-chain.
       setCheckProgress(3, 3);
-      $deployFoot.textContent = "Confirming on-chain — this can take up to a minute…";
       const confirmed = await waitForConfirmation(submitted.transactionId);
       if (!confirmed.hash) throw new Error("Relayer confirmed account setup without a transaction hash");
 
@@ -628,7 +619,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
       // 3 · confirmed; 4 · "Adding testnet funds" begins.
       setCheckProgress(4, 4);
-      $deployFoot.textContent = "Adding testnet funds…";
       let fundingComplete = true;
       try {
         await drainTestnetFunding(server, contractId!);
@@ -641,7 +631,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         renderCheck(5, "pending");
         $deployNestSpinning.style.display = "none";
         $deployNestStatic.style.display = "block";
-        $deployFoot.textContent = "Your Nido was created, but testnet funding failed.";
         showError(
           fundingErr instanceof Error
             ? `Testnet funding failed after setup: ${fundingErr.message}`
@@ -652,9 +641,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       if (fundingComplete) setCheckProgress(6, -1);
       $deployNestSpinning.style.display = "none";
       $deployNestStatic.style.display = "block";
-      $deployFoot.textContent = fundingComplete
-        ? "All set. Welcome to your Nido."
-        : "Your Nido is ready. Testnet funding did not complete.";
 
       // Wire up the done screen.
       const protocol = window.location.protocol;
