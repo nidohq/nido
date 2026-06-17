@@ -124,22 +124,22 @@ export type Signer = {tag: "Delegated", values: readonly [string]} | {tag: "Exte
 /**
  * The authorization payload passed to `__check_auth`, bundling cryptographic
  * proofs with context rule selection.
- *
+ * 
  * This struct carries two distinct pieces of information that are both
  * required for authorization but cannot be derived from each other:
- *
+ * 
  * - `signers` maps each [`Signer`] to its raw signature bytes, providing
  * cryptographic proof that the signer actually signed the transaction
  * payload. A context rule stores which signer *identities* are authorized
  * (via `signer_ids`), but the rule does not contain the signatures
  * themselves — those must be supplied here.
- *
+ * 
  * - `context_rule_ids` tells the system which rule to validate for each auth
  * context. Because multiple rules can exist for the same context type, the
  * caller must explicitly select one per context rather than relying on
  * auto-discovery. Each entry is aligned by index with the `auth_contexts`
  * passed to `__check_auth`.
- *
+ * 
  * The length of `context_rule_ids` must equal the number of auth contexts;
  * a mismatch is rejected with
  * [`SmartAccountError::ContextRuleIdsLen
@@ -508,7 +508,7 @@ export const WebAuthnError = {
 /**
  * WebAuthn signature data structure containing all components needed for
  * verification.
- *
+ * 
  * This structure encapsulates the signature and associated data generated
  * during a WebAuthn authentication ceremony.
  */
@@ -550,14 +550,23 @@ export interface Client {
 
   /**
    * Construct and simulate a get_c_address transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * The deterministic account address for `key`, without deploying. Uses the
+   * same `sha256(key)` salt derivation as [`Self::create_account`].
    */
-  get_c_address: ({salt}: {salt: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
+  get_c_address: ({key}: {key: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
 
   /**
    * Construct and simulate a create_account transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Deploy an account contract and add its initial passkey signer.
+   * 
+   * The deploy salt is derived on-chain as `sha256(key)` (see
+   * [`Self::salt_from_key`]) rather than supplied by the caller. This binds
+   * the resulting address to the signing key: nobody can deploy a
+   * different-key account at the same address, and the address is
+   * recoverable from the passkey alone (the basis for resuming an
+   * interrupted setup).
    */
-  create_account: ({salt, key}: {salt: Buffer, key: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
+  create_account: ({key}: {key: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
 
 }
 export class Client extends ContractClient {
@@ -583,8 +592,8 @@ export class Client extends ContractClient {
         "AAAAAAAAAGhVcGdyYWRlIHRoZSBmYWN0b3J5J3Mgb3duIHdhc20gdG8gYG5ld193YXNtX2hhc2hgIChhbiBhbHJlYWR5LWluc3RhbGxlZAp3YXNtIGhhc2gpLiBSZXF1aXJlcyBhZG1pbiBhdXRoLgAAAAd1cGdyYWRlAAAAAAEAAAAAAAAADW5ld193YXNtX2hhc2gAAAAAAAPuAAAAIAAAAAA=",
         "AAAAAAAAADRSb3RhdGUgdGhlIGFkbWluLiBSZXF1aXJlcyB0aGUgY3VycmVudCBhZG1pbidzIGF1dGguAAAACXNldF9hZG1pbgAAAAAAAAEAAAAAAAAACW5ld19hZG1pbgAAAAAAABMAAAAA",
         "AAAAAAAAAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAEAAAAAAAAABWFkbWluAAAAAAAAEwAAAAA=",
-        "AAAAAAAAAAAAAAANZ2V0X2NfYWRkcmVzcwAAAAAAAAEAAAAAAAAABHNhbHQAAAPuAAAAIAAAAAEAAAAT",
-        "AAAAAAAAAD5EZXBsb3kgYW4gYWNjb3VudCBjb250cmFjdCBhbmQgYWRkIGl0cyBpbml0aWFsIHBhc3NrZXkgc2lnbmVyLgAAAAAADmNyZWF0ZV9hY2NvdW50AAAAAAACAAAAAAAAAARzYWx0AAAD7gAAACAAAAAAAAAAA2tleQAAAAPuAAAAQQAAAAEAAAAT",
+        "AAAAAAAAAIhUaGUgZGV0ZXJtaW5pc3RpYyBhY2NvdW50IGFkZHJlc3MgZm9yIGBrZXlgLCB3aXRob3V0IGRlcGxveWluZy4gVXNlcyB0aGUKc2FtZSBgc2hhMjU2KGtleSlgIHNhbHQgZGVyaXZhdGlvbiBhcyBbYFNlbGY6OmNyZWF0ZV9hY2NvdW50YF0uAAAADWdldF9jX2FkZHJlc3MAAAAAAAABAAAAAAAAAANrZXkAAAAD7gAAAEEAAAABAAAAEw==",
+        "AAAAAAAAAY9EZXBsb3kgYW4gYWNjb3VudCBjb250cmFjdCBhbmQgYWRkIGl0cyBpbml0aWFsIHBhc3NrZXkgc2lnbmVyLgoKVGhlIGRlcGxveSBzYWx0IGlzIGRlcml2ZWQgb24tY2hhaW4gYXMgYHNoYTI1NihrZXkpYCAoc2VlCltgU2VsZjo6c2FsdF9mcm9tX2tleWBdKSByYXRoZXIgdGhhbiBzdXBwbGllZCBieSB0aGUgY2FsbGVyLiBUaGlzIGJpbmRzCnRoZSByZXN1bHRpbmcgYWRkcmVzcyB0byB0aGUgc2lnbmluZyBrZXk6IG5vYm9keSBjYW4gZGVwbG95IGEKZGlmZmVyZW50LWtleSBhY2NvdW50IGF0IHRoZSBzYW1lIGFkZHJlc3MsIGFuZCB0aGUgYWRkcmVzcyBpcwpyZWNvdmVyYWJsZSBmcm9tIHRoZSBwYXNza2V5IGFsb25lICh0aGUgYmFzaXMgZm9yIHJlc3VtaW5nIGFuCmludGVycnVwdGVkIHNldHVwKS4AAAAADmNyZWF0ZV9hY2NvdW50AAAAAAABAAAAAAAAAANrZXkAAAAD7gAAAEEAAAABAAAAEw==",
         "AAAABQAAADdFdmVudCBlbWl0dGVkIHdoZW4gYSBwb2xpY3kgaXMgYWRkZWQgdG8gYSBjb250ZXh0IHJ1bGUuAAAAAAAAAAALUG9saWN5QWRkZWQAAAAAAQAAAAxwb2xpY3lfYWRkZWQAAAACAAAAAAAAAA9jb250ZXh0X3J1bGVfaWQAAAAABAAAAAEAAAAAAAAACXBvbGljeV9pZAAAAAAAAAQAAAAAAAAAAg==",
         "AAAABQAAADdFdmVudCBlbWl0dGVkIHdoZW4gYSBzaWduZXIgaXMgYWRkZWQgdG8gYSBjb250ZXh0IHJ1bGUuAAAAAAAAAAALU2lnbmVyQWRkZWQAAAAAAQAAAAxzaWduZXJfYWRkZWQAAAACAAAAAAAAAA9jb250ZXh0X3J1bGVfaWQAAAAABAAAAAEAAAAAAAAACXNpZ25lcl9pZAAAAAAAAAQAAAAAAAAAAg==",
         "AAAABQAAADtFdmVudCBlbWl0dGVkIHdoZW4gYSBwb2xpY3kgaXMgcmVtb3ZlZCBmcm9tIGEgY29udGV4dCBydWxlLgAAAAAAAAAADVBvbGljeVJlbW92ZWQAAAAAAAABAAAADnBvbGljeV9yZW1vdmVkAAAAAAACAAAAAAAAAA9jb250ZXh0X3J1bGVfaWQAAAAABAAAAAEAAAAAAAAACXBvbGljeV9pZAAAAAAAAAQAAAAAAAAAAg==",
