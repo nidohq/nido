@@ -22,9 +22,18 @@
 
 <style is:global>
   /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach them. */
-  .assets-card .as-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  /* The base .card has no padding, so the header + rows sat flush against the
+     border — the source of the "crowded" feel. Pad it like the page's other
+     row-bearing cards: ~18px sides (the house gutter), tighter top/bottom since
+     the rows carry their own vertical rhythm. */
+  .assets-card { padding: 14px 18px 6px; }
+  .assets-card .as-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
   .assets-card .as-explorer { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; white-space: nowrap; }
   .assets-card .as-explorer:hover { text-decoration: underline; }
+  /* a touch more air per row + a hair of separation under the title so the
+     code/domain pair reads as two lines, not one dense block. */
+  .assets-card .row { padding: 15px 0; }
+  .assets-card .row .rsub { margin-top: 3px; }
   /* :not([hidden]) so the `hidden` attribute can actually hide it — a bare
      `display: grid` out-specifies the UA `[hidden] { display: none }` rule. */
   .assets-card .as-skeleton:not([hidden]) { display: grid; gap: 10px; }
