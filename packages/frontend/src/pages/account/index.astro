@@ -116,9 +116,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         <div>
           <div class="mut home-greeting-eyebrow">Welcome back</div>
           <h1 class="disp home-hello js-account-name">Your Nido</h1>
-          <button id="claim-name-top-btn" class="btn acc sm hidden" style="margin-top:8px; font-size:13px;" type="button">
-            Claim a name
-          </button>
         </div>
         <span class="chip acc"><span class="dot"></span> Testnet</span>
       </div>
@@ -132,9 +129,18 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           <div class="disp" id="xlm-balance" style="font-weight:800; font-size:48px; letter-spacing:-.01em; line-height:1.04; margin-top:4px;">…</div>
           <div class="mut" style="font-size:14px; font-weight:600; margin-top:2px;">In your Nido</div>
           <div class="home-addr-row" style="display:flex; justify-content:center; margin-top:14px;">
-            <button id="copy-btn" class="addr" title="Copy your address">
+            <button id="copy-btn" class="addr addr-full" title="Copy your address">
               <code id="contract-id" style="background:none; padding:0;"></code>
-              <Icon name="copy" size={15} color="var(--ink-soft)" />
+              <span class="copy-ico" aria-hidden="true"><Icon name="copy" size={15} color="var(--ink-soft)" /></span>
+              <span class="copy-check" aria-hidden="true"><Icon name="check" size={15} color="var(--good)" /></span>
+            </button>
+          </div>
+          <!-- Claim a name — coral CTA sitting directly under the contract
+               address (the contract name), matching the Send button's accent.
+               Revealed by JS only for accounts that have not claimed a name. -->
+          <div class="home-claim-row" style="margin-top:14px;">
+            <button id="claim-name-top-btn" class="btn acc sm hidden" style="font-size:13px;" type="button">
+              <Icon name="sparkle" size={16} color="#fff" /> Claim a name
             </button>
           </div>
           <div style="margin-top:10px;">
@@ -171,14 +177,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           <div class="circ soft"><Icon name="shield" size={23} /></div>
           <span>Security</span>
         </a>
-        <button id="claim-name-mobile-action" class="qa hidden" type="button">
-          <div class="circ soft"><Icon name="sparkle" size={22} /></div>
-          <span>Claim</span>
-        </button>
       </div>
 
-      <!-- Inline name-claim form — shared by the desktop greeting button and the
-           mobile quick action. Hidden until JS reveals it (unclaimed accounts only). -->
+      <!-- Inline name-claim form — opened by the coral "Claim a name" button in
+           the hero. Hidden until JS reveals it (unclaimed accounts only). -->
       <div class="span-all hidden" id="claim-name-inline" style="padding:0 22px 6px;">
         <p class="mut" style="font-size:13px; line-height:1.45; margin:0 0 8px;">
           Use 1-15 lowercase letters and digits, starting with a letter. After it is claimed, we'll open the new domain address and register its passkey because browsers lock passkeys to the domain shown.
@@ -524,8 +526,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   }
 
   function initAccountCard() {
-    const display = contractId ? shortAddr(contractId, 6, 6) : "(unknown)";
-    document.getElementById("contract-id")!.textContent = display;
+    // Show the FULL contract address (not a truncated 6…6 form) so the
+    // account's on-chain identity — the contract name — is never hidden behind
+    // an ellipsis.
+    document.getElementById("contract-id")!.textContent = contractId ?? "(unknown)";
 
     const $explorerLink = document.getElementById("explorer-link") as HTMLAnchorElement;
     if (contractId) {
@@ -533,16 +537,30 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       $explorerLink.style.display = "inline";
     }
 
-    // Copy button — uses the Nido toast for feedback.
-    document.getElementById("copy-btn")!.addEventListener("click", async () => {
+    // Copy button — fires the Nido toast AND flips the button into an inline
+    // "copied" check state, so a tap gives unmissable local feedback even if
+    // the toast is missed.
+    const $copyBtn = document.getElementById("copy-btn") as HTMLButtonElement;
+    $copyBtn.addEventListener("click", async () => {
       if (!contractId) return;
       try {
         await navigator.clipboard.writeText(contractId);
         toast({ msg: "Copied your address", icon: "check" });
+        flashCopied($copyBtn);
       } catch {
         toast("Couldn't copy — try selecting it manually");
       }
     });
+  }
+
+  // Briefly flip a copy button into its "copied" check state (the CSS toggles
+  // the copy glyph for a check), then restore it. Re-entrant taps reset the
+  // timer instead of stacking.
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  function flashCopied(btn: HTMLElement) {
+    btn.classList.add("copied");
+    if (copiedTimer) clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => btn.classList.remove("copied"), 1300);
   }
 
   // =====================
@@ -949,12 +967,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       nameLink.href = accountShareUrl(rootHost, existingName);
       nameLink.textContent = accountShareLabel(rootHost, existingName);
     } else {
-      // Show claim-a-name entry points (desktop greeting button + mobile quick action)
+      // Show the claim-a-name CTA (now a single coral button sitting under the
+      // contract address in the hero).
       const topBtn = document.getElementById("claim-name-top-btn") as HTMLButtonElement | null;
-      const mobileAction = document.getElementById("claim-name-mobile-action") as HTMLButtonElement | null;
       const inlineForm = document.getElementById("claim-name-inline") as HTMLElement | null;
       if (topBtn) topBtn.classList.remove("hidden");
-      if (mobileAction) mobileAction.classList.remove("hidden");
       // Auto-open inline form when returning from signing
       if (params.get("nameresult") === "1" && inlineForm) {
         inlineForm.classList.remove("hidden");
@@ -965,7 +982,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         $nameInput.focus();
       };
       topBtn?.addEventListener("click", openClaimForm);
-      mobileAction?.addEventListener("click", openClaimForm);
     }
 
 

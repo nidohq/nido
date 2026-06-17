@@ -168,6 +168,17 @@ button { font-family: inherit; }
   cursor: pointer; border: none; transition: background .15s; white-space: nowrap;
 }
 .addr:hover { background: #e4ddcd; }
+/* Full-length variant: the whole contract address stays visible (wraps instead
+   of being hidden behind an ellipsis). Squarer than the pill so a wrapped,
+   multi-line address still reads as one tidy block. */
+.addr-full { white-space: normal; word-break: break-all; text-align: left; line-height: 1.45; border-radius: var(--r-md); }
+/* Copy → check feedback: both glyphs live in the button; the .copied class
+   (added briefly on click) swaps which one shows and tints it success-green. */
+.addr .copy-ico, .addr .copy-check { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.addr .copy-check { display: none; }
+.addr.copied { color: var(--good); }
+.addr.copied .copy-ico { display: none; }
+.addr.copied .copy-check { display: inline-flex; }
 
 /* ---------- inputs ---------- */
 .field label { display: block; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin-bottom: 7px; }
