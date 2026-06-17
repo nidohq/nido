@@ -21,8 +21,17 @@
 
 <style is:global>
   /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach them. */
-  .recent-activity .ra-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  /* The base .card has no padding, so the header + rows sat flush against the
+     border — the source of the "crowded" feel. Pad it like the page's other
+     row-bearing cards (matches AssetsCard so the two columns line up): ~18px
+     sides, tighter top/bottom since the rows carry their own vertical rhythm. */
+  .recent-activity { padding: 14px 18px 6px; }
+  .recent-activity .ra-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
   .recent-activity .ra-all { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; }
+  /* a touch more air per row + a hair of separation under the title so the
+     label/timestamp pair reads as two lines, not one dense block. */
+  .recent-activity .row { padding: 15px 0; }
+  .recent-activity .row .rsub { margin-top: 3px; }
   /* :not([hidden]) so the `hidden` attribute can actually hide it — a bare
      `display: grid` out-specifies the UA `[hidden] { display: none }` rule and
      would leave the skeleton animating under the loaded rows. */
