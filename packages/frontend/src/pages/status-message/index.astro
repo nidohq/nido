@@ -372,10 +372,10 @@ import Icon from "../../components/Icon.astro";
           return;
         }
         // Build the wallet origin. accountUrl returns a protocol-relative
-        // URL ("//<acc>.<base>/" in prod, "//<acc>--pr-N.<base>/" in PR
+        // URL ("//<acc>.<base>/" in prod, "//<acc>--N.<base>/" in PR
         // previews), which we feed to URL() to extract the origin. Doing it
-        // manually with `${acc}.${stripSubdomain(host)}` drops the --pr-N
-        // suffix in previews because stripSubdomain returns "pr-N.<base>"
+        // manually with `${acc}.${stripSubdomain(host)}` drops the --N
+        // suffix in previews because stripSubdomain returns "N.<base>"
         // (preserves the prefix as its own segment).
         const path = accountUrl(window.location.host, acc, "/");
         const walletOrigin = new URL(`${window.location.protocol}${path}`).origin;
@@ -400,7 +400,7 @@ import Icon from "../../components/Icon.astro";
 
   // --- Header navigation links ---
   //
-  // The page lives on `status-message[.--pr-N].mysoroban.xyz`, so a static
+  // The page lives on `status-message[.--N].mysoroban.xyz`, so a static
   // <a href="/"> wouldn't go to the wallet — it'd stay on the dApp
   // subdomain (the worker rewrites `/` here back to `/status-message/`).
   // Compute the apex at runtime and route Home there. Account link
@@ -793,8 +793,8 @@ import Icon from "../../components/Icon.astro";
     const $kitWallet = document.getElementById("kit-wallet")!;
 
     // Tell the button the Nido apex base BEFORE it upgrades: the page lives at
-    // `status-message[.--pr-N].<base>`, and `stripSubdomain` recovers the apex
-    // (preserving the `--pr-N` preview prefix, which a naive last-two-labels
+    // `status-message[.--N].<base>`, and `stripSubdomain` recovers the apex
+    // (preserving the `--N` preview prefix, which a naive last-two-labels
     // split would drop). Set the attribute first so the element's
     // connectedCallback reads it when it inits the kit.
     const apexBase = `${window.location.protocol}//${stripSubdomain(window.location.host)}`;

@@ -178,7 +178,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     activateAccount,
     fetchRegistryAddress,
     accountUrl,
-    stripSubdomain,
   } from "@nidohq/passkey-sdk";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
@@ -286,9 +285,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   function setupCookieDomain(): string {
     const host = window.location.hostname;
     if (host === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return "";
-    const first = host.split(".")[0];
-    const base = /^pr-\d+$/.test(first) ? stripSubdomain(host) : host.split(".").slice(-2).join(".");
-    return base.includes(".") ? `; Domain=.${base}` : "";
+    const base = host.split(".").slice(-2).join(".");
+    // `*.pages.dev` is on the Public Suffix List, so browsers silently reject a
+    // `Domain=.pages.dev` cookie. On a direct Cloudflare Pages preview host
+    // (the client-side fallback when the worker proxy isn't in the path) fall
+    // back to a host-only cookie so the setup salt is actually written.
+    if (!base.includes(".") || base === "pages.dev") return "";
+    return `; Domain=.${base}`;
   }
 
   function saveSetupSaltCookie(account: string, salt: string): void {

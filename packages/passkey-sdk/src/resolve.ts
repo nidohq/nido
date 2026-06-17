@@ -67,7 +67,7 @@ export async function resolveNameCached(
   name: string,
   networkPassphrase: string
 ): Promise<string | null> {
-  const cacheKey = `g2c:name:${name}`;
+  const cacheKey = `nido:name:${name}`;
 
   try {
     const cached = sessionStorage.getItem(cacheKey);

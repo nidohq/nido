@@ -7,11 +7,34 @@ import {
   isNidoWallet,
   connectWith,
   restoreWith,
+  deriveBase,
   NIDO_ID,
   type SessionStorage,
   type KitLike,
   type WalletSession,
 } from './walletConnect.js';
+
+describe('deriveBase', () => {
+  const loc = (hostname: string, protocol = 'https:', port = '') => ({ hostname, protocol, port });
+
+  it('preserves the preview suffix so ceremony origins stay on the preview', () => {
+    // The bug: a naive last-two-labels split collapsed every preview host to the
+    // production apex, breaking WebAuthn rpId matching for preview dApps.
+    expect(deriveBase(loc('status-message--100.nido.fyi'))).toBe('https://100.nido.fyi');
+    expect(deriveBase(loc('100.nido.fyi'))).toBe('https://100.nido.fyi');
+    expect(deriveBase(loc('pr-100.nido.fyi'))).toBe('https://100.nido.fyi');
+  });
+
+  it('resolves production subdomains and the bare apex to the production apex', () => {
+    expect(deriveBase(loc('status-message.nido.fyi'))).toBe('https://nido.fyi');
+    expect(deriveBase(loc('nido.fyi'))).toBe('https://nido.fyi');
+  });
+
+  it('keeps the scheme and port for localhost dev', () => {
+    expect(deriveBase(loc('status-message.localhost', 'http:', '4321'))).toBe('http://localhost:4321');
+    expect(deriveBase(loc('localhost', 'http:', '4321'))).toBe('http://localhost:4321');
+  });
+});
 
 /** An in-memory Storage-shaped fake. */
 function fakeStorage(initial: Record<string, string> = {}): SessionStorage & { map: Map<string, string> } {
@@ -37,18 +60,18 @@ describe('session store', () => {
   });
 
   it('returns null (rather than throwing) on corrupt JSON', () => {
-    const store = fakeStorage({ 'g2c:walletSession': '{not json' });
+    const store = fakeStorage({ 'nido:walletSession': '{not json' });
     expect(readSession(store)).toBeNull();
   });
 
   it('returns null when the stored object is missing required fields', () => {
-    const store = fakeStorage({ 'g2c:walletSession': JSON.stringify({ walletId: 'g2c' }) });
+    const store = fakeStorage({ 'nido:walletSession': JSON.stringify({ walletId: 'g2c' }) });
     expect(readSession(store)).toBeNull();
   });
 
   it('normalizes the legacy stored Nido wallet id', () => {
     const store = fakeStorage({
-      'g2c:walletSession': JSON.stringify({ walletId: 'g2c', walletAddress: 'CABC' }),
+      'nido:walletSession': JSON.stringify({ walletId: 'g2c', walletAddress: 'CABC' }),
     });
     expect(readSession(store)).toEqual({ walletId: NIDO_ID, walletAddress: 'CABC' });
   });
@@ -158,7 +181,7 @@ describe('restoreWith', () => {
 
   it('re-selects Nido for a legacy stored wallet id', () => {
     const store = fakeStorage({
-      'g2c:walletSession': JSON.stringify({ walletId: 'g2c', walletAddress: 'CABC' }),
+      'nido:walletSession': JSON.stringify({ walletId: 'g2c', walletAddress: 'CABC' }),
     });
     const setWallet = vi.fn();
     const session = restoreWith({ setWallet }, store);

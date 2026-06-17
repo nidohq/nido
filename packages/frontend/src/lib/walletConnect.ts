@@ -36,11 +36,12 @@
 
 import { StellarWalletsKit, type ModuleInterface } from '@creit.tech/stellar-wallets-kit';
 import { NidoModule, NIDO_ID } from '@nidohq/stellar-wallets-kit-module';
+import { apexHostForHost } from './nidoSharedStorage';
 
 export { NIDO_ID };
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
-const SESSION_KEY = 'g2c:walletSession';
+const SESSION_KEY = 'nido:walletSession';
 const LEGACY_NIDO_ID = 'g2c';
 
 // ---------------------------------------------------------------------------
@@ -234,12 +235,18 @@ export interface InitWalletKitParams {
 let inited = false;
 
 /** Derive the Nido apex origin from the current page if `base` wasn't given. */
-function deriveBase(): string {
-  // The page may live on a subdomain (e.g. status-message.<apex>); take the
-  // last two labels as the apex. Falls back to the full origin for localhost.
-  const { protocol, hostname, port } = window.location;
-  const labels = hostname.split('.');
-  const apexHost = labels.length > 2 ? labels.slice(-2).join('.') : hostname;
+export function deriveBase(
+  loc: Pick<Location, 'protocol' | 'hostname' | 'port'> = window.location,
+): string {
+  // The page may live on a subdomain (e.g. status-message.<apex>), so strip to
+  // the Nido apex. Use the preview-aware helper: a naive last-two-labels split
+  // would DROP the `--<N>` preview suffix and collapse every preview host to the
+  // production apex, so the kit module would build its WebAuthn ceremony origins
+  // on production and the rpId would not match the preview credential.
+  // apexHostForHost preserves the preview root (`<N>.<apex>`), keeps the 2-label
+  // apex intact, and resolves localhost — exactly the base NidoModule expects.
+  const { protocol, hostname, port } = loc;
+  const apexHost = apexHostForHost(hostname);
   const portPart = port ? `:${port}` : '';
   return `${protocol}//${apexHost}${portPart}`;
 }

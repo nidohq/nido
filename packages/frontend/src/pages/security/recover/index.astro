@@ -1,6 +1,6 @@
 ---
 // Nido reskin of the account-recovery ceremony page. BOTH modes are preserved:
-//  - friend mode (?handoff=…): a friend approves & signs a rotation
+//  - friend mode (?handoff=…): a friend approves & signs a Refractor-backed rotation
 //  - originator mode: stage an M-of-N rotation, collect friend signatures, submit
 // The entire <script> (recoveryActions wiring, M-of-N logic, handoff, staging
 // resume, key persistence) is preserved verbatim from the BaseLayout version.
@@ -40,16 +40,35 @@ import Icon from '../../../components/Icon.astro';
           <div class="actions" style="display:flex;gap:10px;">
             <button id="fm-sign" class="btn acc" type="button">Approve &amp; sign</button>
           </div>
-          <div id="fm-result" hidden style="margin-top:16px;">
-            <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 8px;">
-              Send this back to the friend getting in (paste it where they asked):
+          <div id="fm-done" hidden style="margin-top:16px;">
+            <div style="display:flex;align-items:center;gap:9px;color:var(--good-ink);">
+              <Icon name="shieldcheck" size={18} color="var(--good-ink)" />
+              <strong style="font-size:14px;">Signed ✓ — you can close this</strong>
+            </div>
+            <p class="mut" style="font-size:13px;line-height:1.55;margin:8px 0 0;">
+              Your approval was sent to your friend automatically. Nothing else to do.
             </p>
-            <textarea id="fm-blob" class="input mono" rows="5" readonly></textarea>
-            <button id="fm-copy" class="btn soft sm" type="button" style="margin-top:8px;">
-              <Icon name="copy" size={16} /> Copy
-            </button>
           </div>
           <p id="fm-status" class="mut" style="font-size:12.5px;margin-top:12px;"></p>
+        </div>
+      </section>
+
+      <!-- Picker mode: shown when the handoff is for THIS account's own
+           subdomain — pick a friend, then redirect to that friend's Nido. -->
+      <section id="picker-mode" hidden>
+        <div class="card" style="padding:18px;">
+          <div style="display:flex;align-items:center;gap:11px;margin-bottom:12px;">
+            <div style="width:40px;height:40px;border-radius:12px;background:var(--acc-soft);display:grid;place-items:center;">
+              <Icon name="shieldcheck" size={20} color="var(--acc)" />
+            </div>
+            <div class="disp" style="font-weight:800;font-size:17px;">Ask a friend to approve</div>
+          </div>
+          <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 14px;">
+            Pick a friend below. We'll take you to their Nido so they can approve
+            with their own passkey. Friends who've already signed are greyed out.
+          </p>
+          <ul id="picker-list" style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px;"></ul>
+          <p id="picker-progress" class="mut" style="font-size:12.5px;margin-top:14px;"></p>
         </div>
       </section>
 
@@ -126,9 +145,10 @@ import Icon from '../../../components/Icon.astro';
             <button id="om-copy-link" class="btn soft sm" type="button" style="margin:8px 0 16px;">
               <Icon name="copy" size={16} /> Copy link
             </button>
-            <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 8px;">Paste each friend's reply here:</p>
-            <textarea id="om-paste" class="input mono" rows="4" placeholder="paste your friend's reply"></textarea>
-            <button id="om-add-sig" class="btn soft sm" type="button" style="margin-top:8px;">Add reply</button>
+            <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 8px;">
+              As each friend approves, their okay shows up here automatically.
+            </p>
+            <button id="om-refresh" class="btn soft sm" type="button">Refresh</button>
             <p id="om-progress" class="mut" style="font-size:12.5px;margin-top:12px;"></p>
             <ul id="om-collected"></ul>
           </div>
@@ -156,30 +176,50 @@ import Icon from '../../../components/Icon.astro';
     contractIdFromHostname,
     createSessionPasskey,
     decodeRotationHandoff,
+    lookupName,
     buf2hex,
+    type RotationHandoff,
   } from '@nidohq/passkey-sdk';
   import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
   import {
     findRecoveryRules,
     prepareRotation,
-    addFriendSignature,
     submitRotation,
     signRotationAsFriend,
+    submitFriendSignatureToRelay,
+    collectFromRelay,
     checkDefaultRuleRepair,
     getStaging,
     clearStaging,
     collectedCount,
+    recoveryHandoffLinkFromStaging,
+    RELAY_BASE_URL,
   } from '../../../lib/recoveryActions.js';
+  import { buildPickerRows } from '../../../lib/friendPicker.js';
+  import { listFriendSignatures } from '../../../lib/relayClient.js';
+  import { nameRegistryId, NAME_NETWORK } from '../../../lib/nidoSwitcher.js';
+  import { RPC_URL } from '../../../lib/network.js';
 
   const account = contractIdFromHostname(window.location.hostname);
   const params = new URLSearchParams(window.location.search);
   const handoff = params.get('handoff');
 
   const friendMode = document.getElementById('friend-mode')!;
+  const pickerMode = document.getElementById('picker-mode')!;
   const originatorMode = document.getElementById('originator-mode')!;
 
   if (handoff) {
-    runFriendMode(handoff);
+    let parsed: RotationHandoff | null = null;
+    try {
+      parsed = decodeRotationHandoff(handoff);
+    } catch {
+      parsed = null; // surface the decode-error path through friend mode
+    }
+    if (parsed && account === parsed.account) {
+      runPickerMode(handoff, parsed);
+    } else {
+      runFriendMode(handoff);
+    }
   } else {
     runOriginatorMode();
   }
@@ -193,33 +233,160 @@ import Icon from '../../../components/Icon.astro';
       return;
     }
     try {
-      // Lazily peek at the description by decoding via the helper inside sign.
-      document.getElementById('fm-account')!.textContent = account;
-    } catch { /* ignore */ }
+      document.getElementById('fm-account')!.textContent =
+        decodeRotationHandoff(encoded).account;
+    } catch {
+      document.getElementById('fm-account')!.textContent = 'this account';
+    }
 
+    // Persists across retry clicks so a relay-PUT failure never forces a re-sign.
+    let signedBlob: string | null = null;
     document.getElementById('fm-sign')!.addEventListener('click', async () => {
       const btn = document.getElementById('fm-sign') as HTMLButtonElement;
       btn.disabled = true;
-      status.textContent = 'Signing…';
+      // Sign only once: if a previous attempt already produced a blob (e.g. the
+      // relay PUT failed and the user is retrying), reuse it instead of
+      // re-running the passkey ceremony with a fresh nonce.
+      if (!signedBlob) {
+        status.textContent = 'Signing…';
+        try {
+          const signed = await signRotationAsFriend(
+            account!,
+            encoded,
+            (m) => { status.textContent = m; },
+          );
+          signedBlob = signed.blob;
+          document.getElementById('fm-desc')!.textContent = signed.description;
+        } catch (e) {
+          status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+          btn.disabled = false;
+          return;
+        }
+      }
+      // Decode the handoff to learn where the friend's signature should go, then
+      // push the blob to the relay. The recovering account polls it; no paste-back.
       try {
-        const { blob, description } = await signRotationAsFriend(
+        const h = decodeRotationHandoff(encoded);
+        status.textContent = 'Sending your approval…';
+        await submitFriendSignatureToRelay(
+          h.relayBaseUrl,
+          h.relayKey,
           account!,
-          encoded,
-          (m) => { status.textContent = m; },
+          signedBlob,
         );
-        document.getElementById('fm-desc')!.textContent = description;
-        (document.getElementById('fm-blob') as HTMLTextAreaElement).value = blob;
-        document.getElementById('fm-result')!.hidden = false;
-        status.textContent = 'Signed. Send the blob back to the recovering account.';
+        document.getElementById('fm-sign')!.hidden = true;
+        document.getElementById('fm-done')!.hidden = false;
+        status.textContent = '';
       } catch (e) {
-        status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+        // Do NOT lose the signature: keep the blob in scope (so the retry above
+        // reuses it) and offer a manual fallback to hand it back out of band.
+        const err = e instanceof Error ? e.message : String(e);
+        status.innerHTML =
+          `Couldn't send automatically (${err}). Copy this and send it to ` +
+          `your friend, or tap Approve again to retry:`;
+        let ta = document.getElementById('fm-fallback') as HTMLTextAreaElement | null;
+        if (!ta) {
+          ta = document.createElement('textarea');
+          ta.id = 'fm-fallback';
+          ta.className = 'input mono';
+          ta.rows = 5;
+          ta.readOnly = true;
+          ta.style.marginTop = '8px';
+          status.after(ta);
+        }
+        ta.value = signedBlob;
         btn.disabled = false;
       }
     });
-    document.getElementById('fm-copy')!.addEventListener('click', () => {
-      const ta = document.getElementById('fm-blob') as HTMLTextAreaElement;
-      navigator.clipboard.writeText(ta.value);
-    });
+  }
+
+  // ---- Picker mode --------------------------------------------------------
+  // Shown when the handoff link is opened on the RECOVERING account's own
+  // subdomain. Lists the rule's friends, greys out those who already signed,
+  // and redirects to a chosen friend's Nido so they can approve there.
+  async function runPickerMode(encoded: string, h: RotationHandoff) {
+    pickerMode.hidden = false;
+    const list = document.getElementById('picker-list')!;
+    const progress = document.getElementById('picker-progress')!;
+
+    // Resolve the rule the handoff targets (fall back to the first rule).
+    let friends: string[] = [];
+    let threshold = 0;
+    try {
+      const rules = await findRecoveryRules(h.account);
+      const rule = rules.find((r) => r.ruleId === h.recoveryRuleId) ?? rules[0];
+      if (!rule) {
+        progress.textContent = 'No recovery friends are set up on this account.';
+        return;
+      }
+      friends = rule.friends;
+      threshold = rule.threshold ?? Math.max(1, Math.ceil(friends.length / 2));
+    } catch (e) {
+      progress.textContent =
+        'Could not read this account’s recovery rule: ' +
+        (e instanceof Error ? e.message : String(e));
+      return;
+    }
+
+    // Best-effort name resolution per friend; failures fall back to the address.
+    const names = new Map<string, string>();
+    let registryId: string | null = null;
+    try {
+      registryId = await nameRegistryId();
+    } catch {
+      registryId = null;
+    }
+    if (registryId) {
+      await Promise.all(
+        friends.map(async (addr) => {
+          try {
+            const name = await lookupName(RPC_URL, registryId!, addr, NAME_NETWORK);
+            if (name) names.set(addr, name);
+          } catch {
+            /* leave unresolved; address fallback is fine */
+          }
+        }),
+      );
+    }
+
+    // Best-effort signed set: a relay error means show everyone ungreyed.
+    let signed = new Set<string>();
+    try {
+      const sigs = await listFriendSignatures(h.relayBaseUrl, h.relayKey);
+      signed = new Set(sigs.map((s) => s.friend));
+    } catch {
+      signed = new Set();
+    }
+
+    const rows = buildPickerRows(friends, names, signed);
+    list.innerHTML = '';
+    for (const row of rows) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn soft';
+      btn.style.width = '100%';
+      btn.style.justifyContent = 'flex-start';
+      if (row.signed) {
+        btn.textContent = `${row.label} ✓`;
+        btn.disabled = true;
+      } else {
+        btn.textContent = row.label;
+        btn.addEventListener('click', () => {
+          window.location.assign(
+            accountUrl(
+              window.location.host,
+              row.address,
+              `/security/recover/?handoff=${encoded}`,
+            ),
+          );
+        });
+      }
+      li.appendChild(btn);
+      list.appendChild(li);
+    }
+
+    progress.textContent = `${signed.size} of ${threshold} friends have signed.`;
   }
 
   // ---- Originator mode ----------------------------------------------------
@@ -378,16 +545,32 @@ import Icon from '../../../components/Icon.astro';
       navigator.clipboard.writeText((document.getElementById('om-link') as HTMLTextAreaElement).value);
     });
 
-    document.getElementById('om-add-sig')!.addEventListener('click', () => {
-      const ta = document.getElementById('om-paste') as HTMLTextAreaElement;
+    // Pull any newly-arrived friend approvals from the relay, then re-render
+    // progress. Friends submit their blobs to the relay instead of pasting back.
+    let collecting = false;
+    async function collectFromRelayNow() {
+      const staging = getStaging(account!);
+      if (!staging || collecting) return;
+      collecting = true;
       try {
-        addFriendSignature(account!, ta.value);
-        ta.value = '';
+        const known = new Set(Object.keys(staging.collected));
+        await collectFromRelay(account!, RELAY_BASE_URL, staging.relayKey, known);
         refreshProgress();
       } catch (e) {
-        alert('Could not add signature: ' + (e instanceof Error ? e.message : String(e)));
+        console.warn('relay poll failed:', e);
+      } finally {
+        collecting = false;
       }
+    }
+
+    document.getElementById('om-refresh')!.addEventListener('click', () => {
+      void collectFromRelayNow();
     });
+
+    // Poll while the collect step is visible (cheap GET; errors are swallowed).
+    setInterval(() => {
+      if (!document.getElementById('om-collect')!.hidden) void collectFromRelayNow();
+    }, 10000);
 
     document.getElementById('om-submit')!.addEventListener('click', async () => {
       const btn = document.getElementById('om-submit') as HTMLButtonElement;
@@ -411,17 +594,16 @@ import Icon from '../../../components/Icon.astro';
 
     function showCollect(_threshold: number) {
       document.getElementById('om-collect')!.hidden = false;
-      const link = getStaging(account!)?.txs[0]?.txXdr;
-      if (link && !(document.getElementById('om-link') as HTMLTextAreaElement).value) {
-        // Reconstruct the share link from staging on resume.
-        // (link param recomputed on next prepare; on resume we leave blank.)
-      }
     }
 
     function refreshProgress() {
       const staging = getStaging(account!);
       if (!staging) return;
       const have = collectedCount(staging);
+      const linkBox = document.getElementById('om-link') as HTMLTextAreaElement;
+      if (!linkBox.value) {
+        linkBox.value = recoveryHandoffLinkFromStaging(window.location.origin, staging);
+      }
       document.getElementById('om-progress')!.textContent =
         `${have} of ${staging.threshold} required signatures collected.`;
       const ul = document.getElementById('om-collected')!;

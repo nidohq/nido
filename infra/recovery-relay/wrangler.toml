@@ -1,0 +1,11 @@
+name = "recovery-relay"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+routes = [
+  { pattern = "relay.nido.fyi/*", zone_name = "nido.fyi" }
+]
+
+[[kv_namespaces]]
+binding = "RECOVERY_SIGS"
+id = "02abddedd39b4e5ba9f3c8db75d02dfa"

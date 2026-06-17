@@ -23,13 +23,13 @@ import { createNido } from "./createNido";
 import { syncNidoStorageViaBridge } from "./nidoSharedStorage";
 
 const RPC_URL = "https://soroban-testnet.stellar.org";
-const NAME_NETWORK = "Test SDF Network ; September 2015";
+export const NAME_NETWORK = "Test SDF Network ; September 2015";
 
 // Resolve the name-registry contract id once per page load (memoized promise),
 // shared across switcher instances. Only fetched if some row needs an on-chain
 // name.
 let nameRegistryIdPromise: Promise<string> | null = null;
-function nameRegistryId(): Promise<string> {
+export function nameRegistryId(): Promise<string> {
   return (nameRegistryIdPromise ??= fetchRegistryAddress("name-registry"));
 }
 

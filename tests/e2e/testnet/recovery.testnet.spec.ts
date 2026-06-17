@@ -122,8 +122,8 @@ async function findRuleForPubkey(
  *     multisig-policy threshold 1, the friend as the sole signer). This is a
  *     primary-passkey self-mod (proven by the session-key install spec).
  *  3) Originator: create a fresh rotation passkey (#om-new-key), stage the
- *     rotation (#om-prepare — freezes the canonical parentSignatureExpiration-
- *     Ledger and emits the ?handoff= link).
+ *     rotation (#om-prepare — stores the tx in Refractor, freezes the
+ *     canonical parentSignatureExpirationLedger, and emits the ?handoff= link).
  *  4) Friend: open the handoff link ON THE FRIEND'S subdomain (so loadCredential
  *     finds the friend's key), sign the nested auth entry with their OWN passkey
  *     (#fm-sign → #fm-blob).
@@ -195,13 +195,10 @@ test.describe('@testnet social recovery (1-of-1)', () => {
       { waitUntil: 'domcontentloaded' },
     );
     await expect(page.locator('#friend-mode')).toBeVisible({ timeout: 30_000 });
-    // NOTE: the page fills #fm-account with `contractIdFromHostname(hostname)` —
-    // i.e. the CURRENT (friend) subdomain's account, NOT the recovering
-    // originator (a UI labeling quirk: the copy says "your friend …" but the
-    // value is this account). So assert it equals the FRIEND address. The
-    // originator↔friend link is enforced inside signRotationAsFriend, which
-    // requires `handoff.friends.includes(friendAccount)`.
-    await expect(page.locator('#fm-account')).toContainText(friend.cAddress.slice(0, 8));
+    // The compact handoff carries the recovering account, while the signer
+    // authorization is enforced inside signRotationAsFriend by re-reading the
+    // recovery rule from chain and checking that the current friend is listed.
+    await expect(page.locator('#fm-account')).toContainText(orig.cAddress.slice(0, 8));
     await page.locator('#fm-sign').click();
 
     // #fm-blob is a textarea revealed (and filled) only after a successful sign.

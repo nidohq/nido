@@ -54,9 +54,14 @@ describe("apexHostForHost", () => {
     expect(apexHostForHost("alice.localhost:4399")).toBe("localhost:4399");
   });
 
-  it("preserves PR preview roots", () => {
-    expect(apexHostForHost("pr-24.mysoroban.xyz")).toBe("pr-24.mysoroban.xyz");
-    expect(apexHostForHost("alice--pr-24.mysoroban.xyz")).toBe("pr-24.mysoroban.xyz");
+  it("preserves numeric PR preview roots", () => {
+    expect(apexHostForHost("24.mysoroban.xyz")).toBe("24.mysoroban.xyz");
+    expect(apexHostForHost("alice--24.mysoroban.xyz")).toBe("24.mysoroban.xyz");
+  });
+
+  it("normalizes legacy PR preview roots to the numeric root", () => {
+    expect(apexHostForHost("pr-24.mysoroban.xyz")).toBe("24.mysoroban.xyz");
+    expect(apexHostForHost("alice--pr-24.mysoroban.xyz")).toBe("24.mysoroban.xyz");
   });
 });
 
@@ -74,10 +79,10 @@ describe("sameNidoApexOrigin", () => {
 describe("Nido account snapshot storage", () => {
   it("loads local accounts, pending rows, and cached names", () => {
     const store = new MemoryStorage({
-      "g2c:accounts": JSON.stringify([A, "not-an-account"]),
-      "g2c:pending": JSON.stringify([{ contractId: B, secretKey: "S123" }]),
-      [`g2c:names:${A}`]: "alpha",
-      [`g2c:names:${B}`]: "beta",
+      "nido:accounts": JSON.stringify([A, "not-an-account"]),
+      "nido:pending": JSON.stringify([{ contractId: B, secretKey: "S123" }]),
+      [`nido:names:${A}`]: "alpha",
+      [`nido:names:${B}`]: "beta",
     });
 
     expect(localNidoSnapshot(store)).toEqual({
@@ -89,9 +94,9 @@ describe("Nido account snapshot storage", () => {
 
   it("merges bridge accounts and removes pending rows once active", () => {
     const store = new MemoryStorage({
-      "g2c:accounts": JSON.stringify([A]),
-      "g2c:pending": JSON.stringify([{ contractId: B, secretKey: "S123" }]),
-      [`g2c:names:${A}`]: "alpha",
+      "nido:accounts": JSON.stringify([A]),
+      "nido:pending": JSON.stringify([{ contractId: B, secretKey: "S123" }]),
+      [`nido:names:${A}`]: "alpha",
     });
 
     const changed = mergeNidoSnapshot(

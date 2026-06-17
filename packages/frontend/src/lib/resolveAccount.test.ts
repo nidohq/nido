@@ -19,7 +19,19 @@ describe("resolveAccountFromHostname", () => {
     expect(resolveName).not.toHaveBeenCalled();
   });
 
-  it("strips a preview suffix from a contract-ID subdomain", async () => {
+  it("strips a numeric preview suffix from a contract-ID subdomain", async () => {
+    const resolveName = vi.fn();
+
+    const address = await resolveAccountFromHostname(
+      `${C.toLowerCase()}--24.nido.fyi`,
+      resolveName,
+    );
+
+    expect(address).toBe(C);
+    expect(resolveName).not.toHaveBeenCalled();
+  });
+
+  it("strips a legacy preview suffix from a contract-ID subdomain", async () => {
     const resolveName = vi.fn();
 
     const address = await resolveAccountFromHostname(
@@ -40,7 +52,19 @@ describe("resolveAccountFromHostname", () => {
     expect(address).toBe(C);
   });
 
-  it("resolves a name subdomain with a preview suffix", async () => {
+  it("resolves a name subdomain with a numeric preview suffix", async () => {
+    const resolveName = vi.fn().mockResolvedValue(C);
+
+    const address = await resolveAccountFromHostname(
+      "joe--24.nido.fyi",
+      resolveName,
+    );
+
+    expect(resolveName).toHaveBeenCalledWith("joe");
+    expect(address).toBe(C);
+  });
+
+  it("resolves a name subdomain with a legacy preview suffix", async () => {
     const resolveName = vi.fn().mockResolvedValue(C);
 
     const address = await resolveAccountFromHostname(

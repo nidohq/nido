@@ -1,12 +1,10 @@
 import { isContractId } from "@nidohq/passkey-sdk";
 import type { PendingAccount } from "./myNidoModel";
 
-const ACCOUNT_KEY = "g2c:accounts";
-const PENDING_KEY = "g2c:pending";
-const NAME_PREFIX = "g2c:names:";
+const ACCOUNT_KEY = "nido:accounts";
+const PENDING_KEY = "nido:pending";
+const NAME_PREFIX = "nido:names:";
 const VALID_NAME_RE = /^[a-z][a-z0-9]{0,14}$/;
-const PREVIEW_SEP = "--pr-";
-
 export const NIDO_STORAGE_REQUEST = "nido:storage:request:v1";
 export const NIDO_STORAGE_RESPONSE = "nido:storage:response:v1";
 
@@ -181,11 +179,11 @@ export function apexHostForHost(host: string): string {
 
   const [subdomain, ...restParts] = parts;
   const rest = restParts.join(".");
-  const previewIndex = subdomain.indexOf(PREVIEW_SEP);
-  if (previewIndex !== -1) {
-    return `pr-${subdomain.slice(previewIndex + PREVIEW_SEP.length)}.${rest}`;
-  }
-  if (/^pr-\d+$/.test(subdomain)) return host;
+  const preview = subdomain.match(/--(?:pr-)?(\d+)$/);
+  if (preview) return `${preview[1]}.${rest}`;
+  if (/^\d+$/.test(subdomain)) return host;
+  const legacyRoot = subdomain.match(/^pr-(\d+)$/);
+  if (legacyRoot) return `${legacyRoot[1]}.${rest}`;
   if (rest.startsWith("localhost")) return rest;
   return parts.length > 2 ? rest : host;
 }
