@@ -4,6 +4,7 @@
  * app's `PUBLIC_RELAYER_URL` default (the SDK itself has no env coupling).
  */
 import { RELAYER_URL } from "./network";
+import type { RelayerStatus } from "@nidohq/passkey-sdk";
 export {
   RelayerError,
   type RelayerStatus,
@@ -30,5 +31,9 @@ export const getRelayerTransaction = (id: string, baseUrl: string = RELAYER_URL)
 export const waitForConfirmation = (
   id: string,
   baseUrl: string = RELAYER_URL,
-  opts?: { intervalMs?: number; maxAttempts?: number },
+  opts?: {
+    intervalMs?: number;
+    maxAttempts?: number;
+    onPoll?: (info: { status: RelayerStatus | null; attempt: number; maxAttempts: number }) => void;
+  },
 ) => sdkWait(id, baseUrl, opts);
