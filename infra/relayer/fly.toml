@@ -9,6 +9,21 @@ primary_region = "iad"
   METRICS_ENABLED = "false"
   REPOSITORY_STORAGE_TYPE = "redis"
   REDIS_KEY_PREFIX = "nido-relayer"
+  # Redis is self-hosted as a separate Fly app (infra/relayer-redis), reached
+  # over private 6PN networking — NOT managed Upstash. Upstash PAYG billed
+  # per-op, and the relayer's always-on worker pool polls Redis continuously;
+  # that ran up the bill until Upstash throttled bandwidth and every /relay call
+  # failed. A self-hosted Redis is flat-cost. The base relayer image is
+  # Wolfi-glibc with only the Chainguard apk repo (no `redis` package), so Redis
+  # can't live in this container — hence a sibling app. To migrate off Upstash,
+  # `fly secrets unset REDIS_URL` so this plain-env value wins (no password —
+  # the 6PN address is private to the org and Redis is not publicly exposed).
+  REDIS_URL = "redis://nido-redis.internal:6379"
+  # Trim the per-op / connection overhead that made the polling expensive: a
+  # small pool means fewer idle connection heartbeats (this relayer is
+  # low-traffic), and short transaction expiry keeps the Redis dataset tiny.
+  REDIS_POOL_MAX_SIZE = "10"
+  TRANSACTION_EXPIRATION_HOURS = "6"
   STELLAR_NETWORK = "testnet"
   FUND_RELAYER_ID = "channels-fund"
   RATE_LIMIT_REQUESTS_PER_SECOND = "20"

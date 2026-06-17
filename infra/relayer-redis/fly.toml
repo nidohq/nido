@@ -1,0 +1,42 @@
+# Self-hosted Redis for the `nido` relayer — replaces managed Upstash, whose
+# per-op PAYG billing made the relayer's always-on worker polling expensive (it
+# hit the budget cap, throttled, and took the relayer down).
+#
+# This is a sibling app, not a sidecar, because the relayer's base image is
+# Wolfi-glibc with only the Chainguard apk repo (no `redis` package) — Redis
+# can't be installed into that container. The stock redis image here handles its
+# own user/volume setup, and living in its own app means Redis survives relayer
+# redeploys.
+#
+# No public services: the machine is reachable only over Fly's private 6PN at
+# `nido-redis.internal:6379`. That privacy is the trust boundary (testnet dev
+# relayer), so Redis runs without a password but bound to 6PN only.
+app = "nido-redis"
+primary_region = "iad"
+
+[build]
+  image = "redis:7-alpine"
+
+# AOF persistence on the volume keeps the relayer's channel-account pool
+# registration (setChannelAccounts) across restarts. `--bind ::` listens on the
+# 6PN IPv6 interface; protected-mode off allows the relayer app to connect
+# without a password (private network only). maxmemory caps the 256mb VM.
+[experimental]
+  cmd = [
+    "redis-server",
+    "--dir", "/data",
+    "--appendonly", "yes",
+    "--save", "",
+    "--bind", "::",
+    "--protected-mode", "no",
+    "--maxmemory", "200mb",
+    "--maxmemory-policy", "noeviction",
+  ]
+
+[[mounts]]
+  source = "nido_redis_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

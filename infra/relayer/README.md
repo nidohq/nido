@@ -11,7 +11,12 @@ The deployed stack is:
 - OpenZeppelin Relayer `v1.5.0`
 - OpenZeppelin Channels plugin
 - Caddy sidecar
-- Upstash Redis
+- self-hosted Redis — a separate `nido-redis` Fly app (stock `redis:7-alpine`
+  image + `nido_redis_data` volume), reached over private 6PN at
+  `nido-redis.internal:6379`. Replaced managed Upstash, whose per-op PAYG billing
+  made the relayer's always-on worker polling expensive (it hit the budget cap
+  and throttled, taking the relayer down). It's a sibling app, not a sidecar,
+  because the relayer's Wolfi/Chainguard base image has no `redis` apk package.
 - three local Stellar keystores loaded from Fly secrets
 - single Fly machine in org `aha-684`, region `iad`
 
@@ -84,9 +89,12 @@ Run commands from the repo root unless noted.
 # Already done 2026-06-10; re-running errors harmlessly if app exists.
 fly apps create nido --org aha-684
 
-# 2. Create Redis and record the redis:// URL.
-# Lost the output? `fly redis status nido-relayer-redis` re-prints it.
-fly redis create --name nido-relayer-redis --org aha-684 --region iad --no-replicas
+# 2. Stand up the self-hosted Redis app (separate app, private 6PN only). The
+# relayer reaches it at redis://nido-redis.internal:6379 (set in fly.toml). 1GB
+# is ample — TRANSACTION_EXPIRATION_HOURS keeps the dataset tiny.
+fly apps create nido-redis --org aha-684
+fly volumes create nido_redis_data -a nido-redis -r iad -n 1 -s 1
+fly deploy infra/relayer-redis -a nido-redis --remote-only --ha=false
 
 # 3. Generate keystores.
 # Save this passphrase to 1Password before running. It is not recoverable.
@@ -100,10 +108,10 @@ STORAGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
 
 # Save API_KEY, PLUGIN_ADMIN_SECRET, and STORAGE_ENCRYPTION_KEY to 1Password now.
 
-# 5. Set all 8 Fly secrets in one call.
+# 5. Set the Fly secrets in one call.
+# No REDIS_URL — fly.toml sets REDIS_URL=redis://nido-redis.internal:6379.
 # macOS: use `openssl base64 -A -in <file>` instead of `base64 -w0 <file>`.
 fly secrets set -a nido \
-  REDIS_URL="<redis-url-from-step-2>" \
   API_KEY="$API_KEY" \
   STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
   KEYSTORE_PASSPHRASE="<same passphrase used in step 3>" \
@@ -123,6 +131,66 @@ files are stored in 1Password vault `theahaco`, then remove local copies:
 ```bash
 rm -rf /tmp/relayer-keys
 ```
+
+## Migrating Off Managed Upstash (one-time)
+
+For the already-deployed app that still points at Upstash. The fix moves Redis
+to a sibling `nido-redis` app (see `../relayer-redis/fly.toml` and `fly.toml`).
+
+**One-shot:** `scripts/migrate-redis-selfhost.sh` does all of the below
+idempotently (volume, secret unset, deploy, health gate, channel re-activation,
+relay probe). Pass `API_KEY` + `PLUGIN_ADMIN_SECRET` to auto re-activate, and
+`--destroy-upstash` to tear down Upstash at the end.
+
+The two secrets accept literals or `op://` references. Find their item/field
+names with `op item list --vault theahaco`, then either let the script load the
+op token from the iac `.env` and resolve the refs:
+
+```bash
+API_KEY='op://theahaco/<item>/<field>' \
+PLUGIN_ADMIN_SECRET='op://theahaco/<item>/<field>' \
+  ./infra/relayer/scripts/migrate-redis-selfhost.sh \
+    --env-file ~/c/theahaco/iac/.env --destroy-upstash
+```
+
+or wrap the whole run in `op run` (needs `OP_SERVICE_ACCOUNT_TOKEN` exported):
+
+```bash
+op run --env-file=relayer-secrets.env -- \
+  ./infra/relayer/scripts/migrate-redis-selfhost.sh --destroy-upstash
+```
+
+flyctl auth is separate — `flyctl auth login` once; the op token only feeds the
+two activation secrets.
+
+The manual breakdown, if you'd rather step through it: these steps cut the live
+app over.
+
+```bash
+# 1. Stand up the sibling Redis app + its volume, then deploy it.
+fly apps create nido-redis --org aha-684
+fly volumes create nido_redis_data -a nido-redis -r iad -n 1 -s 1
+fly deploy infra/relayer-redis -a nido-redis --remote-only --ha=false
+
+# 2. Remove the Upstash REDIS_URL secret. A secret OVERRIDES the fly.toml env,
+# so the redis://nido-redis.internal URL only takes effect once Upstash's is
+# gone. --stage defers the change to the relayer deploy below.
+fly secrets unset REDIS_URL -a nido --stage
+
+# 3. Deploy the relayer. REDIS_URL now resolves to redis://nido-redis.internal:6379.
+fly deploy infra/relayer -a nido --remote-only --ha=false
+```
+
+The new Redis starts empty, so the channel pool is unregistered — re-run the
+activation below once (`## Fund And Activate`). AOF persists it across all
+subsequent deploys. Confirm the cutover, then delete the Upstash DB to stop the
+bleed:
+
+```bash
+fly redis destroy nido-relayer-redis      # stops the PAYG meter
+```
+
+Drop the stale `REDIS_URL` entry from 1Password (vault `theahaco`) too.
 
 ## Fund And Activate
 
