@@ -9,7 +9,7 @@ on:
       - 'package-lock.json'
       - '.github/workflows/preview.yml'
       # The example-dApp preview (example-preview.yml) points its wallet at
-      # THIS PR's pr-N.nido.fyi — so a dApp-only PR still needs the wallet
+      # THIS PR's N.nido.fyi — so a dApp-only PR still needs the wallet
       # preview deployed alongside.
       - 'examples/status-message-dapp/**'
 
@@ -44,6 +44,7 @@ jobs:
           # the relayer's public fund address (simulation-only tx source).
           PUBLIC_RELAYER_URL: https://nido.fly.dev
           PUBLIC_RELAYER_SIM_SOURCE: GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2
+          PUBLIC_RECOVERY_RELAY_URL: https://relay.nido.fyi
         run: npx astro build --root ./packages/frontend
 
       - name: Deploy to Cloudflare Pages
@@ -60,8 +61,8 @@ jobs:
         with:
           script: |
             const prNum = context.payload.pull_request.number;
-            const previewUrl = `https://pr-${prNum}.nido.fyi`;
-            const body = `**Preview deployed!**\n\n${previewUrl}\n\nAccount URLs: \`<contract-address>--pr-${prNum}.nido.fyi\``;
+            const previewUrl = `https://${prNum}.nido.fyi`;
+            const body = `**Preview deployed!**\n\n${previewUrl}\n\nAccount URLs use numeric preview suffixes, for example \`<contract-address>--${prNum}.nido.fyi\`.`;
 
             // Find existing bot comment
             const { data: comments } = await github.rest.issues.listComments({

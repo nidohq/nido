@@ -1,5 +1,3 @@
-const PREVIEW_SEP = "--pr-";
-
 /**
  * nido.fyi wildcard-subdomain proxy. Identical logic to the mysoroban-proxy
  * worker, but the upstream origin is the `nido` Pages project
@@ -15,27 +13,41 @@ const RESERVED_DAPP_SUBDOMAINS = {
 // bare `nido` project subdomain was taken).
 const PAGES = "nido-1am.pages.dev";
 
+function previewSubdomain(sub) {
+  const match = sub.match(/^(.*)--(?:pr-)?(\d+)$/);
+  return match ? { raw: match[1], pr: match[2] } : { raw: sub, pr: null };
+}
+
+function previewRoot(sub) {
+  const numeric = sub.match(/^(\d+)$/);
+  if (numeric) return numeric[1];
+  const legacy = sub.match(/^pr-(\d+)$/);
+  return legacy ? legacy[1] : null;
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
     const parts = url.hostname.split(".");
     const sub = parts[0];
 
-    const sepIndex = sub.indexOf(PREVIEW_SEP);
-    const labelRaw = sepIndex !== -1 ? sub.slice(0, sepIndex) : sub;
-    const dappPath = RESERVED_DAPP_SUBDOMAINS[labelRaw.toLowerCase()];
+    const preview = previewSubdomain(sub);
+    const dappPath = RESERVED_DAPP_SUBDOMAINS[preview.raw.toLowerCase()];
 
     if (dappPath && url.pathname === "/") {
       url.pathname = dappPath;
     }
 
-    if (sepIndex !== -1) {
-      const prBranch = "pr-" + sub.slice(sepIndex + PREVIEW_SEP.length);
+    if (preview.pr) {
+      const prBranch = "pr-" + preview.pr;
       url.hostname = `${prBranch}.${PAGES}`;
-    } else if (/^pr-\d+$/.test(sub)) {
-      url.hostname = `${sub}.${PAGES}`;
     } else {
-      url.hostname = PAGES;
+      const pr = previewRoot(sub);
+      if (pr) {
+        url.hostname = `pr-${pr}.${PAGES}`;
+      } else {
+        url.hostname = PAGES;
+      }
     }
 
     return fetch(url.toString(), { headers: request.headers });
