@@ -94,13 +94,21 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
           </div>
           <div class="checkitem" id="check-1" style="display:flex; align-items:center; gap:12px; opacity:.4; transition:opacity .3s;">
             <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center;"></span>
-            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Publishing to Stellar</span>
+            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Preparing transaction</span>
           </div>
           <div class="checkitem" id="check-2" style="display:flex; align-items:center; gap:12px; opacity:.4; transition:opacity .3s;">
             <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center;"></span>
-            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Adding testnet funds</span>
+            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Submitting to Stellar</span>
           </div>
           <div class="checkitem" id="check-3" style="display:flex; align-items:center; gap:12px; opacity:.4; transition:opacity .3s;">
+            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center;"></span>
+            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Confirming on-chain</span>
+          </div>
+          <div class="checkitem" id="check-4" style="display:flex; align-items:center; gap:12px; opacity:.4; transition:opacity .3s;">
+            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center;"></span>
+            <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Adding testnet funds</span>
+          </div>
+          <div class="checkitem" id="check-5" style="display:flex; align-items:center; gap:12px; opacity:.4; transition:opacity .3s;">
             <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center;"></span>
             <span class="check-text" style="font-size:14.5px; font-weight:600; white-space:nowrap;">Your Nido is ready</span>
           </div>
@@ -245,7 +253,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
   // Animated "Setting up your Nido" checklist. Each step is one of:
   //   "pending" (dim ring) · "active" (spinner) · "done" (teal check).
-  const CHECK_LABELS = ["check-0", "check-1", "check-2", "check-3"];
+  const CHECK_LABELS = ["check-0", "check-1", "check-2", "check-3", "check-4", "check-5"];
 
   function renderCheck(i: number, state: "pending" | "active" | "done") {
     const item = document.getElementById(CHECK_LABELS[i]);
@@ -404,6 +412,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   renderCheck(1, "pending");
   renderCheck(2, "pending");
   renderCheck(3, "pending");
+  renderCheck(4, "pending");
+  renderCheck(5, "pending");
 
   if (!contractId && !isSetupReservation) {
     showError("That link looks off. Please start again from the home page.");
@@ -559,8 +569,10 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     }
 
     try {
-      // 1 · "Locked to you" is already done by the time we get here.
+      // 0 · "Locked to you" is already done; 1 · "Preparing transaction" begins
+      // (load source account, build + simulate + assemble the factory call).
       setCheckProgress(1, 1);
+      $deployFoot.textContent = "Preparing transaction…";
 
       if (!RELAYER_URL || !RELAYER_SIM_SOURCE) {
         throw new Error("Relayer is not configured for account setup.");
@@ -594,10 +606,19 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
       const transaction = rpc.assembleTransaction(simTxn, sim).setTimeout(0).build();
       const { func, auth } = extractFuncAndAuth(transaction);
+
+      // 1 · prepared; 2 · "Submitting to Stellar" begins (hand off to the relayer).
+      setCheckProgress(2, 2);
+      $deployFoot.textContent = "Submitting to Stellar…";
       const submitted = await submitSorobanTransaction({ func, auth });
       if (!submitted.transactionId) {
         throw new Error("Relayer accepted account setup but returned no transaction id");
       }
+
+      // 2 · submitted; 3 · "Confirming on-chain" begins — the long wait, polling
+      // the relayer until the transaction is confirmed on-chain.
+      setCheckProgress(3, 3);
+      $deployFoot.textContent = "Confirming on-chain — this can take up to a minute…";
       const confirmed = await waitForConfirmation(submitted.transactionId);
       if (!confirmed.hash) throw new Error("Relayer confirmed account setup without a transaction hash");
 
@@ -605,18 +626,19 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       clearSetupSaltCookie(contractId!);
       await syncNidoStorageViaBridge();
 
-      // 2 · published; 3 · funded; 4 · ready.
-      setCheckProgress(2, 2);
-      $deployFoot.textContent = "Adding testnet funds...";
+      // 3 · confirmed; 4 · "Adding testnet funds" begins.
+      setCheckProgress(4, 4);
+      $deployFoot.textContent = "Adding testnet funds…";
       let fundingComplete = true;
       try {
         await drainTestnetFunding(server, contractId!);
-        setCheckProgress(3, 3);
+        // 4 · funded; 5 · "Your Nido is ready" begins.
+        setCheckProgress(5, 5);
       } catch (fundingErr) {
         fundingComplete = false;
         console.warn("[nido] testnet funding failed", fundingErr);
-        renderCheck(2, "pending");
-        renderCheck(3, "pending");
+        renderCheck(4, "pending");
+        renderCheck(5, "pending");
         $deployNestSpinning.style.display = "none";
         $deployNestStatic.style.display = "block";
         $deployFoot.textContent = "Your Nido was created, but testnet funding failed.";
@@ -627,7 +649,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         );
         return;
       }
-      if (fundingComplete) setCheckProgress(4, -1);
+      if (fundingComplete) setCheckProgress(6, -1);
       $deployNestSpinning.style.display = "none";
       $deployNestStatic.style.display = "block";
       $deployFoot.textContent = fundingComplete
