@@ -189,7 +189,7 @@ test.describe('@testnet example status-message dApp — Nido delegation + in-pag
     // -------- PART E — verify the session key is installed on-chain -----------
     const sessionPubkey = await page.evaluate(
       ([acc, c]) => {
-        const raw = localStorage.getItem(`g2c.${acc}.session-key.${c}`);
+        const raw = localStorage.getItem(`nido.${acc}.session-key.${c}`);
         return raw ? (JSON.parse(raw).publicKey as string) : null;
       },
       [cAddress, CONTRACT] as const,

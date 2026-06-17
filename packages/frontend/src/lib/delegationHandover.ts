@@ -29,7 +29,7 @@ import { createSessionPasskey, saveSessionKeyMaterial, buf2hex } from '@nidohq/p
 // (and can locate the session-key material it saved, which is keyed by them).
 // ---------------------------------------------------------------------------
 
-const PENDING_KEY = 'g2c:pendingDelegation';
+const PENDING_KEY = 'nido:pendingDelegation';
 
 /** Minimal Storage shape so the store is testable with a fake. */
 export type DelegationStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;

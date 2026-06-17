@@ -31,7 +31,7 @@ type SetSessionKeyUiState = (state: SessionKeyUiState) => void
 
 /** Survives the enable-tipping redirect to the wallet and back, so the tip
  *  row can re-attach to the author the user was about to tip. */
-const TIP_CONTEXT_KEY = "g2c:tipContext"
+const TIP_CONTEXT_KEY = "nido:tipContext"
 
 /** The deployed status-message contract id (baked into the generated client). */
 const CONTRACT_ID = statusMessage.options.contractId

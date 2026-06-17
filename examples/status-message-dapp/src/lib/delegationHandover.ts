@@ -29,7 +29,7 @@ import { createSessionPasskey, saveSessionKeyMaterial, buf2hex } from "@nidohq/p
 // knows which account+contract the round-trip was for (and can fill the form).
 // ---------------------------------------------------------------------------
 
-const PENDING_KEY = "g2c:pendingDelegation"
+const PENDING_KEY = "nido:pendingDelegation"
 
 /** Minimal Storage shape so the store is testable with a fake. */
 export type DelegationStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
@@ -180,7 +180,7 @@ export async function startDelegation(opts: StartDelegationOptions): Promise<voi
 // flag) or a cancelled return (flag already spent) can't re-trigger it.
 // ---------------------------------------------------------------------------
 
-const AUTOSTART_KEY = "g2c:autostartDelegation"
+const AUTOSTART_KEY = "nido:autostartDelegation"
 
 /** sessionStorage by default — scoped to the tab, auto-cleared on close. */
 function defaultSessionStorage(): DelegationStorage | null {

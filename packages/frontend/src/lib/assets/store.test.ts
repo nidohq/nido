@@ -34,7 +34,7 @@ describe("known-assets store", () => {
   });
 
   it("survives corrupt storage", () => {
-    localStorage.setItem(`g2c:assets:known:${ACCOUNT}`, "{not json");
+    localStorage.setItem(`nido:assets:known:${ACCOUNT}`, "{not json");
     expect(loadKnownAssets(ACCOUNT)).toEqual([]);
   });
 

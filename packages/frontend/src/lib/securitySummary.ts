@@ -26,7 +26,7 @@ export interface SecuritySummary {
 /** Walk localStorage for any session-key material this account holds. */
 function collectSessionKeyMaterial(account: string) {
   const out: Record<string, NonNullable<ReturnType<typeof loadSessionKeyMaterial>>> = {};
-  const prefix = `g2c.${account}.session-key.`;
+  const prefix = `nido.${account}.session-key.`;
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i)!;
     if (key.startsWith(prefix)) {

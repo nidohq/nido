@@ -61,8 +61,8 @@ export function pluckSoroswapNetwork(doc: unknown): unknown {
 }
 
 const LISTS: { url: string; cacheKey: string; pluck: (doc: unknown) => unknown }[] = [
-  { url: CURATED_LIST_URL, cacheKey: "g2c:assets:curated", pluck: (doc) => doc },
-  { url: SOROSWAP_LIST_URL, cacheKey: "g2c:assets:curated:soroswap", pluck: pluckSoroswapNetwork },
+  { url: CURATED_LIST_URL, cacheKey: "nido:assets:curated", pluck: (doc) => doc },
+  { url: SOROSWAP_LIST_URL, cacheKey: "nido:assets:curated:soroswap", pluck: pluckSoroswapNetwork },
 ];
 
 async function fetchList(list: (typeof LISTS)[number]): Promise<AssetCandidate[]> {

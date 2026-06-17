@@ -294,7 +294,7 @@ test.describe('@testnet session-key delegation install (primary-passkey signed)'
     // Task 2: the dApp now SIGNS with the installed session key. We open the
     // status-message dApp, seed the SessionKeyMaterial the dApp reads
     // (`loadSessionKeyMaterial(account, STATUS_CONTRACT)` → localStorage key
-    // `g2c.<account>.session-key.<STATUS_CONTRACT>`; see support/sessionKey.ts),
+    // `nido.<account>.session-key.<STATUS_CONTRACT>`; see support/sessionKey.ts),
     // then drive "set note". With material present the page takes the in-page
     // SESSION path (status-message/index.astro ~L499-635): it discovers the
     // session rule via `findRuleForPubkey`, computes
@@ -331,7 +331,7 @@ test.describe('@testnet session-key delegation install (primary-passkey signed)'
 
     // Sanity: the material is actually present on this origin under the exact key.
     const present = await page.evaluate(
-      ([acc, tgt]) => !!localStorage.getItem(`g2c.${acc}.session-key.${tgt}`),
+      ([acc, tgt]) => !!localStorage.getItem(`nido.${acc}.session-key.${tgt}`),
       [cAddress, TARGET] as const,
     );
     expect(present, 'session material not seeded on the status-message origin').toBe(true);

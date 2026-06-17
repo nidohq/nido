@@ -111,7 +111,7 @@ export async function probeSep41Token(
   if (typeof balance !== "bigint") return null;
   if (balance <= 0n) return { balance, decimals: 0 };
 
-  const metaKey = `g2c:assets:meta:${tokenContract}`;
+  const metaKey = `nido:assets:meta:${tokenContract}`;
   let meta: TokenMeta | null = null;
   try {
     const cached = JSON.parse(localStorage.getItem(metaKey) ?? "null") as TokenMeta | null;

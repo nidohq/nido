@@ -6,7 +6,7 @@ import { credentialFor } from './auth/seed';
  * `loadSessionKeyMaterial(account, target)`.
  *
  * Verified against `packages/passkey-sdk/src/storage.ts`:
- *   - localStorage key template: `g2c.${account}.session-key.${target}`
+ *   - localStorage key template: `nido.${account}.session-key.${target}`
  *     (the `sessionKey(account, target)` helper; `saveSessionKeyMaterial` writes
  *     to exactly this key).
  *   - JSON shape written by `saveSessionKeyMaterial`:
@@ -36,7 +36,7 @@ export async function seedSessionKey(
   await page.evaluate(
     ([acc, tgt, cid, pk, lbl]) => {
       // Mirrors `sessionKey(account, target)` + `saveSessionKeyMaterial` shape.
-      const key = `g2c.${acc}.session-key.${tgt}`;
+      const key = `nido.${acc}.session-key.${tgt}`;
       localStorage.setItem(
         key,
         JSON.stringify({ credentialId: cid, publicKey: pk, label: lbl }),
