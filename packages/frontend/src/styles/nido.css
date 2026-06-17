@@ -311,6 +311,15 @@ body:has(.tabbar) .toastwrap { bottom: calc(86px + env(safe-area-inset-bottom));
 .spin { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Nest spinner — the two rings rotate independently with eased, varying speed:
+   each ring surges through the first part of the turn then eases to a crawl,
+   and the inner ring counter-rotates on a shorter period so they drift apart. */
+.nest-ring { transform-box: fill-box; transform-origin: center; }
+.nest-ring--outer { animation: nest-rot     var(--nest-dur, 1.2s)             ease-in-out infinite; }
+.nest-ring--inner { animation: nest-rot-rev  calc(var(--nest-dur, 1.2s) * .62) ease-in-out infinite; }
+@keyframes nest-rot     { 0% { transform: rotate(0deg); }  40% { transform: rotate(228deg); }  100% { transform: rotate(360deg); } }
+@keyframes nest-rot-rev { 0% { transform: rotate(0deg); }  40% { transform: rotate(-228deg); } 100% { transform: rotate(-360deg); } }
+
 /* generic */
 .scroll-hide { scrollbar-width: none; }
 .scroll-hide::-webkit-scrollbar { display: none; }
