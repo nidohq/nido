@@ -18,10 +18,15 @@ export function activityRowHtml(it: ActivityItem): string {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   });
   const sign = it.kind === "payment" ? (it.direction === "in" ? "+" : "−") : "";
+  // Direction-keyed amount colour (The Living Ledger): money in reads teal/good,
+  // money out (and contract spends) reads neutral ink — so a glance down the
+  // amounts column distinguishes credits from debits without reading them.
+  const amtCls =
+    it.kind === "payment" && it.direction === "in" ? " pos" : sign ? " neg" : "";
   // An unverified asset (genuine SAC, but not the curated/native one for its
   // code) must not render identically to the canonical asset — see classify.
   const assetTag = `${esc(it.asset)}${it.assetUnverified ? " · unverified" : ""}`;
-  const amt = it.amount ? `<span class="ramt">${sign}${esc(it.amount)} <small>${assetTag}</small></span>` : "";
+  const amt = it.amount ? `<span class="ramt${amtCls}">${sign}${esc(it.amount)} <small>${assetTag}</small></span>` : "";
   return `<a class="row" href="${esc(it.explorerUrl)}" target="_blank" rel="noopener noreferrer">
       <span class="ricon ${iconCls}">${icon}</span>
       <span class="rmain"><span class="rtitle">${esc(it.title)}</span><span class="rsub">${esc(it.subtitle ?? when)}</span></span>${amt}</a>`;

@@ -194,13 +194,13 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
            dedicated multi-asset transfer view at /transfer/ (the .js-send
            buttons navigate there in initHomeMode). -->
 
-      <!-- ============ ASSETS ============ -->
-      <div class="grid-cell">
+      <!-- ============ THE LIVING LEDGER ============ -->
+      <!-- One borderless surface: the OTHER held balances as a pinned compact
+           band, a single hairline, then the activity timeline below it. On
+           desktop this is one centered column (not two side-by-side cards). -->
+      <div class="span-all ledger">
         <AssetsCard />
-      </div>
-
-      <!-- ============ RECENT ACTIVITY ============ -->
-      <div class="grid-cell home-col-activity">
+        <hr class="ledger-rule" />
         <RecentActivityCard />
       </div>
 
