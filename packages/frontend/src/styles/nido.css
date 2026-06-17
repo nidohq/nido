@@ -195,12 +195,17 @@ textarea.input { height: auto; padding: 13px 15px; resize: none; line-height: 1.
 }
 a.row { text-decoration: none; color: inherit; }
 .row:first-child { border-top: none; }
-.row .ricon {
+/* .ricon is the directional/asset glyph chip. Promoted out of `.row` scope so
+   the same chip can be reused borderless (The Ledger summary glyph + the
+   stacked-avatar cluster) — the row only sets the gap/divider around it. */
+.ricon {
   width: 42px; height: 42px; border-radius: 13px; flex: 0 0 auto; display: grid; place-items: center;
   background: var(--chip); color: var(--ink-soft);
 }
-.row .ricon.in { background: var(--good-soft); color: var(--good-ink); }
-.row .ricon.acc { background: var(--acc-soft); color: var(--acc); }
+.ricon.in { background: var(--good-soft); color: var(--good-ink); }
+/* outgoing/contract glyph: --acc-ink (#b83e14) clears WCAG AA on --acc-soft;
+   the bare --acc it used before failed AA. */
+.ricon.acc { background: var(--acc-soft); color: var(--acc-ink); }
 .row .rmain { flex: 1; min-width: 0; }
 .row .rtitle { font-weight: 700; font-size: 14.5px; }
 .row .rsub { font-size: 12px; color: var(--mut); font-family: var(--mono); }

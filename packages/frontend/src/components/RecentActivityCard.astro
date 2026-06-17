@@ -2,26 +2,52 @@
 // packages/frontend/src/components/RecentActivityCard.astro
 // No SSR address exists — the smart account is resolved client-side from the
 // hostname subdomain (same as account/index.astro and the sign/recover pages).
+//
+// The Ledger redesign: a borderless full-width SUMMARY ROW (.ledger-summary) on
+// --paper — the newest event's directional glyph + "Recent activity" + a
+// one-line plain-language digest of the newest item ("Sent 100 XLM · 2h ago")
+// + a chevron. Tapping it reveals the EXISTING injected row list
+// (activityRowHtml, untouched) inside a soft --paper-3 "well". The toggle is
+// self-contained, so it works without the page's main script.
 ---
-<section class="card recent-activity">
-  <header class="ra-head">
-    <span class="section-label">Recent activity</span>
-    <a class="ra-all" href="/account/activity/">View all →</a>
-  </header>
-  <div class="ra-body">
-    <div class="ra-skeleton">
-      <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
-    </div>
-    <div class="ra-list" hidden></div>
-    <div class="empty ra-empty" hidden>
-      <span class="ra-empty-text">No recent activity.</span> <a class="ra-fh" target="_blank" rel="noopener noreferrer" hidden>View full history ↗</a>
+<section class="ledger recent-activity" data-open="false">
+  <button type="button" class="ledger-summary ra-toggle" aria-expanded="false" aria-controls="ra-well">
+    <span class="ls-left ra-glyph" aria-hidden="true"><span class="ricon">•</span></span>
+    <span class="ls-label">Recent activity</span>
+    <span class="ls-right">
+      <span class="ls-meta ra-digest"></span>
+      <span class="ls-chev" aria-hidden="true">›</span>
+    </span>
+  </button>
+  <div class="ledger-well" id="ra-well" hidden>
+    <header class="ra-head">
+      <span class="section-label">Latest</span>
+      <a class="ra-all" href="/account/activity/">View all →</a>
+    </header>
+    <div class="ra-body">
+      <div class="ra-skeleton">
+        <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
+      </div>
+      <div class="ra-list" hidden></div>
+      <div class="empty ra-empty" hidden>
+        <span class="ra-empty-text">No recent activity.</span> <a class="ra-fh" target="_blank" rel="noopener noreferrer" hidden>View full history ↗</a>
+      </div>
     </div>
   </div>
 </section>
 
 <style is:global>
-  /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach them. */
-  .recent-activity .ra-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  /* is:global: rows are injected via innerHTML and the summary glyph/digest are
+     built by the inline script, so scoped styles wouldn't reach them. The shared
+     .ledger / .ledger-summary look is defined once in AssetsCard.astro; here we
+     only add the activity-specific bits, namespaced under .recent-activity. */
+
+  /* ---- activity summary: newest-event glyph ---- */
+  .recent-activity .ra-glyph { display: inline-flex; flex: 0 0 auto; }
+  .recent-activity .ra-glyph .ricon { width: 32px; height: 32px; border-radius: 11px; font-size: 16px; }
+
+  /* ---- well contents (the existing header + injected rows) ---- */
+  .recent-activity .ra-head { display: flex; justify-content: space-between; align-items: baseline; margin: 6px 0 2px; }
   .recent-activity .ra-all { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; }
   /* :not([hidden]) so the `hidden` attribute can actually hide it — a bare
      `display: grid` out-specifies the UA `[hidden] { display: none }` rule and
@@ -30,6 +56,8 @@
   .recent-activity .ra-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
   .recent-activity .ra-fh { color: var(--acc-btn, #c2410c); text-decoration: none; white-space: nowrap; }
   .recent-activity .ra-fh:hover { text-decoration: underline; }
+  /* injected activity rows shouldn't draw a divider against the soft well */
+  .recent-activity .ledger-well .row { border-top-color: var(--line); }
 </style>
 
 <script>
@@ -37,16 +65,51 @@
   import { activityRowHtml } from "../lib/activity/rowHtml.js";
   import { EXPLORER_BASE } from "../lib/network.js";
   import { resolveAccountAddress } from "../lib/resolveAccount.js";
+  import type { ActivityItem } from "../lib/activity/types.js";
+
+  /** Compact relative time ("just now", "2h ago", "3d ago") from unix seconds. */
+  function relTime(tsSeconds: number): string {
+    const diff = Math.max(0, Date.now() / 1000 - tsSeconds);
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
+    return `${Math.floor(diff / (86400 * 30))}mo ago`;
+  }
+
+  /** One-line plain-language summary of the newest item for the collapsed row. */
+  function digestText(it: ActivityItem): string {
+    const when = relTime(it.timestamp);
+    if (it.kind === "payment" && it.amount) {
+      const verb = it.direction === "in" ? "Received" : "Sent";
+      const asset = it.asset ? ` ${it.asset}` : "";
+      return `${verb} ${it.amount}${asset} · ${when}`;
+    }
+    return `${it.title} · ${when}`;
+  }
 
   async function init() {
     const card = document.querySelector<HTMLElement>(".recent-activity");
     if (!card) return;
+    const toggle = card.querySelector<HTMLButtonElement>(".ra-toggle")!;
+    const well = card.querySelector<HTMLElement>(".ledger-well")!;
+    const glyphIcon = card.querySelector<HTMLElement>(".ra-glyph .ricon")!;
+    const digest = card.querySelector<HTMLElement>(".ra-digest")!;
     const skel = card.querySelector<HTMLElement>(".ra-skeleton")!;
     const list = card.querySelector<HTMLElement>(".ra-list")!;
     const empty = card.querySelector<HTMLElement>(".ra-empty")!;
     const emptyText = card.querySelector<HTMLElement>(".ra-empty-text")!;
+
+    // Expand/collapse is self-contained — no dependency on the page script.
+    toggle.addEventListener("click", () => {
+      const open = card.getAttribute("data-open") !== "true";
+      card.setAttribute("data-open", String(open));
+      toggle.setAttribute("aria-expanded", String(open));
+      well.hidden = !open;
+    });
+
     const address = await resolveAccountAddress();
-    if (!address) { skel.hidden = true; empty.hidden = false; return; }
+    if (!address) { skel.hidden = true; empty.hidden = false; digest.textContent = ""; return; }
     // Full lifetime history lives on the explorer (RPC only retains ~1 week).
     const fh = card.querySelector<HTMLAnchorElement>(".ra-fh")!;
     fh.href = `${EXPLORER_BASE}/contract/${address}`;
@@ -57,7 +120,13 @@
       const page = await loadActivityPage({ address, maxChunks: 2 });
       skel.hidden = true;
       const top = page.items.slice(0, 5);
-      if (top.length === 0) { empty.hidden = false; return; }
+      if (top.length === 0) { empty.hidden = false; digest.textContent = "Nothing yet"; return; }
+      // Summary reflects the newest item: its glyph + a plain-language digest.
+      const newest = top[0]!;
+      const incoming = newest.kind === "payment" && newest.direction === "in";
+      glyphIcon.textContent = newest.kind === "payment" ? (incoming ? "↓" : "↑") : "•";
+      glyphIcon.className = `ricon ${incoming ? "in" : "acc"}`;
+      digest.textContent = digestText(newest);
       list.innerHTML = top.map(activityRowHtml).join("");
       list.hidden = false;
     } catch {
@@ -65,6 +134,7 @@
       skel.hidden = true;
       emptyText.textContent = "Couldn’t load activity.";
       empty.hidden = false;
+      digest.textContent = "—";
     }
   }
   init();
