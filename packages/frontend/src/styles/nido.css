@@ -200,7 +200,9 @@ a.row { text-decoration: none; color: inherit; }
   background: var(--chip); color: var(--ink-soft);
 }
 .row .ricon.in { background: var(--good-soft); color: var(--good-ink); }
-.row .ricon.acc { background: var(--acc-soft); color: var(--acc); }
+/* outgoing / contract glyph: --acc-ink (AA on --acc-soft, 4.57:1) — bare --acc
+   failed contrast. Incoming uses --good-ink above. */
+.row .ricon.acc { background: var(--acc-soft); color: var(--acc-ink); }
 .row .rmain { flex: 1; min-width: 0; }
 .row .rtitle { font-weight: 700; font-size: 14.5px; }
 .row .rsub { font-size: 12px; color: var(--mut); font-family: var(--mono); }
@@ -646,6 +648,29 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
 .dev-card[open] > summary { margin-bottom: 12px; }
 /* defensive: grid cells must not overflow on long content */
 .grid-cell { min-width: 0; }
+
+/* ===================================================================
+   The Living Ledger — merged balances band + activity timeline.
+   One borderless surface (NOT a .card): the held balances read as a pinned
+   continuation of the balance hero, closed by a single hairline, then the
+   activity timeline streams below. Replaces the two side-by-side Assets /
+   Recent-activity cards on the account home.
+   =================================================================== */
+.ledger { min-width: 0; }
+/* the one hairline between band and timeline — no side/top border, no radius,
+   so the band reads as a continuation of the hero rather than a boxed card. */
+.ledger-rule { height: 0; margin: 0 22px; border: none; border-top: 1px solid var(--line); }
+/* the timeline gets its own breathing room below the hairline */
+.ledger .timeline { padding: 14px 22px 4px; }
+@media (min-width: 1024px) {
+  /* desktop: one centered reading column rather than a full-bleed grid row */
+  .home-mode .ledger {
+    max-width: 620px; margin-inline: auto; width: 100%;
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: var(--r-lg); box-shadow: var(--sh-2); overflow: hidden;
+    padding: 6px 6px 10px;
+  }
+}
 
 /* ===================================================================
    Account Home — desktop dashboard (≥1024)

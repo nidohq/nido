@@ -29,3 +29,25 @@ export function assetRowHtml(a: AssetHolding): string {
       <span class="rmain"><span class="rtitle">${esc(a.code)}</span><span class="rsub">${esc(sub)}</span></span>
       <span class="ramt">${esc(a.formatted)}</span></a>`;
 }
+
+/**
+ * Render one AssetHolding as a compact balance CHIP (The Living Ledger) — a far
+ * smaller surface than `assetRowHtml`, used in the pinned balances band above
+ * the activity timeline. Reuses the 28px `.asset-initial` letter chip (with the
+ * same logo-over-letter fallback), then the code + bold balance. An unverified
+ * holding gets a small `--warn` dot instead of its (untrusted) domain — same
+ * trust contract as the full row, just compressed.
+ */
+export function balChipHtml(a: AssetHolding): string {
+  const initial = (a.code[0] ?? "?").toUpperCase();
+  const icon = a.verified && a.icon
+    ? `<img class="asset-icon" src="${esc(a.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+    : "";
+  const warn = a.verified
+    ? ""
+    : `<span class="bal-warn" aria-hidden="true" title="Unverified token"></span>`;
+  const title = a.verified ? a.code : `${a.code} · unverified`;
+  return `<a class="bal-chip" data-contract="${esc(a.contractId)}" href="${esc(a.explorerUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(title)} — ${esc(a.contractId)}">
+      <span class="ricon asset-initial">${esc(initial)}${icon}</span>
+      <span class="bal-code">${esc(a.code)}</span><b class="bal-amt">${esc(a.formatted)}</b>${warn}</a>`;
+}

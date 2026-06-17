@@ -1,35 +1,88 @@
 ---
 // packages/frontend/src/components/RecentActivityCard.astro
+// The Living Ledger "timeline": one continuous activity stream (NOT a bordered
+// card). Adds three things over the bare row list:
+//   1. lightweight DAY separators ("Today" / "Yesterday" / "Mon Jun 9")
+//      computed from item.timestamp and injected by the script below;
+//   2. a pinned non-event "current balance — you are here" marker at the top;
+//   3. direction-keyed amount colours (the .ramt pos/neg class in rowHtml.ts).
+// It ends with an honest 7-day-horizon footer carrying BOTH the in-app
+// "View all" link and the external "full history" link.
+//
 // No SSR address exists — the smart account is resolved client-side from the
 // hostname subdomain (same as account/index.astro and the sign/recover pages).
 ---
-<section class="card recent-activity">
-  <header class="ra-head">
-    <span class="section-label">Recent activity</span>
-    <a class="ra-all" href="/account/activity/">View all →</a>
+<section class="timeline">
+  <header class="tl-head">
+    <span class="section-label">Activity</span>
+    <a class="tl-all" href="/account/activity/">View all →</a>
   </header>
-  <div class="ra-body">
-    <div class="ra-skeleton">
+
+  <!-- pinned non-event "you are here" marker — always present, no data needed -->
+  <div class="tl-here">
+    <span class="tl-here-dot" aria-hidden="true"></span>
+    <span class="tl-here-text">Current balance — you are here</span>
+  </div>
+
+  <div class="tl-body">
+    <div class="tl-skeleton">
       <span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span><span class="skeleton">&nbsp;</span>
     </div>
-    <div class="ra-list" hidden></div>
-    <div class="empty ra-empty" hidden>
-      <span class="ra-empty-text">No recent activity.</span> <a class="ra-fh" target="_blank" rel="noopener noreferrer" hidden>View full history ↗</a>
+    <div class="tl-list" hidden></div>
+    <div class="empty tl-empty" hidden>
+      <span class="tl-empty-text">Nothing in the last 7 days.</span>
     </div>
   </div>
+
+  <!-- honest horizon footer — only the 7-day RPC window lives here; full
+       lifetime history is on the explorer. Shown once rows have loaded. -->
+  <footer class="tl-horizon" hidden>
+    <span class="tl-horizon-text">That’s the last 7 days.</span>
+    <a class="btn soft tl-fh" target="_blank" rel="noopener noreferrer">Full history on Stellar Expert ↗</a>
+  </footer>
 </section>
 
 <style is:global>
-  /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach them. */
-  .recent-activity .ra-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-  .recent-activity .ra-all { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; }
-  /* :not([hidden]) so the `hidden` attribute can actually hide it — a bare
-     `display: grid` out-specifies the UA `[hidden] { display: none }` rule and
-     would leave the skeleton animating under the loaded rows. */
-  .recent-activity .ra-skeleton:not([hidden]) { display: grid; gap: 10px; }
-  .recent-activity .ra-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
-  .recent-activity .ra-fh { color: var(--acc-btn, #c2410c); text-decoration: none; white-space: nowrap; }
-  .recent-activity .ra-fh:hover { text-decoration: underline; }
+  /* is:global: rows + day separators are injected via innerHTML, so scoped
+     styles wouldn't reach them. */
+  .timeline .tl-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+  .timeline .tl-all { font-size: 13px; color: var(--acc-ink); font-weight: 700; text-decoration: none; }
+  .timeline .tl-all:hover { text-decoration: underline; }
+
+  /* "you are here" marker — a faint coral dot + quiet line, no row chrome */
+  .timeline .tl-here { display: flex; align-items: center; gap: 11px; padding: 10px 0 6px; }
+  .timeline .tl-here-dot {
+    width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto;
+    background: var(--acc-soft); box-shadow: 0 0 0 4px rgba(252,227,214,.5);
+  }
+  .timeline .tl-here-text { font-size: 12.5px; font-weight: 700; color: var(--mut); }
+
+  /* :not([hidden]) so the `hidden` attribute can hide it — a bare `display:grid`
+     would out-specify the UA [hidden]{display:none} rule. */
+  .timeline .tl-skeleton:not([hidden]) { display: grid; gap: 10px; }
+  .timeline .tl-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
+
+  /* day separator — a 12px muted eyebrow, no divider of its own; the first row
+     under it drops its top border so the header reads as the run's start. */
+  .timeline .tl-day {
+    font-size: 12px; font-weight: 700; letter-spacing: .02em; color: var(--mut);
+    padding: 16px 0 4px;
+  }
+  .timeline .tl-day:first-child { padding-top: 4px; }
+  .timeline .tl-day + .row { border-top: none; }
+
+  /* direction-keyed amount colours: money in reads teal/good, money out reads ink */
+  .timeline .ramt.pos { color: var(--good-ink); }
+  .timeline .ramt.neg { color: var(--ink); }
+
+  /* horizon footer — reskinned off the dashed .empty box: a quiet centered cap */
+  .timeline .tl-horizon:not([hidden]) {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    text-align: center; padding: 22px 16px 6px; margin-top: 6px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .timeline .tl-horizon-text { font-size: 13px; font-weight: 600; color: var(--mut); }
+  .timeline .tl-fh { width: auto; height: 40px; font-size: 13.5px; padding: 0 18px; }
 </style>
 
 <script>
@@ -37,31 +90,69 @@
   import { activityRowHtml } from "../lib/activity/rowHtml.js";
   import { EXPLORER_BASE } from "../lib/network.js";
   import { resolveAccountAddress } from "../lib/resolveAccount.js";
+  import type { ActivityItem } from "../lib/activity/types.js";
+
+  /** Local-midnight day key for grouping (YYYY-MM-DD in the viewer's tz). */
+  function dayKey(d: Date): string {
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+
+  /** "Today" / "Yesterday" / "Mon Jun 9" from a unix-seconds timestamp. */
+  function dayLabel(ts: number): string {
+    const d = new Date(ts * 1000);
+    const now = new Date();
+    const today = dayKey(now);
+    const yesterday = dayKey(new Date(now.getTime() - 86_400_000));
+    const k = dayKey(d);
+    if (k === today) return "Today";
+    if (k === yesterday) return "Yesterday";
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  }
+
+  /**
+   * Build the timeline HTML: items grouped into day runs, each run opened by a
+   * .tl-day eyebrow, then its rows. Items arrive newest-first; same order is
+   * preserved within and across days.
+   */
+  function timelineHtml(items: ActivityItem[]): string {
+    let html = "";
+    let lastKey = "";
+    for (const it of items) {
+      const key = dayKey(new Date(it.timestamp * 1000));
+      if (key !== lastKey) {
+        html += `<div class="tl-day">${dayLabel(it.timestamp)}</div>`;
+        lastKey = key;
+      }
+      html += activityRowHtml(it);
+    }
+    return html;
+  }
 
   async function init() {
-    const card = document.querySelector<HTMLElement>(".recent-activity");
-    if (!card) return;
-    const skel = card.querySelector<HTMLElement>(".ra-skeleton")!;
-    const list = card.querySelector<HTMLElement>(".ra-list")!;
-    const empty = card.querySelector<HTMLElement>(".ra-empty")!;
-    const emptyText = card.querySelector<HTMLElement>(".ra-empty-text")!;
+    const tl = document.querySelector<HTMLElement>(".timeline");
+    if (!tl) return;
+    const skel = tl.querySelector<HTMLElement>(".tl-skeleton")!;
+    const list = tl.querySelector<HTMLElement>(".tl-list")!;
+    const empty = tl.querySelector<HTMLElement>(".tl-empty")!;
+    const emptyText = tl.querySelector<HTMLElement>(".tl-empty-text")!;
+    const horizon = tl.querySelector<HTMLElement>(".tl-horizon")!;
+    const fh = tl.querySelector<HTMLAnchorElement>(".tl-fh")!;
     const address = await resolveAccountAddress();
     if (!address) { skel.hidden = true; empty.hidden = false; return; }
     // Full lifetime history lives on the explorer (RPC only retains ~1 week).
-    const fh = card.querySelector<HTMLAnchorElement>(".ra-fh")!;
     fh.href = `${EXPLORER_BASE}/contract/${address}`;
-    fh.hidden = false;
     try {
-      // The compact card only needs the newest few rows — scan a small window so
-      // it loads fast; the full /account/activity page scans the default depth.
+      // The compact home stream only needs the newest few rows — scan a small
+      // window so it loads fast; the full /account/activity page scans deeper.
       const page = await loadActivityPage({ address, maxChunks: 2 });
       skel.hidden = true;
       const top = page.items.slice(0, 5);
-      if (top.length === 0) { empty.hidden = false; return; }
-      list.innerHTML = top.map(activityRowHtml).join("");
+      if (top.length === 0) { empty.hidden = false; horizon.hidden = false; return; }
+      list.innerHTML = timelineHtml(top);
       list.hidden = false;
+      horizon.hidden = false;
     } catch {
-      // Update only the text node so the "View full history" link survives.
+      // Update only the text node so the empty state stays a real surface.
       skel.hidden = true;
       emptyText.textContent = "Couldn’t load activity.";
       empty.hidden = false;
