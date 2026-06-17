@@ -4,10 +4,10 @@
 // RecentActivityCard: the address comes from the hostname subdomain (name
 // subdomains resolve via the registry), so no SSR address exists.
 ---
-<section class="card assets-card">
+<section class="assets-card nest-zone">
   <header class="as-head">
-    <span class="section-label">Assets</span>
-    <a class="as-explorer" target="_blank" rel="noopener noreferrer" hidden>View on explorer →</a>
+    <span class="section-label">In your nest</span>
+    <a class="as-explorer" target="_blank" rel="noopener noreferrer" hidden>explorer →</a>
   </header>
   <div class="as-body">
     <div class="as-skeleton">
@@ -22,13 +22,47 @@
 
 <style is:global>
   /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach them. */
-  .assets-card .as-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-  .assets-card .as-explorer { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; white-space: nowrap; }
-  .assets-card .as-explorer:hover { text-decoration: underline; }
+  /* The Nest: card-free zone — no border/radius/shadow; assets float on the
+     shared --paper floor and read as a labelled group, not a boxed card. */
+  .assets-card.nest-zone { background: transparent; border: none; border-radius: 0; box-shadow: none; }
+  .assets-card .as-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; margin-bottom: 12px;
+  }
+  /* demoted to a quiet trailing ghost link on the label baseline */
+  .assets-card .as-explorer { font-size: 12px; font-weight: 600; color: var(--mut); text-decoration: none; white-space: nowrap; }
+  .assets-card .as-explorer:hover { color: var(--acc-ink); text-decoration: underline; }
   /* :not([hidden]) so the `hidden` attribute can actually hide it — a bare
      `display: grid` out-specifies the UA `[hidden] { display: none }` rule. */
-  .assets-card .as-skeleton:not([hidden]) { display: grid; gap: 10px; }
-  .assets-card .as-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
+  .assets-card .as-skeleton:not([hidden]) { display: grid; gap: 8px; }
+  .assets-card .as-skeleton .skeleton { height: 60px; border-radius: var(--r-lg); display: block; }
+  .assets-card .as-list:not([hidden]) { display: flex; flex-direction: column; gap: 8px; }
+
+  /* Each injected .row becomes a "perch" — a tinted lozenge cushion: no border,
+     warm --paper-3 fill, rounded, with internal padding (the base .row has none
+     + a hairline border-top, both overridden here). */
+  .assets-card .row {
+    background: var(--paper-3); border-top: none; border-radius: var(--r-lg);
+    padding: 14px 16px; gap: 13px; transition: transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .18s;
+  }
+  .assets-card .row:hover { box-shadow: var(--sh-1); transform: translateY(-1px); }
+  /* unverified asset → amber cushion (NOT a white/cream box) so a spoofed code
+     stays visually distinct from curated holdings. */
+  .assets-card .row.unverified { background: var(--warn-soft); }
+  /* CODE in the display serif; subtitle mono/muted; balance tabular mono. */
+  .assets-card .row .rtitle {
+    font-family: var(--disp); font-weight: 700; font-size: 16px; letter-spacing: -.01em;
+    display: flex; align-items: center; gap: 8px; overflow: visible;
+  }
+  .assets-card .row .rsub { font-size: 12px; }
+  .assets-card .row .ramt {
+    font-family: var(--mono); font-weight: 600; font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* the inline "unverified" chip must not be squeezed/ellipsised by the title's
+     nowrap+ellipsis rules. */
+  .assets-card .row .rtag { flex: 0 0 auto; padding: 2px 8px; font-size: 10.5px; }
+
   .assets-card .asset-initial { font-weight: 800; font-size: 15px; position: relative; overflow: hidden; }
   /* logo sits over the letter chip; removing it (load error) reveals the letter */
   .assets-card .asset-icon { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--paper-2); }

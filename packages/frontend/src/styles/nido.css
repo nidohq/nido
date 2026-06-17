@@ -694,6 +694,29 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
 
   /* A closed panel collapses so it never leaves an empty grid cell. */
   .home-mode .card-grid > .home-panel:has(> .hidden) { display: none; }
+
+  /* ---- The Nest: assets + activity share one paper floor ----
+     Override the symmetric auto-fit grid for just these two cells so assets get
+     the wider share (~58%) and activity the narrower (~42%). A single bounded
+     --line-soft spine between them reinforces "one surface, two zones" without
+     re-boxing either. The assets/activity sections inside are already card-free
+     (.nest-zone), so the floor reads continuous. */
+  .home-mode .card-grid > .grid-cell:has(.assets-card) { grid-column: 1; }
+  .home-mode .card-grid > .grid-cell.home-col-activity {
+    grid-column: 2;
+    border-left: 1px solid var(--line-soft);
+    padding-left: 28px;
+  }
+  .home-mode .card-grid:has(.assets-card) {
+    grid-template-columns: 1.38fr 1fr;
+    column-gap: 28px;
+  }
+  /* keep full-width rows spanning both columns under the explicit 2-col template */
+  .home-mode .card-grid > .home-greeting,
+  .home-mode .card-grid > .home-hero,
+  .home-mode .card-grid > .home-panel,
+  .home-mode .card-grid > .home-actions-mobile,
+  .home-mode .card-grid > .home-foot { grid-column: 1 / -1; }
 }
 
 /* ---------- shared app-page desktop header (Activity, Security) ----------

@@ -3,10 +3,10 @@
 // No SSR address exists — the smart account is resolved client-side from the
 // hostname subdomain (same as account/index.astro and the sign/recover pages).
 ---
-<section class="card recent-activity">
+<section class="recent-activity nest-zone">
   <header class="ra-head">
-    <span class="section-label">Recent activity</span>
-    <a class="ra-all" href="/account/activity/">View all →</a>
+    <span class="section-label">Lately</span>
+    <a class="ra-all" href="/account/activity/">all →</a>
   </header>
   <div class="ra-body">
     <div class="ra-skeleton">
@@ -21,8 +21,15 @@
 
 <style is:global>
   /* is:global: rows are injected via innerHTML, so scoped styles wouldn't reach them. */
-  .recent-activity .ra-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-  .recent-activity .ra-all { font-size: 13px; color: var(--acc-btn, #c2410c); text-decoration: none; }
+  /* The Nest: card-free zone — activity shares the same paper floor as assets. */
+  .recent-activity.nest-zone { background: transparent; border: none; border-radius: 0; box-shadow: none; }
+  .recent-activity .ra-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; margin-bottom: 12px;
+  }
+  /* demoted to a quiet trailing ghost link on the label baseline */
+  .recent-activity .ra-all { font-size: 12px; font-weight: 600; color: var(--mut); text-decoration: none; }
+  .recent-activity .ra-all:hover { color: var(--acc-ink); text-decoration: underline; }
   /* :not([hidden]) so the `hidden` attribute can actually hide it — a bare
      `display: grid` out-specifies the UA `[hidden] { display: none }` rule and
      would leave the skeleton animating under the loaded rows. */
@@ -30,6 +37,24 @@
   .recent-activity .ra-skeleton .skeleton { height: 42px; border-radius: 10px; display: block; }
   .recent-activity .ra-fh { color: var(--acc-btn, #c2410c); text-decoration: none; white-space: nowrap; }
   .recent-activity .ra-fh:hover { text-decoration: underline; }
+
+  /* "Lately" timeline: drop the per-row hairline; separate rows with air and run
+     ONE continuous thread through the left icon column. The thread is a vertical
+     line on the .ra-list, positioned to land on the 42px-wide icon centre
+     (16px = half of the 42px icon - line width, offset for the list edge). */
+  .recent-activity .ra-list:not([hidden]) { position: relative; }
+  .recent-activity .ra-list:not([hidden])::before {
+    content: ""; position: absolute; top: 21px; bottom: 21px; left: 20px;
+    width: 1px; background: var(--line-soft);
+  }
+  .recent-activity .row { border-top: none; padding: 9px 0; position: relative; }
+  /* the icon must sit ABOVE the thread (the chip background masks the line so it
+     reads as beads on a string, not a line crossing each glyph). */
+  .recent-activity .row .ricon { position: relative; z-index: 1; }
+  /* AA fix: outgoing/contract glyph used bare --acc (fails WCAG AA). Switch to
+     --acc-ink; incoming keeps --good-ink. */
+  .recent-activity .row .ricon.acc { color: var(--acc-ink); }
+  .recent-activity .row .ricon.in { color: var(--good-ink); }
 </style>
 
 <script>

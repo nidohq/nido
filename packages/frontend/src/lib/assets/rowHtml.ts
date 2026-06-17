@@ -24,8 +24,13 @@ export function assetRowHtml(a: AssetHolding): string {
   const icon = a.verified && a.icon
     ? `<img class="asset-icon" src="${esc(a.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
     : "";
-  return `<a class="row" data-contract="${esc(a.contractId)}" href="${esc(a.explorerUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(a.contractId)}">
+  // The Nest: an unverified holding gets an amber "perch" cushion + an inline
+  // chip. The marker class lets container CSS distinguish it (rows are injected
+  // via innerHTML, so a styling hook must live on the element itself).
+  const rowCls = a.verified ? "row" : "row unverified";
+  const tag = a.verified ? "" : `<span class="chip warn rtag">unverified</span>`;
+  return `<a class="${rowCls}" data-contract="${esc(a.contractId)}" href="${esc(a.explorerUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(a.contractId)}">
       <span class="ricon asset-initial">${esc(initial)}${icon}</span>
-      <span class="rmain"><span class="rtitle">${esc(a.code)}</span><span class="rsub">${esc(sub)}</span></span>
+      <span class="rmain"><span class="rtitle">${esc(a.code)}${tag}</span><span class="rsub">${esc(sub)}</span></span>
       <span class="ramt">${esc(a.formatted)}</span></a>`;
 }
