@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { StrKey, Buffer as _Buffer } from '@stellar/stellar-sdk';
+import { StrKey, Buffer as _Buffer, xdr } from '@stellar/stellar-sdk';
 import {
   planRotation,
   describeRotation,
+  thresholdInstallParam,
   type RotationPlan,
 } from './multisigRotation.js';
 
@@ -15,6 +16,35 @@ function newPubkey(): Uint8Array {
   p[1] = 0x99;
   return p;
 }
+
+describe('thresholdInstallParam (#72 dual-SDK fix)', () => {
+  // The spec-built ScVal must be byte-identical to the old hand-built
+  // scvMap{ threshold: u32 } so on-chain decode into SimpleThresholdAccountParams
+  // is unchanged. The fix only changes WHICH stellar-base copy builds it.
+  it('encodes identically to the hand-built scvMap{threshold:u32}', () => {
+    const expected = xdr.ScVal.scvMap([
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol('threshold'),
+        val: xdr.ScVal.scvU32(1),
+      }),
+    ]);
+    expect(thresholdInstallParam(1).toXDR('base64')).toBe(expected.toXDR('base64'));
+  });
+
+  it('round-trips the threshold value', () => {
+    const sc = thresholdInstallParam(3);
+    expect(sc.toXDR('base64')).toBe(
+      xdr.ScVal
+        .scvMap([
+          new xdr.ScMapEntry({
+            key: xdr.ScVal.scvSymbol('threshold'),
+            val: xdr.ScVal.scvU32(3),
+          }),
+        ])
+        .toXDR('base64'),
+    );
+  });
+});
 
 describe('planRotation', () => {
   it('emits an add_signer call for a new passkey', () => {

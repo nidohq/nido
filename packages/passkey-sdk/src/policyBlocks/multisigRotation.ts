@@ -18,13 +18,53 @@
  */
 
 import { Buffer } from 'buffer';
-import { xdr } from '@stellar/stellar-sdk';
+import type { xdr } from '@stellar/stellar-sdk';
+import type { Spec } from '@stellar/stellar-sdk/contract';
 import { Client as SmartAccountClient } from '@nidohq/smart-account';
+import { Client as MultisigPolicyClient } from '@nidohq/multisig-policy';
 import type { Signer } from '@nidohq/smart-account';
 import { extractXdrOperations } from '../assembledTx.js';
 import type { TxBuild } from './types.js';
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
+
+let memoizedThresholdSpec: Spec | undefined;
+function thresholdPolicySpec(): Spec {
+  // Dummy contract id — we only need the embedded Spec, never an RPC call.
+  memoizedThresholdSpec ??= new MultisigPolicyClient({
+    contractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+    networkPassphrase: TESTNET_PASSPHRASE,
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+  }).spec;
+  return memoizedThresholdSpec;
+}
+
+/**
+ * ScVal for `SimpleThresholdAccountParams { threshold: u32 }`, the multisig
+ * policy's install param.
+ *
+ * Built through the multisig-policy bindings' `Spec` — NOT `xdr.ScVal.scvMap`
+ * from the bare `@stellar/stellar-sdk` specifier — so the returned ScVal lives
+ * in the SAME stellar-base copy the smart-account bindings' `funcArgsToScVals`
+ * instanceof-checks against in browser bundles. Constructing it from the bare
+ * specifier yields an ScVal from a SECOND stellar-base (vite's `browser`
+ * condition vs `@stellar/stellar-sdk/contract`'s CJS build), so the
+ * `instanceof xdr.ScVal` passthrough fails and the host throws "cannot
+ * interpret <minified> value as ScVal" before signing. See the DUAL-SDK HAZARD
+ * note in `packages/frontend/src/lib/spendingLimitParams.ts` (#72). Node tests
+ * resolve one copy, so this only bites browser bundles.
+ */
+export function thresholdInstallParam(threshold: number): xdr.ScVal {
+  const spec = thresholdPolicySpec();
+  const installParams = spec
+    .getFunc('install')
+    .inputs()
+    .find((input) => input.name().toString() === 'install_params');
+  if (!installParams) {
+    throw new Error('multisig-policy spec has no install(install_params, …) input');
+  }
+  return spec.nativeToScVal({ threshold }, installParams.type());
+}
 
 /** A new External (passkey) signer to install. */
 export interface NewPasskeySigner {
@@ -238,16 +278,11 @@ export async function buildRotation(args: BuildRotationArgs): Promise<RotationTx
       tx = await client.add_policy({
         context_rule_id: call.contextRuleId,
         policy: call.policyAddress,
-        // The binding erases the install param to `any` (it is a Val on
-        // chain); hand it a pre-encoded ScVal — the generated client passes
-        // ScVal instances through untouched. SimpleThresholdAccountParams
-        // is a one-field struct → ScMap with a single Symbol key.
-        install_param: xdr.ScVal.scvMap([
-          new xdr.ScMapEntry({
-            key: xdr.ScVal.scvSymbol('threshold'),
-            val: xdr.ScVal.scvU32(call.threshold),
-          }),
-        ]),
+        // The binding erases the install param to `any` (it is a Val on chain);
+        // hand it a pre-encoded ScVal. Build it through the policy bindings'
+        // Spec so it shares the smart-account bindings' stellar-base copy in
+        // browser bundles — see thresholdInstallParam (#72).
+        install_param: thresholdInstallParam(call.threshold),
       });
     }
     operations.push(...extractXdrOperations(tx, 'multisig-rotation'));
