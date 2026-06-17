@@ -967,7 +967,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       nameLink.href = accountShareUrl(rootHost, existingName);
       nameLink.textContent = accountShareLabel(rootHost, existingName);
     } else {
-      // Show the claim-a-name CTA (now a single coral button sitting under the
+      // Show the claim-a-name CTA (now a single coral button sitting above the
       // contract address in the hero).
       const topBtn = document.getElementById("claim-name-top-btn") as HTMLButtonElement | null;
       const inlineForm = document.getElementById("claim-name-inline") as HTMLElement | null;
