@@ -11,7 +11,7 @@
 
 import { isContractId } from '@nidohq/passkey-sdk';
 
-const ADDRESS_CACHE_KEY = 'g2c:wallet-kit:address';
+const ADDRESS_CACHE_KEY = 'nido:wallet-kit:address';
 
 declare const localStorage: {
   getItem(key: string): string | null;

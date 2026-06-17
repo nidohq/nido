@@ -17,27 +17,45 @@ describe('accountUrl', () => {
     );
   });
 
-  it('preview from wallet origin (contract--pr-N): uses true apex', () => {
-    expect(accountUrl('cabc1234--pr-10.mysoroban.xyz', C, '/account/')).toBe(
-      `//${C.toLowerCase()}--pr-10.mysoroban.xyz/account/`,
+  it('preview from wallet origin: uses the full account with a numeric suffix', () => {
+    expect(accountUrl(`${C.toLowerCase()}--100.mysoroban.xyz`, C, '/account/')).toBe(
+      `//${C.toLowerCase()}--100.mysoroban.xyz/account/`,
     );
   });
 
-  it('preview from bare preview root (pr-N): uses apex', () => {
-    expect(accountUrl('pr-10.mysoroban.xyz', C, '/account/')).toBe(
-      `//${C.toLowerCase()}--pr-10.mysoroban.xyz/account/`,
+  it('preview from bare numeric preview root: uses the full account with a numeric suffix', () => {
+    expect(accountUrl('100.mysoroban.xyz', C, '/account/')).toBe(
+      `//${C.toLowerCase()}--100.mysoroban.xyz/account/`,
     );
   });
 
-  // Regression: status-message--pr-24.mysoroban.xyz → the dApp origin in a PR
+  it('preview accepts the legacy pr-N root but emits numeric account URLs', () => {
+    expect(accountUrl('pr-100.mysoroban.xyz', C, '/account/')).toBe(
+      `//${C.toLowerCase()}--100.mysoroban.xyz/account/`,
+    );
+  });
+
+  // Regression: status-message--24.mysoroban.xyz -> the dApp origin in a PR
   // preview deploy. accountUrl previously produced the wallet hostname with
-  // a duplicated preview prefix (`<acc>--pr-24.pr-24.mysoroban.xyz`)
+  // a duplicated preview prefix (`<acc>--24.24.mysoroban.xyz`)
   // because `stripSubdomain` preserves the prefix as its own segment for
   // wallet-context usage. The fix derives the apex from `host.split('.').slice(1)`
   // instead, dropping the dApp's first label outright.
-  it('preview from a reserved-dApp origin (status-message--pr-N): no duplicate prefix', () => {
-    expect(accountUrl('status-message--pr-24.mysoroban.xyz', C, '/security/delegate/')).toBe(
-      `//${C.toLowerCase()}--pr-24.mysoroban.xyz/security/delegate/`,
+  it('preview from a reserved-dApp origin (status-message--N): no duplicate prefix', () => {
+    expect(accountUrl('status-message--100.mysoroban.xyz', C, '/security/delegate/')).toBe(
+      `//${C.toLowerCase()}--100.mysoroban.xyz/security/delegate/`,
+    );
+  });
+
+  it('preview preserves existing query and hash', () => {
+    expect(accountUrl('100.mysoroban.xyz', C, '/new-account/?salt=abc#salt=abc')).toBe(
+      `//${C.toLowerCase()}--100.mysoroban.xyz/new-account/?salt=abc#salt=abc`,
+    );
+  });
+
+  it('preview keeps name-based account URLs readable', () => {
+    expect(accountUrl('100.mysoroban.xyz', 'alice', '/account/')).toBe(
+      '//alice--100.mysoroban.xyz/account/',
     );
   });
 
@@ -64,7 +82,19 @@ describe('stripSubdomain', () => {
     expect(stripSubdomain('cabc1234.mysoroban.xyz')).toBe('mysoroban.xyz');
   });
   it('preserves preview prefix as its own segment', () => {
-    expect(stripSubdomain('cabc1234--pr-10.mysoroban.xyz')).toBe('pr-10.mysoroban.xyz');
+    expect(stripSubdomain('cabc1234--10.mysoroban.xyz')).toBe('10.mysoroban.xyz');
+  });
+  it('normalizes legacy preview suffixes to numeric preview roots', () => {
+    expect(stripSubdomain('cabc1234--pr-10.mysoroban.xyz')).toBe('10.mysoroban.xyz');
+  });
+  it('keeps a bare numeric preview root intact (does not drop the preview number)', () => {
+    // Regression: a page loaded ON the preview root must not collapse to the
+    // production apex, or `accountUrl(stripSubdomain(host), …)` loses `--<N>`
+    // and redirects the account onto the production host.
+    expect(stripSubdomain('10.mysoroban.xyz')).toBe('10.mysoroban.xyz');
+  });
+  it('normalizes a legacy bare preview root to the numeric form', () => {
+    expect(stripSubdomain('pr-10.mysoroban.xyz')).toBe('10.mysoroban.xyz');
   });
   it('returns the tail when host has no subdomain (no-op on apex is the caller\'s job)', () => {
     // The function always drops the first label. Callers know whether they
@@ -81,7 +111,17 @@ describe('contractIdFromHostname', () => {
     expect(contractIdFromHostname(`${C.toLowerCase()}.mysoroban.xyz`)).toBe(C);
   });
   it('strips preview suffix', () => {
+    expect(contractIdFromHostname(`${C.toLowerCase()}--24.mysoroban.xyz`)).toBe(C);
+  });
+  it('strips a legacy preview suffix', () => {
     expect(contractIdFromHostname(`${C.toLowerCase()}--pr-24.mysoroban.xyz`)).toBe(C);
+  });
+  it('treats a former c-<32> preview alias as an ordinary subdomain (no ?account= read)', () => {
+    // The abandoned alias reader used to resolve `c-<32>` labels from a
+    // `?account=` query. That cluster is gone: such a label is now just
+    // uppercased like any other first label.
+    const alias = `c-${'a'.repeat(32)}`;
+    expect(contractIdFromHostname(`${alias}--100.mysoroban.xyz`)).toBe(`C-${'A'.repeat(32)}`);
   });
   it('does not validate — returns the first-label uppercased for any host with >1 label', () => {
     // contractIdFromHostname has no strkey check; isContractId does that.
@@ -98,17 +138,21 @@ describe('nameFromHostname', () => {
     expect(nameFromHostname('alice.mysoroban.xyz')).toBe('alice');
   });
   it('strips preview suffix', () => {
+    expect(nameFromHostname('alice--24.mysoroban.xyz')).toBe('alice');
+  });
+  it('strips legacy preview suffix', () => {
     expect(nameFromHostname('alice--pr-24.mysoroban.xyz')).toBe('alice');
   });
   it('returns null for contract subdomains', () => {
     expect(nameFromHostname(`${C.toLowerCase()}.mysoroban.xyz`)).toBe(null);
   });
   it('returns null for the bare preview root', () => {
+    expect(nameFromHostname('24.mysoroban.xyz')).toBe(null);
     expect(nameFromHostname('pr-24.mysoroban.xyz')).toBe(null);
   });
   it('returns null for reserved dApp subdomains', () => {
     expect(nameFromHostname('status-message.mysoroban.xyz')).toBe(null);
-    expect(nameFromHostname('status-message--pr-24.mysoroban.xyz')).toBe(null);
+    expect(nameFromHostname('status-message--24.mysoroban.xyz')).toBe(null);
   });
 });
 
@@ -124,13 +168,18 @@ describe('dappUrl', () => {
     );
   });
   it('preview: contract subdomain → reserved-dapp subdomain with same prefix', () => {
-    expect(dappUrl('cabc1234--pr-24.mysoroban.xyz', 'status-message', '/?contract=X')).toBe(
-      '//status-message--pr-24.mysoroban.xyz/?contract=X',
+    expect(dappUrl('cabc1234--24.mysoroban.xyz', 'status-message', '/?contract=X')).toBe(
+      '//status-message--24.mysoroban.xyz/?contract=X',
     );
   });
   it('preview: bare preview root → reserved-dapp subdomain', () => {
+    expect(dappUrl('24.mysoroban.xyz', 'status-message', '/')).toBe(
+      '//status-message--24.mysoroban.xyz/',
+    );
+  });
+  it('preview: legacy bare preview root → numeric reserved-dapp subdomain', () => {
     expect(dappUrl('pr-24.mysoroban.xyz', 'status-message', '/')).toBe(
-      '//status-message--pr-24.mysoroban.xyz/',
+      '//status-message--24.mysoroban.xyz/',
     );
   });
 });
@@ -140,6 +189,7 @@ describe('dappPathFromHostname', () => {
     expect(dappPathFromHostname('status-message.mysoroban.xyz')).toBe('/status-message/');
   });
   it('handles preview variants', () => {
+    expect(dappPathFromHostname('status-message--24.mysoroban.xyz')).toBe('/status-message/');
     expect(dappPathFromHostname('status-message--pr-24.mysoroban.xyz')).toBe('/status-message/');
   });
   it('returns null for non-reserved hosts', () => {

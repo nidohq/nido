@@ -175,7 +175,7 @@ describe("loadAssets (wiring)", () => {
     ]);
     expect(holdings[0].icon).toBe("https://x.test/xlm.png"); // soroswap backfill
     // Curated assets are not persisted — the list itself is the durable source.
-    expect(localStorage.getItem(`g2c:assets:known:${SELF}`) ?? "[]").not.toContain(USDC_SAC);
+    expect(localStorage.getItem(`nido:assets:known:${SELF}`) ?? "[]").not.toContain(USDC_SAC);
   });
 
   it("probes non-SAC tokens, keeps confirmed holders, drops zeros and non-tokens, persists confirmed finds", async () => {
@@ -189,7 +189,7 @@ describe("loadAssets (wiring)", () => {
     // non-token sits in the persisted store from a previous session and now
     // DEFINITIVELY fails its balance simulation (sim-level error).
     localStorage.setItem(
-      `g2c:assets:known:${SELF}`,
+      `nido:assets:known:${SELF}`,
       JSON.stringify([{ contractId: JUNK_TOKEN, sac: false, source: "events" }]),
     );
     vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: 3_000_000 } as never);
@@ -222,14 +222,14 @@ describe("loadAssets (wiring)", () => {
       ["WERT", "42", false],  // probe symbol + 6 decimals, unverified
     ]);
     // Confirmed find persisted; confirmed non-token pruned.
-    const stored = localStorage.getItem(`g2c:assets:known:${SELF}`)!;
+    const stored = localStorage.getItem(`nido:assets:known:${SELF}`)!;
     expect(stored).toContain(SEP41_TOKEN);
     expect(stored).not.toContain(JUNK_TOKEN);
   });
 
   it("a transient probe failure keeps a stored holding (only confirmed absence prunes)", async () => {
     localStorage.setItem(
-      `g2c:assets:known:${SELF}`,
+      `nido:assets:known:${SELF}`,
       JSON.stringify([{ contractId: SEP41_TOKEN, code: "WERT", sac: false, source: "events" }]),
     );
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
@@ -245,7 +245,7 @@ describe("loadAssets (wiring)", () => {
 
     expect(holdings.map((h) => h.code)).toEqual(["XLM"]); // can't show what we can't read...
     // ...but the confirmed holding survives in the store for the next load.
-    expect(localStorage.getItem(`g2c:assets:known:${SELF}`)).toContain(SEP41_TOKEN);
+    expect(localStorage.getItem(`nido:assets:known:${SELF}`)).toContain(SEP41_TOKEN);
   });
 
   it("an event spray can't starve a stored holding out of the probe budget or the store", async () => {
@@ -256,7 +256,7 @@ describe("loadAssets (wiring)", () => {
       return StrKey.encodeContract(buf);
     });
     localStorage.setItem(
-      `g2c:assets:known:${SELF}`,
+      `nido:assets:known:${SELF}`,
       JSON.stringify([{ contractId: SEP41_TOKEN, code: "WERT", sac: false, source: "events" }]),
     );
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
@@ -288,7 +288,7 @@ describe("loadAssets (wiring)", () => {
     // The stored holding was probed FIRST (before sprayed finds), so it's
     // shown and retained; the spray persists nothing.
     expect(holdings.map((h) => h.code)).toContain("WERT");
-    const stored = JSON.parse(localStorage.getItem(`g2c:assets:known:${SELF}`)!) as { contractId: string }[];
+    const stored = JSON.parse(localStorage.getItem(`nido:assets:known:${SELF}`)!) as { contractId: string }[];
     expect(stored.map((s) => s.contractId)).toEqual([SEP41_TOKEN]);
   });
 

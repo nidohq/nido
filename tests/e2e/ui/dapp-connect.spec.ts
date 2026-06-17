@@ -9,12 +9,12 @@ const DAPP = `http://dapp.localhost:${PORT}`;
 
 test.describe('@fast dapp connect ceremony', () => {
   test('picker returns the chosen account via redirect', async ({ page }) => {
-    // Seed g2c:accounts on the WALLET origin (localhost:PORT) before loading
+    // Seed nido:accounts on the WALLET origin (localhost:PORT) before loading
     // the connect page, so loadAccounts() finds the account.
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
     await page.evaluate((acc) => {
-      // Account-store format: key "g2c:accounts", value = JSON array of C-address strings.
-      localStorage.setItem('g2c:accounts', JSON.stringify([acc]));
+      // Account-store format: key "nido:accounts", value = JSON array of C-address strings.
+      localStorage.setItem('nido:accounts', JSON.stringify([acc]));
     }, FAKE_CONTRACT_ID);
 
     const ret = `${DAPP}/cb`;
@@ -43,7 +43,7 @@ test.describe('@fast dapp connect ceremony', () => {
   test('previous= highlights the connected account but still shows the full list', async ({ page }) => {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
     await page.evaluate(
-      ([a, b]) => localStorage.setItem('g2c:accounts', JSON.stringify([a, b])),
+      ([a, b]) => localStorage.setItem('nido:accounts', JSON.stringify([a, b])),
       [FAKE_CONTRACT_ID, SECOND_CONTRACT_ID],
     );
 
@@ -67,7 +67,7 @@ test.describe('@fast dapp connect ceremony', () => {
   test('single-account device matching previous= auto-confirms without a click', async ({ page }) => {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
     await page.evaluate(
-      (acc) => localStorage.setItem('g2c:accounts', JSON.stringify([acc])),
+      (acc) => localStorage.setItem('nido:accounts', JSON.stringify([acc])),
       FAKE_CONTRACT_ID,
     );
 

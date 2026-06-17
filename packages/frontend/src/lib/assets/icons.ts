@@ -55,7 +55,7 @@ export function parseTomlCurrencies(toml: string): TomlCurrency[] {
   return out;
 }
 
-const cacheKey = (contractId: string) => `g2c:assets:icon:${contractId}`;
+const cacheKey = (contractId: string) => `nido:assets:icon:${contractId}`;
 
 /**
  * The issuer account's on-chain home_domain. Curated lists often omit

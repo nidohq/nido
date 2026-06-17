@@ -546,7 +546,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
   function renderStoredNameClaimDetails(name: string, signHash: string): string {
     const account = contractId;
-    const registry = localStorage.getItem("g2c:name-registry-id");
+    const registry = localStorage.getItem("nido:name-registry-id");
     const row = (label: string, valueHtml: string, first = false) => {
       const border = first ? "" : "border-top:1px solid var(--line-soft);";
       return `<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 0;${border}">
@@ -573,7 +573,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   // operation, not just the digest. Best-effort: any failure leaves the
   // already-rendered hash card in place.
   async function renderClaimTxDetails($tech: HTMLElement, signHash: string) {
-    const txXdr = localStorage.getItem("g2c:name-txXdr");
+    const txXdr = localStorage.getItem("nido:name-txXdr");
     if (!txXdr) return;
     try {
       // stellar-sdk's XDR parsing needs the Buffer global (same lazy polyfill
@@ -625,8 +625,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     // flow stashed both), so a mismatched/forged request can't borrow it.
     const summary = describeSignRequest({
       signHash: signHashParam!,
-      claimHash: localStorage.getItem("g2c:name-claim-hash"),
-      claimName: localStorage.getItem("g2c:name-pending"),
+      claimHash: localStorage.getItem("nido:name-claim-hash"),
+      claimName: localStorage.getItem("nido:name-pending"),
     });
     const signingNameClaim = summary.kind === "name-claim" ? summary.name : null;
     if (summary.kind === "name-claim") {
@@ -957,12 +957,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
     // Helper: lazily get funded keypair for tx submission
     async function getNameKeypair(): Promise<Keypair> {
-      const stored = localStorage.getItem("g2c:name-keypair");
+      const stored = localStorage.getItem("nido:name-keypair");
       if (stored) return Keypair.fromSecret(stored);
       const kp = Keypair.random();
       const resp = await fetch(`https://friendbot.stellar.org?addr=${kp.publicKey()}`);
       if (!resp.ok) throw new Error(`Friendbot funding failed: ${resp.statusText}`);
-      localStorage.setItem("g2c:name-keypair", kp.secret());
+      localStorage.setItem("nido:name-keypair", kp.secret());
       return kp;
     }
 
@@ -1041,15 +1041,15 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         const assembled = rpc.assembleTransaction(simTx, successSim).build();
 
         // Store assembled transaction data for after signing redirect
-        localStorage.setItem("g2c:name-txXdr", assembled.toXDR());
-        localStorage.setItem("g2c:name-lastLedger", lastLedger.toString());
-        localStorage.setItem("g2c:name-pending", name);
-        localStorage.setItem("g2c:name-registry-id", nameRegistryId);
+        localStorage.setItem("nido:name-txXdr", assembled.toXDR());
+        localStorage.setItem("nido:name-lastLedger", lastLedger.toString());
+        localStorage.setItem("nido:name-pending", name);
+        localStorage.setItem("nido:name-registry-id", nameRegistryId);
         // Bind the friendly "claiming <name>" copy shown on the signing surface
         // to the exact hash we're about to ask the user to sign. The signing
         // mode (same origin) reads this back and only shows the name when the
         // incoming ?sign= hash matches — see describeSignRequest.
-        localStorage.setItem("g2c:name-claim-hash", authHashHex);
+        localStorage.setItem("nido:name-claim-hash", authHashHex);
 
         $nameResult.textContent = "Taking you to confirm with your passkey…";
 
@@ -1085,10 +1085,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
               (globalThis as any).Buffer = B;
             }
 
-            const txXdr = localStorage.getItem("g2c:name-txXdr");
-            const lastLedgerStr = localStorage.getItem("g2c:name-lastLedger");
-            const pendingName = localStorage.getItem("g2c:name-pending");
-            const keypairSecret = localStorage.getItem("g2c:name-keypair");
+            const txXdr = localStorage.getItem("nido:name-txXdr");
+            const lastLedgerStr = localStorage.getItem("nido:name-lastLedger");
+            const pendingName = localStorage.getItem("nido:name-pending");
+            const keypairSecret = localStorage.getItem("nido:name-keypair");
 
             if (!txXdr || !lastLedgerStr || !keypairSecret || !pendingName) {
               throw new Error("Missing stored transaction data. Please try again.");
@@ -1179,11 +1179,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
               saveAccountName(contractId, pendingName);
 
               // Clean up stored transaction data
-              localStorage.removeItem("g2c:name-txXdr");
-              localStorage.removeItem("g2c:name-lastLedger");
-              localStorage.removeItem("g2c:name-pending");
-              localStorage.removeItem("g2c:name-claim-hash");
-              localStorage.removeItem("g2c:name-registry-id");
+              localStorage.removeItem("nido:name-txXdr");
+              localStorage.removeItem("nido:name-lastLedger");
+              localStorage.removeItem("nido:name-pending");
+              localStorage.removeItem("nido:name-claim-hash");
+              localStorage.removeItem("nido:name-registry-id");
 
               // Redirect to the claimed name's subdomain
               const rootHost = stripSubdomain(window.location.host);

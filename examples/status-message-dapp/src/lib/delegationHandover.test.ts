@@ -95,13 +95,13 @@ describe("pending delegation round-trip", () => {
 
 	it("treats a corrupt entry as absent", () => {
 		const store = fakeStore()
-		store.setItem("g2c:pendingDelegation", "{ not json")
+		store.setItem("nido:pendingDelegation", "{ not json")
 		expect(consumePendingDelegation(store)).toBe(null)
 	})
 
 	it("rejects a record missing required fields", () => {
 		const store = fakeStore()
-		store.setItem("g2c:pendingDelegation", JSON.stringify({ account: "CABC" }))
+		store.setItem("nido:pendingDelegation", JSON.stringify({ account: "CABC" }))
 		expect(consumePendingDelegation(store)).toBe(null)
 	})
 })

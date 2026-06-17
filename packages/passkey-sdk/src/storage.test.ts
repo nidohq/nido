@@ -50,7 +50,7 @@ describe('policy storage', () => {
   });
 
   it('updates pending setup keys and migrates old secret-key rows', () => {
-    localStorage.setItem("g2c:pending", JSON.stringify([{ contractId: ACC, secretKey: "SOLD" }]));
+    localStorage.setItem("nido:pending", JSON.stringify([{ contractId: ACC, secretKey: "SOLD" }]));
     expect(loadPendingAccounts()).toEqual([{ contractId: ACC, secretKey: "SOLD", setupKey: "SOLD" }]);
 
     savePendingAccount(ACC, "salt-1");

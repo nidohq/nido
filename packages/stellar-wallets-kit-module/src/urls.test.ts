@@ -28,18 +28,36 @@ describe('accountOrigin', () => {
   it('throws on an invalid contract id', () => {
     expect(() => accountOrigin(BASE, 'not-a-contract')).toThrow();
   });
-  it('encodes a PR-preview base into a single `--pr-N` subdomain level', () => {
-    // The dApp-derived base collapses to `pr-34.<apex>` in previews; the
-    // account origin must be `<acc>--pr-34.<apex>`, NOT `<acc>.pr-34.<apex>`,
-    // so wildcard TLS + the WebAuthn rpId still match.
+  it('encodes a numeric PR-preview base into a single-level account origin', () => {
+    expect(accountOrigin('34.mysoroban.xyz', C)).toBe(
+      `https://${C.toLowerCase()}--34.mysoroban.xyz`,
+    );
+  });
+  it('accepts a legacy pr-N preview base but emits numeric account origins', () => {
     expect(accountOrigin('pr-34.mysoroban.xyz', C)).toBe(
-      `https://${C.toLowerCase()}--pr-34.mysoroban.xyz`,
+      `https://${C.toLowerCase()}--34.mysoroban.xyz`,
     );
   });
   it('preserves an explicit scheme with a PR-preview base', () => {
-    expect(accountOrigin('http://pr-7.localhost', C)).toBe(
-      `http://${C.toLowerCase()}--pr-7.localhost`,
+    expect(accountOrigin('http://7.localhost', C)).toBe(
+      `http://${C.toLowerCase()}--7.localhost`,
     );
+  });
+});
+
+describe('preview signing URLs', () => {
+  it('use the full account id in the numeric preview host', () => {
+    const u = new URL(
+      signTransactionUrl({
+        base: '100.mysoroban.xyz',
+        account: C,
+        xdr: 'AAAA',
+        dappOrigin: DAPP,
+        returnUrl: `${DAPP}/cb`,
+      }),
+    );
+    expect(u.host).toBe(`${C.toLowerCase()}--100.mysoroban.xyz`);
+    expect(u.searchParams.get('account')).toBeNull();
   });
 });
 

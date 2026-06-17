@@ -67,7 +67,7 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
     />
   </head>
   <body>
-    <a id="preview-banner" style="display:none" target="_blank" rel="noopener"></a>
+    <a id="preview-banner" hidden target="_blank" rel="noopener"></a>
     <div class="stage">
       <div id="webview-warning" style="display:none">
         <p>Passkeys need your real browser to work their magic.</p>
@@ -101,10 +101,8 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
   @import "../styles/nido.css";
 
   #preview-banner {
-    position: fixed;
+    position: sticky;
     top: 0;
-    left: 0;
-    right: 0;
     display: none;
     background: #e11d48;
     color: #fff;
@@ -116,12 +114,12 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
     z-index: 9999;
   }
 
-  #preview-banner:hover {
-    background: #be123c;
+  #preview-banner:not([hidden]) {
+    display: block;
   }
 
-  body:has(#preview-banner[style*="display: block"]) {
-    padding-top: 2.2rem;
+  #preview-banner:hover {
+    background: #be123c;
   }
 
   #webview-warning {
@@ -161,14 +159,14 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
 
   // Preview banner
   const sub = window.location.hostname.split(".")[0];
-  const match = sub.match(/(?:--)?pr-(\d+)$/);
+  const match = sub.match(/^(?:.*--(?:pr-)?|pr-)?(\d+)$/);
   const githubRepository = import.meta.env.PUBLIC_GITHUB_REPOSITORY;
   if (match && githubRepository) {
     const prNum = match[1];
     const banner = document.getElementById("preview-banner") as HTMLAnchorElement;
     banner.textContent = `Preview PR #${prNum}`;
     banner.href = `https://github.com/${githubRepository}/pull/${prNum}`;
-    banner.style.display = "block";
+    banner.hidden = false;
   }
 
   // Passkey-context warning — two distinct problems get two messages:

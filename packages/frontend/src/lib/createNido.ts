@@ -5,8 +5,13 @@ function setupHost(host: string): string {
   if (hostname === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
     return host;
   }
-  if (/^pr-\d+$/.test(hostname.split(".")[0]) || hostname.split(".").length <= 2) {
+  const first = hostname.split(".")[0];
+  if (/^\d+$/.test(first) || hostname.split(".").length <= 2) {
     return host;
+  }
+  const legacyPreview = first.match(/^pr-(\d+)$/);
+  if (legacyPreview) {
+    return host.replace(/^pr-\d+(?=\.)/, legacyPreview[1]);
   }
   return stripSubdomain(host);
 }

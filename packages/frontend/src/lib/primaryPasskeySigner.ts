@@ -37,7 +37,7 @@ const RELAYER_EXPIRATION_OFFSET = 120;
 
 /** localStorage key shared with `account/index.astro` so we don't
  *  proliferate ephemeral submitter accounts. */
-const SUBMITTER_KEY = 'g2c:name-keypair';
+const SUBMITTER_KEY = 'nido:name-keypair';
 
 /**
  * Get or mint an ephemeral G-address keypair used as the tx submitter

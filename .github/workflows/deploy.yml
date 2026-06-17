@@ -31,6 +31,7 @@ jobs:
           # the relayer's public fund address (simulation-only tx source).
           PUBLIC_RELAYER_URL: https://nido.fly.dev
           PUBLIC_RELAYER_SIM_SOURCE: GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2
+          PUBLIC_RECOVERY_RELAY_URL: https://relay.nido.fyi
         run: npx astro build --root ./packages/frontend
 
       - name: Deploy to Cloudflare Pages
@@ -48,6 +49,12 @@ jobs:
       # Requires the CF API token to include Workers Scripts:Edit (not just Pages).
       - name: Deploy nido.fyi proxy worker
         run: npx wrangler deploy --config frontend/worker-proxy-nido/wrangler.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy recovery-relay worker
+        run: npx wrangler deploy --config infra/recovery-relay/wrangler.toml
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

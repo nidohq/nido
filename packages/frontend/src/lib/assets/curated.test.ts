@@ -104,13 +104,13 @@ describe("fetchCuratedAssets", () => {
     expect(assets).toHaveLength(4);
     expect(assets[0].code).toBe("USDC");
     expect(assets.find((a) => a.contractId === NATIVE_SAC_ID)?.icon).toBe("https://x.test/xlm.png");
-    expect(localStorage.getItem("g2c:assets:curated")).toBe(JSON.stringify(TOP50_DOC));
-    expect(localStorage.getItem("g2c:assets:curated:soroswap")).toBe(JSON.stringify(SOROSWAP_DOC));
+    expect(localStorage.getItem("nido:assets:curated")).toBe(JSON.stringify(TOP50_DOC));
+    expect(localStorage.getItem("nido:assets:curated:soroswap")).toBe(JSON.stringify(SOROSWAP_DOC));
   });
 
   it("falls back per-list to the cached copy when the network fails", async () => {
-    localStorage.setItem("g2c:assets:curated", JSON.stringify(TOP50_DOC));
-    localStorage.setItem("g2c:assets:curated:soroswap", JSON.stringify(SOROSWAP_DOC));
+    localStorage.setItem("nido:assets:curated", JSON.stringify(TOP50_DOC));
+    localStorage.setItem("nido:assets:curated:soroswap", JSON.stringify(SOROSWAP_DOC));
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     expect(await fetchCuratedAssets()).toHaveLength(4);
   });

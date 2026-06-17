@@ -4,7 +4,7 @@ import type { AssetCandidate } from "./types.js";
 // the balance probe) without bound.
 const MAX_STORED = 100;
 
-const storageKey = (account: string) => `g2c:assets:known:${account}`;
+const storageKey = (account: string) => `nido:assets:known:${account}`;
 
 /**
  * Tokens this browser has confirmed the account holds. Event discovery only

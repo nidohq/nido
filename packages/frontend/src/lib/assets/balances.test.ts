@@ -132,7 +132,7 @@ describe("probeSep41Token", () => {
 
     expect(probe?.balance).toBe(0n);
     expect(spy).toHaveBeenCalledTimes(1); // balance only
-    expect(localStorage.getItem(`g2c:assets:meta:${SEP41_TOKEN}`)).toBeNull();
+    expect(localStorage.getItem(`nido:assets:meta:${SEP41_TOKEN}`)).toBeNull();
   });
 
   it("rejects a token reporting implausible decimals (would brick amount math)", async () => {
@@ -141,11 +141,11 @@ describe("probeSep41Token", () => {
       .mockResolvedValueOnce(simResult(nativeToScVal(4294967295, { type: "u32" })))
       .mockResolvedValueOnce(simResult(nativeToScVal("EVIL", { type: "string" })));
     expect(await probeSep41Token(SEP41_TOKEN, HOLDER)).toBeNull();
-    expect(localStorage.getItem(`g2c:assets:meta:${SEP41_TOKEN}`)).toBeNull();
+    expect(localStorage.getItem(`nido:assets:meta:${SEP41_TOKEN}`)).toBeNull();
   });
 
   it("ignores a poisoned metadata cache and refetches", async () => {
-    localStorage.setItem(`g2c:assets:meta:${SEP41_TOKEN}`, JSON.stringify({ decimals: 4294967295 }));
+    localStorage.setItem(`nido:assets:meta:${SEP41_TOKEN}`, JSON.stringify({ decimals: 4294967295 }));
     vi.spyOn(rpc.Server.prototype, "simulateTransaction")
       .mockResolvedValueOnce(simResult(nativeToScVal(42n, { type: "i128" })))
       .mockResolvedValueOnce(simResult(nativeToScVal(6, { type: "u32" })))

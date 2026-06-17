@@ -21,15 +21,15 @@ export function loadCredential(contractId: string): { credentialId: Uint8Array; 
 }
 
 export function saveAccount(contractId: string): void {
-  const accounts: string[] = JSON.parse(localStorage.getItem("g2c:accounts") || "[]");
+  const accounts: string[] = JSON.parse(localStorage.getItem("nido:accounts") || "[]");
   if (!accounts.includes(contractId)) {
     accounts.push(contractId);
-    localStorage.setItem("g2c:accounts", JSON.stringify(accounts));
+    localStorage.setItem("nido:accounts", JSON.stringify(accounts));
   }
 }
 
 export function loadAccounts(): string[] {
-  return JSON.parse(localStorage.getItem("g2c:accounts") || "[]");
+  return JSON.parse(localStorage.getItem("nido:accounts") || "[]");
 }
 
 export interface PendingAccount {
@@ -40,27 +40,27 @@ export interface PendingAccount {
 }
 
 export function savePendingAccount(contractId: string, setupKey: string): void {
-  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("g2c:pending") || "[]");
+  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("nido:pending") || "[]");
   const existing = pending.find((p) => p.contractId === contractId);
   if (existing) {
     existing.setupKey = setupKey;
     delete existing.secretKey;
-    localStorage.setItem("g2c:pending", JSON.stringify(pending));
+    localStorage.setItem("nido:pending", JSON.stringify(pending));
   } else {
     pending.push({ contractId, setupKey });
-    localStorage.setItem("g2c:pending", JSON.stringify(pending));
+    localStorage.setItem("nido:pending", JSON.stringify(pending));
   }
 }
 
 export function loadPendingAccounts(): PendingAccount[] {
-  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("g2c:pending") || "[]");
+  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("nido:pending") || "[]");
   return pending.map((p) => ({ ...p, setupKey: p.setupKey ?? p.secretKey ?? "" }));
 }
 
 export function removePendingAccount(contractId: string): void {
-  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("g2c:pending") || "[]");
+  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("nido:pending") || "[]");
   const filtered = pending.filter((p) => p.contractId !== contractId);
-  localStorage.setItem("g2c:pending", JSON.stringify(filtered));
+  localStorage.setItem("nido:pending", JSON.stringify(filtered));
 }
 
 export function activateAccount(contractId: string): void {
@@ -69,11 +69,11 @@ export function activateAccount(contractId: string): void {
 }
 
 export function saveAccountName(contractId: string, name: string): void {
-  localStorage.setItem(`g2c:names:${contractId}`, name);
+  localStorage.setItem(`nido:names:${contractId}`, name);
 }
 
 export function loadAccountName(contractId: string): string | null {
-  return localStorage.getItem(`g2c:names:${contractId}`);
+  return localStorage.getItem(`nido:names:${contractId}`);
 }
 
 // --- Policy storage (Tier C/D from the spec) -------------------------------
@@ -82,10 +82,10 @@ export function loadAccountName(contractId: string): string | null {
 // material includes the private key (Tier D) and must never leave this
 // origin. Keys are namespaced by smart-account address.
 
-const friendsKey = (account: string) => `g2c.${account}.friends`;
+const friendsKey = (account: string) => `nido.${account}.friends`;
 const sessionKey = (account: string, target: string) =>
-  `g2c.${account}.session-key.${target}`;
-const labelsKey = (account: string) => `g2c.${account}.block-labels`;
+  `nido.${account}.session-key.${target}`;
+const labelsKey = (account: string) => `nido.${account}.block-labels`;
 
 export function saveFriendNickname(
   account: string,

@@ -4,7 +4,7 @@ export const RPC_URL = 'https://soroban-testnet.stellar.org';
 export const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 
 /** localStorage key the app uses for the name-tx submitter/fee-payer. */
-export const SUBMITTER_KEY = 'g2c:name-keypair';
+export const SUBMITTER_KEY = 'nido:name-keypair';
 
 /**
  * localStorage key the status-message dApp uses for its tx submitter/fee-payer.
