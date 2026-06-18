@@ -438,37 +438,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     void reserveNidoAddress();
   }
 
-  // Continuity splash. Reservation happens on the apex/preview host, which
-  // spins the Nest while it works, then hard-navigates to the account's own
-  // subdomain (a different origin — no shared state, no cross-document view
-  // transition possible). Landing here cold would snap from that spinner to
-  // the static step, reading as a blink. When we arrive with `prepared=1`,
-  // mirror the spinning "preparing" state for a beat so the spinner looks
-  // continuous across the navigation, then reveal the ready step.
-  if (params.get("prepared") === "1" && contractId && !isSetupReservation) {
-    const $btnSpan = $registerBtn.querySelector("span")!;
-    const readyDisabled = $registerBtn.disabled;
-    const readyBtnLabel = $btnSpan.textContent;
-    const readyIntro = $passkeyIntro.textContent;
-
-    $passkeySection.classList.add("setup-reserving");
-    $registerBtn.disabled = true;
-    $btnSpan.textContent = "Preparing your Nido...";
-    $passkeyIntro.textContent =
-      "Your Nido address is being prepared. Read what's protected here while setup finishes.";
-
-    window.setTimeout(() => {
-      $passkeySection.classList.remove("setup-reserving");
-      $registerBtn.disabled = readyDisabled;
-      $btnSpan.textContent = readyBtnLabel;
-      $passkeyIntro.textContent = readyIntro;
-      // One-shot: drop the flag so a refresh or back-nav doesn't replay it.
-      params.delete("prepared");
-      const query = params.toString();
-      history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
-    }, 650);
-  }
-
   function saltBytes(): Uint8Array {
     if (!saltHex || !/^[0-9a-fA-F]{64}$/.test(saltHex)) {
       throw new Error("Setup salt is missing or invalid. Please start again from the home page.");
@@ -513,12 +482,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       saveSetupSaltCookie(cAddress, saltHex!);
       await syncNidoStorageViaBridge();
 
-      // `prepared=1` tells the destination subdomain it arrived straight from
-      // this reservation, so it can keep the spinning "preparing" state for a
-      // beat instead of snapping to the static step (see the continuity block
-      // near the top of the script). The redirect is a cross-subdomain hard
-      // navigation, so this flag is the only way to carry that intent across.
-      window.location.replace(accountUrl(window.location.host, cAddress, `/new-account/?salt=${encodeURIComponent(saltHex!)}&prepared=1#salt=${encodeURIComponent(saltHex!)}`));
+      window.location.replace(accountUrl(window.location.host, cAddress, `/new-account/?salt=${encodeURIComponent(saltHex!)}#salt=${encodeURIComponent(saltHex!)}`));
     } catch (err: any) {
       $passkeySection.classList.remove("setup-reserving");
       $registerBtn.disabled = true;
