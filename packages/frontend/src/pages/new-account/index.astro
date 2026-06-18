@@ -229,6 +229,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   let passkeyPublicKey: Uint8Array | null = null;
   let credentialIdBytes: Uint8Array | null = null;
   let testnetFundingPromise: Promise<Keypair> | null = null;
+  // Lets a manual tap abort an in-flight auto-attempt of the passkey prompt.
+  let autoPasskeyController: AbortController | null = null;
 
   // --- UI refs ---
 
@@ -583,6 +585,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
   $registerBtn.addEventListener("click", async () => {
     clearError();
+    // A manual tap takes over from any in-flight auto-attempt (see autopass).
+    autoPasskeyController?.abort();
     if (!contractId) {
       showError("No account found in this link. Please start again from the home page.");
       return;
@@ -621,15 +625,18 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   // OS dialog is the prompt on browsers that allow it.
   async function attemptAutoPasskey() {
     if (!contractId || !checkPasskeySupport().ok) return;
+    // Run in the background: do NOT disable the button. The user can tap to take
+    // over at any time (the click handler aborts this attempt first), so a hung
+    // or pending attempt can never strand the button in a disabled state.
+    autoPasskeyController = new AbortController();
+    const options = buildPasskeyCreateOptions();
+    options.signal = autoPasskeyController.signal;
     try {
-      $registerBtn.disabled = true;
-      const credential = (await navigator.credentials.create(
-        buildPasskeyCreateOptions(),
-      )) as PublicKeyCredential;
+      const credential = (await navigator.credentials.create(options)) as PublicKeyCredential;
       await completeRegistration(credential);
     } catch {
-      // No user activation / declined — fall back to the manual button silently.
-      $registerBtn.disabled = false;
+      // Rejected (no user activation on iOS Safari), declined, or aborted by a
+      // manual tap — the ready button is already there for the user. Silent.
     }
   }
 
