@@ -155,6 +155,9 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       <div class="mut" style="display:flex; align-items:center; justify-content:center; gap:8px; font-size:13px; margin-top:26px; opacity:.85;">
         <span class="dot acc"></span><span id="preparing-status-text">Reserving your address…</span>
       </div>
+      <button id="preparing-continue" class="btn acc" style="margin-top:22px;" disabled>
+        <span>Preparing…</span>
+      </button>
       <a id="preparing-home-link" href="/" class="link hidden" style="align-self:center; margin-top:18px; font-size:13.5px;">Start again from home</a>
     </section>
   </div>
@@ -193,7 +196,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   } from "@nidohq/passkey-sdk";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
-  import { withMinimumDuration } from "../../lib/withMinimumDuration";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
   import { NATIVE_SAC_ID, RELAYER_SIM_SOURCE, RELAYER_URL } from "../../lib/network";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation, type RelayerStatus } from "../../lib/relayerClient";
@@ -238,6 +240,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const $passkeyIntro = document.getElementById("passkey-intro")!;
   const $preparingSection = document.getElementById("preparing-section")!;
   const $preparingStatusText = document.getElementById("preparing-status-text")!;
+  const $preparingContinue = document.getElementById("preparing-continue") as HTMLButtonElement;
   const $preparingHomeLink = document.getElementById("preparing-home-link")!;
   const $deploySection = document.getElementById("deploy-section")!;
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
@@ -449,24 +452,48 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     void runReservationFlow();
   }
 
+  // Page 2 (account subdomain) arriving from the reservation page: auto-attempt
+  // the passkey prompt (see attemptAutoPasskey for the user-activation caveat).
+  if (params.get("autopass") === "1" && contractId && !isSetupReservation) {
+    // One-shot: drop the flag so a refresh doesn't re-trigger the attempt.
+    params.delete("autopass");
+    const query = params.toString();
+    history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
+    void attemptAutoPasskey();
+  }
+
   async function runReservationFlow() {
     clearError();
+    const $continueSpan = $preparingContinue.querySelector("span")!;
     try {
-      // Hold the explainer for at least 2.5s so it's readable even when the
-      // reservation RPC is fast; a slow RPC simply extends the dwell.
-      const cAddress = await withMinimumDuration(reserveNidoAddress(), 2500);
-      $preparingStatusText.textContent = "Taking you there…";
-      window.location.replace(
-        accountUrl(
-          window.location.host,
-          cAddress,
-          `/new-account/?salt=${encodeURIComponent(saltHex!)}#salt=${encodeURIComponent(saltHex!)}`,
-        ),
+      // Reserve the address in the background while the user reads the explainer.
+      const cAddress = await reserveNidoAddress();
+      // Reserved — hand the redirect to the user (it's theirs to trigger), and
+      // tell the destination to auto-attempt the passkey prompt on arrival.
+      $preparingStatusText.textContent = "Your Nido is ready.";
+      $continueSpan.textContent = "Continue";
+      $preparingContinue.disabled = false;
+      $preparingContinue.addEventListener(
+        "click",
+        () => {
+          $preparingContinue.disabled = true;
+          $continueSpan.textContent = "Taking you there…";
+          window.location.replace(
+            accountUrl(
+              window.location.host,
+              cAddress,
+              `/new-account/?salt=${encodeURIComponent(saltHex!)}&autopass=1#salt=${encodeURIComponent(saltHex!)}`,
+            ),
+          );
+        },
+        { once: true },
       );
     } catch (err: any) {
-      // Dead end — reservation failed, so stop the spinner and offer a way back.
+      // Dead end — reservation failed, so stop the spinner, hide the button,
+      // and offer a way back.
       $preparingSection.classList.add("is-error");
       $preparingStatusText.textContent = "Setup paused";
+      $preparingContinue.classList.add("hidden");
       $preparingHomeLink.classList.remove("hidden");
       showError(`Couldn't prepare your Nido: ${err.message}`);
     }
@@ -515,6 +542,45 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
   // --- Step 1 · Lock it to you (register passkey) ---
 
+  function buildPasskeyCreateOptions(): CredentialCreationOptions {
+    const userId = new Uint8Array(16);
+    crypto.getRandomValues(userId);
+    return {
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: `Soroban ${contractId}`, id: rpId },
+        user: { id: userId, name: contractId!, displayName: `Account ${contractId}` },
+        pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+        authenticatorSelection: { residentKey: "required", userVerification: "required" },
+        attestation: "none",
+        timeout: 60000,
+      },
+    };
+  }
+
+  // Persist the freshly-created passkey, then advance to the deploy step.
+  async function completeRegistration(credential: PublicKeyCredential) {
+    const reg = parseRegistration(credential as any);
+    passkeyPublicKey = reg.publicKey;
+    credentialIdBytes = reg.credentialId;
+
+    sdkSaveCredential(contractId!, credentialIdBytes, passkeyPublicKey);
+    void startTestnetFunding().catch((err) => console.warn("[nido] testnet funding prep failed", err));
+
+    void buf2base64url(credentialIdBytes);
+    void buf2hex(passkeyPublicKey);
+
+    // Advance to "Setting up your Nido" and kick off the deploy automatically.
+    $step1.classList.remove("on");
+    $step1.classList.add("done");
+    $step2.classList.add("on");
+    $passkeySection.classList.add("hidden");
+    $accountChip.classList.add("hidden");
+    $deploySection.classList.remove("hidden");
+
+    void deploy();
+  }
+
   $registerBtn.addEventListener("click", async () => {
     clearError();
     if (!contractId) {
@@ -530,54 +596,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
     try {
       $registerBtn.disabled = true;
-
-      const userId = new Uint8Array(16);
-      crypto.getRandomValues(userId);
-
       // Drive the REAL ceremony through the sheet — no fake timer. The OS
       // passkey dialog is the source of truth; the sheet closes when it settles.
       const credential = (await withPasskeySheet(
-        () =>
-          navigator.credentials.create({
-            publicKey: {
-              challenge: crypto.getRandomValues(new Uint8Array(32)),
-              rp: { name: `Soroban ${contractId}`, id: rpId },
-              user: {
-                id: userId,
-                name: contractId,
-                displayName: `Account ${contractId}`,
-              },
-              pubKeyCredParams: [{ alg: -7, type: "public-key" }],
-              authenticatorSelection: {
-                residentKey: "required",
-                userVerification: "required",
-              },
-              attestation: "none",
-              timeout: 60000,
-            },
-          }),
+        () => navigator.credentials.create(buildPasskeyCreateOptions()),
         { title: "Lock it to you", sub: "Confirm with your passkey to finish setting up." },
       )) as PublicKeyCredential;
-
-      const reg = parseRegistration(credential as any);
-      passkeyPublicKey = reg.publicKey;
-      credentialIdBytes = reg.credentialId;
-
-      sdkSaveCredential(contractId!, credentialIdBytes, passkeyPublicKey);
-      void startTestnetFunding().catch((err) => console.warn("[nido] testnet funding prep failed", err));
-
-      void buf2base64url(credentialIdBytes);
-      void buf2hex(passkeyPublicKey);
-
-      // Advance to "Setting up your Nido" and kick off the deploy automatically.
-      $step1.classList.remove("on");
-      $step1.classList.add("done");
-      $step2.classList.add("on");
-      $passkeySection.classList.add("hidden");
-      $accountChip.classList.add("hidden");
-      $deploySection.classList.remove("hidden");
-
-      void deploy();
+      await completeRegistration(credential);
     } catch (err: any) {
       if (err.name === "NotAllowedError") {
         showError("We couldn't reach your passkey. If you're in an in-app browser (Twitter, Instagram, etc.), tap the menu (…) and choose \"Open in Safari\" or \"Open in Browser\".");
@@ -587,6 +612,26 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       $registerBtn.disabled = false;
     }
   });
+
+  // Arriving straight from the reservation page (`autopass=1`): try the passkey
+  // prompt automatically. WebAuthn needs a transient user gesture that does NOT
+  // survive the cross-subdomain redirect, so where it's enforced (notably iOS
+  // Safari) this rejects at once — we swallow that silently and leave the ready
+  // button for a manual tap. No sheet here, so the fallback doesn't flicker; the
+  // OS dialog is the prompt on browsers that allow it.
+  async function attemptAutoPasskey() {
+    if (!contractId || !checkPasskeySupport().ok) return;
+    try {
+      $registerBtn.disabled = true;
+      const credential = (await navigator.credentials.create(
+        buildPasskeyCreateOptions(),
+      )) as PublicKeyCredential;
+      await completeRegistration(credential);
+    } catch {
+      // No user activation / declined — fall back to the manual button silently.
+      $registerBtn.disabled = false;
+    }
+  }
 
   // --- Step 2 · Setting up your Nido (deploy account) ---
 
