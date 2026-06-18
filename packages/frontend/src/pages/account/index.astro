@@ -395,6 +395,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     buildClaimHandoffUrl,
   } from "../../lib/claimFlow";
   import { localNidoSnapshot, syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
+  import { createNido } from "../../lib/createNido";
   import { markUsed, readLastUsed } from "../../lib/lastUsed";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
   import { toast } from "../../lib/toast";
@@ -655,7 +656,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     // No account anywhere → send to new-account (on the apex) with a return intent.
     const choice = selectClaimer(paramAccount, snapshot.accounts, readLastUsed());
     if (choice.contractId === null) {
-      window.location.href = `${window.location.protocol}//${apexHost}/new-account/?then=claim:${name}`;
+      // No account yet → start a fresh new-account reservation, carrying the claim
+      // intent so we return here to claim the name once it's deployed.
+      const setupUrl = createNido(window.location.host); // //<setupHost>/new-account/?salt=<hex>&setup=1
+      const sep = setupUrl.includes("?") ? "&" : "?";
+      window.location.href = `${window.location.protocol}${setupUrl}${sep}then=claim:${encodeURIComponent(name)}`;
       return;
     }
 

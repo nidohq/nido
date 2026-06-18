@@ -482,11 +482,16 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         () => {
           $preparingContinue.disabled = true;
           $continueSpan.textContent = "Taking you there…";
+          // Preserve a claim return intent across the apex → <cAddress> subdomain
+          // hop so it survives to the final success redirect (which reads `then`
+          // from the query string). Absent when this isn't a claim flow → no change.
+          const thenParam = params.get("then");
+          const thenQuery = thenParam ? `&then=${encodeURIComponent(thenParam)}` : "";
           window.location.replace(
             accountUrl(
               window.location.host,
               cAddress,
-              `/new-account/?salt=${encodeURIComponent(saltHex!)}&autopass=1#salt=${encodeURIComponent(saltHex!)}`,
+              `/new-account/?salt=${encodeURIComponent(saltHex!)}&autopass=1${thenQuery}#salt=${encodeURIComponent(saltHex!)}`,
             ),
           );
         },
