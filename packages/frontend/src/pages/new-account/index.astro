@@ -155,6 +155,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       <div class="mut" style="display:flex; align-items:center; justify-content:center; gap:8px; font-size:13px; margin-top:26px; opacity:.85;">
         <span class="dot acc"></span><span id="preparing-status-text">Reserving your address…</span>
       </div>
+      <a id="preparing-home-link" href="/" class="link hidden" style="align-self:center; margin-top:18px; font-size:13.5px;">Start again from home</a>
     </section>
   </div>
 
@@ -170,6 +171,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
      "two cards" bug. Apply the flex layout only while the section is shown. */
   #deploy-section:not(.hidden) { display: flex; flex-direction: column; }
   #preparing-section:not(.hidden) { display: flex; flex-direction: column; }
+  /* On a reservation failure the flow stops here, so halt the spinner. */
+  #preparing-section.is-error .nest-ring { animation-play-state: paused; }
 </style>
 
 <script>
@@ -235,6 +238,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const $passkeyIntro = document.getElementById("passkey-intro")!;
   const $preparingSection = document.getElementById("preparing-section")!;
   const $preparingStatusText = document.getElementById("preparing-status-text")!;
+  const $preparingHomeLink = document.getElementById("preparing-home-link")!;
   const $deploySection = document.getElementById("deploy-section")!;
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
   const $deployNestStatic = document.getElementById("deploy-nest-static")!;
@@ -460,7 +464,10 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         ),
       );
     } catch (err: any) {
+      // Dead end — reservation failed, so stop the spinner and offer a way back.
+      $preparingSection.classList.add("is-error");
       $preparingStatusText.textContent = "Setup paused";
+      $preparingHomeLink.classList.remove("hidden");
       showError(`Couldn't prepare your Nido: ${err.message}`);
     }
   }

@@ -32,10 +32,11 @@ const {
   class: className,
 } = Astro.props;
 
-// When spinning, the two rings animate independently (different periods,
-// opposite directions, eased so the rotation speed swells and slows) rather
-// than the whole mark turning as one rigid unit. `--nest-dur` drives the outer
-// ring; the inner ring derives a shorter period from it in CSS.
+// When spinning, the two rings animate independently (different periods, eased
+// so the rotation speed swells and slows) rather than the whole mark turning as
+// one rigid unit. They turn the same direction on a 4:3 period ratio so they
+// periodically realign and spin together. `--nest-dur` drives the outer ring;
+// the inner ring derives a shorter period from it in CSS.
 const style = spin ? `--nest-dur: ${dur}s;` : undefined;
 const outerClass = spin ? "nest-ring nest-ring--outer" : undefined;
 const innerClass = spin ? "nest-ring nest-ring--inner" : undefined;

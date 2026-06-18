@@ -314,7 +314,7 @@ body:has(.tabbar) .toastwrap { bottom: calc(86px + env(safe-area-inset-bottom));
 /* Nest spinner — the two rings rotate with eased, varying speed (each surges
    through the first part of the turn then eases to a crawl). They turn the same
    way but on a 4:3 period ratio, so they drift apart for most of the loop and
-   then realign every 12 base-durations to briefly spin together in sync. */
+   then realign every 7.2 base-durations to briefly spin together in sync. */
 .nest-ring { transform-box: fill-box; transform-origin: center; }
 .nest-ring--outer { animation: nest-rot-o calc(var(--nest-dur, 1.2s) * 2.4) ease-in-out infinite; }
 .nest-ring--inner { animation: nest-rot-i calc(var(--nest-dur, 1.2s) * 1.8) ease-in-out infinite; }
