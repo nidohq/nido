@@ -77,15 +77,31 @@ implementation without changing structure.
 
 ### 2. Flow & timing
 
+> **Revised after first build (user-triggered redirect + auto-attempt).** The
+> redirect is now the user's to trigger via a button, and the destination
+> auto-attempts the passkey on arrival. The original timed auto-redirect
+> (`withMinimumDuration` min-dwell) was removed — superseded by the button.
+
 - On page 1 load, when `isSetupReservation && saltHex`: show `preparing-section`,
-  keep `passkey-section` hidden.
-- Run the reservation and a **minimum-dwell timer (~2.5s)** concurrently:
-  `await Promise.all([reserve(), sleep(2500)])`. The longer of the two wins, so
-  the explanation is always readable and a slow RPC simply extends the dwell.
-- Just before redirect, swap the status line to **"Taking you there…"**, then
-  `window.location.replace(accountUrl(host, cAddress, "/new-account/?salt=…#salt=…"))`.
-- **Arrival (page 2):** unchanged — lands directly on the "Lock it to you" step,
-  one click ("Create with a passkey").
+  keep `passkey-section` hidden, and reserve the address **in the background**.
+- The explainer carries a **"Continue" button**, disabled (`Preparing…`) until
+  the reservation resolves; then it enables (`Continue`) and the status line
+  becomes "Your Nido is ready." The page does **not** auto-redirect — the
+  navigation is the user's to trigger.
+- On click: `window.location.replace(accountUrl(host, cAddress,
+  "/new-account/?salt=…&autopass=1#salt=…"))` — a one-shot `autopass=1` flag.
+- **Arrival (page 2):** lands on the "Lock it to you" step and **auto-attempts**
+  the passkey prompt (`attemptAutoPasskey`), then strips the flag. WebAuthn needs
+  a transient user gesture that does not survive the cross-subdomain redirect, so
+  where it's enforced (notably iOS Safari) the attempt rejects immediately — it's
+  swallowed silently (no sheet, no flicker) and the ready "Create with a passkey"
+  button remains for a manual tap. The attempt is non-blocking (never disables
+  the button) and abortable (a manual tap aborts it and starts the sheet-based
+  ceremony), so it can never strand the button. On browsers that allow
+  gestureless creation, the OS dialog appears automatically.
+- The `reserveNidoAddress` → passkey-create logic is factored into reusable
+  units: `buildPasskeyCreateOptions` + `completeRegistration` are shared by the
+  manual click handler and `attemptAutoPasskey`.
 
 ### 3. Remove the continuity splash
 
