@@ -32,7 +32,14 @@ const {
   class: className,
 } = Astro.props;
 
-const style = spin ? `animation: spin ${dur}s linear infinite;` : undefined;
+// When spinning, the two rings animate independently (different periods, eased
+// so the rotation speed swells and slows) rather than the whole mark turning as
+// one rigid unit. They turn the same direction on a 4:3 period ratio so they
+// periodically realign and spin together. `--nest-dur` drives the outer ring;
+// the inner ring derives a shorter period from it in CSS.
+const style = spin ? `--nest-dur: ${dur}s;` : undefined;
+const outerClass = spin ? "nest-ring nest-ring--outer" : undefined;
+const innerClass = spin ? "nest-ring nest-ring--inner" : undefined;
 ---
 
 <svg
@@ -43,7 +50,7 @@ const style = spin ? `animation: spin ${dur}s linear infinite;` : undefined;
   class={className}
   style={style}
 >
-  <circle cx="60" cy="60" r="46" fill="none" stroke={ring1} stroke-width="6" stroke-dasharray="14 9" stroke-linecap="round" />
-  <circle cx="60" cy="60" r="31" fill="none" stroke={ring2} stroke-width="6" stroke-dasharray="11 8" stroke-linecap="round" />
+  <circle class={outerClass} cx="60" cy="60" r="46" fill="none" stroke={ring1} stroke-width="6" stroke-dasharray="14 9" stroke-linecap="round" />
+  <circle class={innerClass} cx="60" cy="60" r="31" fill="none" stroke={ring2} stroke-width="6" stroke-dasharray="11 8" stroke-linecap="round" />
   <circle cx="60" cy="60" r="11" fill={dot} />
 </svg>
