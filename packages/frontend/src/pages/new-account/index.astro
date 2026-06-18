@@ -140,6 +140,22 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         View on Stellar Expert
       </a>
     </section>
+
+    <!-- ===================== RESERVING · explainer (page 1) ===================== -->
+    <section id="preparing-section" class="hidden" style="min-height:440px;">
+      <div style="display:grid; place-items:center; margin:32px 0 26px;">
+        <Nest size={104} spin dur={1.1} />
+      </div>
+      <h1 class="disp" style="font-weight:800; font-size:28px; line-height:1.06; text-align:center;">
+        Setting up your Nido
+      </h1>
+      <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:12px; text-align:center; max-width:330px; margin-inline:auto;">
+        We're reserving your private address and moving you into your own secure space. This only takes a moment.
+      </p>
+      <div class="mut" style="display:flex; align-items:center; justify-content:center; gap:8px; font-size:13px; margin-top:26px; opacity:.85;">
+        <span class="dot acc"></span><span id="preparing-status-text">Reserving your address…</span>
+      </div>
+    </section>
   </div>
 
   <!-- mounted once: real-promise-driven passkey sheet + toast host -->
@@ -153,6 +169,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
      not !important) and leave it rendered on top of the passkey step — the
      "two cards" bug. Apply the flex layout only while the section is shown. */
   #deploy-section:not(.hidden) { display: flex; flex-direction: column; }
+  #preparing-section:not(.hidden) { display: flex; flex-direction: column; }
   #passkey-section.setup-reserving #passkey-nest svg { animation: spin 1.1s linear infinite; }
   #passkey-section.setup-reserving #register-btn { pointer-events: none; }
   #passkey-section.setup-reserving #register-btn:disabled { opacity: 1; }
