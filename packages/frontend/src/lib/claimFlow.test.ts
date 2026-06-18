@@ -26,6 +26,7 @@ describe("classifyNameState", () => {
     expect(classifyNameState("alice", null)).toBe("available");
     expect(classifyNameState("a", null)).toBe("available");
     expect(classifyNameState("alice15charsok", null)).toBe("available");
+    expect(classifyNameState("abcdefghijklmno", null)).toBe("available"); // 15 chars (max valid)
   });
 });
 
@@ -53,6 +54,12 @@ describe("selectClaimer", () => {
   });
   it("multi → falls back to list order when no timestamps", () => {
     expect(selectClaimer(null, [C1, C2], {})).toEqual({ contractId: C1, source: "recent" });
+  });
+  it("multi → ties on timestamp break to list order (strict-greater)", () => {
+    expect(selectClaimer(null, [C1, C2], { [C1]: 5, [C2]: 5 })).toEqual({
+      contractId: C1,
+      source: "recent",
+    });
   });
 });
 

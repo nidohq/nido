@@ -2,7 +2,7 @@
 // See docs/superpowers/specs/2026-06-18-name-centric-inline-claim-design.md
 import { accountUrl, isContractId } from "@nidohq/passkey-sdk";
 
-/** A valid Nido name: a lowercase letter then up to 14 lowercase letters/digits. */
+/** A valid Nido name: a lowercase letter, then 0–14 more lowercase letters/digits (1–15 chars total). */
 export const VALID_NAME_RE = /^[a-z][a-z0-9]{0,14}$/;
 
 export type NameState = "available" | "taken" | "invalid";
