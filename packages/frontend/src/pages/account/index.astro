@@ -106,6 +106,36 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     </div>
 
     <!-- ============================================================= -->
+    <!-- CLAIM ENTRY — unclaimed name subdomain, non-signing            -->
+    <!-- ============================================================= -->
+    <!-- A standalone top-level view (sibling of #signing-mode / #home-mode),
+         NOT nested in #home-mode: an unclaimed name has no account context, so
+         #home-mode (and its empty balance/address hero) is never revealed.
+         showClaimEntry un-hides this section directly. Visited when an UNCLAIMED
+         name subdomain is opened outside signing mode — we identify a claiming
+         account here and hand off to that account's own subdomain (where its
+         passkey rpId matches) to do the claim. -->
+    <div id="claim-entry" class="hidden screen-in pad" style="padding-top:18px;">
+      <span class="section-label" style="display:block; margin-bottom:12px;">Claim this name</span>
+      <div class="card" style="padding:16px;">
+        <p style="font-size:15px; font-weight:600; margin:0 0 6px;">
+          <span id="claim-entry-name"></span> is available
+        </p>
+        <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+          Claim it for <strong id="claim-entry-account"></strong>. We'll open your account's
+          domain to confirm with your passkey, then bring you back here.
+        </p>
+        <button id="claim-entry-btn" class="btn acc">
+          <Icon name="sparkle" size={18} color="#fff" /> Claim <span id="claim-entry-name2"></span>
+        </button>
+        <button id="claim-entry-switch" class="btn ghost sm" type="button" style="margin-top:8px; display:none;">
+          Use a different account
+        </button>
+        <div id="claim-entry-picker" class="hidden" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <!-- ============================================================= -->
     <!-- HOME MODE                                                     -->
     <!-- ============================================================= -->
     <div id="home-mode" class="hidden screen-in home-mode">
@@ -191,30 +221,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         </div>
         <div id="name-result" role="status" aria-live="polite" class="mut mono" style="display:none; font-size:12.5px; margin-top:8px; line-height:1.5;"></div>
       </div>
-
-      <!-- Claim-entry view — shown when an UNCLAIMED name subdomain is visited
-           outside signing mode. The name has no account context of its own, so
-           we identify a claiming account here and hand off to that account's own
-           subdomain (where its passkey rpId matches) to do the claim. -->
-      <section id="claim-entry" class="span-all hidden pad" style="padding-top:18px;">
-        <span class="section-label" style="display:block; margin-bottom:12px;">Claim this name</span>
-        <div class="card" style="padding:16px;">
-          <p style="font-size:15px; font-weight:600; margin:0 0 6px;">
-            <span id="claim-entry-name"></span> is available
-          </p>
-          <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
-            Claim it for <strong id="claim-entry-account"></strong>. We'll open your account's
-            domain to confirm with your passkey, then bring you back here.
-          </p>
-          <button id="claim-entry-btn" class="btn acc">
-            <Icon name="sparkle" size={18} color="#fff" /> Claim <span id="claim-entry-name2"></span>
-          </button>
-          <button id="claim-entry-switch" class="btn ghost sm" type="button" style="margin-top:8px; display:none;">
-            Use a different account
-          </button>
-          <div id="claim-entry-picker" class="hidden" style="margin-top:10px;"></div>
-        </div>
-      </section>
 
       <!-- The XLM-only inline Send panel was retired here: "Send" now opens the
            dedicated multi-asset transfer view at /transfer/ (the .js-send
