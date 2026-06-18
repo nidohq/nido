@@ -192,6 +192,30 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         <div id="name-result" role="status" aria-live="polite" class="mut mono" style="display:none; font-size:12.5px; margin-top:8px; line-height:1.5;"></div>
       </div>
 
+      <!-- Claim-entry view — shown when an UNCLAIMED name subdomain is visited
+           outside signing mode. The name has no account context of its own, so
+           we identify a claiming account here and hand off to that account's own
+           subdomain (where its passkey rpId matches) to do the claim. -->
+      <section id="claim-entry" class="span-all hidden pad" style="padding-top:18px;">
+        <span class="section-label" style="display:block; margin-bottom:12px;">Claim this name</span>
+        <div class="card" style="padding:16px;">
+          <p style="font-size:15px; font-weight:600; margin:0 0 6px;">
+            <span id="claim-entry-name"></span> is available
+          </p>
+          <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            Claim it for <strong id="claim-entry-account"></strong>. We'll open your account's
+            domain to confirm with your passkey, then bring you back here.
+          </p>
+          <button id="claim-entry-btn" class="btn acc">
+            <Icon name="sparkle" size={18} color="#fff" /> Claim <span id="claim-entry-name2"></span>
+          </button>
+          <button id="claim-entry-switch" class="btn ghost sm" type="button" style="margin-top:8px; display:none;">
+            Use a different account
+          </button>
+          <div id="claim-entry-picker" class="hidden" style="margin-top:10px;"></div>
+        </div>
+      </section>
+
       <!-- The XLM-only inline Send panel was retired here: "Send" now opens the
            dedicated multi-asset transfer view at /transfer/ (the .js-send
            buttons navigate there in initHomeMode). -->
@@ -318,6 +342,14 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     fetchRegistryAddress,
   } from "@nidohq/passkey-sdk";
   import { accountShareUrl, accountShareLabel } from "../../lib/accountLinks";
+  import {
+    classifyNameState,
+    selectClaimer,
+    formatClaimerLabel,
+    buildClaimHandoffUrl,
+  } from "../../lib/claimFlow";
+  import { localNidoSnapshot, syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
+  import { readLastUsed } from "../../lib/lastUsed";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
   import { toast } from "../../lib/toast";
   import { describeSignRequest } from "../../lib/signRequestSummary";
@@ -411,11 +443,22 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         }
         // Stay on name subdomain — use resolved ID for all operations
         contractId = resolved;
+      } else if (!isSigningMode) {
+        // Syntactically-valid but unclaimed name + not signing → offer to claim
+        // it. The entry view OWNS the page (it picks a claiming account and
+        // hands off to that account's own subdomain), so halt the rest of
+        // module init: there's no account context to initialize for an
+        // unclaimed name. A bare `return` is illegal at module top level here
+        // (this whole block runs in the script's ES-module body), so mirror the
+        // signing-mode redirect above and throw a sentinel the catch re-throws.
+        await showClaimEntry(detectedName);
+        throw new Error("claim-entry");
       } else {
+        // Signing mode: nothing to sign against an unresolved name.
         showError(`Name "${detectedName}" not found in the registry.`);
       }
     } catch (err: any) {
-      if (err.message === "redirecting") throw err;
+      if (err.message === "redirecting" || err.message === "claim-entry") throw err;
       showError(`Couldn't resolve that name: ${err.message}`);
     }
   }
@@ -517,6 +560,102 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
   function passkeyBlockedHint(action: "registration" | "signing"): string {
     return `Passkey ${action} was blocked. If you're using an in-app browser (Twitter, Instagram, etc.), tap the menu (…) and choose "Open in Safari" or "Open in Browser".`;
+  }
+
+  // =====================
+  // CLAIM ENTRY (unclaimed name subdomain, non-signing)
+  // =====================
+
+  // Show the "claim this name" entry view for an UNCLAIMED, syntactically-valid
+  // name. Picks a claiming account (param → recent → single → none) and hands
+  // off to that account's own subdomain (where its passkey rpId matches).
+  async function showClaimEntry(name: string) {
+    const state = classifyNameState(name, null); // resolved was null in this branch
+    if (state === "invalid") {
+      showError(`"${name}" isn't a valid name.`);
+      return;
+    }
+
+    const paramAccount = params.get("account");
+    // Pull accounts from local storage, then refresh from the apex bridge if empty.
+    let snapshot = localNidoSnapshot();
+    if (snapshot.accounts.length === 0) {
+      await syncNidoStorageViaBridge();
+      snapshot = localNidoSnapshot();
+    }
+
+    const apexHost = stripSubdomain(window.location.host);
+
+    // No account anywhere → send to new-account (on the apex) with a return intent.
+    const choice = selectClaimer(paramAccount, snapshot.accounts, readLastUsed());
+    if (choice.contractId === null) {
+      window.location.href = `${window.location.protocol}//${apexHost}/new-account/?then=claim:${name}`;
+      return;
+    }
+
+    const claimer = choice.contractId;
+    const claimerName = snapshot.names[claimer] ?? null;
+
+    const $entry = document.getElementById("claim-entry")!;
+    document.getElementById("claim-entry-name")!.textContent = name;
+    document.getElementById("claim-entry-name2")!.textContent = name;
+    document.getElementById("claim-entry-account")!.textContent = formatClaimerLabel(claimer, claimerName);
+    $entry.classList.remove("hidden");
+
+    const handoff = () =>
+      buildClaimHandoffUrl({
+        apexHost,
+        fromHost: window.location.host,
+        claimName: name,
+        claimerContractId: claimer,
+        claimerName,
+        protocol: window.location.protocol,
+      });
+
+    document.getElementById("claim-entry-btn")!.addEventListener("click", () => {
+      window.location.href = handoff();
+    });
+
+    // Offer account switching only when there is more than one account.
+    if (snapshot.accounts.length > 1) {
+      const $switch = document.getElementById("claim-entry-switch") as HTMLButtonElement;
+      $switch.style.display = "block";
+      $switch.addEventListener("click", () => {
+        const $picker = document.getElementById("claim-entry-picker")!;
+        $picker.classList.toggle("hidden");
+        if (!$picker.dataset.mounted) {
+          renderClaimPicker($picker, name, apexHost, snapshot);
+          $picker.dataset.mounted = "1";
+        }
+      });
+    }
+  }
+
+  function renderClaimPicker(
+    host: HTMLElement,
+    name: string,
+    apexHost: string,
+    snapshot: { accounts: string[]; names: Record<string, string> },
+  ) {
+    host.innerHTML = "";
+    for (const id of snapshot.accounts) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "btn ghost sm";
+      row.style.cssText = "display:block; width:100%; text-align:left; margin-bottom:6px;";
+      row.textContent = formatClaimerLabel(id, snapshot.names[id] ?? null);
+      row.addEventListener("click", () => {
+        window.location.href = buildClaimHandoffUrl({
+          apexHost,
+          fromHost: window.location.host,
+          claimName: name,
+          claimerContractId: id,
+          claimerName: snapshot.names[id] ?? null,
+          protocol: window.location.protocol,
+        });
+      });
+      host.append(row);
+    }
   }
 
   function clearNamePasskeyParam() {
