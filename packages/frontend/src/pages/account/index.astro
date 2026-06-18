@@ -996,16 +996,16 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       return kp;
     }
 
-    // Claim name button
-    $claimBtn.addEventListener("click", async () => {
-      clearError();
-      const name = $nameInput.value.trim().toLowerCase();
-
-      if (!name || !/^[a-z][a-z0-9]*$/.test(name) || name.length > 15) {
-        showError("Name must be 1-15 characters, lowercase letters and digits only, starting with a letter.");
+    // Build + simulate the register tx, then route to the passkey step.
+    // `name` is pre-validated lowercase. (Task 6 will later swap the ?sign=
+    // redirect for an inline ceremony — for now keep the redirect identical.)
+    async function runNameClaim(name: string) {
+      clearError(); // finalizeClaim has no counterpart: it runs on a fresh
+                    // post-signing page load, so there's no prior error to clear.
+      if (!contractId) {
+        showError("Navigate to your account's subdomain to claim a name.");
         return;
       }
-
       try {
         $claimBtn.disabled = true;
         $nameResult.style.display = "block";
@@ -1104,174 +1104,200 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       } finally {
         $claimBtn.disabled = false;
       }
+    }
+
+    // Claim name button
+    $claimBtn.addEventListener("click", () => {
+      const name = $nameInput.value.trim().toLowerCase();
+      if (!name || !/^[a-z][a-z0-9]*$/.test(name) || name.length > 15) {
+        showError("Name must be 1-15 characters, lowercase letters and digits only, starting with a letter.");
+        return;
+      }
+      void runNameClaim(name);
     });
 
     // --- Handle return from signing (name registration) ---
 
-    if (params.get("nameresult") === "1") {
-      const authenticatorData = params.get("authenticatorData");
-      const clientDataJSON = params.get("clientDataJSON");
-      const signatureHex = params.get("signature");
-      const publicKeyHex = params.get("publicKey");
+    interface PasskeySig {
+      authenticatorData: string;
+      clientDataJSON: string;
+      signature: string;
+      publicKey: string;
+    }
 
+    // Inject the passkey signature into the stored claim tx, submit, and on success
+    // redirect to the name subdomain to register its passkey (moment B).
+    async function finalizeClaim(sig: PasskeySig) {
+      // contractId is always truthy here (this whole block is gated on it), but
+      // the narrowing from the outer `if` doesn't carry into a named function
+      // declaration — re-assert it so TS keeps it as `string`.
+      if (!contractId) return;
+      $nameResult.style.display = "block";
+      try {
+        // Load Buffer polyfill — needed by injectPasskeySignature and other SDK functions
+        const { Buffer: B } = await import("buffer");
+        if (typeof globalThis.Buffer === "undefined") {
+          (globalThis as any).Buffer = B;
+        }
+
+        const txXdr = localStorage.getItem("nido:name-txXdr");
+        const lastLedgerStr = localStorage.getItem("nido:name-lastLedger");
+        const pendingName = localStorage.getItem("nido:name-pending");
+        const useRelayer = relayerEnabled();
+        const keypairSecret = localStorage.getItem("nido:name-keypair");
+
+        // Classic mode submits with the ephemeral keypair; relayer mode never
+        // minted one, so don't require it there.
+        if (!txXdr || !lastLedgerStr || !pendingName || (!useRelayer && !keypairSecret)) {
+          throw new Error("Missing stored transaction data. Please try again.");
+        }
+
+        const lastLedger = parseInt(lastLedgerStr, 10);
+        const keypair = keypairSecret ? Keypair.fromSecret(keypairSecret) : null;
+        const expirationOffset = useRelayer ? RELAYER_EXPIRATION_OFFSET : undefined;
+        // Read the verifier from the account's actual on-chain rule-0 signer.
+        // Computing it from a hardcoded WASM hash yields a stale address that
+        // won't match the registered signer, so __check_auth can't validate
+        // the context (UnvalidatedContext / #3002). Mirrors walletSign.
+        const verifierAddr = await fetchVerifierAddress(contractId);
+
+        // Reconstruct transaction from stored XDR
+        const authTxn = TransactionBuilder.fromXDR(txXdr, Networks.TESTNET) as Transaction;
+
+        // Inject passkey signature
+        injectPasskeySignature(
+          authTxn,
+          {
+            authenticatorData: hex2buf(sig.authenticatorData),
+            clientDataJson: hex2buf(sig.clientDataJSON),
+            signature: hex2buf(sig.signature),
+          },
+          verifierAddr,
+          hex2buf(sig.publicKey),
+          lastLedger,
+          expirationOffset,
+          [0]
+        );
+
+        const finishClaim = (claimedName: string) => {
+          saveAccountName(contractId, claimedName);
+          // Clean up stored transaction data
+          localStorage.removeItem("nido:name-txXdr");
+          localStorage.removeItem("nido:name-lastLedger");
+          localStorage.removeItem("nido:name-pending");
+          localStorage.removeItem("nido:name-claim-hash");
+          localStorage.removeItem("nido:name-registry-id");
+          // Redirect to the claimed name's subdomain
+          const rootHost = stripSubdomain(window.location.host);
+          $nameResult.textContent = `Your Nido is now "${claimedName}" — opening it so you can register the passkey for that new domain address…`;
+          const nameUrl = accountUrl(rootHost, claimedName, "/account/?namepasskey=1");
+          setTimeout(() => {
+            window.location.href = `${window.location.protocol}${nameUrl}`;
+          }, 1500);
+        };
+
+        const server = new rpc.Server(RPC_URL);
+
+        if (useRelayer) {
+          // The Channels plugin re-simulates server-side in enforce mode,
+          // builds the footprint itself, and a channel account becomes the tx
+          // source with the fund account fee-bumping. We ship only the host
+          // function and the passkey-signed auth entry. Mirrors signAndSubmit.
+          $nameResult.textContent = "Submitting transaction…";
+          const { func, auth } = extractFuncAndAuth(authTxn);
+          if (auth.length > 1) {
+            throw new Error(`Expected a single auth entry, got ${auth.length} — only the first is passkey-signed.`);
+          }
+          const submitted = await submitSorobanTransaction({ func, auth });
+          if (!submitted.transactionId) {
+            throw new Error("Relayer accepted the transaction but returned no transaction id");
+          }
+          $nameResult.textContent = "Waiting for confirmation…";
+          const confirmed = await waitForConfirmation(submitted.transactionId);
+          if (!confirmed.hash) throw new Error("Relayer confirmed without a transaction hash");
+          finishClaim(pendingName);
+          return;
+        }
+
+        // Re-simulate the now-signed tx in ENFORCE mode. This both verifies
+        // the passkey auth before submit AND recomputes the resource
+        // footprint to cover the storage keys __check_auth reads (the
+        // verifier + the account's context-rule data). The initial assemble
+        // (built from a sim with no auth entries) doesn't size those reads,
+        // so submit would otherwise trap with an out-of-footprint error.
+        // Default "record" mode IGNORES our injected signature entirely —
+        // pass "enforce" so the simulator runs __check_auth against it.
+        // (Mirrors primaryPasskeySigner.signAndSubmit / walletSign.)
+        $nameResult.textContent = "Simulating signed transaction…";
+        const sim = await server.simulateTransaction(authTxn, undefined, "enforce");
+
+        if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
+          throw new Error(`Re-simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
+        }
+        const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
+
+        // Splice the fresh sorobanData (footprint + resource fee) into the
+        // signed tx via cloneFrom. Do NOT use rpc.assembleTransaction here:
+        // it rebuilds the auth entries from the sim's UNSIGNED templates and
+        // silently discards our passkey signature. cloneFrom carries the
+        // signed auth entry across intact.
+        const newSorobanData = successSim.transactionData.build();
+        const newResourceFee = BigInt(newSorobanData.resourceFee().toString());
+        const classicFee =
+          BigInt(authTxn.fee) -
+          BigInt(
+            (authTxn.toEnvelope().v1().tx().ext().value() as
+              | xdr.SorobanTransactionData
+              | undefined)
+              ?.resourceFee()
+              .toString() ?? "0"
+          );
+        const finalTx = TransactionBuilder.cloneFrom(authTxn, {
+          fee: (classicFee + newResourceFee).toString(),
+          sorobanData: newSorobanData,
+          networkPassphrase: Networks.TESTNET,
+        }).build();
+        if (!keypair) throw new Error("unreachable: classic path without a keypair");
+        finalTx.sign(keypair);
+
+        // Submit
+        $nameResult.textContent = "Submitting transaction…";
+        const sendResult = await server.sendTransaction(finalTx);
+
+        if (sendResult.status === "ERROR") {
+          throw new Error(`Transaction rejected: ${sendResult.errorResult?.toXDR("base64") ?? "unknown"}`);
+        }
+
+        // Poll for confirmation
+        $nameResult.textContent = "Waiting for confirmation…";
+        let getResult = await server.getTransaction(sendResult.hash);
+        while (getResult.status === "NOT_FOUND") {
+          await new Promise((r) => setTimeout(r, 1500));
+          getResult = await server.getTransaction(sendResult.hash);
+        }
+
+        if (getResult.status === "SUCCESS") {
+          finishClaim(pendingName);
+        } else {
+          throw new Error(`Transaction failed: ${getResult.status}`);
+        }
+      } catch (err: any) {
+        showError(`Couldn't finish claiming your name: ${err.message}`);
+        $nameResult.style.display = "none";
+      }
+    }
+
+    if (params.get("nameresult") === "1") {
       if (params.get("error")) {
         showError("Name claim was cancelled.");
-      } else if (authenticatorData && clientDataJSON && signatureHex && publicKeyHex) {
-        (async () => {
-          $nameResult.style.display = "block";
-          try {
-            // Load Buffer polyfill — needed by injectPasskeySignature and other SDK functions
-            const { Buffer: B } = await import("buffer");
-            if (typeof globalThis.Buffer === "undefined") {
-              (globalThis as any).Buffer = B;
-            }
-
-            const txXdr = localStorage.getItem("nido:name-txXdr");
-            const lastLedgerStr = localStorage.getItem("nido:name-lastLedger");
-            const pendingName = localStorage.getItem("nido:name-pending");
-            const useRelayer = relayerEnabled();
-            const keypairSecret = localStorage.getItem("nido:name-keypair");
-
-            // Classic mode submits with the ephemeral keypair; relayer mode never
-            // minted one, so don't require it there.
-            if (!txXdr || !lastLedgerStr || !pendingName || (!useRelayer && !keypairSecret)) {
-              throw new Error("Missing stored transaction data. Please try again.");
-            }
-
-            const lastLedger = parseInt(lastLedgerStr, 10);
-            const keypair = keypairSecret ? Keypair.fromSecret(keypairSecret) : null;
-            const expirationOffset = useRelayer ? RELAYER_EXPIRATION_OFFSET : undefined;
-            // Read the verifier from the account's actual on-chain rule-0 signer.
-            // Computing it from a hardcoded WASM hash yields a stale address that
-            // won't match the registered signer, so __check_auth can't validate
-            // the context (UnvalidatedContext / #3002). Mirrors walletSign.
-            const verifierAddr = await fetchVerifierAddress(contractId);
-
-            // Reconstruct transaction from stored XDR
-            const authTxn = TransactionBuilder.fromXDR(txXdr, Networks.TESTNET) as Transaction;
-
-            // Inject passkey signature
-            injectPasskeySignature(
-              authTxn,
-              {
-                authenticatorData: hex2buf(authenticatorData),
-                clientDataJson: hex2buf(clientDataJSON),
-                signature: hex2buf(signatureHex),
-              },
-              verifierAddr,
-              hex2buf(publicKeyHex),
-              lastLedger,
-              expirationOffset,
-              [0]
-            );
-
-            const finishClaim = (claimedName: string) => {
-              saveAccountName(contractId, claimedName);
-              // Clean up stored transaction data
-              localStorage.removeItem("nido:name-txXdr");
-              localStorage.removeItem("nido:name-lastLedger");
-              localStorage.removeItem("nido:name-pending");
-              localStorage.removeItem("nido:name-claim-hash");
-              localStorage.removeItem("nido:name-registry-id");
-              // Redirect to the claimed name's subdomain
-              const rootHost = stripSubdomain(window.location.host);
-              $nameResult.textContent = `Your Nido is now "${claimedName}" — opening it so you can register the passkey for that new domain address…`;
-              const nameUrl = accountUrl(rootHost, claimedName, "/account/?namepasskey=1");
-              setTimeout(() => {
-                window.location.href = `${window.location.protocol}${nameUrl}`;
-              }, 1500);
-            };
-
-            const server = new rpc.Server(RPC_URL);
-
-            if (useRelayer) {
-              // The Channels plugin re-simulates server-side in enforce mode,
-              // builds the footprint itself, and a channel account becomes the tx
-              // source with the fund account fee-bumping. We ship only the host
-              // function and the passkey-signed auth entry. Mirrors signAndSubmit.
-              $nameResult.textContent = "Submitting transaction…";
-              const { func, auth } = extractFuncAndAuth(authTxn);
-              if (auth.length > 1) {
-                throw new Error(`Expected a single auth entry, got ${auth.length} — only the first is passkey-signed.`);
-              }
-              const submitted = await submitSorobanTransaction({ func, auth });
-              if (!submitted.transactionId) {
-                throw new Error("Relayer accepted the transaction but returned no transaction id");
-              }
-              $nameResult.textContent = "Waiting for confirmation…";
-              const confirmed = await waitForConfirmation(submitted.transactionId);
-              if (!confirmed.hash) throw new Error("Relayer confirmed without a transaction hash");
-              finishClaim(pendingName);
-              return;
-            }
-
-            // Re-simulate the now-signed tx in ENFORCE mode. This both verifies
-            // the passkey auth before submit AND recomputes the resource
-            // footprint to cover the storage keys __check_auth reads (the
-            // verifier + the account's context-rule data). The initial assemble
-            // (built from a sim with no auth entries) doesn't size those reads,
-            // so submit would otherwise trap with an out-of-footprint error.
-            // Default "record" mode IGNORES our injected signature entirely —
-            // pass "enforce" so the simulator runs __check_auth against it.
-            // (Mirrors primaryPasskeySigner.signAndSubmit / walletSign.)
-            $nameResult.textContent = "Simulating signed transaction…";
-            const sim = await server.simulateTransaction(authTxn, undefined, "enforce");
-
-            if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
-              throw new Error(`Re-simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
-            }
-            const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
-
-            // Splice the fresh sorobanData (footprint + resource fee) into the
-            // signed tx via cloneFrom. Do NOT use rpc.assembleTransaction here:
-            // it rebuilds the auth entries from the sim's UNSIGNED templates and
-            // silently discards our passkey signature. cloneFrom carries the
-            // signed auth entry across intact.
-            const newSorobanData = successSim.transactionData.build();
-            const newResourceFee = BigInt(newSorobanData.resourceFee().toString());
-            const classicFee =
-              BigInt(authTxn.fee) -
-              BigInt(
-                (authTxn.toEnvelope().v1().tx().ext().value() as
-                  | xdr.SorobanTransactionData
-                  | undefined)
-                  ?.resourceFee()
-                  .toString() ?? "0"
-              );
-            const finalTx = TransactionBuilder.cloneFrom(authTxn, {
-              fee: (classicFee + newResourceFee).toString(),
-              sorobanData: newSorobanData,
-              networkPassphrase: Networks.TESTNET,
-            }).build();
-            if (!keypair) throw new Error("unreachable: classic path without a keypair");
-            finalTx.sign(keypair);
-
-            // Submit
-            $nameResult.textContent = "Submitting transaction…";
-            const sendResult = await server.sendTransaction(finalTx);
-
-            if (sendResult.status === "ERROR") {
-              throw new Error(`Transaction rejected: ${sendResult.errorResult?.toXDR("base64") ?? "unknown"}`);
-            }
-
-            // Poll for confirmation
-            $nameResult.textContent = "Waiting for confirmation…";
-            let getResult = await server.getTransaction(sendResult.hash);
-            while (getResult.status === "NOT_FOUND") {
-              await new Promise((r) => setTimeout(r, 1500));
-              getResult = await server.getTransaction(sendResult.hash);
-            }
-
-            if (getResult.status === "SUCCESS") {
-              finishClaim(pendingName);
-            } else {
-              throw new Error(`Transaction failed: ${getResult.status}`);
-            }
-          } catch (err: any) {
-            showError(`Couldn't finish claiming your name: ${err.message}`);
-            $nameResult.style.display = "none";
-          }
-        })();
+      } else {
+        const authenticatorData = params.get("authenticatorData");
+        const clientDataJSON = params.get("clientDataJSON");
+        const signature = params.get("signature");
+        const publicKey = params.get("publicKey");
+        if (authenticatorData && clientDataJSON && signature && publicKey) {
+          void finalizeClaim({ authenticatorData, clientDataJSON, signature, publicKey });
+        }
       }
     }
   }
