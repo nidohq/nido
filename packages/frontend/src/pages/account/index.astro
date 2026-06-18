@@ -395,7 +395,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     buildClaimHandoffUrl,
   } from "../../lib/claimFlow";
   import { localNidoSnapshot, syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
-  import { readLastUsed } from "../../lib/lastUsed";
+  import { markUsed, readLastUsed } from "../../lib/lastUsed";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
   import { toast } from "../../lib/toast";
   import { describeSignRequest } from "../../lib/signRequestSummary";
@@ -1000,6 +1000,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
   function initHomeMode() {
     document.getElementById("home-mode")!.classList.remove("hidden");
+
+    if (contractId) markUsed(contractId);
 
     const cred = loadCredential();
     const $registerSection = document.getElementById("register-section")!;
