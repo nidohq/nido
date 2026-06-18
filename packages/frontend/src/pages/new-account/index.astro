@@ -193,7 +193,9 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     activateAccount,
     fetchRegistryAddress,
     accountUrl,
+    stripSubdomain,
   } from "@nidohq/passkey-sdk";
+  import { parseReturnIntent, buildClaimReturnUrl } from "../../lib/claimFlow";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
@@ -776,7 +778,18 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // in the funded wallet is the payoff, and the deploy copy already promised
       // an automatic hand-off. "View on Stellar Expert" remains the only opt-in link.
       setTimeout(() => {
-        window.location.href = accountUrl;
+        const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
+        if (intent) {
+          const apexHost = stripSubdomain(window.location.host);
+          window.location.href = buildClaimReturnUrl({
+            apexHost,
+            name: intent.name,
+            contractId: contractId!,
+            protocol: window.location.protocol,
+          });
+        } else {
+          window.location.href = accountUrl;
+        }
       }, 1700);
     } catch (err: any) {
       // Fall back to the passkey step so the user can retry the deploy.
