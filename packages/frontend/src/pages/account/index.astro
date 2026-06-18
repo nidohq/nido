@@ -222,6 +222,46 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         <div id="name-result" role="status" aria-live="polite" class="mut mono" style="display:none; font-size:12.5px; margin-top:8px; line-height:1.5;"></div>
       </div>
 
+      <!-- Inline claim progress ticker — revealed when a ?claim=<name> URL auto-
+           runs the claim on this account's own subdomain (passkey signed inline,
+           no ?sign= redirect). Mirrors the new-account creation ticker. -->
+      <section id="claim-progress" class="span-all hidden pad" style="padding-top:18px;">
+        <span class="section-label" style="display:block; margin-bottom:12px;">Claiming your name</span>
+        <div class="card" style="padding:16px;">
+          <div style="display:flex; flex-direction:column; gap:13px;">
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Preparing the claim</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Confirm with your passkey</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Publishing to Stellar</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Name locked in</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+          </div>
+          <div id="claim-progress-error" class="hidden" style="margin-top:12px; font-size:13px; color:var(--bad);"></div>
+        </div>
+      </section>
+
       <!-- The XLM-only inline Send panel was retired here: "Send" now opens the
            dedicated multi-asset transfer view at /transfer/ (the .js-send
            buttons navigate there in initHomeMode). -->
@@ -375,8 +415,19 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     waitForConfirmation,
   } from "../../lib/relayerClient";
   import { RELAYER_SIM_SOURCE } from "../../lib/network";
+  import { mountSteps } from "../../lib/progressSteps";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
+
+  // Lazy claim progress-ticker controller. The #claim-progress card lives in the
+  // markup (revealed by the ?claim= auto-run); mountSteps operates over its
+  // .checkitem rows even while hidden, so driving it from the legacy
+  // ?nameresult=1 callback is harmless (the card stays hidden there).
+  let claimSteps: ReturnType<typeof mountSteps> | null = null;
+  function claimProgress() {
+    if (!claimSteps) claimSteps = mountSteps(document.getElementById("claim-progress")!);
+    return claimSteps;
+  }
 
   // Signature validity in relayer mode: ~2 min. The SDK default (≈14h) is fine
   // when the signed entry never leaves the browser, but the relayer is an
@@ -1156,6 +1207,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         $nameResult.style.display = "block";
         $nameResult.textContent = "Getting things ready…";
 
+        claimProgress().setProgress(0, 0);
+        claimProgress().ticker(0, "Building transaction…");
+
         // Load Buffer polyfill — needed by buildAuthHash and other SDK functions
         const { Buffer: B } = await import("buffer");
         if (typeof globalThis.Buffer === "undefined") {
@@ -1201,6 +1255,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           .build();
 
         $nameResult.textContent = "Simulating transaction…";
+        claimProgress().ticker(0, "Simulating…");
         const sim = await server.simulateTransaction(simTx);
 
         if (rpc.Api.isSimulationError(sim)) {
@@ -1237,15 +1292,30 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         // incoming ?sign= hash matches — see describeSignRequest.
         localStorage.setItem("nido:name-claim-hash", authHashHex);
 
-        $nameResult.textContent = "Taking you to confirm with your passkey…";
+        $nameResult.textContent = "Confirm with your passkey…";
 
-        // Redirect to the signing flow on this same account page
-        const callback = `${window.location.protocol}//${window.location.host}/account/?nameresult=1`;
-        const signUrl = `/account/?sign=${authHashHex}&callback=${encodeURIComponent(callback)}`;
-        window.location.href = signUrl;
+        // Inline passkey ceremony (no ?sign= redirect): the credential is
+        // registered for this contractId on this own subdomain, so signHash can
+        // produce the assertion here and hand it straight to finalizeClaim.
+        const steps = claimProgress();
+        steps.setProgress(1, 1); // prepare done, passkey active
+        steps.ticker(1, "Waiting for your passkey…");
+        const sig = await signHash(authHashHex);
+        steps.setProgress(2, 2); // passkey done, submitting active
+        await finalizeClaim({
+          authenticatorData: sig.authenticatorData,
+          clientDataJSON: sig.clientDataJSON,
+          signature: sig.signature,
+          publicKey: sig.publicKey,
+        });
       } catch (err: any) {
         showError(`Couldn't claim that name: ${err.message}`);
         $nameResult.style.display = "none";
+        const pe = document.getElementById("claim-progress-error");
+        if (pe) {
+          pe.textContent = `Couldn't claim that name: ${err.message}`;
+          pe.classList.remove("hidden");
+        }
       } finally {
         $claimBtn.disabled = false;
       }
@@ -1260,6 +1330,21 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       }
       void runNameClaim(name);
     });
+
+    // --- Auto-run on ?claim=<name> (account's own subdomain) ---
+    // A name-centric inline claim: instead of bouncing through ?sign=, the claim
+    // runs the passkey assertion inline (the credential is registered for this
+    // contractId here) and shows the progress ticker.
+    const claimParam = params.get("claim");
+    if (claimParam && contractId && !isSigningMode) {
+      const name = claimParam.trim().toLowerCase();
+      if (/^[a-z][a-z0-9]{0,14}$/.test(name)) {
+        document.getElementById("claim-name-inline")?.classList.add("hidden");
+        document.getElementById("claim-name-top-btn")?.classList.add("hidden");
+        document.getElementById("claim-progress")!.classList.remove("hidden");
+        void runNameClaim(name);
+      }
+    }
 
     // --- Handle return from signing (name registration) ---
 
@@ -1333,6 +1418,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           localStorage.removeItem("nido:name-claim-hash");
           localStorage.removeItem("nido:name-registry-id");
           // Redirect to the claimed name's subdomain
+          claimProgress().finish();
           const rootHost = stripSubdomain(window.location.host);
           $nameResult.textContent = `Your Nido is now "${claimedName}" — opening it so you can register the passkey for that new domain address…`;
           const nameUrl = accountUrl(rootHost, claimedName, "/account/?namepasskey=1");
@@ -1349,6 +1435,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           // source with the fund account fee-bumping. We ship only the host
           // function and the passkey-signed auth entry. Mirrors signAndSubmit.
           $nameResult.textContent = "Submitting transaction…";
+          claimProgress().setProgress(2, 2);
+          claimProgress().ticker(2, "Submitting to the network…");
           const { func, auth } = extractFuncAndAuth(authTxn);
           if (auth.length > 1) {
             throw new Error(`Expected a single auth entry, got ${auth.length} — only the first is passkey-signed.`);
@@ -1358,6 +1446,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
             throw new Error("Relayer accepted the transaction but returned no transaction id");
           }
           $nameResult.textContent = "Waiting for confirmation…";
+          claimProgress().ticker(2, "Waiting for confirmation…");
           const confirmed = await waitForConfirmation(submitted.transactionId);
           if (!confirmed.hash) throw new Error("Relayer confirmed without a transaction hash");
           finishClaim(pendingName);
@@ -1374,6 +1463,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         // pass "enforce" so the simulator runs __check_auth against it.
         // (Mirrors primaryPasskeySigner.signAndSubmit / walletSign.)
         $nameResult.textContent = "Simulating signed transaction…";
+        claimProgress().setProgress(2, 2);
+        claimProgress().ticker(2, "Submitting to the network…");
         const sim = await server.simulateTransaction(authTxn, undefined, "enforce");
 
         if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
@@ -1415,6 +1506,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
         // Poll for confirmation
         $nameResult.textContent = "Waiting for confirmation…";
+        claimProgress().ticker(2, "Waiting for confirmation…");
         let getResult = await server.getTransaction(sendResult.hash);
         while (getResult.status === "NOT_FOUND") {
           await new Promise((r) => setTimeout(r, 1500));
@@ -1429,6 +1521,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       } catch (err: any) {
         showError(`Couldn't finish claiming your name: ${err.message}`);
         $nameResult.style.display = "none";
+        const pe = document.getElementById("claim-progress-error");
+        if (pe) {
+          pe.textContent = `Couldn't finish claiming your name: ${err.message}`;
+          pe.classList.remove("hidden");
+        }
       }
     }
 
