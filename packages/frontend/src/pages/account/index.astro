@@ -259,6 +259,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
             </div>
           </div>
           <div id="claim-progress-error" class="hidden" style="margin-top:12px; font-size:13px; color:var(--bad);"></div>
+          <button id="claim-retry-btn" class="btn acc sm hidden" type="button" style="margin-top:12px;">Try again</button>
         </div>
       </section>
 
@@ -437,6 +438,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     if (!pe) return;
     pe.textContent = msg;
     pe.classList.remove("hidden");
+    document.getElementById("claim-retry-btn")?.classList.remove("hidden");
   }
 
   // Signature validity in relayer mode: ~2 min. The SDK default (≈14h) is fine
@@ -1354,6 +1356,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         document.getElementById("claim-name-inline")?.classList.add("hidden");
         document.getElementById("claim-name-top-btn")?.classList.add("hidden");
         document.getElementById("claim-progress")!.classList.remove("hidden");
+        const retryBtn = document.getElementById("claim-retry-btn");
+        retryBtn?.addEventListener("click", () => {
+          retryBtn.classList.add("hidden");
+          document.getElementById("claim-progress-error")?.classList.add("hidden");
+          void runNameClaim(name);
+        });
         void runNameClaim(name);
       }
     }
