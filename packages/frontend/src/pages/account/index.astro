@@ -429,6 +429,15 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     return claimSteps;
   }
 
+  // Surface a claim failure inside the progress card (in addition to the global
+  // error banner showError writes). No-op when the card isn't in the DOM.
+  function showClaimProgressError(msg: string) {
+    const pe = document.getElementById("claim-progress-error");
+    if (!pe) return;
+    pe.textContent = msg;
+    pe.classList.remove("hidden");
+  }
+
   // Signature validity in relayer mode: ~2 min. The SDK default (≈14h) is fine
   // when the signed entry never leaves the browser, but the relayer is an
   // external holder of the body — keep the window tight (channel tx lifetime is
@@ -1192,9 +1201,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       return kp;
     }
 
-    // Build + simulate the register tx, then route to the passkey step.
-    // `name` is pre-validated lowercase. (Task 6 will later swap the ?sign=
-    // redirect for an inline ceremony — for now keep the redirect identical.)
+    // Build + simulate the register tx, then run the passkey ceremony inline
+    // (no ?sign= redirect) and hand the assertion to finalizeClaim. `name` is
+    // pre-validated lowercase. Drives the #claim-progress ticker throughout.
     async function runNameClaim(name: string) {
       clearError(); // finalizeClaim has no counterpart: it runs on a fresh
                     // post-signing page load, so there's no prior error to clear.
@@ -1311,11 +1320,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       } catch (err: any) {
         showError(`Couldn't claim that name: ${err.message}`);
         $nameResult.style.display = "none";
-        const pe = document.getElementById("claim-progress-error");
-        if (pe) {
-          pe.textContent = `Couldn't claim that name: ${err.message}`;
-          pe.classList.remove("hidden");
-        }
+        showClaimProgressError(`Couldn't claim that name: ${err.message}`);
       } finally {
         $claimBtn.disabled = false;
       }
@@ -1435,6 +1440,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           // source with the fund account fee-bumping. We ship only the host
           // function and the passkey-signed auth entry. Mirrors signAndSubmit.
           $nameResult.textContent = "Submitting transaction…";
+          // setProgress here (not just the ticker) so the legacy ?nameresult=
+          // entry point — where runNameClaim never ran — still reaches the
+          // submit phase. Redundant (idempotent) on the inline ?claim= path.
           claimProgress().setProgress(2, 2);
           claimProgress().ticker(2, "Submitting to the network…");
           const { func, auth } = extractFuncAndAuth(authTxn);
@@ -1463,6 +1471,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         // pass "enforce" so the simulator runs __check_auth against it.
         // (Mirrors primaryPasskeySigner.signAndSubmit / walletSign.)
         $nameResult.textContent = "Simulating signed transaction…";
+        // setProgress here (not just the ticker) so the legacy ?nameresult=
+        // entry point — where runNameClaim never ran — still reaches the submit
+        // phase. Redundant (idempotent) on the inline ?claim= path.
         claimProgress().setProgress(2, 2);
         claimProgress().ticker(2, "Submitting to the network…");
         const sim = await server.simulateTransaction(authTxn, undefined, "enforce");
@@ -1519,13 +1530,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           throw new Error(`Transaction failed: ${getResult.status}`);
         }
       } catch (err: any) {
+        clearError(); // avoid stacking on a stale banner from a prior retry
         showError(`Couldn't finish claiming your name: ${err.message}`);
         $nameResult.style.display = "none";
-        const pe = document.getElementById("claim-progress-error");
-        if (pe) {
-          pe.textContent = `Couldn't finish claiming your name: ${err.message}`;
-          pe.classList.remove("hidden");
-        }
+        showClaimProgressError(`Couldn't finish claiming your name: ${err.message}`);
       }
     }
 
