@@ -193,7 +193,9 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     activateAccount,
     fetchRegistryAddress,
     accountUrl,
+    stripSubdomain,
   } from "@nidohq/passkey-sdk";
+  import { parseReturnIntent, buildClaimReturnUrl } from "../../lib/claimFlow";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
@@ -480,11 +482,16 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         () => {
           $preparingContinue.disabled = true;
           $continueSpan.textContent = "Taking you there…";
+          // Preserve a claim return intent across the apex → <cAddress> subdomain
+          // hop so it survives to the final success redirect (which reads `then`
+          // from the query string). Absent when this isn't a claim flow → no change.
+          const thenParam = params.get("then");
+          const thenQuery = thenParam ? `&then=${encodeURIComponent(thenParam)}` : "";
           window.location.replace(
             accountUrl(
               window.location.host,
               cAddress,
-              `/new-account/?salt=${encodeURIComponent(saltHex!)}&autopass=1#salt=${encodeURIComponent(saltHex!)}`,
+              `/new-account/?salt=${encodeURIComponent(saltHex!)}&autopass=1${thenQuery}#salt=${encodeURIComponent(saltHex!)}`,
             ),
           );
         },
@@ -776,7 +783,18 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // in the funded wallet is the payoff, and the deploy copy already promised
       // an automatic hand-off. "View on Stellar Expert" remains the only opt-in link.
       setTimeout(() => {
-        window.location.href = accountUrl;
+        const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
+        if (intent) {
+          const apexHost = stripSubdomain(window.location.host);
+          window.location.href = buildClaimReturnUrl({
+            apexHost,
+            name: intent.name,
+            contractId: contractId!,
+            protocol: window.location.protocol,
+          });
+        } else {
+          window.location.href = accountUrl;
+        }
       }, 1700);
     } catch (err: any) {
       // Fall back to the passkey step so the user can retry the deploy.
