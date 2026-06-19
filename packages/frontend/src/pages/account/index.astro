@@ -1108,14 +1108,19 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     }
 
     $registerBtn.addEventListener("click", () => {
-      void runPasskeyRegistration();
+      void runPasskeyRegistration(shouldRegisterNamePasskey ? { namePasskey: true } : undefined);
     });
 
+    // Arriving on the freshly-claimed name subdomain (?namepasskey=1): bring the
+    // "Register passkey for <name>" button into view and let the user TAP it.
+    // Do NOT auto-fire navigator.credentials.create() from a timer — WebAuthn
+    // needs a transient user gesture to surface the passkey UI (1Password on
+    // Firefox/Zen and iOS Safari enforce this; see attemptAutoPasskey in
+    // new-account). A programmatic call just darkens our sheet with no provider
+    // prompt and can trap the user behind the scrim. The button runs the same
+    // registration, gesture-activated.
     if (!cred && shouldRegisterNamePasskey && detectedName && !isSigningMode) {
       $registerSection.scrollIntoView({ behavior: "smooth", block: "center" });
-      setTimeout(() => {
-        void runPasskeyRegistration({ namePasskey: true });
-      }, 250);
     }
   }
 
