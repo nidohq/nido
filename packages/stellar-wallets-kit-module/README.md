@@ -5,6 +5,10 @@ module that registers a **Nido passkey smart account** as a first-class Stellar
 wallet. With it, any dApp that already uses the kit's wallet picker gets Nido
 alongside Freighter / Albedo / xBull / etc. with no Nido-specific code required.
 
+> **New here?** For a step-by-step integration walkthrough, see
+> [docs/ADD-NIDO-TO-DAPP.md](../../docs/ADD-NIDO-TO-DAPP.md). The reference below
+> covers the API surface.
+
 ## Install
 
 ```bash
