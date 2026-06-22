@@ -105,12 +105,30 @@ impl Contract {
     }
 
     /// Deploy an account contract and add its initial passkey signer.
-    pub fn create_account(e: &Env, salt: &BytesN<32>, key: BytesN<65>) -> Address {
-        Self::deploy_account_contract(e, salt, key.to_bytes())
+    ///
+    /// The deploy salt is derived on-chain as `sha256(key)` (see
+    /// [`Self::salt_from_key`]) rather than supplied by the caller. This binds
+    /// the resulting address to the signing key: nobody can deploy a
+    /// different-key account at the same address, and the address is
+    /// recoverable from the passkey alone (the basis for resuming an
+    /// interrupted setup).
+    pub fn create_account(e: &Env, key: BytesN<65>) -> Address {
+        let key_bytes = key.to_bytes();
+        let salt = Self::salt_from_key(e, &key_bytes);
+        Self::deploy_account_contract(e, &salt, key_bytes)
     }
 
-    pub fn get_c_address(e: &Env, salt: &BytesN<32>) -> Address {
-        Self::deployer(e, salt).deployed_address()
+    /// The deterministic account address for `key`, without deploying. Uses the
+    /// same `sha256(key)` salt derivation as [`Self::create_account`].
+    pub fn get_c_address(e: &Env, key: BytesN<65>) -> Address {
+        let salt = Self::salt_from_key(e, &key.to_bytes());
+        Self::deployer(e, &salt).deployed_address()
+    }
+
+    /// Derive the deploy salt from the signer key: `salt = sha256(key)`.
+    /// Enforced on-chain so the address is provably bound to the key.
+    fn salt_from_key(e: &Env, key_bytes: &Bytes) -> BytesN<32> {
+        e.crypto().sha256(key_bytes).to_bytes()
     }
 
     fn deployer(e: &Env, salt: &BytesN<32>) -> DeployerWithAddress {
@@ -167,11 +185,33 @@ impl Contract {
 mod test {
     use super::*;
     use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{contract, contractimpl, Env, IntoVal};
+    use soroban_sdk::{contract, contractimpl, Env, IntoVal, TryFromVal, Val, Vec};
 
     // Minimal mock: every `fetch_contract_id` call returns a fixed address.
     #[contract]
     struct MockRegistry;
+
+    // Minimal verifier whose `batch_canonicalize_key` echoes its input — enough
+    // for the smart-account constructor to canonicalize the External signer's
+    // key during deploy. Mirrors the mock in stellar-accounts' own tests.
+    #[contract]
+    struct MockVerifier;
+
+    #[contractimpl]
+    impl MockVerifier {
+        pub fn verify(_e: &Env, _hash: Bytes, _key_data: Val, _sig_data: Val) -> bool {
+            true
+        }
+        pub fn canonicalize_key(e: &Env, key_data: Val) -> Bytes {
+            Bytes::try_from_val(e, &key_data).unwrap()
+        }
+        pub fn batch_canonicalize_key(e: &Env, key_data: Vec<Val>) -> Vec<Bytes> {
+            Vec::from_iter(
+                e,
+                key_data.iter().map(|k| Bytes::try_from_val(e, &k).unwrap()),
+            )
+        }
+    }
 
     #[contractimpl]
     impl MockRegistry {
@@ -208,21 +248,68 @@ mod test {
         assert_eq!(first, second);
     }
 
+    /// `get_c_address` derives the salt as `sha256(key)`: distinct keys give
+    /// distinct addresses, the same key always gives the same address, and the
+    /// address equals the deployer address for `sha256(key)`.
     #[test]
-    fn get_c_address_uses_random_salt() {
+    fn get_c_address_derives_salt_from_key() {
         let env = Env::default();
         env.mock_all_auths();
         let admin = Address::generate(&env);
         let factory_addr = env.register(Contract, (admin,));
-        let salt_a = BytesN::from_array(&env, &[1; 32]);
-        let salt_b = BytesN::from_array(&env, &[2; 32]);
+        let key_a = BytesN::from_array(&env, &[1; 65]);
+        let key_b = BytesN::from_array(&env, &[2; 65]);
 
-        let first = env.as_contract(&factory_addr, || Contract::get_c_address(&env, &salt_a));
-        let second = env.as_contract(&factory_addr, || Contract::get_c_address(&env, &salt_b));
-        let first_again = env.as_contract(&factory_addr, || Contract::get_c_address(&env, &salt_a));
+        let first = env.as_contract(&factory_addr, || {
+            Contract::get_c_address(&env, key_a.clone())
+        });
+        let second = env.as_contract(&factory_addr, || Contract::get_c_address(&env, key_b));
+        let first_again = env.as_contract(&factory_addr, || {
+            Contract::get_c_address(&env, key_a.clone())
+        });
 
         assert_ne!(first, second);
         assert_eq!(first, first_again);
+
+        // The address is exactly the deployer address for salt = sha256(key).
+        let expected = env.as_contract(&factory_addr, || {
+            let salt = Contract::salt_from_key(&env, &key_a.to_bytes());
+            Contract::deployer(&env, &salt).deployed_address()
+        });
+        assert_eq!(first, expected);
+    }
+
+    /// `create_account` deploys at the `get_c_address(key)` address, and a
+    /// second deploy of the same key fails (the address is already occupied) —
+    /// the idempotent-fail that lets a resumed setup detect "already done".
+    #[test]
+    fn create_account_deploys_at_derived_address_and_is_idempotent() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        // A working verifier so the smart-account constructor can canonicalize
+        // the External signer's key; registry resolves "verifier" to it.
+        let verifier = env.register(MockVerifier, ());
+        let registry_addr = Address::from_str(&env, REGISTRY);
+        env.register_at(&registry_addr, MockRegistry, (verifier,));
+
+        // Install the smart-account wasm so deploy_v2 can resolve its hash.
+        env.deployer().upload_contract_wasm(smart_account::WASM);
+
+        let admin = Address::generate(&env);
+        let factory_addr = env.register(Contract, (admin,));
+        let client = ContractClient::new(&env, &factory_addr);
+
+        let key = BytesN::from_array(&env, &[7; 65]);
+        let predicted = client.get_c_address(&key);
+        let deployed = client.create_account(&key);
+        assert_eq!(
+            deployed, predicted,
+            "deployed address must match get_c_address(key)"
+        );
+
+        // Same key again → address already deployed → error.
+        assert!(client.try_create_account(&key).is_err());
     }
 
     /// The property that actually matters: the hash the factory hands to

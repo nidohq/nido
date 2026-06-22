@@ -47,7 +47,7 @@ const DUMMY_SOURCE =
  * always preferred and these only paper over a transient registry outage.
  */
 export const REGISTRY_FALLBACKS: Record<string, string> = {
-  factory: "CBQKB6GYPO7P2CGDKN7KYLEFEBBN6FY5NXZJ7HNR43ZK2DDOU5N7NCV5",
+  factory: "CD4XJXIYFSQNBWYERBJQMUCLDGRDX3L7ECV62PJHUSAFNEY3K6L76VZE",
   "name-registry": "CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX",
   "status-message": "CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV",
   // The verifier registered under `unverified/verifier` on testnet by

@@ -13,6 +13,12 @@ export {
 export { derToCompact } from "./signature.js";
 
 export {
+  recoverP256PublicKeys,
+  intersectCandidates,
+  webauthnSignedDigest,
+} from "./passkeyRecovery.js";
+
+export {
   buildAuthHash,
   buildAuthHashAt,
   computeAuthDigest,
