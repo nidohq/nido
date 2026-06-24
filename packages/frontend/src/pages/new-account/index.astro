@@ -702,7 +702,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // ledger heartbeat so the step reads as live rather than stalled.
       const confirmLabel = (status: RelayerStatus | null) =>
         status === "sent" ? "sent to the network"
-        : status === "submitted" ? "submitted — waiting to confirm"
+        : status === "submitted" ? "submitted — waiting for confirmation"
         : status === "confirmed" ? "confirmed on-chain"
         : "waiting for the network";
       let tickStatus = "waiting for the network";
