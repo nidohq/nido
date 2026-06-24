@@ -136,9 +136,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         <Nest size={22} spin dur={1.1} />
         <span style="font-size:13.5px; font-weight:600;">Opening your Nido…</span>
       </div>
-      <a id="explorer-link" class="link" target="_blank" rel="noopener" style="display:block; text-align:center; margin-top:18px; font-size:13.5px;">
-        View on Stellar Expert
-      </a>
     </section>
 
     <!-- ===================== RESERVING · explainer (page 1) ===================== -->
@@ -250,7 +247,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
   const $deployNestStatic = document.getElementById("deploy-nest-static")!;
   const $doneSection = document.getElementById("done-section")!;
-  const $explorerLink = document.getElementById("explorer-link") as HTMLAnchorElement;
   const $step1 = document.getElementById("step-1")!;
   const $step2 = document.getElementById("step-2")!;
 
@@ -706,31 +702,22 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // ledger heartbeat so the step reads as live rather than stalled.
       const confirmLabel = (status: RelayerStatus | null) =>
         status === "sent" ? "sent to the network"
-        : status === "submitted" ? "submitted — waiting to confirm"
+        : status === "submitted" ? "submitted — waiting for confirmation"
         : status === "confirmed" ? "confirmed on-chain"
         : "waiting for the network";
       let tickStatus = "waiting for the network";
-      let tickLedger: number | null = null;
-      // Guards the async ledger read: it may resolve after the wait is over and
+      // Guards the ticker render: a late poll may fire after the wait is over and
       // the step is already done — without this it would re-show a stale ticker.
       let confirming = true;
       const renderConfirmTicker = () => {
         if (!confirming) return;
-        setTicker(1, tickLedger ? `${tickStatus} · ledger ${tickLedger}…` : `${tickStatus}…`);
+        setTicker(1, `${tickStatus}…`);
       };
       renderConfirmTicker();
       const confirmed = await waitForConfirmation(submitted.transactionId, undefined, {
         onPoll: ({ status }) => {
           tickStatus = confirmLabel(status);
           renderConfirmTicker();
-          // Best-effort ledger heartbeat; a failed read just keeps the last value.
-          server
-            .getLatestLedger()
-            .then((l) => {
-              tickLedger = l.sequence;
-              renderConfirmTicker();
-            })
-            .catch(() => {});
         },
       });
       confirming = false;
@@ -770,7 +757,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       const protocol = window.location.protocol;
       const host = window.location.host;
       const accountUrl = `${protocol}//${host}/account/`;
-      $explorerLink.href = `https://stellar.expert/explorer/testnet/contract/${contractId}`;
 
       // Brief beat so the final check lands before the reveal.
       await new Promise((r) => setTimeout(r, 700));
@@ -781,7 +767,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
       // F-02: auto-advance into the wallet after a brief "ready" beat — arriving
       // in the funded wallet is the payoff, and the deploy copy already promised
-      // an automatic hand-off. "View on Stellar Expert" remains the only opt-in link.
+      // an automatic hand-off.
       setTimeout(() => {
         const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
         if (intent) {
