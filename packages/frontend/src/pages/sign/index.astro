@@ -65,6 +65,30 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       <div id="tx-detail" class="hidden" style="margin-bottom:16px;"></div>
       <button id="toggle-raw" type="button" class="hidden" style="background:none;border:none;color:var(--acc-ink);font-weight:700;cursor:pointer;font-size:12.5px;padding:0;margin:-2px 0 16px;">Show raw transaction</button>
 
+      <!-- Editable spending-limit control (revealed only for a session-grant
+           request whose `editable` carries a spending-limit field). Moved from
+           security/delegate/index.astro — same element ids, same wiring. -->
+      <div id="limit-edit" class="hidden card" style="padding:14px 16px;margin-bottom:16px;">
+        <div style="font-weight:700;font-size:13.5px;">Spending limit</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+          <input id="limit-amount" class="input" inputmode="decimal" placeholder="Amount"
+                 autocomplete="off" spellcheck="false"
+                 style="height:40px;font-size:13.5px;flex:1;min-width:0;" />
+          <span class="mut" style="font-size:12.5px;flex:0 0 auto;">XLM</span>
+          <select id="limit-period" class="input"
+                  style="height:40px;font-size:13.5px;flex:0 0 auto;width:auto;padding:0 10px;">
+            <option value="day">per day</option>
+            <option value="week">per week</option>
+            <option value="30d">per 30 days</option>
+          </select>
+        </div>
+        <label class="mut" style="display:flex;align-items:center;gap:7px;margin-top:10px;font-size:12.5px;cursor:pointer;">
+          <input id="limit-none" type="checkbox" />
+          No limit
+        </label>
+        <div class="mut" id="limit-summary" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
+      </div>
+
       <div id="error-box" role="alert" class="alert danger" style="display:none"></div>
 
       <div id="needs-register" class="hidden">
@@ -164,6 +188,9 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     padding: 14px 22px calc(18px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--line); background: var(--paper-2);
   }
+
+  #limit-edit .input:disabled { opacity: 0.5; }
+  #limit-none { accent-color: var(--acc); }
 </style>
 
 <script>
@@ -181,7 +208,13 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { NATIVE_SAC_ID } from '../../lib/network.js';
   import { loadSignRequest, signRequestFromParams, type SignRequest } from '../../lib/signing/signRequest';
   import { renderTechDetails } from '../../lib/transfer/techDetails.js';
-  import type { LimitPeriod } from '../../lib/spendingLimitParams';
+  import {
+    PERIOD_LEDGERS,
+    PERIOD_LABEL,
+    stroopsFromXlm,
+    type LimitPeriod,
+  } from '../../lib/spendingLimitParams';
+  import { stroopsToXlm } from '../../lib/money.js';
   import { runSign } from '../../lib/signing/runSign';
   import { mountSteps } from '../../lib/progressSteps';
   import { EXPLORER_BASE } from '../../lib/network.js';
@@ -313,41 +346,111 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       $detail.innerHTML = renderNameRegister(nameOp);
       $detail.classList.remove('hidden');
     } else if (op.type === 'add-context-rule') {
-      // Session-grant descriptor — render via renderSessionGrant.
+      // Session-grant descriptor — render via renderSessionGrant. `op` is a live
+      // reference into req.operation, so the editable spending-limit control
+      // below mutates op.limit in place; runSign rebuilds the op from this
+      // edited descriptor at approve time (no live re-simulation needed).
       payload = op.target; // non-empty (target address) so validate() passes
       document.getElementById('payload-row')!.classList.add('hidden');
       document.getElementById('payload-divider')?.classList.add('hidden');
       const $detail = document.getElementById('tx-detail')!;
-      // Derive the scope from the descriptor fields.
       const grantOrigin =
         req.returnTarget.type === 'dapp' ? req.returnTarget.origin : (req.subtitle ?? op.target);
-      const limitStroops = op.limit ? op.limit.stroops : null;
-      // Map period ledgers to a LimitPeriod label: day=17280, week=120960, 30d=518400.
+      // Map period ledgers back to a LimitPeriod label: day=17280, week=120960, 30d=518400.
       const periodMap: Array<[number, LimitPeriod]> = [
         [17280, 'day'], [120960, 'week'], [518400, '30d'],
       ];
-      const period =
-        op.limit
-          ? (periodMap.find(([l]) => l === op.limit!.periodLedgers)?.[1] ?? 'day')
-          : 'day';
-      const expiryLabel =
-        op.validUntil == null
-          ? 'Until revoked'
-          : new Date(op.validUntil * 1000).toLocaleDateString();
-      const grantOp = {
-        kind: 'session-grant' as const,
-        contract: account ?? '',
-        name: op.label ?? 'session-key',
-        target: op.target,
-        validUntil: op.validUntil ?? null,
+      // Re-render the grant card from the CURRENT descriptor — called once now
+      // and again on every spending-limit edit.
+      const renderGrant = () => {
+        const period: LimitPeriod =
+          op.limit
+            ? (periodMap.find(([l]) => l === op.limit!.periodLedgers)?.[1] ?? 'day')
+            : 'day';
+        const expiryLabel =
+          op.validUntil == null
+            ? 'Until revoked'
+            : new Date(op.validUntil * 1000).toLocaleDateString();
+        $detail.innerHTML = renderSessionGrant(
+          {
+            kind: 'session-grant',
+            contract: account ?? '',
+            name: op.label ?? 'session-key',
+            target: op.target,
+            validUntil: op.validUntil ?? null,
+          },
+          {
+            origin: grantOrigin,
+            limitStroops: op.limit ? op.limit.stroops : null,
+            period,
+            expiryLabel,
+          },
+        );
       };
-      $detail.innerHTML = renderSessionGrant(grantOp, {
-        origin: grantOrigin,
-        limitStroops,
-        period,
-        expiryLabel,
-      });
+      renderGrant();
       $detail.classList.remove('hidden');
+
+      // Editable spending-limit slot: only when the request asks for it. Moved
+      // verbatim (markup + wiring) from security/delegate/index.astro.
+      const editLimit = req.editable?.find((e) => e.field === 'spending-limit');
+      if (editLimit) {
+        const $limitEdit = document.getElementById('limit-edit')!;
+        const limitAmount = document.getElementById('limit-amount') as HTMLInputElement;
+        const limitPeriod = document.getElementById('limit-period') as HTMLSelectElement;
+        const limitNone = document.getElementById('limit-none') as HTMLInputElement;
+        const limitSummary = document.getElementById('limit-summary')!;
+
+        const initialPeriod: LimitPeriod =
+          editLimit.initialPeriod in PERIOD_LEDGERS ? editLimit.initialPeriod : 'day';
+        limitAmount.value =
+          editLimit.initialStroops != null ? stroopsToXlm(editLimit.initialStroops) : '';
+        limitPeriod.value = initialPeriod;
+        limitNone.checked = editLimit.initialStroops == null;
+
+        const selectedPeriod = (): LimitPeriod =>
+          limitPeriod.value in PERIOD_LEDGERS ? (limitPeriod.value as LimitPeriod) : 'day';
+
+        // Push the controls' state into the in-memory descriptor, then re-render
+        // the grant card + summary. No re-simulation: buildOperation reads
+        // op.limit at approve time.
+        const syncLimitControls = () => {
+          const none = limitNone.checked;
+          limitAmount.disabled = none;
+          limitPeriod.disabled = none;
+          if (none) {
+            op.limit = null;
+            limitSummary.textContent =
+              'No cap — the app can move any amount this contract allows until the key expires.';
+            renderGrant();
+            return;
+          }
+          try {
+            const stroops = stroopsFromXlm(limitAmount.value); // throws a user-facing message
+            op.limit = {
+              stroops: stroops.toString(),
+              periodLedgers: PERIOD_LEDGERS[selectedPeriod()],
+            };
+            // The policy is deny-by-default: with a limit installed, ONLY token
+            // transfers are authorized — any other call in the scoped contract is
+            // blocked outright, not merely unmetered.
+            limitSummary.textContent =
+              `Only token transfers are allowed, capped at ${stroopsToXlm(stroops)} XLM ` +
+              `${PERIOD_LABEL[selectedPeriod()]} (rolling window) — other calls in this ` +
+              `contract will be blocked.`;
+            renderGrant();
+          } catch (e) {
+            // Leave op.limit at its last valid value so the card doesn't flicker;
+            // surface the parse error in the summary line only.
+            limitSummary.textContent = e instanceof Error ? e.message : String(e);
+          }
+        };
+
+        limitNone.addEventListener('change', syncLimitControls);
+        limitAmount.addEventListener('input', syncLimitControls);
+        limitPeriod.addEventListener('change', syncLimitControls);
+        syncLimitControls();
+        $limitEdit.classList.remove('hidden');
+      }
     } else {
       // remove-context-rule or any unknown descriptor kind: fall through to
       // the raw payload row (nothing specific to render).
@@ -515,9 +618,23 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   const err = validate();
   if (err) { showError(err); approve.disabled = true; }
 
+  // The cancel query mirrors the dApp's success contract: a session-grant
+  // return uses `?delegation=ok` on success, so cancel must send the matching
+  // `?delegation=cancelled`. For the default dapp-tx path (no successQuery) we
+  // keep the historical `?nido_sign=cancelled`. Derived from successQuery's
+  // single param so the two stay in lockstep without a second config field.
+  function dappCancelQuery(): string {
+    if (req?.returnTarget.type === 'dapp' && req.returnTarget.successQuery) {
+      const sp = new URLSearchParams(req.returnTarget.successQuery);
+      const key = [...sp.keys()][0];
+      if (key) return '?' + new URLSearchParams({ [key]: 'cancelled' }).toString();
+    }
+    return '?nido_sign=cancelled';
+  }
+
   cancel.addEventListener('click', () => {
     if (!origin) { window.location.href = '/account/'; return; }
-    finish('?nido_sign=cancelled');
+    finish(dappCancelQuery());
   });
 
   // #89: "Use a different account" — this page can't switch in place (the
@@ -562,8 +679,14 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         steps.finish();
         $status.textContent = 'Done — returning…';
         if (req.returnTarget.type === 'dapp') {
-          // SUBMITTED-MARKER: dApp must not re-broadcast; return hash only.
-          setTimeout(() => finish('?nido_submitted=' + encodeURIComponent(result.hash) + '&kind=tx'), 300);
+          // A dApp return can override the success query (e.g. the session-grant
+          // caller sets `?delegation=ok` for delegationHandover.readDelegationReturn).
+          // Absent (the dapp-tx path) → SUBMITTED-MARKER: the dApp must not
+          // re-broadcast, so we return the hash only.
+          const successQuery =
+            req.returnTarget.successQuery ??
+            '?nido_submitted=' + encodeURIComponent(result.hash) + '&kind=tx';
+          setTimeout(() => finish(successQuery), 300);
         } else {
           // own-action (route): navigate internally, appending txhash so the
           // return page (e.g. status-message) can display an explorer link.

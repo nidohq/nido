@@ -26,7 +26,12 @@ export type EditableControl = {
 
 export type ReturnTarget =
   | { type: "route"; url: string }
-  | { type: "dapp"; origin: string; returnUrl?: string };
+  // `successQuery` overrides the default submitted-marker query a dApp return
+  // appends on success. ADDITIVE: when absent (the dapp-tx path), /sign/ keeps
+  // appending `?nido_submitted=<hash>&kind=tx`. The session-grant caller sets
+  // it to `?delegation=ok` so the existing `delegationHandover.readDelegationReturn`
+  // contract keeps working unchanged.
+  | { type: "dapp"; origin: string; returnUrl?: string; successQuery?: string };
 
 export interface SignRequest {
   v: 1;
