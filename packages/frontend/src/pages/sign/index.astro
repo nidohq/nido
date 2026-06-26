@@ -746,12 +746,11 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   const PHASE_STEP: Record<string, number> = { build: 0, sign: 1, submit: 2, confirm: 3 };
 
   function onProgress(p: { phase: string; detail?: string }) {
-    // Open the passkey sheet right before the WebAuthn ceremony (sign phase),
-    // and close it once the ceremony is done (submit/confirm phase) so the
-    // progress ticker is visible during relayer submit + on-chain confirmation.
-    if (p.phase === 'sign') {
-      openPasskeySheet({ title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` });
-    } else if (p.phase === 'submit' || p.phase === 'confirm') {
+    // Close the passkey sheet once the ceremony is done (submit/confirm phase)
+    // so the progress ticker is visible during relayer submit + on-chain confirmation.
+    // The sheet is opened at the handler start (before runSign) to cover ALL paths
+    // including dApp single-passkey which never fires 'sign' via onStatus.
+    if (p.phase === 'submit' || p.phase === 'confirm') {
       closePasskeySheet();
     }
     const stepIdx = PHASE_STEP[p.phase] ?? -1;
@@ -769,6 +768,12 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       // New path: drive runSign — handles build → sign → submit → confirm.
       $signProgress.classList.remove('hidden');
       steps.setProgress(0, 0);
+      // Open the passkey sheet immediately (before runSign) so it's shown for
+      // ALL new-path flows — own-action AND dApp single-passkey. The single-passkey
+      // dApp path goes through signTransactionXdr which only calls onStatus for
+      // multi-passkey ceremonies, so waiting for 'sign' in onProgress would leave
+      // the sheet closed for the most common dApp-tx case.
+      openPasskeySheet({ title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` });
       try {
         const result = await runSign(req!, { onProgress });
         steps.finish();
