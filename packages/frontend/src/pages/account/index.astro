@@ -11,8 +11,7 @@
 //   - copy-address — now uses toast() for "Copied!" feedback.
 //   - name section — saveAccountName/loadAccountName + claim/sign-redirect-return flow.
 //   - passkey-info section, register section, sign-a-hash section.
-//   - signing mode — reskinned with PasskeySheet + withPasskeySheet(realCeremony);
-//     loadCredential / signHash / registerPasskey plumbing intact (Task 15 removes).
+//   - signing mode — removed; signing now handled by dedicated /sign/ route.
 //
 // Send & Activity from the prototype are intentionally OMITTED (no backend).
 // "Settings" links out to the existing /security/ page (no settings built here).
@@ -47,68 +46,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     <div id="error-box" role="alert" class="alert danger" style="display:none; margin:8px 22px;"></div>
 
     <!-- ============================================================= -->
-    <!-- SIGNING MODE — reskinned signature request                    -->
-    <!-- ============================================================= -->
-    <div id="signing-mode" class="hidden screen-in pad" style="padding-top:18px;">
-      <div style="text-align:center; margin-bottom:18px;">
-        <div style="width:72px; height:72px; border-radius:20px; background:var(--acc-soft); display:grid; place-items:center; margin:0 auto 14px;">
-          <span id="sign-icon-generic"><Icon name="shieldcheck" size={36} color="var(--acc)" /></span>
-          <span id="sign-icon-claim" class="hidden"><Icon name="sparkle" size={36} color="var(--acc)" /></span>
-        </div>
-        <div id="sign-title" class="disp" style="font-weight:800; font-size:26px;">Approve this request</div>
-        <p id="sign-sub" class="mut" style="font-size:14px; line-height:1.5; max-width:320px; margin:8px auto 0;">
-          An app is asking you to sign. Review it, then confirm with your passkey.
-        </p>
-      </div>
-
-      <div class="card" style="padding:4px 16px;">
-        <!-- Name row — shown only when this request is a recognized name claim
-             (the incoming hash matches the one the claim flow stashed). Default
-             hidden via inline display (NOT the .hidden class) because the row
-             also carries an inline display, and an inline style would otherwise
-             override the class and leak an empty row into the generic path. -->
-        <div id="sign-name-row" style="display:none; justify-content:space-between; align-items:center; gap:14px; padding:14px 0;">
-          <span class="mut" style="font-size:13.5px; font-weight:600; white-space:nowrap;">Name</span>
-          <code id="sign-name" class="mono" style="font-size:15px; font-weight:700; margin-left:auto; text-align:right; word-break:break-all; color:var(--acc-ink);"></code>
-        </div>
-        <div id="sign-from-row" style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 0;">
-          <span class="mut" style="font-size:13.5px; font-weight:600; white-space:nowrap;">From</span>
-          <span id="sign-origin" class="mono" style="font-size:13px; margin-left:auto; text-align:right; word-break:break-all;"></span>
-        </div>
-        <div id="sign-hash-row" style="display:flex; justify-content:space-between; gap:14px; padding:14px 0; border-top:1px solid var(--line-soft);">
-          <span class="mut" style="font-size:13.5px; font-weight:600; white-space:nowrap;">Hash</span>
-          <code id="sign-hash" class="mono" style="font-size:11.5px; margin-left:auto; text-align:right; word-break:break-all;"></code>
-        </div>
-      </div>
-      <!-- For a recognized name claim the verifiable details (the decoded
-           transaction + the raw hash) are collapsed behind this toggle (mirrors
-           the /sign/ page's "Show raw transaction"). Populated by JS. -->
-      <button id="sign-toggle-tech" type="button" class="hidden" style="background:none; border:none; color:var(--acc-ink); font-weight:700; cursor:pointer; font-size:12.5px; padding:0; margin:10px 0 0;">Show technical details</button>
-      <div id="sign-tech" class="hidden" style="margin-top:12px;"></div>
-
-      <div id="sign-needs-register" style="margin-top:18px;">
-        <p class="mut" style="font-size:13.5px; line-height:1.5; text-align:center; margin:0 0 14px;">
-          You don't have a passkey on this Nido yet. Set one up first, then you can approve.
-        </p>
-        <button id="sign-register-btn" class="btn acc">
-          <Icon name="key" size={20} color="#fff" /> Set up your passkey
-        </button>
-      </div>
-
-      <div id="sign-ready" class="hidden" style="margin-top:18px;">
-        <button id="approve-btn" class="btn acc">
-          <Icon name="faceid" size={20} color="#fff" /> <span class="js-confirm-label">Confirm it's you</span>
-        </button>
-        <button id="deny-btn" class="btn ghost" style="margin-top:10px;">Not now</button>
-      </div>
-
-      <pre id="sign-mode-result" class="mono" style="display:none; margin-top:16px; font-size:12.5px; color:var(--good); text-align:center;"></pre>
-    </div>
-
-    <!-- ============================================================= -->
     <!-- CLAIM ENTRY — unclaimed name subdomain, non-signing            -->
     <!-- ============================================================= -->
-    <!-- A standalone top-level view (sibling of #signing-mode / #home-mode),
+    <!-- A standalone top-level view (sibling of #home-mode),
          NOT nested in #home-mode: an unclaimed name has no account context, so
          #home-mode (and its empty balance/address hero) is never revealed.
          showClaimEntry un-hides this section directly. Visited when an UNCLAIMED
@@ -314,13 +254,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
 <script>
   import {
-    Networks,
-  } from "@stellar/stellar-sdk";
-  import {
     parseRegistration,
-    derToCompact,
-    buf2hex,
-    hex2buf,
     contractIdFromHostname,
     isContractId,
     nameFromHostname,
@@ -345,14 +279,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { createNido } from "../../lib/createNido";
   import { markUsed, readLastUsed } from "../../lib/lastUsed";
   import { toast } from "../../lib/toast";
-  import { describeSignRequest } from "../../lib/signRequestSummary";
   import { stashSignRequest, type SignRequest } from "../../lib/signing/signRequest";
-  import { describeTransaction } from "../../lib/transfer/txSummary";
-  import { renderNameRegister } from "../../lib/transfer/review";
-  import { esc } from "../../lib/html";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
-  import { shortAddr } from "../../lib/address";
   import { formatXlm } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
@@ -375,9 +304,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   // --- URL params (needed early for signing mode detection) ---
 
   const params = new URLSearchParams(window.location.search);
-  const signHashParam = params.get("sign");
-  const callbackUrl = params.get("callback");
-  const isSigningMode = signHashParam && callbackUrl;
   const shouldRegisterNamePasskey = params.get("namepasskey") === "1";
 
   // --- State ---
@@ -414,31 +340,21 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         "Test SDF Network ; September 2015"
       );
       if (resolved) {
-        if (isSigningMode) {
-          // Redirect to contract-ID subdomain for passkey auth
-          const rootHost = stripSubdomain(window.location.host);
-          const target = accountUrl(rootHost, resolved, window.location.pathname + window.location.search);
-          window.location.replace(window.location.protocol + target);
-          throw new Error("redirecting");
-        }
         // Stay on name subdomain — use resolved ID for all operations
         contractId = resolved;
-      } else if (!isSigningMode) {
-        // Syntactically-valid but unclaimed name + not signing → offer to claim
-        // it. The entry view OWNS the page (it picks a claiming account and
+      } else {
+        // Syntactically-valid but unclaimed name → offer to claim it.
+        // The entry view OWNS the page (it picks a claiming account and
         // hands off to that account's own subdomain), so halt the rest of
         // module init: there's no account context to initialize for an
         // unclaimed name. A bare `return` is illegal at module top level here
-        // (this whole block runs in the script's ES-module body), so mirror the
-        // signing-mode redirect above and throw a sentinel the catch re-throws.
+        // (this whole block runs in the script's ES-module body), so throw a
+        // sentinel the catch re-throws.
         await showClaimEntry(detectedName);
         throw new Error("claim-entry");
-      } else {
-        // Signing mode: nothing to sign against an unresolved name.
-        showError(`Name "${detectedName}" not found in the registry.`);
       }
     } catch (err: any) {
-      if (err.message === "redirecting" || err.message === "claim-entry") throw err;
+      if (err.message === "claim-entry") throw err;
       showError(`Couldn't resolve that name: ${err.message}`);
     }
   }
@@ -449,12 +365,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
   function loadCredential() {
     return contractId ? sdkLoadCredential(contractId) : null;
-  }
-
-  function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-    const buffer = new ArrayBuffer(bytes.byteLength);
-    new Uint8Array(buffer).set(bytes);
-    return buffer;
   }
 
   // --- Shared: register passkey ---
@@ -487,43 +397,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     const reg = parseRegistration(credential as any);
     saveCredential(reg.credentialId, reg.publicKey);
     return reg;
-  }
-
-  // --- Shared: sign hash ---
-
-  async function signHash(hashHex: string) {
-    const cred = loadCredential();
-    if (!cred) throw new Error("No passkey registered");
-
-    const challenge = bytesToArrayBuffer(hex2buf(hashHex));
-
-    const assertion = (await navigator.credentials.get({
-      publicKey: {
-        challenge: challenge,
-        rpId: rpId,
-        allowCredentials: [
-          {
-            id: bytesToArrayBuffer(cred.credentialId),
-            type: "public-key",
-          },
-        ],
-        userVerification: "required",
-        timeout: 60000,
-      },
-    })) as PublicKeyCredential;
-
-    const response = assertion.response as AuthenticatorAssertionResponse;
-    const authenticatorData = new Uint8Array(response.authenticatorData);
-    const clientDataJSON = new Uint8Array(response.clientDataJSON);
-    const signatureDer = new Uint8Array(response.signature);
-    const signatureCompact = derToCompact(signatureDer);
-
-    return {
-      authenticatorData: buf2hex(authenticatorData),
-      clientDataJSON: buf2hex(clientDataJSON),
-      signature: buf2hex(signatureCompact),
-      publicKey: cred.publicKey,
-    };
   }
 
   // --- UI helpers ---
@@ -687,232 +560,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   }
 
   // =====================
-  // SIGNING MODE
-  // =====================
-
-  // The raw auth digest, as a labelled card — the irreducible "what you're
-  // signing" detail, shown inside the collapsible technical section.
-  function renderSignHashCard(hash: string): string {
-    return `<div class="card" style="padding:13px 16px;margin-top:10px;">
-      <div class="mut" style="font-size:12px;font-weight:600;margin-bottom:6px;">Signature hash</div>
-      <code class="mono" style="font-size:11.5px;word-break:break-all;line-height:1.5;">${esc(hash)}</code>
-    </div>`;
-  }
-
-  function renderStoredNameClaimDetails(name: string, signHash: string): string {
-    const account = contractId;
-    const registry = localStorage.getItem("nido:name-registry-id");
-    const row = (label: string, valueHtml: string, first = false) => {
-      const border = first ? "" : "border-top:1px solid var(--line-soft);";
-      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 0;${border}">
-        <span class="mut" style="font-size:13px;font-weight:600;white-space:nowrap;">${label}</span>
-        <span style="font-size:13.5px;font-weight:600;text-align:right;min-width:0;word-break:break-word;">${valueHtml}</span>
-      </div>`;
-    };
-    const accountRow = account
-      ? row("For account", `<span class="mono">${esc(shortAddr(account))}</span>`)
-      : "";
-    const registryRow = registry
-      ? row("Registry", `<span class="mono">${esc(shortAddr(registry))}</span>`)
-      : "";
-    return `<div class="card" style="padding:2px 16px;">
-      ${row("Action", "Register a name", true)}
-      ${row("Name", `<code class="mono">${esc(name)}</code>`)}
-      ${accountRow}
-      ${registryRow}
-    </div>${renderSignHashCard(signHash)}`;
-  }
-
-  // Decode the transaction the claim flow stashed (same origin) and render it as
-  // human-readable detail, so "technical details" shows the actual register
-  // operation, not just the digest. Best-effort: any failure leaves the
-  // already-rendered hash card in place.
-  async function renderClaimTxDetails($tech: HTMLElement, signHash: string) {
-    const txXdr = localStorage.getItem("nido:name-txXdr");
-    if (!txXdr) return;
-    try {
-      // stellar-sdk's XDR parsing needs the Buffer global (same lazy polyfill
-      // the claim/finalize paths use before any SDK call).
-      const { Buffer: B } = await import("buffer");
-      if (typeof globalThis.Buffer === "undefined") (globalThis as any).Buffer = B;
-
-      const summary = describeTransaction(txXdr, Networks.TESTNET);
-      const reg = summary.ops.find((o) => o.kind === "name-register");
-      if (!reg || reg.kind !== "name-register") return;
-
-      let fee: bigint | undefined;
-      try {
-        fee = BigInt(summary.fee);
-      } catch {
-        fee = undefined;
-      }
-      $tech.innerHTML = renderNameRegister(reg, fee) + renderSignHashCard(signHash);
-    } catch {
-      /* keep the hash-only card already shown */
-    }
-  }
-
-  function initSigningMode() {
-    document.getElementById("signing-mode")!.classList.remove("hidden");
-
-    // K-04: an "approve a request" moment is a single focused decision — strip
-    // the wallet sidebar + topbar so this surface matches the dedicated /sign/
-    // treatment, regardless of which route the request arrived on. Inline
-    // display:none beats the ≥1024 sidebar media query.
-    const $sidebar = document.querySelector<HTMLElement>(".nido-sidebar");
-    if ($sidebar) $sidebar.style.display = "none";
-    const $topbar = document.querySelector<HTMLElement>(".col-app .topbar");
-    if ($topbar) $topbar.style.display = "none";
-
-    // Show request details
-    let originDisplay: string;
-    try {
-      originDisplay = new URL(callbackUrl!).origin;
-    } catch {
-      originDisplay = callbackUrl!;
-    }
-    document.getElementById("sign-origin")!.textContent = originDisplay;
-    document.getElementById("sign-hash")!.textContent = signHashParam;
-
-    // If this request is the name claim the user just started, surface what
-    // they're actually approving — the name — instead of only the raw hash.
-    // describeSignRequest binds that friendly copy to the exact hash (the claim
-    // flow stashed both), so a mismatched/forged request can't borrow it.
-    const summary = describeSignRequest({
-      signHash: signHashParam!,
-      claimHash: localStorage.getItem("nido:name-claim-hash"),
-      claimName: localStorage.getItem("nido:name-pending"),
-    });
-    const signingNameClaim = summary.kind === "name-claim" ? summary.name : null;
-    if (summary.kind === "name-claim") {
-      document.getElementById("sign-icon-generic")!.classList.add("hidden");
-      document.getElementById("sign-icon-claim")!.classList.remove("hidden");
-      document.getElementById("sign-title")!.textContent = "Claim your name";
-      document.getElementById("sign-sub")!.textContent =
-        `You're claiming the name "${summary.name}" for your Nido. Confirm with your passkey to lock it in.`;
-
-      document.getElementById("sign-name")!.textContent = summary.name;
-      document.getElementById("sign-name-row")!.style.display = "flex";
-      // The "From" origin and the in-card raw-hash row are noise for a
-      // self-initiated claim — hide both. The verifiable details (the decoded
-      // transaction + the hash) move into the collapsible block below.
-      document.getElementById("sign-from-row")!.style.display = "none";
-      document.getElementById("sign-hash-row")!.style.display = "none";
-
-      const $tech = document.getElementById("sign-tech")!;
-      // Show hash-bound name-claim details immediately so the toggle is useful
-      // even if async XDR decoding fails; enrich with the decoded transaction
-      // when ready.
-      $tech.innerHTML = renderStoredNameClaimDetails(summary.name, signHashParam!);
-      void renderClaimTxDetails($tech, signHashParam!);
-
-      const $toggle = document.getElementById("sign-toggle-tech")!;
-      $toggle.classList.remove("hidden");
-      $toggle.addEventListener("click", () => {
-        const shown = $tech.classList.toggle("hidden") === false;
-        $toggle.textContent = shown ? "Hide technical details" : "Show technical details";
-      });
-    }
-
-    const cred = loadCredential();
-    if (cred) {
-      document.getElementById("sign-ready")!.classList.remove("hidden");
-      document.getElementById("sign-needs-register")!.classList.add("hidden");
-    } else {
-      document.getElementById("sign-needs-register")!.classList.remove("hidden");
-      document.getElementById("sign-ready")!.classList.add("hidden");
-    }
-
-    // Register button in signing mode
-    document.getElementById("sign-register-btn")!.addEventListener("click", async () => {
-      clearError();
-      const btn = document.getElementById("sign-register-btn") as HTMLButtonElement;
-      const support = checkPasskeySupport();
-      if (!support.ok) {
-        showError(support.message!);
-        return;
-      }
-      try {
-        btn.disabled = true;
-        await withPasskeySheet(() => registerPasskey(), {
-          title: "Set up your passkey",
-          sub: `Confirm with ${passkey.label} to create it.`,
-        });
-        document.getElementById("sign-needs-register")!.classList.add("hidden");
-        document.getElementById("sign-ready")!.classList.remove("hidden");
-      } catch (err: any) {
-        if (err.name === "NotAllowedError") {
-          showError(passkeyBlockedHint("registration"));
-        } else {
-          showError(`Couldn't set up your passkey: ${err.message}`);
-        }
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    // Approve button
-    document.getElementById("approve-btn")!.addEventListener("click", async () => {
-      clearError();
-
-      const btn = document.getElementById("approve-btn") as HTMLButtonElement;
-      const support = checkPasskeySupport();
-      if (!support.ok) {
-        showError(support.message!);
-        return;
-      }
-      try {
-        btn.disabled = true;
-
-        const result = await withPasskeySheet(
-          () => signHash(signHashParam!),
-          signingNameClaim
-            ? {
-                title: "Claim your name",
-                sub: `Confirm with ${passkey.label} to register "${signingNameClaim}" for this Nido.`,
-              }
-            : {
-                title: confirmLabel,
-                sub: "Approving the request from the app.",
-              },
-        );
-
-        const $result = document.getElementById("sign-mode-result")!;
-        $result.style.display = "block";
-        $result.textContent = "Approved — sending you back…";
-
-        const cbUrl = new URL(callbackUrl!);
-        cbUrl.searchParams.set("authenticatorData", result.authenticatorData);
-        cbUrl.searchParams.set("clientDataJSON", result.clientDataJSON);
-        cbUrl.searchParams.set("signature", result.signature);
-        cbUrl.searchParams.set("publicKey", result.publicKey);
-
-        setTimeout(() => {
-          window.location.href = cbUrl.toString();
-        }, 500);
-      } catch (err: any) {
-        if (err.name === "NotAllowedError") {
-          showError(passkeyBlockedHint("signing"));
-        } else {
-          showError(`Couldn't confirm: ${err.message}`);
-        }
-        btn.disabled = false;
-      }
-    });
-
-    // Deny button
-    document.getElementById("deny-btn")!.addEventListener("click", () => {
-      try {
-        const cbUrl = new URL(callbackUrl!);
-        cbUrl.searchParams.set("error", "denied");
-        window.location.href = cbUrl.toString();
-      } catch {
-        window.history.back();
-      }
-    });
-  }
-
-  // =====================
   // HOME MODE
   // =====================
 
@@ -1030,7 +677,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     // new-account). A programmatic call just darkens our sheet with no provider
     // prompt and can trap the user behind the scrim. The button runs the same
     // registration, gesture-activated.
-    if (!cred && shouldRegisterNamePasskey && detectedName && !isSigningMode) {
+    if (!cred && shouldRegisterNamePasskey && detectedName) {
       $registerSection.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }
@@ -1042,12 +689,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   // Home link is set unconditionally near the top of the script (before any
   // code that can throw), so it doesn't need setting here.
 
-  if (isSigningMode) {
-    initSigningMode();
-  } else {
-    if (contractId) saveAccount(contractId);
-    initHomeMode();
-  }
+  if (contractId) saveAccount(contractId);
+  initHomeMode();
 
   // Show the real, full address in the Receive panel.
   document.getElementById("receive-address")!.textContent = contractId || "(unknown)";
@@ -1069,7 +712,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
   // --- Name section ---
 
-  if (SHOW_NAME_SECTION && contractId && !isSigningMode) {
+  if (SHOW_NAME_SECTION && contractId) {
     const $nameSection = document.getElementById("name-section")!;
     const $nameDisplay = document.getElementById("name-display")!;
     const $claimBtn = document.getElementById("claim-name-btn") as HTMLButtonElement;
@@ -1140,7 +783,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     // Build a SignRequest and hand off to /sign/ so the claim flows through
     // the unified signing surface. Return target: the name subdomain at /account/?namepasskey=1.
     const claimParam = params.get("claim");
-    if (claimParam && contractId && !isSigningMode) {
+    if (claimParam && contractId) {
       const name = claimParam.trim().toLowerCase();
       if (/^[a-z][a-z0-9]{0,14}$/.test(name)) {
         const rootHost = stripSubdomain(window.location.host);
@@ -1167,7 +810,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     // address so the status-message page can repopulate its input on return.
     const smSignXdr = params.get("sm-sign");
     const smReturnUrl = params.get("sm-return");
-    if (smSignXdr && smReturnUrl && contractId && !isSigningMode) {
+    if (smSignXdr && smReturnUrl && contractId) {
       const req: SignRequest = {
         v: 1,
         kind: "generic",
