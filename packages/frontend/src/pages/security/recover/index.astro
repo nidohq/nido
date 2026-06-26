@@ -123,11 +123,14 @@ import Icon from '../../../components/Icon.astro';
 
           <span class="section-label" style="display:block;margin:22px 0 10px;">Step 2 · Optional</span>
           <div class="card" style="padding:18px;">
-            <div class="field">
-              <label for="om-remove-id">Remove the lost device's key</label>
-              <input id="om-remove-id" class="input mono" type="number" min="0"
-                     placeholder="leave blank to keep" style="margin-top:7px;" />
-            </div>
+            <label id="om-remove-label" style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;">
+              <input id="om-remove-old" type="checkbox" disabled
+                     style="margin-top:3px;accent-color:var(--acc);" />
+              <span>
+                <span style="display:block;font-size:14px;">Remove the lost device's key</span>
+                <span id="om-remove-hint" class="mut" style="display:block;font-size:12.5px;margin-top:3px;line-height:1.5;">Checking the account…</span>
+              </span>
+            </label>
           </div>
 
           <span class="section-label" style="display:block;margin:22px 0 10px;">Step 3 · Share with friends</span>
@@ -180,7 +183,11 @@ import Icon from '../../../components/Icon.astro';
     buf2hex,
     type RotationHandoff,
   } from '@nidohq/passkey-sdk';
-  import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
+  import {
+    fetchVerifierAddress,
+    findRemovableOldSigner,
+    type RemovableSigner,
+  } from '../../../lib/policyChainFetch.js';
   import {
     findRecoveryRules,
     prepareRotation,
@@ -403,6 +410,7 @@ import Icon from '../../../components/Icon.astro';
     let recoveryRuleId: number | null = null;
     let friends: string[] = [];
     let threshold = 1;
+    let removable: RemovableSigner | null = null;
 
     const keyStatus = document.getElementById('om-key-status')!;
     const prepareBtn = document.getElementById('om-prepare') as HTMLButtonElement;
@@ -436,6 +444,33 @@ import Icon from '../../../components/Icon.astro';
         (e instanceof Error ? e.message : String(e)) + '</p>';
       return;
     }
+
+    // Figure out which signer the "remove the lost device's key" checkbox would
+    // remove. Enable it only when exactly one External (passkey) signer is on
+    // rule 0 — during recovery that's the lost device's key (the new passkey
+    // isn't on-chain yet). With 0 or >1 (or an unreadable rule) leave it
+    // disabled and explain why, rather than guess.
+    const removeCheckbox = document.getElementById('om-remove-old') as HTMLInputElement;
+    const removeHint = document.getElementById('om-remove-hint')!;
+    void (async () => {
+      removable = await findRemovableOldSigner(account!);
+      if (removable.ok) {
+        removeCheckbox.disabled = false;
+        removeHint.textContent =
+          `Removes the old passkey …${buf2hex(removable.publicKey).slice(-8)} ` +
+          `(signer #${removable.signerId}) in the same recovery.`;
+      } else {
+        removeCheckbox.checked = false;
+        removeCheckbox.disabled = true;
+        removeHint.textContent =
+          removable.reason === 'none'
+            ? 'No old device key found to remove.'
+            : removable.reason === 'multiple'
+              ? `This account has ${removable.count} device keys — can't pick one ` +
+                `automatically, so leave this unchecked.`
+              : "Couldn't read this account's keys just now — leave unchecked or retry.";
+      }
+    })();
 
     // Resume an in-progress rotation if one is staged.
     const existing = getStaging(account);
@@ -509,16 +544,22 @@ import Icon from '../../../components/Icon.astro';
       status.textContent = 'Staging…';
       try {
         const verifierAddress = await fetchVerifierAddress(account!);
-        const removeRaw = (document.getElementById('om-remove-id') as HTMLInputElement).value;
-        const removeSignerId = removeRaw === '' ? undefined : Number(removeRaw);
-        // Soroban allows one InvokeHostFunction op per tx, so a rotation is a
-        // single action: prefer adding the new key; if no new key was created,
-        // fall back to removing the old signer.
-        const request = newPublicKey
-          ? { defaultRuleId: 0, addPasskey: { verifierAddress, publicKey: newPublicKey } }
-          : { defaultRuleId: 0, removeSignerId };
-        if (!newPublicKey && removeSignerId === undefined) {
-          throw new Error('Create a new passkey or enter an old signer id to remove.');
+        // Remove the lost device's key when the box is checked AND we resolved
+        // exactly one removable signer. planRotation supports add + remove in a
+        // single rotation (separate txs, one friend handoff), so the new key and
+        // the removal land together — no second ceremony needed.
+        const r = removable;
+        const removeSignerId =
+          removeCheckbox.checked && r?.ok ? r.signerId : undefined;
+        const request: {
+          defaultRuleId: number;
+          addPasskey?: { verifierAddress: string; publicKey: Uint8Array };
+          removeSignerId?: number;
+        } = { defaultRuleId: 0 };
+        if (newPublicKey) request.addPasskey = { verifierAddress, publicKey: newPublicKey };
+        if (removeSignerId !== undefined) request.removeSignerId = removeSignerId;
+        if (!request.addPasskey && request.removeSignerId === undefined) {
+          throw new Error('Create a new passkey, or check "Remove the lost device\'s key", before sharing.');
         }
         const { handoffLink } = await prepareRotation({
           account: account!,
@@ -579,7 +620,12 @@ import Icon from '../../../components/Icon.astro';
       status.textContent = 'Submitting…';
       try {
         const hash = await submitRotation(account!);
-        status.textContent = 'Rotation submitted: ' + hash + '. Your new passkey is now active.';
+        status.textContent =
+          'Done — your new passkey is active (tx ' + hash.slice(0, 8) + '…). Taking you to your account…';
+        // Recovery complete: drop the user on their account home instead of
+        // stranding them on the recovery page. We're already on the account
+        // subdomain, so a same-origin /account/ redirect is correct.
+        setTimeout(() => { window.location.href = '/account/'; }, 1200);
       } catch (e) {
         status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
         btn.disabled = false;
