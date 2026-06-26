@@ -125,7 +125,10 @@ export function renderNameRegister(
  * special-case, or a classic operation) — used by the signing page so even an
  * unrecognized transaction reads as something better than a raw XDR blob.
  */
-export function renderGenericOp(op: OpSummary): string {
+/** Content-only generic-op line — the inner `<span>` WITHOUT the `.card` wrapper.
+ *  Use this when embedding the op inside another container (e.g. a tech-details
+ *  row) so cards don't nest (F9). `renderGenericOp` wraps it in a card. */
+export function renderGenericOpLine(op: OpSummary): string {
   const line =
     op.kind === "name-register"
       ? `Registers the name <code class="mono">${esc(op.name)}</code>`
@@ -138,7 +141,11 @@ export function renderGenericOp(op: OpSummary): string {
             : op.kind === "other"
               ? `<code class="mono">${esc(op.type)}</code> operation`
               : "";
-  return `<div class="card" style="padding:13px 16px;"><span style="font-size:13.5px;font-weight:600;">${line}</span></div>`;
+  return `<span style="font-size:13.5px;font-weight:600;">${line}</span>`;
+}
+
+export function renderGenericOp(op: OpSummary): string {
+  return `<div class="card" style="padding:13px 16px;">${renderGenericOpLine(op)}</div>`;
 }
 
 export { renderSessionGrant, type SessionGrantScope } from "./sessionGrantReview.js";

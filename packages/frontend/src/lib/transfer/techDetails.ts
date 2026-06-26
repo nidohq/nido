@@ -1,7 +1,7 @@
 import { esc } from "../html.js";
 import { formatDecimal, rawToDecimal } from "../money.js";
 import type { TxSummary } from "./txSummary.js";
-import { renderGenericOp } from "./review.js";
+import { renderGenericOpLine } from "./review.js";
 
 export interface TechDetailsInput {
   txXdr?: string;
@@ -29,11 +29,11 @@ export function renderTechDetails(input: TechDetailsInput): string {
     );
   }
 
-  // Decoded operations (when summary provided)
+  // Decoded operations (when summary provided). Use the content-only line
+  // (no inner .card) so it doesn't nest inside the outer tech-details card (F9).
   if (summary?.ops) {
     for (const op of summary.ops) {
-      const opHtml = renderGenericOp(op);
-      // Strip the card wrapper from renderGenericOp and just use the content
+      const opHtml = renderGenericOpLine(op);
       rows.push(
         row("Operation", opHtml, rows.length === 0)
       );
