@@ -367,10 +367,16 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           op.limit
             ? (periodMap.find(([l]) => l === op.limit!.periodLedgers)?.[1] ?? 'day')
             : 'day';
+        // Use the human-readable label the delegate caller set (e.g. "7 days",
+        // "Until revoked"). Fall back gracefully: null validUntil → "Until revoked",
+        // else note that we only have a ledger sequence (not a date) to avoid
+        // displaying a nonsensical timestamp.
         const expiryLabel =
-          op.validUntil == null
-            ? 'Until revoked'
-            : new Date(op.validUntil * 1000).toLocaleDateString();
+          op.expiryLabel != null
+            ? op.expiryLabel
+            : op.validUntil == null
+              ? 'Until revoked'
+              : `Ledger ${op.validUntil}`;
         $detail.innerHTML = renderSessionGrant(
           {
             kind: 'session-grant',

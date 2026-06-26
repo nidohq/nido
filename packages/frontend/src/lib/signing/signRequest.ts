@@ -9,6 +9,9 @@ export type OperationDescriptor =
       validUntil: number | null;
       limit?: { stroops: string; periodLedgers: number } | null;
       label?: string;
+      /** Human-readable expiry label set by the caller (e.g. "7 days", "Until revoked").
+       *  /sign/ uses this instead of computing a date from the ledger sequence. */
+      expiryLabel?: string;
     }
   | { type: "remove-context-rule"; ruleId: number; target: string }
   | { type: "raw-xdr"; xdr: string };

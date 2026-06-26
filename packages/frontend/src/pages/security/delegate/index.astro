@@ -112,6 +112,14 @@ import Icon from '../../../components/Icon.astro';
     '30d': 17280 * 30,
     'none': null,
   };
+  // Human-readable expiry labels matching the <select> option text, used to carry
+  // the display label through to /sign/ so it never has to interpret validUntil.
+  const DURATION_LABEL: Record<string, string> = {
+    '24h': '24 hours',
+    '7d': '7 days',
+    '30d': '30 days',
+    'none': 'Until revoked',
+  };
 
   const params = new URLSearchParams(window.location.search);
   const dappOrigin = params.get('origin') ?? '';
@@ -271,6 +279,7 @@ import Icon from '../../../components/Icon.astro';
           validUntil,
           limit,
           label: 'session-key',
+          expiryLabel: DURATION_LABEL[durationSel.value] ?? (validUntil == null ? 'Until revoked' : `${durationSel.value}`),
         },
         title: 'Grant a session key',
         subtitle: `${dappOrigin} wants to act on your behalf.`,
