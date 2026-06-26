@@ -1,16 +1,16 @@
 import type { ScopedSessionKeyBlock } from '@nidohq/passkey-sdk';
 import { formatSpendingLimit } from '@nidohq/passkey-sdk';
-import { revokeSessionKey } from '../lib/sessionKeyActions';
-import { toast } from '../lib/toast';
+import { stashSignRequest, type SignRequest } from '../lib/signing/signRequest';
 import { shortAddr } from '../lib/address';
 import { EXPLORER_BASE } from '../lib/network';
 
 export function renderSessionKeyCard(
   block: ScopedSessionKeyBlock,
   account: string,
-  /** Called after the card removed itself on a successful revoke (e.g. to
-   *  restore the list's empty-state copy). */
-  onRevoked?: () => void,
+  /** Called after the card removed itself on a successful revoke. Now unused:
+   *  revoke navigates to /sign/ and the security page re-mounts on return.
+   *  Kept for API compatibility — callers that pass this will see it never fire. */
+  _onRevoked?: () => void,
 ): HTMLElement {
   const div = document.createElement('div');
   div.className = 'rule-card';
@@ -39,22 +39,27 @@ export function renderSessionKeyCard(
     </div>
   `;
   const btn = div.querySelector<HTMLButtonElement>('.revoke')!;
-  btn.addEventListener('click', async () => {
+  btn.addEventListener('click', () => {
     if (block.ruleId == null) return;
     if (!confirm('Revoke this session key? The dApp will need to re-delegate.')) return;
-    btn.disabled = true;
-    try {
-      // Signs remove_context_rule with the primary passkey; revokeSessionKey
-      // forgets the local session-key material only when this rule's pubkey
-      // owns it (same-target re-delegation keeps the newer key's material).
-      await revokeSessionKey(account, block.ruleId, block.targetContract, block.sessionPubkey);
-      div.remove();
-      toast({ msg: 'Session key revoked', icon: 'check' });
-      onRevoked?.();
-    } catch (err) {
-      btn.disabled = false;
-      toast(`Couldn't revoke: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    // Route through /sign/ so the user sees a standard "Revoke session-key"
+    // confirmation screen. Local material cleanup runs on the /security/ return
+    // page when it sees ?revoked=<ruleId>.
+    const pubkeyHexParam = pubkeyHex ? `&pubkey=${encodeURIComponent(pubkeyHex)}` : '';
+    const targetParam = `&target=${encodeURIComponent(block.targetContract)}`;
+    const returnUrl = `/security/?revoked=${encodeURIComponent(block.ruleId)}${pubkeyHexParam}${targetParam}`;
+    const req: SignRequest = {
+      v: 1,
+      kind: 'session-revoke',
+      account,
+      operation: { type: 'remove-context-rule', ruleId: block.ruleId, target: block.targetContract },
+      title: `Revoke session key #${block.ruleId}`,
+      subtitle: block.label ? `Revoke access for "${escape(block.label ?? '')}"` : `Revoke access for ${escape(shortAddr(block.targetContract, 8, 4))}`,
+      submitMode: 'relayer',
+      returnTarget: { type: 'route', url: returnUrl },
+    };
+    const id = stashSignRequest(req);
+    window.location.href = `/sign/?req=${id}`;
   });
   return div;
 }

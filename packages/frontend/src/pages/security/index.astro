@@ -111,6 +111,7 @@ import Nest from '../../components/Nest.astro';
     loadFriendNicknames,
     loadBlockLabels,
     loadSessionKeyMaterial,
+    forgetSessionKeyMaterial,
     loadCredential,
     buf2base64url,
   } from '@nidohq/passkey-sdk';
@@ -119,8 +120,52 @@ import Nest from '../../components/Nest.astro';
   import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
   import { mountRecoveryForm } from '../../lib/recoveryForm.js';
   import { mountDelegationForm } from '../../lib/delegationForm.js';
+  import { toast } from '../../lib/toast.js';
 
   const account = contractIdFromHostname(window.location.hostname);
+
+  // Return handler: /sign/ navigates back to /security/?revoked=<ruleId>
+  // after a successful session-key revoke. Clean up local material here —
+  // the on-chain remove already happened, so this is pure localStorage hygiene.
+  {
+    const sp = new URLSearchParams(window.location.search);
+    const revokedId = sp.get('revoked');
+    if (revokedId != null && account) {
+      const target = sp.get('target') ?? '';
+      const pubkeyHex = sp.get('pubkey') ?? '';
+      // Reconstruct the Uint8Array only when a pubkey was passed so we can do
+      // the ownership check (same as maybeForgetMaterial in sessionKeyActions.ts).
+      let sessionPubkey: Uint8Array | undefined;
+      if (pubkeyHex) {
+        const bytes = pubkeyHex.match(/.{1,2}/g)?.map((b) => parseInt(b, 16)) ?? [];
+        sessionPubkey = new Uint8Array(bytes);
+      }
+      // Ownership-safe cleanup: mirrors maybeForgetMaterial from sessionKeyActions.ts.
+      // With two live rules on the same target (re-delegation), the single per-target
+      // material slot belongs to the NEWER credential — revoking the stale rule must
+      // not wipe it.
+      if (target) {
+        if (sessionPubkey && sessionPubkey.length > 0) {
+          const stored = loadSessionKeyMaterial(account, target);
+          const revokedHex = pubkeyHex.toLowerCase();
+          // Legacy material (pre-publicKey schema) has no owner to compare — wipe it.
+          if (!stored?.publicKey || stored.publicKey.toLowerCase() === revokedHex) {
+            forgetSessionKeyMaterial(account, target);
+          }
+        } else {
+          forgetSessionKeyMaterial(account, target);
+        }
+      }
+      toast({ msg: 'Session key revoked', icon: 'check' });
+      // Clean the ?revoked= params from the URL so a refresh doesn't re-run cleanup.
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete('revoked');
+      clean.searchParams.delete('pubkey');
+      clean.searchParams.delete('target');
+      clean.searchParams.delete('txhash');
+      window.history.replaceState(null, '', clean.toString());
+    }
+  }
 
   // Passkey details for this device (relocated here from the account page).
   const deviceCred = account ? loadCredential(account) : null;
