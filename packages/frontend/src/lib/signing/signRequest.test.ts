@@ -58,29 +58,69 @@ describe("stash/load SignRequest", () => {
 });
 
 describe("safeRouteUrl (F1 XSS / open-redirect guard)", () => {
-  const ORIGIN = "https://alice.nido.fyi";
+  // The base is a CONTRACT subdomain — the real /sign/ origin. Legitimate
+  // returns hop to SIBLING subdomains of the same parent domain (nido.fyi):
+  // name-claim → `<name>.nido.fyi`, status-message bridge → `status-message.nido.fyi`.
+  const ORIGIN = "https://cabc.nido.fyi";
 
-  it("accepts a same-origin https URL", () => {
-    expect(safeRouteUrl("https://alice.nido.fyi/status-message/?contract=C", ORIGIN))
-      .toBe("https://alice.nido.fyi/status-message/?contract=C");
+  it("accepts a same-subdomain https URL", () => {
+    expect(safeRouteUrl("https://cabc.nido.fyi/account/?namepasskey=1", ORIGIN))
+      .toBe("https://cabc.nido.fyi/account/?namepasskey=1");
+  });
+  it("accepts a SIBLING subdomain on the same parent domain (name-claim hop)", () => {
+    expect(safeRouteUrl("https://alice.nido.fyi/account/?namepasskey=1", ORIGIN))
+      .toBe("https://alice.nido.fyi/account/?namepasskey=1");
+  });
+  it("accepts the status-message sibling subdomain (Set-note bridge)", () => {
+    expect(safeRouteUrl("https://status-message.nido.fyi/status-message/?contract=C", ORIGIN))
+      .toBe("https://status-message.nido.fyi/status-message/?contract=C");
+  });
+  it("accepts the bare apex", () => {
+    expect(safeRouteUrl("https://nido.fyi/account/", ORIGIN)).toBe("https://nido.fyi/account/");
   });
   it("accepts a relative path (resolved against the origin)", () => {
-    expect(safeRouteUrl("/account/", ORIGIN)).toBe("https://alice.nido.fyi/account/");
+    expect(safeRouteUrl("/account/", ORIGIN)).toBe("https://cabc.nido.fyi/account/");
   });
   it("rejects a javascript: URI", () => {
     expect(safeRouteUrl("javascript:alert(1)", ORIGIN)).toBeNull();
   });
+  it("rejects a JavaScript: URI (case-insensitive scheme)", () => {
+    expect(safeRouteUrl("JavaScript:alert(1)", ORIGIN)).toBeNull();
+  });
+  it("rejects a javascript: URI with leading whitespace", () => {
+    expect(safeRouteUrl(" javascript:alert(1)", ORIGIN)).toBeNull();
+  });
   it("rejects a data: URI", () => {
     expect(safeRouteUrl("data:text/html,<script>alert(1)</script>", ORIGIN)).toBeNull();
   });
-  it("rejects a cross-origin https URL (open redirect)", () => {
+  it("rejects a foreign-origin https URL (open redirect)", () => {
     expect(safeRouteUrl("https://evil.example/steal", ORIGIN)).toBeNull();
+    expect(safeRouteUrl("https://evil.com", ORIGIN)).toBeNull();
+  });
+  it("rejects a protocol-relative //evil.com", () => {
+    expect(safeRouteUrl("//evil.com", ORIGIN)).toBeNull();
+  });
+  it("rejects a backslash-prefixed \\\\evil.com", () => {
+    expect(safeRouteUrl("\\\\evil.com", ORIGIN)).toBeNull();
+  });
+  it("rejects a look-alike subdomain suffix (nido.fyi.evil.com)", () => {
+    expect(safeRouteUrl("https://nido.fyi.evil.com/steal", ORIGIN)).toBeNull();
+  });
+  it("rejects a look-alike prefix host (evil-nido.fyi must NOT match .nido.fyi)", () => {
+    expect(safeRouteUrl("https://evil-nido.fyi/steal", ORIGIN)).toBeNull();
+  });
+  it("rejects a userinfo trick (apex@evil.com → hostname is evil.com)", () => {
+    expect(safeRouteUrl("https://nido.fyi@evil.com/steal", ORIGIN)).toBeNull();
   });
   it("rejects http for a non-localhost host", () => {
     expect(safeRouteUrl("http://alice.nido.fyi/account/", ORIGIN)).toBeNull();
   });
   it("allows http for localhost (dev)", () => {
     expect(safeRouteUrl("http://localhost:4321/account/", "http://localhost:4321"))
+      .toBe("http://localhost:4321/account/");
+  });
+  it("allows a dev subdomain hop to the localhost apex", () => {
+    expect(safeRouteUrl("http://localhost:4321/account/", "http://cabc.localhost:4321"))
       .toBe("http://localhost:4321/account/");
   });
   it("returns null for empty / nullish input", () => {

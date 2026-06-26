@@ -49,6 +49,8 @@ export interface SignRequest {
   networkPassphrase?: string;
 }
 
+import { stripSubdomain } from "@nidohq/passkey-sdk";
+
 const KEY = (id: string) => `nido:signreq:${id}`;
 
 export function stashSignRequest(req: SignRequest, store: Storage = sessionStorage): string {
@@ -78,25 +80,64 @@ export function clearSignRequest(id: string, store: Storage = sessionStorage): v
   store.removeItem(KEY(id));
 }
 
+/** Strip a trailing `:port` from a host string, yielding the bare hostname.
+ *  IPv6 literals aren't used by this app, so a simple last-colon split is fine. */
+function hostnameOf(host: string): string {
+  const i = host.lastIndexOf(":");
+  return i === -1 ? host : host.slice(0, i);
+}
+
 /** Validate a route-return URL and normalise it (F1 — XSS / open-redirect guard).
  *
- *  Returns the URL string only when it resolves (against the current origin) to
- *  a SAME-ORIGIN http(s) location; otherwise null. This rejects `javascript:`,
- *  `data:`, and cross-origin redirects that would otherwise execute or navigate
- *  in the nido.fyi origin on the /sign/ success path. Used at BOTH the source
- *  (reject a hostile `sm-return`) and the sink (fall back to /account/).
+ *  Returns the URL string only when it resolves (against `base`) to an http(s)
+ *  location whose hostname is the SAME PARENT DOMAIN as `base` — i.e. the apex
+ *  itself, or a subdomain of it. Everything else (including `javascript:`,
+ *  `data:`, foreign origins, protocol-relative `//evil`, and userinfo tricks)
+ *  is rejected. Used at BOTH the source (reject a hostile `sm-return`) and the
+ *  sink (fall back to /account/).
  *
- *  `base` lets callers resolve relative URLs (e.g. `/account/`) — pass
+ *  Why not strict same-origin? Nido's multi-subdomain architecture has
+ *  legitimate cross-subdomain hops that the unified /sign/ surface depends on:
+ *   - name-claim returns from `<contractid>.<apex>` to `<name>.<apex>`
+ *     (`/account/?namepasskey=1`, to fire moment-B passkey registration);
+ *   - the status-message bridge returns to `status-message.<apex>`.
+ *  Both build their destinations with `accountUrl(stripSubdomain(host), …)`, so
+ *  the allowlist is derived the SAME way (`stripSubdomain(base.host)`) and thus
+ *  matches exactly those destinations and no more.
+ *
+ *  SECURITY: parse with the WHATWG `URL` so backslash / userinfo / whitespace
+ *  tricks are normalised before the hostname check. The apex suffix test
+ *  requires a literal leading dot (`"." + apex`), so `evil-nido.fyi` does NOT
+ *  match `.nido.fyi`. http is permitted only for localhost/127.0.0.1 (dev).
+ *
+ *  `base` lets callers resolve relative URLs (e.g. `/account/`) and supplies the
+ *  current host whose parent domain forms the allowlist — pass
  *  `window.location.origin` in the browser. */
 export function safeRouteUrl(url: string | null | undefined, base: string): string | null {
   if (!url) return null;
   try {
     const u = new URL(url, base);
-    const origin = new URL(base).origin;
-    if (u.origin !== origin) return null;
+    const baseUrl = new URL(base);
+
     // localhost may be served over http during dev; everything else must be https.
-    if (u.protocol === "https:") return u.href;
-    if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) return u.href;
+    if (u.protocol === "https:") {
+      // ok
+    } else if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
+      // ok (dev)
+    } else {
+      return null;
+    }
+
+    // Same parent domain as the current host. `stripSubdomain` reduces a host to
+    // its account-root (apex in prod, the `--<N>` preview root in previews,
+    // `localhost:<port>` in dev); the candidate is allowed when it is that apex,
+    // a subdomain of it, or reduces to the same root (covers preview siblings
+    // like `<name>--24.apex` whose dot-suffix differs from the bare root).
+    const apex = hostnameOf(stripSubdomain(baseUrl.host));
+    const candidateRoot = hostnameOf(stripSubdomain(u.host));
+    if (u.hostname === apex || u.hostname.endsWith("." + apex) || candidateRoot === apex) {
+      return u.href;
+    }
     return null;
   } catch {
     return null;

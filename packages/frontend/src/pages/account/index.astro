@@ -855,11 +855,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   const smSignXdr = params.get("sm-sign");
   const smReturnUrl = params.get("sm-return");
   if (smSignXdr && smReturnUrl && contractId) {
-    // SECURITY (F1): the bridge only ever returns to THIS subdomain's
-    // /status-message/, so validate sm-return is a same-origin http(s) URL
-    // before stashing it as the /sign/ returnTarget. A crafted
-    // `?sm-return=javascript:…` (or a cross-origin URL) would otherwise be
-    // navigated to verbatim on the /sign/ success path — an XSS / open redirect.
+    // SECURITY (F1): the bridge returns to the SIBLING `status-message.<apex>`
+    // /status-message/ page (a different subdomain than this contract subdomain),
+    // so validate sm-return is an http(s) URL on the SAME PARENT DOMAIN before
+    // stashing it as the /sign/ returnTarget. A crafted `?sm-return=javascript:…`
+    // (or a foreign-origin URL) would otherwise be navigated to verbatim on the
+    // /sign/ success path — an XSS / open redirect.
     const safeReturn = safeRouteUrl(smReturnUrl, window.location.origin);
     if (!safeReturn) {
       showError("That status-message return link isn't valid. Open the status-message page again to retry.");
