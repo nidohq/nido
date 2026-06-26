@@ -133,8 +133,7 @@ import Nest from '../../components/Nest.astro';
     if (revokedId != null && account) {
       const target = sp.get('target') ?? '';
       const pubkeyHex = sp.get('pubkey') ?? '';
-      // Ownership-safe cleanup via the shared forgetRevokedMaterial helper
-      // (same logic as maybeForgetMaterial in sessionKeyActions.ts).
+      // Ownership-safe cleanup via the shared forgetRevokedMaterial helper.
       // With two live rules on the same target (re-delegation), the single
       // per-target material slot belongs to the NEWER credential — revoking
       // the stale rule must not wipe it.

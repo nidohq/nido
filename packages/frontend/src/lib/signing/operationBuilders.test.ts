@@ -12,9 +12,9 @@
  *
  *   - `add-context-rule` / `remove-context-rule`: SmartAccountClient.add_context_rule
  *     and .remove_context_rule call simulateTransaction against RPC, which will
- *     fail in jsdom. These are tested with a vi.stubGlobal fetch mock that
- *     returns a valid Soroban simulation response, allowing extractXdrOperations
- *     to produce the expected op.
+ *     fail in jsdom. These branches are verified by code inspection and covered
+ *     indirectly through integration tests — they are NOT unit-tested here
+ *     (no vi.stubGlobal fetch mock exists for them).
  *
  *   - `transfer`: buildSendOperation is pure (no network), so the round-trip
  *     test runs without any mock.

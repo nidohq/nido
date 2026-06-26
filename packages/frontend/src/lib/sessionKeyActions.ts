@@ -45,55 +45,6 @@ export async function delegateSessionKey(args: {
   });
 }
 
-/** Revoke a session-key rule, idempotently.
- *
- *  Two failure shapes are treated as (eventual) success rather than surfaced:
- *  - The rule is ALREADY gone on-chain (`ContextRuleNotFound` from the build
- *    or signing simulation): a prior attempt timed out client-side but its tx
- *    landed. Surfacing the raw `Error(Contract, #3000)` would dead-end the
- *    user on a revoke that already happened.
- *  - ANY other failure (confirmation timeout, a racing duplicate failing
- *    on-chain, transient relayer errors) gets a chain re-check: failure is
- *    only reported when the rule verifiably still exists.
- *
- *  Local material cleanup is ownership-checked: with two live rules on the
- *  same target (re-delegation), the single per-target material slot belongs to
- *  the NEWER credential — revoking the stale rule must not wipe it. Pass the
- *  revoked rule's `sessionPubkey` to enable the check.
- */
-export async function revokeSessionKey(
-  account: string,
-  ruleId: number,
-  target: string,
-  sessionPubkey?: Uint8Array,
-): Promise<void> {
-  try {
-    const built = await scopedSessionKeyModule.buildRevoke({
-      account,
-      ruleId,
-      rpcUrl: RPC_URL,
-    });
-    const verifierAddr = await fetchVerifierAddress(account);
-    await signAndSubmit({
-      account,
-      operation: built.operations[0],
-      verifierAddress: verifierAddr,
-    });
-  } catch (err) {
-    if (isRuleNotFound(err)) {
-      // Already revoked — fall through to local cleanup.
-    } else if (!(await ruleStillExists(account, ruleId))) {
-      // Whatever the error shape (confirmation timeout, a racing duplicate
-      // submit failing on-chain, a transient relayer error), the rule is
-      // verifiably gone — the revoke happened. Reporting failure here would
-      // dead-end the user on a success.
-    } else {
-      throw err;
-    }
-  }
-  maybeForgetMaterial(account, target, sessionPubkey);
-}
-
 /** Check whether a context rule still exists on-chain.
  *  Returns true if the rule exists, false if it is gone.
  *  On transient/unexpected errors returns true (conservative — let the caller
@@ -141,9 +92,3 @@ export function forgetRevokedMaterial(
   if (target) forgetSessionKeyMaterial(account, target);
 }
 
-function maybeForgetMaterial(account: string, target: string, sessionPubkey?: Uint8Array): void {
-  const revokedHex = sessionPubkey
-    ? Array.from(sessionPubkey, (b) => b.toString(16).padStart(2, '0')).join('')
-    : undefined;
-  forgetRevokedMaterial(account, target, revokedHex);
-}

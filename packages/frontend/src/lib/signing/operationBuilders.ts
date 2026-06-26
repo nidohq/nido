@@ -110,8 +110,6 @@ export async function buildOperation(
     case "remove-context-rule": {
       // Mirror: passkey-sdk/src/policyBlocks/scopedSessionKey.ts buildRevoke
       // (~lines 44-55) which calls SmartAccountClient.remove_context_rule.
-      // sessionKeyActions.ts revokeSessionKey also uses this path via
-      // scopedSessionKeyModule.buildRevoke.
       const client = new SmartAccountClient({
         contractId: account,
         networkPassphrase: NETWORK_PASSPHRASE,

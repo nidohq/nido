@@ -326,6 +326,14 @@ export const StatusMessage = () => {
 					})
 				} catch (e) {
 					// Re-throw anything that isn't our own sentinel.
+					//
+					// IMPLEMENTATION ASSUMPTION: stellar-sdk's `signAndSend` does NOT
+					// catch or wrap errors thrown from the `signTransaction` callback —
+					// it lets them propagate as-is to the outer try/catch. This sentinel
+					// pattern relies on that behaviour. If a future stellar-sdk version
+					// wraps callback errors, AlreadySubmittedError would be re-thrown
+					// here and the `submitted: true` path would incorrectly surface as
+					// a failure.
 					if (!(e instanceof AlreadySubmittedError)) throw e
 					// Otherwise: tx was already submitted by the relayer — treat as success.
 				}
