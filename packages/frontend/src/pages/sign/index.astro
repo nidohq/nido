@@ -714,7 +714,16 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   }
 
   cancel.addEventListener('click', () => {
-    if (!origin) { window.location.href = '/account/'; return; }
+    if (!origin) {
+      // Own-action (route) request: return to the originating page but strip
+      // query params so success handlers (?txhash=, ?revoked=, ?namepasskey=)
+      // do NOT fire on a decline.
+      const safe = req?.returnTarget.type === 'route'
+        ? safeRouteUrl(req.returnTarget.url, window.location.origin)
+        : null;
+      window.location.href = safe ? new URL(safe, window.location.origin).pathname : '/account/';
+      return;
+    }
     finish(dappCancelQuery());
   });
 
