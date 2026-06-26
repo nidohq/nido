@@ -55,9 +55,16 @@ import Icon from '../../../components/Icon.astro';
           </div>
         </div>
         <div class="navrow" style="cursor:default;">
-          <div style="flex:1;">
+          <div style="flex:1;min-width:0;">
             <div style="font-weight:700;font-size:13.5px;">Expires</div>
-            <div class="mut" id="expiry-text" style="font-size:12.5px;"></div>
+            <select id="duration-sel" class="input"
+                    style="height:40px;font-size:13.5px;width:auto;padding:0 10px;margin-top:8px;">
+              <option value="24h">In 24 hours</option>
+              <option value="7d">In 7 days</option>
+              <option value="30d">In 30 days</option>
+              <option value="none">Never (until revoked)</option>
+            </select>
+            <div class="mut" id="expiry-text" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
           </div>
         </div>
         <div class="navrow" style="cursor:default;border-bottom:none;">
@@ -128,7 +135,7 @@ import Icon from '../../../components/Icon.astro';
   const dappOrigin = params.get('origin') ?? '';
   const target = params.get('target') ?? '';
   const pubkeyHex = params.get('pubkey') ?? '';
-  const duration = params.get('duration') ?? '24h';
+  const duration = params.get('duration') ?? '30d';
   // Optional spending limit: `limit` (decimal XLM string) + `limit_period`
   // (day|week|30d, default day). Absent or EMPTY `limit` = no cap (today's
   // behavior) — `?limit=` should not pre-block approval with a parse error.
@@ -145,11 +152,25 @@ import Icon from '../../../components/Icon.astro';
   document.getElementById('pubkey-text')!.textContent = pubkeyHex || '(missing)';
 
   const expirySpan = document.getElementById('expiry-text')!;
-  const expiryOffset = DURATIONS[duration] ?? 17280;
-  expirySpan.textContent =
-    expiryOffset == null
-      ? 'Never (until revoked)'
-      : `${duration} (≈ ${expiryOffset.toLocaleString()} ledgers from now)`;
+  const durationSel = document.getElementById('duration-sel') as HTMLSelectElement;
+  // Pre-select the dApp's requested duration when it's one we offer; otherwise
+  // fall back to the 30-day default. The user can change it before approving —
+  // the selected value (not the URL param) is what gets installed.
+  durationSel.value = duration in DURATIONS ? duration : '30d';
+
+  // The select only holds keys we defined, so the lookup is always valid; a
+  // `none` value is a real `null` (no expiry), not a missing key.
+  const selectedExpiryOffset = (): number | null => DURATIONS[durationSel.value];
+
+  function syncExpiry() {
+    const off = selectedExpiryOffset();
+    expirySpan.textContent =
+      off == null
+        ? 'Never — stays valid until you revoke it.'
+        : `≈ ${off.toLocaleString()} ledgers from now.`;
+  }
+  durationSel.addEventListener('change', syncExpiry);
+  syncExpiry();
 
   const denyBtn = document.getElementById('deny')!;
   const approveBtn = document.getElementById('approve') as HTMLButtonElement;
@@ -267,8 +288,9 @@ import Icon from '../../../components/Icon.astro';
       const { rpc } = await import('@stellar/stellar-sdk');
       const server = new rpc.Server(RPC_URL);
       const latest = await server.getLatestLedger();
+      const off = selectedExpiryOffset();
       const validUntil =
-        expiryOffset == null ? undefined : latest.sequence + expiryOffset;
+        off == null ? undefined : latest.sequence + off;
 
       status.textContent = 'Building install transaction…';
       const client = new SmartAccountClient({
