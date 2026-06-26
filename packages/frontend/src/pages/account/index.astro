@@ -401,6 +401,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { fetchVerifierAddress } from "../../lib/policyChainFetch";
   import { toast } from "../../lib/toast";
   import { describeSignRequest } from "../../lib/signRequestSummary";
+  import { stashSignRequest, type SignRequest } from "../../lib/signing/signRequest";
   import { describeTransaction } from "../../lib/transfer/txSummary";
   import { renderNameRegister } from "../../lib/transfer/review";
   import { esc } from "../../lib/html";
@@ -1351,23 +1352,26 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     });
 
     // --- Auto-run on ?claim=<name> (account's own subdomain) ---
-    // A name-centric inline claim: instead of bouncing through ?sign=, the claim
-    // runs the passkey assertion inline (the credential is registered for this
-    // contractId here) and shows the progress ticker.
+    // Build a SignRequest and hand off to /sign/ so the claim flows through
+    // the unified signing surface. The post-claim return target matches
+    // finishClaim's redirect: the name subdomain at /account/?namepasskey=1.
     const claimParam = params.get("claim");
     if (claimParam && contractId && !isSigningMode) {
       const name = claimParam.trim().toLowerCase();
       if (/^[a-z][a-z0-9]{0,14}$/.test(name)) {
-        document.getElementById("claim-name-inline")?.classList.add("hidden");
-        document.getElementById("claim-name-top-btn")?.classList.add("hidden");
-        document.getElementById("claim-progress")!.classList.remove("hidden");
-        const retryBtn = document.getElementById("claim-retry-btn");
-        retryBtn?.addEventListener("click", () => {
-          retryBtn.classList.add("hidden");
-          document.getElementById("claim-progress-error")?.classList.add("hidden");
-          void runNameClaim(name);
-        });
-        void runNameClaim(name);
+        const rootHost = stripSubdomain(window.location.host);
+        const returnUrl = `${window.location.protocol}${accountUrl(rootHost, name, "/account/?namepasskey=1")}`;
+        const req: SignRequest = {
+          v: 1,
+          kind: "name-claim",
+          account: contractId,
+          operation: { type: "register", name },
+          title: `Claim ${name}`,
+          submitMode: "relayer",
+          returnTarget: { type: "route", url: returnUrl },
+        };
+        const id = stashSignRequest(req);
+        window.location.href = `/sign/?req=${id}`;
       }
     }
 
