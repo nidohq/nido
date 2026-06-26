@@ -51,6 +51,12 @@ export type SignKind = 'tx' | 'message' | 'authEntry';
 
 export type SignReturn =
   | { status: 'ok'; kind: SignKind; result: string }
+  /**
+   * The Nido relayer already submitted the transaction on-chain (model A:
+   * smart-account path). `result` is the submitted transaction hash.
+   * The dApp MUST NOT re-broadcast; use the hash directly to track the tx.
+   */
+  | { status: 'submitted'; kind: SignKind; result: string }
   | { status: 'cancelled' }
   | { status: 'switch-account' }
   | { status: 'error'; error: string };
@@ -62,14 +68,25 @@ export type SignReturn =
  * structurally bound to one account (WebAuthn rpId = its subdomain), so the
  * only way out is back through connect. Returns `null` if the query carries
  * none of the sign params.
+ *
+ * For smart-account transactions, the `/sign/` page may submit the tx via the
+ * relayer and return `nido_submitted=<hash>&kind=tx` instead of
+ * `nido_signed=<xdr>&kind=tx`. In that case `status` is `'submitted'` and
+ * `result` is the transaction hash — the dApp must NOT re-broadcast.
+ * The legacy `nido_signed` return is preserved for non-relayer paths.
  */
 export function parseSignReturn(search: string): SignReturn | null {
   const p = new URLSearchParams(search);
   const signed = p.get('nido_signed');
+  const submitted = p.get('nido_submitted');
   const sign = p.get('nido_sign');
   if (signed) {
     const kind = (p.get('kind') as SignKind) ?? 'tx';
     return { status: 'ok', kind, result: signed };
+  }
+  if (submitted) {
+    const kind = (p.get('kind') as SignKind) ?? 'tx';
+    return { status: 'submitted', kind, result: submitted };
   }
   if (sign === 'cancelled') return { status: 'cancelled' };
   if (sign === 'switch-account') return { status: 'switch-account' };

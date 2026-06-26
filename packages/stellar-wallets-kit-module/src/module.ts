@@ -165,10 +165,22 @@ export class NidoModule implements ModuleInterface {
     return { address: result.address };
   }
 
+  /**
+   * Sign (or submit) a transaction via the Nido sign page.
+   *
+   * Returns a SEP-43-compatible `{ signedTxXdr; signerAddress? }` object.
+   * For classic wallets (G-address paths) `signedTxXdr` is the signed XDR and
+   * the dApp should submit it normally.
+   *
+   * For smart-account paths the Nido relayer may submit the transaction
+   * on-chain and return `submitted: true` with the transaction hash in
+   * `signedTxXdr`. When `submitted` is `true` the dApp MUST NOT re-broadcast —
+   * use `signedTxXdr` as the transaction hash to track or display the result.
+   */
   async signTransaction(
     xdr: string,
     opts?: { networkPassphrase?: string; address?: string; path?: string },
-  ): Promise<{ signedTxXdr: string; signerAddress?: string }> {
+  ): Promise<{ signedTxXdr: string; signerAddress?: string; submitted?: true }> {
     const account = await this.resolveAccount(opts?.address);
     const url = signTransactionUrl({
       base: this.base,
@@ -178,8 +190,10 @@ export class NidoModule implements ModuleInterface {
       dappOrigin: this.dappOrigin(),
       returnUrl: this.returnUrl(),
     });
-    const signed = await this.runSign(url, account);
-    return { signedTxXdr: signed, signerAddress: account };
+    const { result, submitted } = await this.runSign(url, account);
+    return submitted
+      ? { signedTxXdr: result, signerAddress: account, submitted: true }
+      : { signedTxXdr: result, signerAddress: account };
   }
 
   async signMessage(
@@ -194,8 +208,8 @@ export class NidoModule implements ModuleInterface {
       dappOrigin: this.dappOrigin(),
       returnUrl: this.returnUrl(),
     });
-    const signed = await this.runSign(url, account);
-    return { signedMessage: signed, signerAddress: account };
+    const { result } = await this.runSign(url, account);
+    return { signedMessage: result, signerAddress: account };
   }
 
   async signAuthEntry(
@@ -211,8 +225,8 @@ export class NidoModule implements ModuleInterface {
       dappOrigin: this.dappOrigin(),
       returnUrl: this.returnUrl(),
     });
-    const signed = await this.runSign(url, account);
-    return { signedAuthEntry: signed, signerAddress: account };
+    const { result } = await this.runSign(url, account);
+    return { signedAuthEntry: result, signerAddress: account };
   }
 
   /** The kit calls this on disconnect; drop the cached address. */
@@ -241,19 +255,20 @@ export class NidoModule implements ModuleInterface {
     return (await this.getAddress()).address;
   }
 
-  private async runSign(url: string, account: string): Promise<string> {
+  private async runSign(url: string, account: string): Promise<{ result: string; submitted: boolean }> {
     const { search } = await openCeremonyPopup(url, accountOrigin(this.base, account));
-    const result = parseSignReturn(search);
-    if (!result) throw new Error('Nido: the sign window returned no result.');
-    if (result.status === 'cancelled') throw new Error('Nido: signing was cancelled.');
-    if (result.status === 'switch-account') {
+    const parsed = parseSignReturn(search);
+    if (!parsed) throw new Error('Nido: the sign window returned no result.');
+    if (parsed.status === 'cancelled') throw new Error('Nido: signing was cancelled.');
+    if (parsed.status === 'switch-account') {
       // The user wants another account. Forget the bound one so the next
       // connect doesn't fast-path back to it, and reject with a distinct,
       // documented error the dApp can catch (re-run connect, rebuild the tx).
       clearCachedAddress();
       throw new AccountSwitchRequestedError();
     }
-    if (result.status === 'error') throw new Error(`Nido: ${result.error}`);
-    return result.result;
+    if (parsed.status === 'error') throw new Error(`Nido: ${parsed.error}`);
+    // `ok` → caller should submit; `submitted` → relayer already submitted.
+    return { result: parsed.result, submitted: parsed.status === 'submitted' };
   }
 }
