@@ -199,7 +199,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { avatarBackground } from '../../lib/avatarStyle';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
   import { signTransactionXdr, signMessageRaw, signAuthEntryXdr } from '../../lib/walletSign.js';
-  import { withPasskeySheet } from '../../lib/passkeySheet';
+  import { withPasskeySheet, openPasskeySheet, closePasskeySheet } from '../../lib/passkeySheet';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
   import { shortAddr } from '../../lib/address';
   import { describeTransaction, describeOperation, type OpSummary } from '../../lib/transfer/txSummary.js';
@@ -746,6 +746,14 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   const PHASE_STEP: Record<string, number> = { build: 0, sign: 1, submit: 2, confirm: 3 };
 
   function onProgress(p: { phase: string; detail?: string }) {
+    // Open the passkey sheet right before the WebAuthn ceremony (sign phase),
+    // and close it once the ceremony is done (submit/confirm phase) so the
+    // progress ticker is visible during relayer submit + on-chain confirmation.
+    if (p.phase === 'sign') {
+      openPasskeySheet({ title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` });
+    } else if (p.phase === 'submit' || p.phase === 'confirm') {
+      closePasskeySheet();
+    }
     const stepIdx = PHASE_STEP[p.phase] ?? -1;
     if (stepIdx >= 0) {
       steps.setProgress(stepIdx, stepIdx);
@@ -762,10 +770,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       $signProgress.classList.remove('hidden');
       steps.setProgress(0, 0);
       try {
-        const result = await withPasskeySheet(
-          () => runSign(req!, { onProgress }),
-          { title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` },
-        );
+        const result = await runSign(req!, { onProgress });
         steps.finish();
         $status.textContent = 'Done — returning…';
         // F3: drop the stashed SignRequest now that it submitted successfully,
@@ -811,6 +816,10 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           $status.textContent = '';
           approve.disabled = false;
         }
+      } finally {
+        // Always close the passkey sheet on exit — covers errors and any path
+        // that didn't reach the 'submit'/'confirm' phase to close it normally.
+        closePasskeySheet();
       }
       return;
     }
