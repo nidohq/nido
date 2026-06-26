@@ -1,15 +1,18 @@
 import type { ScopedSessionKeyBlock } from '@nidohq/passkey-sdk';
 import { formatSpendingLimit } from '@nidohq/passkey-sdk';
 import { stashSignRequest, type SignRequest } from '../lib/signing/signRequest';
+import { ruleStillExists, forgetRevokedMaterial } from '../lib/sessionKeyActions';
+import { toast } from '../lib/toast';
 import { shortAddr } from '../lib/address';
 import { EXPLORER_BASE } from '../lib/network';
 
 export function renderSessionKeyCard(
   block: ScopedSessionKeyBlock,
   account: string,
-  /** Called after the card removed itself on a successful revoke. Now unused:
-   *  revoke navigates to /sign/ and the security page re-mounts on return.
-   *  Kept for API compatibility — callers that pass this will see it never fire. */
+  /** Called after the card removed itself on a successful revoke.
+   *  Fires in the pre-flight already-gone branch (rule absent before /sign/).
+   *  Does NOT fire for the normal /sign/ path — the security page re-mounts on
+   *  return to ?revoked=. Kept for API compatibility with existing callers. */
   _onRevoked?: () => void,
 ): HTMLElement {
   const div = document.createElement('div');
@@ -39,9 +42,33 @@ export function renderSessionKeyCard(
     </div>
   `;
   const btn = div.querySelector<HTMLButtonElement>('.revoke')!;
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     if (block.ruleId == null) return;
     if (!confirm('Revoke this session key? The dApp will need to re-delegate.')) return;
+    btn.disabled = true;
+
+    // Pre-flight: check whether the rule is already gone on-chain.
+    // If it is, skip /sign/ entirely — clean up locally and show success.
+    // This preserves idempotency for the common "double-tap" / "prior attempt
+    // already landed" case without hitting the sign flow.
+    //
+    // Narrow race: the rule could vanish between this check and the /sign/
+    // submit (e.g. concurrent revoke from another device). That residual race
+    // is acceptable — /sign/ will surface the error, and the user can retry.
+    try {
+      const stillExists = await ruleStillExists(account, block.ruleId);
+      if (!stillExists) {
+        // Rule is already gone — run ownership-safe cleanup and toast success.
+        forgetRevokedMaterial(account, block.targetContract, pubkeyHex || undefined);
+        div.remove();
+        toast({ msg: 'Session key revoked', icon: 'check' });
+        _onRevoked?.();
+        return;
+      }
+    } catch {
+      // Can't determine chain state — fall through to the normal /sign/ flow.
+    }
+
     // Route through /sign/ so the user sees a standard "Revoke session-key"
     // confirmation screen. Local material cleanup runs on the /security/ return
     // page when it sees ?revoked=<ruleId>.

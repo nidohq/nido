@@ -111,11 +111,11 @@ import Nest from '../../components/Nest.astro';
     loadFriendNicknames,
     loadBlockLabels,
     loadSessionKeyMaterial,
-    forgetSessionKeyMaterial,
     loadCredential,
     buf2base64url,
   } from '@nidohq/passkey-sdk';
   import { fetchAllChainRules, fetchPolicyState } from '../../lib/policyChainFetch.js';
+  import { forgetRevokedMaterial } from '../../lib/sessionKeyActions.js';
   import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
   import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
   import { mountRecoveryForm } from '../../lib/recoveryForm.js';
@@ -133,29 +133,15 @@ import Nest from '../../components/Nest.astro';
     if (revokedId != null && account) {
       const target = sp.get('target') ?? '';
       const pubkeyHex = sp.get('pubkey') ?? '';
-      // Reconstruct the Uint8Array only when a pubkey was passed so we can do
-      // the ownership check (same as maybeForgetMaterial in sessionKeyActions.ts).
-      let sessionPubkey: Uint8Array | undefined;
-      if (pubkeyHex) {
-        const bytes = pubkeyHex.match(/.{1,2}/g)?.map((b) => parseInt(b, 16)) ?? [];
-        sessionPubkey = new Uint8Array(bytes);
-      }
-      // Ownership-safe cleanup: mirrors maybeForgetMaterial from sessionKeyActions.ts.
-      // With two live rules on the same target (re-delegation), the single per-target
-      // material slot belongs to the NEWER credential — revoking the stale rule must
-      // not wipe it.
-      if (target) {
-        if (sessionPubkey && sessionPubkey.length > 0) {
-          const stored = loadSessionKeyMaterial(account, target);
-          const revokedHex = pubkeyHex.toLowerCase();
-          // Legacy material (pre-publicKey schema) has no owner to compare — wipe it.
-          if (!stored?.publicKey || stored.publicKey.toLowerCase() === revokedHex) {
-            forgetSessionKeyMaterial(account, target);
-          }
-        } else {
-          forgetSessionKeyMaterial(account, target);
-        }
-      }
+      // Ownership-safe cleanup via the shared forgetRevokedMaterial helper
+      // (same logic as maybeForgetMaterial in sessionKeyActions.ts).
+      // With two live rules on the same target (re-delegation), the single
+      // per-target material slot belongs to the NEWER credential — revoking
+      // the stale rule must not wipe it.
+      // Toast only when cleanup ran (target was present); if target is absent
+      // the revoke still happened on-chain but we have nothing to clean up
+      // locally — show the toast anyway since the chain operation succeeded.
+      forgetRevokedMaterial(account, target, pubkeyHex || undefined);
       toast({ msg: 'Session key revoked', icon: 'check' });
       // Clean the ?revoked= params from the URL so a refresh doesn't re-run cleanup.
       const clean = new URL(window.location.href);
