@@ -25,7 +25,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       </div>
 
       <h1 class="disp head">Confirm it's you</h1>
-      <p class="lead mut">
+      <p class="lead mut" id="lead">
         <code class="hl" id="dapp-origin">…</code> wants this account to sign a
         <span id="kind-label">request</span>.
       </p>
@@ -665,13 +665,24 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   }
 
   const origin = validatedOrigin();
-  // Write the validated origin to the DOM (only after validation, so a
-  // malicious ?dapp= value is never displayed as a trusted-looking name).
-  document.getElementById('dapp-origin')!.textContent = origin ?? '(unknown)';
-  // For own-action requests (no dapp origin), replace '(unknown)' with the
-  // human-readable subtitle from the SignRequest (e.g. "Register a name").
-  if (!origin && req?.returnTarget.type !== 'dapp' && req?.subtitle) {
-    document.getElementById('dapp-origin')!.textContent = req.subtitle;
+  // F8 (lead copy): the default lead is the dApp framing
+  // "<origin> wants this account to sign a <noun>." — designed for an ORIGIN +
+  // a bare NOUN. Own-action requests (returnTarget: route) ship full titles /
+  // sentences ("Claim alice", "Send 5 XLM to alice", "Revoke access for X")
+  // into those slots, which reads as "(unknown) wants this account to sign a
+  // Claim alice." So own actions get their OWN lead line: just req.title,
+  // standing alone, with no origin framing. dApp + legacy paths keep the
+  // origin-and-noun template untouched.
+  const isOwnActionLead = req?.returnTarget.type === 'route';
+  if (isOwnActionLead) {
+    // Replace the whole lead with the request title as a standalone sentence.
+    // textContent escapes — no HTML is interpolated, so this is XSS-safe.
+    document.getElementById('lead')!.textContent = req!.title;
+  } else {
+    // dApp / legacy framing. Write the validated origin to the DOM (only after
+    // validation, so a malicious ?dapp= value is never displayed as a
+    // trusted-looking name).
+    document.getElementById('dapp-origin')!.textContent = origin ?? '(unknown)';
   }
 
   function finish(search: string) {
