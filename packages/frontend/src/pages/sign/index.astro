@@ -76,6 +76,42 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       </div>
 
       <p id="status" role="status" aria-live="polite" class="status mut"></p>
+
+      <!-- Progress ticker — revealed when runSign starts (new-path only). -->
+      <section id="sign-progress" class="hidden" style="margin-top:8px;">
+        <div class="card" style="padding:16px;">
+          <div style="display:flex; flex-direction:column; gap:13px;">
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Building transaction</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Sign with your passkey</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Submitting to Stellar</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Confirmed on-chain</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -146,6 +182,9 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { loadSignRequest, signRequestFromParams, type SignRequest } from '../../lib/signing/signRequest';
   import { renderTechDetails } from '../../lib/transfer/techDetails.js';
   import type { LimitPeriod } from '../../lib/spendingLimitParams';
+  import { runSign } from '../../lib/signing/runSign';
+  import { mountSteps } from '../../lib/progressSteps';
+  import { EXPLORER_BASE } from '../../lib/network.js';
 
   const params = new URLSearchParams(window.location.search);
   const kind = params.get('kind') ?? 'tx';
@@ -456,10 +495,16 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     postResultToOpener(search, origin, returnUrl || undefined);
   }
 
+  // own-action (route) requests legitimately have no dApp origin — finish() is
+  // not called for them; the handler navigates via window.location.href instead.
+  const isOwnAction = req?.returnTarget.type === 'route';
+
   function validate(): string | null {
     if (!account) return 'This page must be opened on an account subdomain.';
     if (!payload) return 'Missing payload to sign.';
-    if (!origin) return 'Invalid app origin / return URL.';
+    // Skip the origin check for own-action requests — they have no dApp origin.
+    // dApp requests and the legacy path still require a validated origin.
+    if (!isOwnAction && !origin) return 'Invalid app origin / return URL.';
     if (!loadCredential(account)) {
       document.getElementById('needs-register')!.classList.remove('hidden');
       return 'No passkey registered for this account on this device.';
@@ -486,8 +531,67 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     finish('?nido_sign=switch-account');
   });
 
+  // Mount the progress ticker — driven from the new-path (runSign) approve handler.
+  const $signProgress = document.getElementById('sign-progress')!;
+  const steps = mountSteps($signProgress);
+
+  // Map runSign phase names to step indices: build→0, sign→1, submit→2, confirm→3.
+  const PHASE_STEP: Record<string, number> = { build: 0, sign: 1, submit: 2, confirm: 3 };
+
+  function onProgress(p: { phase: string; detail?: string }) {
+    const stepIdx = PHASE_STEP[p.phase] ?? -1;
+    if (stepIdx >= 0) {
+      steps.setProgress(stepIdx, stepIdx);
+      if (p.detail) steps.ticker(stepIdx, p.detail);
+    }
+  }
+
   approve.addEventListener('click', async () => {
     approve.disabled = true;
+    $err.style.display = 'none';
+
+    if (req) {
+      // New path: drive runSign — handles build → sign → submit → confirm.
+      $signProgress.classList.remove('hidden');
+      steps.setProgress(0, 0);
+      try {
+        const result = await withPasskeySheet(
+          () => runSign(req!, { onProgress }),
+          { title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` },
+        );
+        steps.finish();
+        $status.textContent = 'Done — returning…';
+        if (req.returnTarget.type === 'dapp') {
+          // SUBMITTED-MARKER: dApp must not re-broadcast; return hash only.
+          setTimeout(() => finish('?nido_submitted=' + encodeURIComponent(result.hash) + '&kind=tx'), 300);
+        } else {
+          // own-action (route): navigate internally.
+          window.location.href = req.returnTarget.url;
+        }
+      } catch (err) {
+        const e = err as { name?: string; message?: string; code?: string; details?: { hash?: string | null } };
+        const msg = e?.message ?? String(err);
+        if (e?.name === 'RelayerError' && e?.code === 'WAIT_TIMEOUT') {
+          // The tx may still land — do NOT re-enable approve (double-send risk).
+          // Point at the explorer so the user can check status.
+          const hash = e.details?.hash;
+          const explorerLink = hash && /^[0-9a-f]{64}$/i.test(hash)
+            ? ` <a href="${EXPLORER_BASE}/tx/${hash}" target="_blank" rel="noopener">Check status on Stellar Expert →</a>`
+            : '';
+          $err.innerHTML = `Still waiting for the network — this transaction may yet go through. Check the result before trying again.${explorerLink}`;
+          $err.style.display = 'block';
+          $status.textContent = '';
+          // approve stays disabled intentionally.
+        } else {
+          showError(`Failed: ${msg}`);
+          $status.textContent = '';
+          approve.disabled = false;
+        }
+      }
+      return;
+    }
+
+    // LEGACY path (message / authEntry / null req): unchanged.
     try {
       $status.textContent = `Confirming with ${passkey.label}…`;
       // Drive the REAL signing ceremony through the Nido confirm sheet. The
