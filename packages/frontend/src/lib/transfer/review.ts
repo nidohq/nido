@@ -131,8 +131,14 @@ export function renderGenericOp(op: OpSummary): string {
       ? `Registers the name <code class="mono">${esc(op.name)}</code>`
       : op.kind === "invoke"
         ? `Calls <code class="mono">${esc(op.fn)}</code> on <code class="mono">${esc(shortAddr(op.contract))}</code> (${op.argsCount} arg${op.argsCount === 1 ? "" : "s"})`
-        : op.kind === "other"
-          ? `<code class="mono">${esc(op.type)}</code> operation`
-          : "";
+        : op.kind === "session-grant"
+          ? `Grants a session key to <code class="mono">${esc(op.target)}</code>`
+          : op.kind === "session-revoke"
+            ? `Revokes session-key rule #${op.ruleId}`
+            : op.kind === "other"
+              ? `<code class="mono">${esc(op.type)}</code> operation`
+              : "";
   return `<div class="card" style="padding:13px 16px;"><span style="font-size:13.5px;font-weight:600;">${line}</span></div>`;
 }
+
+export { renderSessionGrant, type SessionGrantScope } from "./sessionGrantReview.js";
