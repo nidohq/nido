@@ -224,7 +224,7 @@ export const StatusMessage = () => {
 				walletOrigin: accountOrigin(nidoBase(), nidoAccount),
 				account: nidoAccount,
 				targetContract: CONTRACT_ID,
-				duration: "24h",
+				duration: "30d",
 				returnUrl: window.location.href,
 				label: "status-message",
 			})
@@ -342,7 +342,7 @@ export const StatusMessage = () => {
 				walletOrigin: accountOrigin(nidoBase(), nidoAccount),
 				account: nidoAccount,
 				targetContract: XLM_SAC_ID,
-				duration: "7d",
+				duration: "30d",
 				limit: "5",
 				limitPeriod: "day",
 				returnUrl: window.location.href,

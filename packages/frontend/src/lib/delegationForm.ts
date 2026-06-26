@@ -29,7 +29,7 @@ export function mountDelegationForm(container: HTMLElement, account: string): vo
       <select id="duration" style="display:block;margin-top:0.25rem">
         <option value="24h">24 hours</option>
         <option value="7d">7 days</option>
-        <option value="30d">30 days</option>
+        <option value="30d" selected>30 days</option>
         <option value="none">No expiry</option>
       </select>
     </label>
@@ -96,7 +96,7 @@ export function mountDelegationForm(container: HTMLElement, account: string): vo
         account,
         target,
         sessionPubkey: k.publicKey,
-        validUntilOffset: DURATIONS[duration] ?? 17280,
+        validUntilOffset: DURATIONS[duration] ?? DURATIONS['30d'],
         label,
       });
 

@@ -12,6 +12,13 @@ on:
     paths:
       - "examples/status-message-dapp/**"
       - ".github/workflows/example-preview.yml"
+      # The example exercises the wallet's connect / delegation-handover /
+      # session-signing flows, so a wallet or SDK PR needs the example preview
+      # too — pointed at THIS PR's pr-N.nido.fyi wallet — for end-to-end review.
+      # This is the mirror of preview.yml, which already triggers on examples/**.
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
 
 permissions:
   contents: read
