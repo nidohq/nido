@@ -756,6 +756,48 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   // Map runSign phase names to step indices: build→0, sign→1, submit→2, confirm→3.
   const PHASE_STEP: Record<string, number> = { build: 0, sign: 1, submit: 2, confirm: 3 };
 
+  // Progress-view helpers: collapse review chrome and surface the ticker at top.
+  // Selectors that make up the "review chrome" — these are hidden during signing
+  // and restored on error so the user can read the error and retry.
+  const PROGRESS_VIEW_SELECTORS = [
+    '.card.identity',
+    '.card.review',
+    '#tx-detail',
+    '#toggle-raw',
+    '#limit-edit',
+    '.footer',
+  ] as const;
+
+  // Elements that were actually hidden by enterProgressView() — only those are
+  // restored by exitProgressView(), so pre-hidden elements stay hidden.
+  let collapsed: HTMLElement[] = [];
+
+  function enterProgressView(): void {
+    collapsed = [];
+    for (const sel of PROGRESS_VIEW_SELECTORS) {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (!el) continue;
+      // Skip if already hidden via class or inline display:none.
+      const alreadyHidden =
+        el.classList.contains('hidden') ||
+        el.style.display === 'none' ||
+        getComputedStyle(el).display === 'none';
+      if (alreadyHidden) continue;
+      el.classList.add('hidden');
+      collapsed.push(el);
+    }
+    $signProgress.classList.remove('hidden');
+    window.scrollTo({ top: 0 });
+  }
+
+  function exitProgressView(): void {
+    for (const el of collapsed) {
+      el.classList.remove('hidden');
+    }
+    collapsed = [];
+    $signProgress.classList.add('hidden');
+  }
+
   function onProgress(p: { phase: string; detail?: string }) {
     // Close the passkey sheet once the ceremony is done (submit/confirm phase)
     // so the progress ticker is visible during relayer submit + on-chain confirmation.
@@ -777,7 +819,9 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
 
     if (req) {
       // New path: drive runSign — handles build → sign → submit → confirm.
-      $signProgress.classList.remove('hidden');
+      // Collapse review chrome into a progress-only view so the ticker is
+      // visible at the top without scrolling.
+      enterProgressView();
       steps.setProgress(0, 0);
       // Open the passkey sheet immediately (before runSign) so it's shown for
       // ALL new-path flows — own-action AND dApp single-passkey. The single-passkey
@@ -818,7 +862,10 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         const msg = e?.message ?? String(err);
         if (e?.name === 'RelayerError' && e?.code === 'WAIT_TIMEOUT') {
           // The tx may still land — do NOT re-enable approve (double-send risk).
-          // Point at the explorer so the user can check status.
+          // Keep the progress view so the ticker stays visible; surface the error
+          // and explorer link in the error box (already above the ticker in DOM order
+          // after the review chrome is hidden). Do NOT restore review/footer — that
+          // would re-enable a path that could double-submit.
           const hash = e.details?.hash;
           const explorerLink = hash && /^[0-9a-f]{64}$/i.test(hash)
             ? ` <a href="${EXPLORER_BASE}/tx/${hash}" target="_blank" rel="noopener">Check status on Stellar Expert →</a>`
@@ -826,8 +873,11 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           $err.innerHTML = `Still waiting for the network — this transaction may yet go through. Check the result before trying again.${explorerLink}`;
           $err.style.display = 'block';
           $status.textContent = '';
-          // approve stays disabled intentionally.
+          // approve stays disabled intentionally; footer/review stay hidden.
         } else {
+          // Regular error — restore review chrome so the user can read the error
+          // and retry (approve is re-enabled by exitProgressView restoring the footer).
+          exitProgressView();
           showError(`Failed: ${msg}`);
           $status.textContent = '';
           approve.disabled = false;
