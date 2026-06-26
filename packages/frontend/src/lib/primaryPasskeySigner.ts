@@ -13,6 +13,7 @@ import {
   injectPasskeySignature,
   parseAssertionResponse,
   hex2buf,
+  buf2hex,
 } from '@nidohq/passkey-sdk';
 import { fetchVerifierAddress } from './policyChainFetch.js';
 import {
@@ -83,7 +84,9 @@ export async function signAndSubmit(args: {
    *  already fetched. Otherwise we'll read it from the account's default
    *  rule. */
   verifierAddress?: string;
-}): Promise<rpc.Api.SendTransactionResponse> {
+  /** Optional progress callback fired at each phase of the signing flow. */
+  onProgress?: (p: { phase: "build" | "sign" | "submit" | "confirm"; detail?: string }) => void;
+}): Promise<rpc.Api.SendTransactionResponse & { authHashHex: string }> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
 
@@ -124,6 +127,7 @@ export async function signAndSubmit(args: {
   // from an op with no auth entries so the simulator generates them
   // fresh in recording mode. Clone the XDR op so we don't mutate the
   // caller's operation.
+  args.onProgress?.({ phase: "build" });
   const opClone = xdr.Operation.fromXDR(args.operation.toXDR());
   opClone.body().invokeHostFunctionOp().auth([]);
   const sim_tx = new TransactionBuilder(sourceAccount, {
@@ -153,11 +157,13 @@ export async function signAndSubmit(args: {
   const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger, expirationOffset);
   const contextRuleIds = [0];
   const challengeBytes = computeAuthDigest(signaturePayload, contextRuleIds);
+  const authHashHex = buf2hex(challengeBytes);
 
   // 4. Assemble so auth entries are baked into the tx XDR before signing.
   const assembled_tx = rpc.assembleTransaction(sim_tx, successSim).build();
 
   // 5. Get a WebAuthn assertion over the challenge.
+  args.onProgress?.({ phase: "sign" });
   const challengeBuf = new ArrayBuffer(challengeBytes.byteLength);
   new Uint8Array(challengeBuf).set(challengeBytes);
   const assertion = (await navigator.credentials.get({
@@ -189,12 +195,14 @@ export async function signAndSubmit(args: {
     contextRuleIds,
   );
 
+  args.onProgress?.({ phase: "submit" });
   if (relayerEnabled()) {
     // The Channels plugin re-simulates server-side in enforce mode, builds
     // the footprint itself, and a channel account becomes the tx source with
     // the fund account fee-bumping — the enforce re-sim + fee refit + G
     // signature + RPC submission below are all its job now. We ship only the
     // host function and the passkey-signed auth entry.
+    args.onProgress?.({ phase: "confirm" });
     const { hash } = await relayerSubmitAndConfirm(assembled_tx);
     // Only `hash` is real (the transfer page links it to the explorer) —
     // latestLedger/latestLedgerCloseTime are placeholder zeros and the tx is
@@ -204,6 +212,7 @@ export async function signAndSubmit(args: {
       hash,
       latestLedger: 0,
       latestLedgerCloseTime: 0,
+      authHashHex,
     };
   }
 
@@ -211,5 +220,7 @@ export async function signAndSubmit(args: {
   //    See classicSubmitAndPoll for full commentary on why enforce re-sim
   //    is required and why cloneFrom is used instead of assembleTransaction.
   if (!submitter) throw new Error('unreachable: classic path without submitter');
-  return classicSubmitAndPoll(assembled_tx, submitter, server);
+  args.onProgress?.({ phase: "confirm" });
+  const classicResult = await classicSubmitAndPoll(assembled_tx, submitter, server);
+  return { ...classicResult, authHashHex };
 }
