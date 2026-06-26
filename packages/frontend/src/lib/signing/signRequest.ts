@@ -68,6 +68,41 @@ export function loadSignRequest(id: string, store: Storage = sessionStorage): Si
   }
 }
 
+/** Remove a stashed SignRequest (F3 — back/forward replay hygiene).
+ *
+ *  Called from /sign/ ONLY after a successful submit, never on load: a failed
+ *  attempt must stay retryable. After consumption the entry is gone, so a
+ *  back-button to `/sign/?req=<id>` reloads nothing rather than re-submitting
+ *  the same request. */
+export function clearSignRequest(id: string, store: Storage = sessionStorage): void {
+  store.removeItem(KEY(id));
+}
+
+/** Validate a route-return URL and normalise it (F1 — XSS / open-redirect guard).
+ *
+ *  Returns the URL string only when it resolves (against the current origin) to
+ *  a SAME-ORIGIN http(s) location; otherwise null. This rejects `javascript:`,
+ *  `data:`, and cross-origin redirects that would otherwise execute or navigate
+ *  in the nido.fyi origin on the /sign/ success path. Used at BOTH the source
+ *  (reject a hostile `sm-return`) and the sink (fall back to /account/).
+ *
+ *  `base` lets callers resolve relative URLs (e.g. `/account/`) — pass
+ *  `window.location.origin` in the browser. */
+export function safeRouteUrl(url: string | null | undefined, base: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url, base);
+    const origin = new URL(base).origin;
+    if (u.origin !== origin) return null;
+    // localhost may be served over http during dev; everything else must be https.
+    if (u.protocol === "https:") return u.href;
+    if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) return u.href;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function signRequestFromParams(params: URLSearchParams, account: string | null): SignRequest | null {
   if (!account) return null;
   const kind = params.get("kind") ?? "tx";
@@ -81,7 +116,10 @@ export function signRequestFromParams(params: URLSearchParams, account: string |
     v: 1, kind: "dapp-tx", account,
     operation: { type: "raw-xdr", xdr },
     title: "Confirm it's you",
-    subtitle: `${dapp} wants this account to sign a transaction.`,
+    // F8: the /sign/ lead is the fixed sentence "<origin> wants this account to
+    // sign a <subtitle>." — so the subtitle must be the bare NOUN, not a full
+    // sentence, or the copy doubles ("…sign a <dapp> wants this account to…").
+    subtitle: "transaction",
     submitMode: "return-to-dapp",
     returnTarget: { type: "dapp", origin: dapp, returnUrl: ret },
     networkPassphrase: network,

@@ -207,7 +207,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { renderTransferReview, renderGenericOp, renderNameRegister, renderSessionGrant, type TransferView } from '../../lib/transfer/review.js';
   import { probeSep41Token } from '../../lib/assets/balances.js';
   import { NATIVE_SAC_ID } from '../../lib/network.js';
-  import { loadSignRequest, signRequestFromParams, type SignRequest } from '../../lib/signing/signRequest';
+  import { loadSignRequest, signRequestFromParams, clearSignRequest, safeRouteUrl, type SignRequest } from '../../lib/signing/signRequest';
   import { renderTechDetails } from '../../lib/transfer/techDetails.js';
   import {
     PERIOD_LEDGERS,
@@ -329,10 +329,14 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       $toggle.classList.remove('hidden');
       $toggle.textContent = 'Show technical details';
       let techHtml: string | null = null;
+      // F10: hoist techShown so the async build can repaint an already-open
+      // panel when it resolves — otherwise a user who opens the expander before
+      // the build finishes is stuck on the empty placeholder until the next toggle.
+      let techShown = false;
       void ownActionTechDetails(op, account ?? '').then((html) => {
         techHtml = html;
+        if (techShown && html) $detail.innerHTML = html;
       });
-      let techShown = false;
       $toggle.addEventListener('click', () => {
         techShown = !techShown;
         if (techShown) {
@@ -361,10 +365,12 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       $toggleReg.classList.remove('hidden');
       $toggleReg.textContent = 'Show technical details';
       let regTechHtml: string | null = null;
+      // F10: hoist regTechShown so the async build repaints an already-open panel.
+      let regTechShown = false;
       void ownActionTechDetails(op, account ?? '').then((html) => {
         regTechHtml = html;
+        if (regTechShown && html) $detail.innerHTML = html;
       });
-      let regTechShown = false;
       $toggleReg.addEventListener('click', () => {
         regTechShown = !regTechShown;
         if (regTechShown) {
@@ -487,9 +493,22 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         syncLimitControls();
         $limitEdit.classList.remove('hidden');
       }
+    } else if (op.type === 'remove-context-rule') {
+      // Session-revoke descriptor — render the human-readable revoke line
+      // (F7) instead of dumping raw JSON into the payload row.
+      payload = op.target; // non-empty (target address) so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      $detail.innerHTML = renderGenericOp({
+        kind: 'session-revoke',
+        contract: account ?? '',
+        ruleId: op.ruleId,
+      });
+      $detail.classList.remove('hidden');
     } else {
-      // remove-context-rule or any unknown descriptor kind: fall through to
-      // the raw payload row (nothing specific to render).
+      // Any unknown descriptor kind: fall through to the raw payload row
+      // (nothing specific to render).
       document.getElementById('kind-label')!.textContent = req.subtitle ?? 'request';
       document.getElementById('payload-label')!.textContent = 'Operation';
       document.getElementById('payload-text')!.textContent = JSON.stringify(op);
@@ -740,6 +759,10 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         );
         steps.finish();
         $status.textContent = 'Done — returning…';
+        // F3: drop the stashed SignRequest now that it submitted successfully,
+        // so back/forward to `/sign/?req=<id>` can't reload and re-submit it.
+        // Only on success — a failed attempt (catch below) must stay retryable.
+        if (reqId) clearSignRequest(reqId);
         if (req.returnTarget.type === 'dapp') {
           // A dApp return can override the success query (e.g. the session-grant
           // caller sets `?delegation=ok` for delegationHandover.readDelegationReturn).
@@ -752,7 +775,11 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         } else {
           // own-action (route): navigate internally, appending txhash so the
           // return page (e.g. status-message) can display an explorer link.
-          const base = req.returnTarget.url;
+          // SECURITY (F1, defense-in-depth): even though the source validates
+          // returnTarget.url before stashing, re-validate here as a same-origin
+          // http(s) URL and fall back to /account/ if anything is off — never
+          // navigate to an attacker-controlled `javascript:`/cross-origin URL.
+          const base = safeRouteUrl(req.returnTarget.url, window.location.origin) ?? '/account/';
           const sep = base.includes('?') ? '&' : '?';
           window.location.href = base + sep + 'txhash=' + encodeURIComponent(result.hash);
         }

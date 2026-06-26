@@ -115,7 +115,7 @@ import Nest from '../../components/Nest.astro';
     buf2base64url,
   } from '@nidohq/passkey-sdk';
   import { fetchAllChainRules, fetchPolicyState } from '../../lib/policyChainFetch.js';
-  import { forgetRevokedMaterial } from '../../lib/sessionKeyActions.js';
+  import { forgetRevokedMaterial, ruleStillExists } from '../../lib/sessionKeyActions.js';
   import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
   import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
   import { mountRecoveryForm } from '../../lib/recoveryForm.js';
@@ -133,16 +133,25 @@ import Nest from '../../components/Nest.astro';
     if (revokedId != null && account) {
       const target = sp.get('target') ?? '';
       const pubkeyHex = sp.get('pubkey') ?? '';
-      // Ownership-safe cleanup via the shared forgetRevokedMaterial helper.
-      // With two live rules on the same target (re-delegation), the single
-      // per-target material slot belongs to the NEWER credential — revoking
-      // the stale rule must not wipe it.
-      // Toast only when cleanup ran (target was present); if target is absent
-      // the revoke still happened on-chain but we have nothing to clean up
-      // locally — show the toast anyway since the chain operation succeeded.
-      forgetRevokedMaterial(account, target, pubkeyHex || undefined);
-      toast({ msg: 'Session key revoked', icon: 'check' });
-      // Clean the ?revoked= params from the URL so a refresh doesn't re-run cleanup.
+      const txhash = sp.get('txhash') ?? '';
+      // F2: only run cleanup + toast when there's PROOF a revoke actually
+      // happened — a /sign/ success carries a 64-hex txhash, AND the rule must
+      // really be gone on-chain. Otherwise (a bare/crafted `?revoked=` URL) do
+      // nothing: don't wipe local material, don't show a misleading toast.
+      const ruleId = Number(revokedId);
+      const hasProofShape =
+        /^[0-9a-f]{64}$/i.test(txhash) && Number.isInteger(ruleId) && ruleId >= 0;
+      const proven = hasProofShape && (await ruleStillExists(account, ruleId)) === false;
+      if (proven) {
+        // Ownership-safe cleanup via the shared forgetRevokedMaterial helper.
+        // With two live rules on the same target (re-delegation), the single
+        // per-target material slot belongs to the NEWER credential — revoking
+        // the stale rule must not wipe it.
+        forgetRevokedMaterial(account, target, pubkeyHex || undefined);
+        toast({ msg: 'Session key revoked', icon: 'check' });
+      }
+      // Clean the ?revoked= params from the URL so a refresh doesn't re-run
+      // cleanup — even when unproven (don't leave a hostile URL primed).
       const clean = new URL(window.location.href);
       clean.searchParams.delete('revoked');
       clean.searchParams.delete('pubkey');

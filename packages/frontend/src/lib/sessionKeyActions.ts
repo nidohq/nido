@@ -83,12 +83,21 @@ export function forgetRevokedMaterial(
   target: string,
   pubkeyHex?: string,
 ): void {
-  if (target && pubkeyHex) {
-    const stored = loadSessionKeyMaterial(account, target);
-    // Legacy material (pre-publicKey schema) has no owner to compare — treat
-    // it as unowned and wipe it; it predates the flow and is unusable anyway.
+  if (!target) return;
+  const stored = loadSessionKeyMaterial(account, target);
+  if (pubkeyHex) {
+    // Normal path: only wipe when the stored material's owner matches the
+    // revoked credential (case-insensitive). A NEWER credential on the same
+    // target (re-delegation) must be preserved. Legacy material (pre-publicKey
+    // schema) has no owner to compare — treat it as unowned and wipe it.
     if (stored?.publicKey && stored.publicKey.toLowerCase() !== pubkeyHex.toLowerCase()) return;
+  } else {
+    // F2: pubkey omitted — DON'T blindly wipe. Only clear truly-legacy material
+    // (no stored publicKey). Owned (publicKey-bearing) material must never be
+    // wiped without a matching pubkey, or a `?revoked=` call lacking `&pubkey=`
+    // could destroy a live key's material.
+    if (stored?.publicKey) return;
   }
-  if (target) forgetSessionKeyMaterial(account, target);
+  forgetSessionKeyMaterial(account, target);
 }
 

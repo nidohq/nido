@@ -279,7 +279,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { createNido } from "../../lib/createNido";
   import { markUsed, readLastUsed } from "../../lib/lastUsed";
   import { toast } from "../../lib/toast";
-  import { stashSignRequest, type SignRequest } from "../../lib/signing/signRequest";
+  import { stashSignRequest, safeRouteUrl, type SignRequest } from "../../lib/signing/signRequest";
+  import { EXPLORER_BASE } from "../../lib/network";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { formatXlm } from "../../lib/money";
@@ -686,6 +687,43 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
   initAccountCard();
 
+  // --- Handle return from /sign/ with ?txhash= (F4) ---
+  // /sign/ appends `?txhash=<hash>` to a route returnTarget on success. The
+  // transfer flow routes back here, so surface a "transaction confirmed" toast
+  // plus a per-tx "View on Stellar Expert" link (the explorer link the
+  // pre-refactor transfer screen had), then strip the param so a reload doesn't
+  // re-show it. Mirrors status-message/index.astro's txhash handling.
+  {
+    const txhash = params.get("txhash");
+    // Validate hex-only before embedding in a URL — a crafted ?txhash= must not
+    // be able to inject a javascript: URI or path traversal into the link.
+    if (txhash && /^[0-9a-f]{64}$/i.test(txhash)) {
+      toast({ msg: "Transaction confirmed", icon: "check" });
+      const banner = document.createElement("div");
+      banner.className = "alert good";
+      banner.setAttribute("role", "status");
+      banner.style.cssText = "margin:8px 22px;";
+      const label = document.createElement("span");
+      label.textContent = "Transaction confirmed. ";
+      const link = document.createElement("a");
+      link.className = "link";
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.href = `${EXPLORER_BASE}/tx/${txhash}`;
+      link.textContent = "View on Stellar Expert";
+      banner.append(label, link);
+      const errorBox = document.getElementById("error-box")!;
+      errorBox.insertAdjacentElement("beforebegin", banner);
+    }
+    // Drop ?txhash from the URL whether or not it validated, so reloads/back
+    // don't re-show the banner.
+    if (txhash != null) {
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("txhash");
+      window.history.replaceState({}, "", `${clean.pathname}${clean.search}${clean.hash}`);
+    }
+  }
+
   // Home link is set unconditionally near the top of the script (before any
   // code that can throw), so it doesn't need setting here.
 
@@ -817,17 +855,27 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   const smSignXdr = params.get("sm-sign");
   const smReturnUrl = params.get("sm-return");
   if (smSignXdr && smReturnUrl && contractId) {
-    const req: SignRequest = {
-      v: 1,
-      kind: "generic",
-      account: contractId,
-      operation: { type: "raw-xdr", xdr: smSignXdr },
-      title: "Set your note",
-      subtitle: "Sign the on-chain status-message update.",
-      submitMode: "relayer",
-      returnTarget: { type: "route", url: smReturnUrl },
-    };
-    const id = stashSignRequest(req);
-    window.location.href = `/sign/?req=${id}`;
+    // SECURITY (F1): the bridge only ever returns to THIS subdomain's
+    // /status-message/, so validate sm-return is a same-origin http(s) URL
+    // before stashing it as the /sign/ returnTarget. A crafted
+    // `?sm-return=javascript:…` (or a cross-origin URL) would otherwise be
+    // navigated to verbatim on the /sign/ success path — an XSS / open redirect.
+    const safeReturn = safeRouteUrl(smReturnUrl, window.location.origin);
+    if (!safeReturn) {
+      showError("That status-message return link isn't valid. Open the status-message page again to retry.");
+    } else {
+      const req: SignRequest = {
+        v: 1,
+        kind: "generic",
+        account: contractId,
+        operation: { type: "raw-xdr", xdr: smSignXdr },
+        title: "Set your note",
+        subtitle: "Sign the on-chain status-message update.",
+        submitMode: "relayer",
+        returnTarget: { type: "route", url: safeReturn },
+      };
+      const id = stashSignRequest(req);
+      window.location.href = `/sign/?req=${id}`;
+    }
   }
 </script>

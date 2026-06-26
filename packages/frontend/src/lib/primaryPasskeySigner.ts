@@ -19,20 +19,15 @@ import { fetchVerifierAddress } from './policyChainFetch.js';
 import {
   relayerEnabled,
 } from './relayerClient';
-import { RELAYER_SIM_SOURCE } from './network';
+import { RELAYER_SIM_SOURCE, RELAYER_EXPIRATION_OFFSET } from './network';
 import { relayerSubmitAndConfirm, classicSubmitAndPoll } from './signing/submit';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 
-/** Signature validity in relayer mode: ~10 minutes. The sdk default (10000
- *  ledgers ≈ 14h) is fine when the signed entry never leaves the browser, but
- *  in relayer mode we hand it to an external service — whoever holds the body
- *  can submit at any moment until expiry. The relayer only needs it valid for
- *  well under a minute (channel tx lifetime is 60s; the plugin's minimum
- *  buffer is 2 ledgers), so keep the window tight. MUST be passed identically
- *  to buildAuthHash and injectPasskeySignature or the digest won't verify. */
-const RELAYER_EXPIRATION_OFFSET = 120;
+// RELAYER_EXPIRATION_OFFSET (relayer-mode auth-entry validity window) now lives
+// in ./network so every relayer-submitting signing path (here + walletSign)
+// shares one bound. See the comment there for the security rationale.
 
 /** localStorage key shared with `account/index.astro` so we don't
  *  proliferate ephemeral submitter accounts. */
