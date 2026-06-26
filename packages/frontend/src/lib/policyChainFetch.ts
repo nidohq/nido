@@ -384,6 +384,64 @@ export async function fetchDefaultRuleAuthInfo(account: string): Promise<Default
   };
 }
 
+/** Result of locating the single old passkey to remove during recovery. */
+export type RemovableSigner =
+  | { ok: true; signerId: number; publicKey: Uint8Array }
+  | { ok: false; reason: 'none' | 'multiple' | 'unreadable'; count?: number };
+
+/**
+ * Pure selection: given rule 0's parsed signers and their positionally-aligned
+ * `signer_ids`, decide which single External (passkey) signer the recovery
+ * "remove the lost device's key" checkbox targets. We auto-pick only when there
+ * is exactly one External signer; 0, >1, or a missing id is reported so the
+ * caller never guesses. Exported for unit testing.
+ */
+export function selectRemovableSigner(
+  signers: ChainSigner[],
+  signerIds: number[],
+): RemovableSigner {
+  const externals = signers
+    .map((signer, i) => ({ signer, id: signerIds[i] }))
+    .filter(
+      (e): e is { signer: { kind: 'external'; verifier: string; publicKey: Uint8Array }; id: number } =>
+        e.signer.kind === 'external',
+    );
+
+  if (externals.length === 0) return { ok: false, reason: 'none' };
+  if (externals.length > 1) return { ok: false, reason: 'multiple', count: externals.length };
+  if (!Number.isInteger(externals[0].id)) return { ok: false, reason: 'unreadable' };
+  return { ok: true, signerId: externals[0].id, publicKey: externals[0].signer.publicKey };
+}
+
+/**
+ * Find the External (passkey) signer to remove from rule 0 during recovery.
+ *
+ * The on-chain `ContextRule` carries `signer_ids: Vec<u32>` positionally
+ * aligned with `signers`, but `parseRule` drops it — so we re-decode the raw
+ * struct here to recover each signer's removable id. During recovery the new
+ * passkey isn't on-chain yet, so the existing External signer(s) on rule 0 are
+ * the lost device's key. Delegates the decision to `selectRemovableSigner`.
+ */
+export async function findRemovableOldSigner(account: string): Promise<RemovableSigner> {
+  let native: RawContextRule & { signer_ids?: (number | bigint)[] };
+  try {
+    const server = new rpc.Server(RPC_URL);
+    const rv = await simulateView(
+      server,
+      new Contract(account),
+      'get_context_rule',
+      nativeToScVal(0, { type: 'u32' }),
+    );
+    native = scValToNative(rv) as RawContextRule & { signer_ids?: (number | bigint)[] };
+  } catch {
+    return { ok: false, reason: 'unreadable' };
+  }
+
+  const signers = (native.signers ?? []).map(parseSigner);
+  const signerIds = Array.from(native.signer_ids ?? []).map((n) => Number(n));
+  return selectRemovableSigner(signers, signerIds);
+}
+
 // --- Internal parsers ------------------------------------------------------
 
 /** Raw `scValToNative` shape of one ContextRule: a Soroban struct decodes to a
