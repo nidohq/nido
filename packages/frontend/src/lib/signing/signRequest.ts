@@ -59,3 +59,23 @@ export function loadSignRequest(id: string, store: Storage = sessionStorage): Si
     return null;
   }
 }
+
+export function signRequestFromParams(params: URLSearchParams, account: string | null): SignRequest | null {
+  if (!account) return null;
+  const kind = params.get("kind") ?? "tx";
+  if (kind !== "tx") return null; // message/authEntry keep their own (non-submitting) path
+  const xdr = params.get("xdr");
+  const dapp = params.get("dapp");
+  if (!xdr || !dapp) return null;
+  const ret = params.get("return") ?? undefined;
+  const network = params.get("network") ?? undefined;
+  return {
+    v: 1, kind: "dapp-tx", account,
+    operation: { type: "raw-xdr", xdr },
+    title: "Confirm it's you",
+    subtitle: `${dapp} wants this account to sign a transaction.`,
+    submitMode: "return-to-dapp",
+    returnTarget: { type: "dapp", origin: dapp, returnUrl: ret },
+    networkPassphrase: network,
+  };
+}

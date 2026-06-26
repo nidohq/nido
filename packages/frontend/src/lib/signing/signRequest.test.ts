@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { stashSignRequest, loadSignRequest, type SignRequest } from "./signRequest";
+import { stashSignRequest, loadSignRequest, signRequestFromParams, type SignRequest } from "./signRequest";
 
 const C1 = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 
@@ -41,5 +41,32 @@ describe("stash/load SignRequest", () => {
   it("returns null for malformed json", () => {
     store.setItem("nido:signreq:y", "{not json");
     expect(loadSignRequest("y", store)).toBeNull();
+  });
+});
+
+describe("signRequestFromParams (legacy dApp entry)", () => {
+  it("maps a kind=tx dApp request to a dapp-tx SignRequest", () => {
+    const p = new URLSearchParams({
+      kind: "tx", xdr: "AAAA==", dapp: "https://app.example",
+      return: "https://app.example/cb", network: "Test SDF Network ; September 2015",
+    });
+    expect(signRequestFromParams(p, C1)).toEqual({
+      v: 1, kind: "dapp-tx", account: C1,
+      operation: { type: "raw-xdr", xdr: "AAAA==" },
+      title: "Confirm it's you",
+      subtitle: "https://app.example wants this account to sign a transaction.",
+      submitMode: "return-to-dapp",
+      returnTarget: { type: "dapp", origin: "https://app.example", returnUrl: "https://app.example/cb" },
+      networkPassphrase: "Test SDF Network ; September 2015",
+    });
+  });
+  it("returns null when xdr is missing", () => {
+    expect(signRequestFromParams(new URLSearchParams({ kind: "tx", dapp: "https://x" }), C1)).toBeNull();
+  });
+  it("returns null when account is null", () => {
+    expect(signRequestFromParams(new URLSearchParams({ kind: "tx", xdr: "AAAA==", dapp: "https://x" }), null)).toBeNull();
+  });
+  it("returns null for non-tx kinds (message/authEntry handled elsewhere)", () => {
+    expect(signRequestFromParams(new URLSearchParams({ kind: "message", message: "hi", dapp: "https://x" }), C1)).toBeNull();
   });
 });
