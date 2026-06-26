@@ -140,16 +140,34 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
   import { shortAddr } from '../../lib/address';
   import { describeTransaction } from '../../lib/transfer/txSummary.js';
-  import { renderTransferReview, renderGenericOp, type TransferView } from '../../lib/transfer/review.js';
+  import { renderTransferReview, renderGenericOp, renderNameRegister, renderSessionGrant, type TransferView } from '../../lib/transfer/review.js';
   import { probeSep41Token } from '../../lib/assets/balances.js';
   import { NATIVE_SAC_ID } from '../../lib/network.js';
+  import { loadSignRequest, signRequestFromParams, type SignRequest } from '../../lib/signing/signRequest';
+  import { renderTechDetails } from '../../lib/transfer/techDetails.js';
+  import type { LimitPeriod } from '../../lib/spendingLimitParams';
 
   const params = new URLSearchParams(window.location.search);
   const kind = params.get('kind') ?? 'tx';
-  const dappOrigin = params.get('dapp') ?? '';
-  const returnUrl = params.get('return') ?? '';
+  let dappOrigin = params.get('dapp') ?? '';
+  let returnUrl = params.get('return') ?? '';
   const network = params.get('network') ?? undefined;
   const account = contractIdFromHostname(window.location.hostname);
+
+  // Resolve a SignRequest: from sessionStorage (?req=<id>) or normalised from
+  // legacy query params (?kind=tx&xdr=…&dapp=…). message/authEntry kinds return
+  // null from signRequestFromParams and keep their own path below.
+  const reqId = params.get('req');
+  const req: SignRequest | null =
+    (reqId ? loadSignRequest(reqId) : null) ?? signRequestFromParams(params, account);
+
+  // When the request was loaded from sessionStorage, pull the dapp origin and
+  // return URL into the variables validatedOrigin() reads below, so the existing
+  // anti-redirect-abuse validation continues to protect the finish() call.
+  if (req?.returnTarget.type === 'dapp') {
+    dappOrigin = req.returnTarget.origin;
+    returnUrl = req.returnTarget.returnUrl ?? '';
+  }
 
   const $err = document.getElementById('error-box')!;
   const $status = document.getElementById('status')!;
@@ -186,26 +204,137 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     chip.hidden = false;
   }
 
-  const payload =
+  // payload is mutable so the req path can override it (for validate() below).
+  let payload =
     kind === 'tx' ? (params.get('xdr') ?? '')
     : kind === 'message' ? (params.get('message') ?? '')
     : kind === 'authEntry' ? (params.get('authEntry') ?? '')
     : '';
-  document.getElementById('kind-label')!.textContent =
-    kind === 'tx' ? 'transaction' : kind === 'message' ? 'message' : kind === 'authEntry' ? 'auth entry' : 'request';
-  document.getElementById('payload-label')!.textContent =
-    kind === 'message' ? 'Message' : kind === 'tx' ? 'Transaction XDR' : 'Auth entry XDR';
-  document.getElementById('payload-text')!.textContent = payload || '(missing)';
 
-  // For transactions, decode the XDR into human-readable detail so the user
-  // sees what they're approving, not a base64 blob. The raw XDR stays available
-  // behind a toggle. Best-effort: any decode/enrich failure leaves the raw
-  // payload visible, exactly as before this enhancement.
-  if (kind === 'tx' && payload && account) {
-    void renderTxDetail(payload, account);
+  if (req) {
+    // SignRequest path — set title copy and render the operation review.
+    // The page <title> and lead paragraph copy come from the request metadata.
+    document.title = req.title;
+    document.getElementById('kind-label')!.textContent = req.subtitle ?? req.title;
+
+    const op = req.operation;
+
+    if (op.type === 'raw-xdr') {
+      // Treat raw-xdr just like the legacy ?kind=tx&xdr=… path:
+      // show the XDR in the payload row and decode it into a human-readable
+      // detail panel. Reuse the existing renderTxDetail function.
+      payload = op.xdr;
+      document.getElementById('payload-label')!.textContent = 'Transaction XDR';
+      document.getElementById('payload-text')!.textContent = payload || '(missing)';
+      if (payload && account) {
+        const passphrase = req.networkPassphrase ?? network ?? 'Test SDF Network ; September 2015';
+        void renderTxDetail(payload, account, passphrase);
+      }
+    } else if (op.type === 'transfer') {
+      // Descriptor transfer — render directly without XDR decode.
+      payload = op.amountRaw; // non-empty so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      const native = op.token === NATIVE_SAC_ID;
+      const view: TransferView = {
+        token: op.token,
+        to: op.to,
+        from: account ?? '',
+        amountRaw: BigInt(op.amountRaw),
+        decimals: native ? 7 : op.decimals,
+        code: native ? 'XLM' : op.code,
+        verified: native,
+      };
+      $detail.innerHTML = renderTransferReview(view);
+      $detail.classList.remove('hidden');
+      // Wire the toggle-raw button to show renderTechDetails.
+      const $toggle = document.getElementById('toggle-raw') as HTMLButtonElement;
+      $toggle.classList.remove('hidden');
+      $toggle.textContent = 'Show technical details';
+      let techShown = false;
+      $toggle.addEventListener('click', () => {
+        techShown = !techShown;
+        if (techShown) {
+          $detail.innerHTML = renderTechDetails({ txXdr: undefined });
+          $toggle.textContent = 'Hide technical details';
+        } else {
+          $detail.innerHTML = renderTransferReview(view);
+          $toggle.textContent = 'Show technical details';
+        }
+      });
+    } else if (op.type === 'register') {
+      // Name-registration descriptor — render directly.
+      payload = op.name; // non-empty so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      // renderNameRegister expects an OpSummary name-register shape.
+      const nameOp = { kind: 'name-register' as const, contract: '', account: req.account, name: op.name };
+      $detail.innerHTML = renderNameRegister(nameOp);
+      $detail.classList.remove('hidden');
+    } else if (op.type === 'add-context-rule') {
+      // Session-grant descriptor — render via renderSessionGrant.
+      payload = op.target; // non-empty (target address) so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      // Derive the scope from the descriptor fields.
+      const grantOrigin =
+        req.returnTarget.type === 'dapp' ? req.returnTarget.origin : (req.subtitle ?? op.target);
+      const limitStroops = op.limit ? op.limit.stroops : null;
+      // Map period ledgers to a LimitPeriod label: day=17280, week=120960, 30d=518400.
+      const periodMap: Array<[number, LimitPeriod]> = [
+        [17280, 'day'], [120960, 'week'], [518400, '30d'],
+      ];
+      const period =
+        op.limit
+          ? (periodMap.find(([l]) => l === op.limit!.periodLedgers)?.[1] ?? 'day')
+          : 'day';
+      const expiryLabel =
+        op.validUntil == null
+          ? 'Until revoked'
+          : new Date(op.validUntil * 1000).toLocaleDateString();
+      const grantOp = {
+        kind: 'session-grant' as const,
+        contract: account ?? '',
+        name: op.label ?? 'session-key',
+        target: op.target,
+        validUntil: op.validUntil ?? null,
+      };
+      $detail.innerHTML = renderSessionGrant(grantOp, {
+        origin: grantOrigin,
+        limitStroops,
+        period,
+        expiryLabel,
+      });
+      $detail.classList.remove('hidden');
+    } else {
+      // remove-context-rule or any unknown descriptor kind: fall through to
+      // the raw payload row (nothing specific to render).
+      document.getElementById('kind-label')!.textContent = req.subtitle ?? 'request';
+      document.getElementById('payload-label')!.textContent = 'Operation';
+      document.getElementById('payload-text')!.textContent = JSON.stringify(op);
+      payload = JSON.stringify(op);
+    }
+  } else {
+    // Legacy / message / authEntry path — unchanged.
+    document.getElementById('kind-label')!.textContent =
+      kind === 'tx' ? 'transaction' : kind === 'message' ? 'message' : kind === 'authEntry' ? 'auth entry' : 'request';
+    document.getElementById('payload-label')!.textContent =
+      kind === 'message' ? 'Message' : kind === 'tx' ? 'Transaction XDR' : 'Auth entry XDR';
+    document.getElementById('payload-text')!.textContent = payload || '(missing)';
+
+    // For transactions, decode the XDR into human-readable detail so the user
+    // sees what they're approving, not a base64 blob. The raw XDR stays available
+    // behind a toggle. Best-effort: any decode/enrich failure leaves the raw
+    // payload visible, exactly as before this enhancement.
+    if (kind === 'tx' && payload && account) {
+      void renderTxDetail(payload, account, network ?? 'Test SDF Network ; September 2015');
+    }
   }
 
-  async function renderTxDetail(txXdr: string, acct: string) {
+  async function renderTxDetail(txXdr: string, acct: string, passphrase: string) {
     const $detail = document.getElementById('tx-detail')!;
     try {
       // stellar-sdk's XDR parsing needs the Buffer global (same lazy polyfill
@@ -213,7 +342,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       const { Buffer: B } = await import('buffer');
       if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
 
-      const summary = describeTransaction(txXdr, network ?? 'Test SDF Network ; September 2015');
+      const summary = describeTransaction(txXdr, passphrase);
       if (summary.ops.length === 0) return;
 
       // decimals/symbol for non-native tokens, filled in by an async probe.
@@ -287,8 +416,18 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   }
 
   // anti-redirect-abuse: only post back to the origin that asked.
+  // For own-action SignRequests (returnTarget: route), dappOrigin is empty and
+  // there is nothing to validate against — silently return null so the approve
+  // button stays intact until Task 11 wires the own-action submit path.
   function validatedOrigin(): string | null {
-    if (!dappOrigin) { showError('Missing dapp origin parameter.'); return null; }
+    if (!dappOrigin) {
+      // Suppress the "missing dapp origin" error for own-action sign requests
+      // that route back to an internal page rather than a dApp.
+      if (!req || req.returnTarget.type !== 'route') {
+        showError('Missing dapp origin parameter.');
+      }
+      return null;
+    }
     let origin: string;
     try { origin = new URL(dappOrigin).origin; } catch { showError('Malformed dapp origin.'); return null; }
     if (returnUrl) {
@@ -306,6 +445,11 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   // Write the validated origin to the DOM (only after validation, so a
   // malicious ?dapp= value is never displayed as a trusted-looking name).
   document.getElementById('dapp-origin')!.textContent = origin ?? '(unknown)';
+  // For own-action requests (no dapp origin), replace '(unknown)' with the
+  // human-readable subtitle from the SignRequest (e.g. "Register a name").
+  if (!origin && req?.returnTarget.type !== 'dapp' && req?.subtitle) {
+    document.getElementById('dapp-origin')!.textContent = req.subtitle;
+  }
 
   function finish(search: string) {
     if (!origin) return;
