@@ -81,7 +81,11 @@ export function renderSessionKeyCard(
       account,
       operation: { type: 'remove-context-rule', ruleId: block.ruleId, target: block.targetContract },
       title: `Revoke session key #${block.ruleId}`,
-      subtitle: block.label ? `Revoke access for "${escape(block.label ?? '')}"` : `Revoke access for ${escape(shortAddr(block.targetContract, 8, 4))}`,
+      // `subtitle` is rendered by /sign/ via textContent (XSS-safe already), so
+      // it must NOT be pre-escaped — escaping here would show literal entities
+      // (e.g. `&quot;`). Escaping is kept above for the card body, which goes to
+      // innerHTML.
+      subtitle: block.label ? `Revoke access for "${block.label}"` : `Revoke access for ${shortAddr(block.targetContract, 8, 4)}`,
       submitMode: 'relayer',
       returnTarget: { type: 'route', url: returnUrl },
     };

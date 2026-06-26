@@ -202,7 +202,8 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { withPasskeySheet } from '../../lib/passkeySheet';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
   import { shortAddr } from '../../lib/address';
-  import { describeTransaction } from '../../lib/transfer/txSummary.js';
+  import { describeTransaction, describeOperation, type OpSummary } from '../../lib/transfer/txSummary.js';
+  import { buildOperation } from '../../lib/signing/operationBuilders.js';
   import { renderTransferReview, renderGenericOp, renderNameRegister, renderSessionGrant, type TransferView } from '../../lib/transfer/review.js';
   import { probeSep41Token } from '../../lib/assets/balances.js';
   import { NATIVE_SAC_ID } from '../../lib/network.js';
@@ -320,15 +321,22 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       };
       $detail.innerHTML = renderTransferReview(view);
       $detail.classList.remove('hidden');
-      // Wire the toggle-raw button to show renderTechDetails.
+      // Wire the toggle-raw button to show renderTechDetails. The details (decoded
+      // op + raw operation XDR) are built offline from the descriptor after the
+      // human-readable card renders, so the expander shows real technical detail
+      // instead of the empty "No technical details available" placeholder.
       const $toggle = document.getElementById('toggle-raw') as HTMLButtonElement;
       $toggle.classList.remove('hidden');
       $toggle.textContent = 'Show technical details';
+      let techHtml: string | null = null;
+      void ownActionTechDetails(op, account ?? '').then((html) => {
+        techHtml = html;
+      });
       let techShown = false;
       $toggle.addEventListener('click', () => {
         techShown = !techShown;
         if (techShown) {
-          $detail.innerHTML = renderTechDetails({ txXdr: undefined });
+          $detail.innerHTML = techHtml ?? renderTechDetails({ txXdr: undefined });
           $toggle.textContent = 'Hide technical details';
         } else {
           $detail.innerHTML = renderTransferReview(view);
@@ -343,8 +351,30 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       const $detail = document.getElementById('tx-detail')!;
       // renderNameRegister expects an OpSummary name-register shape.
       const nameOp = { kind: 'name-register' as const, contract: '', account: req.account, name: op.name };
-      $detail.innerHTML = renderNameRegister(nameOp);
+      const registerView = renderNameRegister(nameOp);
+      $detail.innerHTML = registerView;
       $detail.classList.remove('hidden');
+      // Technical-details expander: built offline from the register descriptor
+      // (registry lookup + decoded op + raw operation XDR), shown after the
+      // human-readable card so the expander isn't an empty placeholder.
+      const $toggleReg = document.getElementById('toggle-raw') as HTMLButtonElement;
+      $toggleReg.classList.remove('hidden');
+      $toggleReg.textContent = 'Show technical details';
+      let regTechHtml: string | null = null;
+      void ownActionTechDetails(op, account ?? '').then((html) => {
+        regTechHtml = html;
+      });
+      let regTechShown = false;
+      $toggleReg.addEventListener('click', () => {
+        regTechShown = !regTechShown;
+        if (regTechShown) {
+          $detail.innerHTML = regTechHtml ?? renderTechDetails({ txXdr: undefined });
+          $toggleReg.textContent = 'Hide technical details';
+        } else {
+          $detail.innerHTML = registerView;
+          $toggleReg.textContent = 'Show technical details';
+        }
+      });
     } else if (op.type === 'add-context-rule') {
       // Session-grant descriptor — render via renderSessionGrant. `op` is a live
       // reference into req.operation, so the editable spending-limit control
@@ -479,6 +509,32 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     // payload visible, exactly as before this enhancement.
     if (kind === 'tx' && payload && account) {
       void renderTxDetail(payload, account, network ?? 'Test SDF Network ; September 2015');
+    }
+  }
+
+  // Build the technical-details HTML for an own-action descriptor (transfer /
+  // register / session-grant). The op is built offline (transfer) or with a
+  // best-effort registry lookup (register / session-grant) and decoded into a
+  // human-readable OpSummary, then rendered with its raw operation XDR. The fee
+  // isn't known until runSign simulates at approve time, so we omit the fee row
+  // (empty `fee` string) rather than show a fabricated number. Async + best-effort:
+  // any failure leaves the caller's empty-placeholder fallback in place.
+  async function ownActionTechDetails(
+    op: Exclude<import('../../lib/signing/signRequest').OperationDescriptor, { type: 'raw-xdr' }>,
+    acct: string,
+  ): Promise<string | null> {
+    try {
+      // XDR encode/decode needs the Buffer global (same lazy polyfill as renderTxDetail).
+      const { Buffer: B } = await import('buffer');
+      if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
+      const builtOp = await buildOperation(op, acct);
+      const summary: OpSummary = describeOperation(builtOp);
+      return renderTechDetails({
+        summary: { fee: '', ops: [summary] },
+        txXdr: builtOp.toXDR('base64'),
+      });
+    } catch {
+      return null;
     }
   }
 

@@ -791,16 +791,39 @@ import Icon from "../../components/Icon.astro";
         const unsignedXdr = tx.built!.toXDR();
 
         // 2. Hand the XDR to the kit. The Nido module opens `<account>.<base>/sign/`,
-        //    runs the passkey ceremony, and returns the XDR with the smart
-        //    account's auth entry signed (SEP-43: signing != submitting).
+        //    runs the passkey ceremony, and returns either the signed XDR (classic
+        //    wallets / legacy `nido_signed=<XDR>`) OR — for a Nido smart account
+        //    under model A — the relayer SUBMITS on-chain and returns
+        //    `{ signedTxXdr: <tx hash>, submitted: true }`.
         kitSetStatus("Awaiting wallet signature (passkey)…");
-        const { signedTxXdr } = await kitSignTransaction(unsignedXdr, {
+        const result = await kitSignTransaction(unsignedXdr, {
           networkPassphrase: Networks.TESTNET,
           address: kitAccount,
         });
 
-        // 3. The returned tx is signed by the smart account but still needs the
-        //    fee-payer (tx source) signature. Add it and submit.
+        // Guard (mirrors the example dApp's StatusMessage.tsx `AlreadySubmittedError`
+        // contract): when the wallet already submitted via the relayer, `signedTxXdr`
+        // is the on-chain tx HASH, not a signable XDR. Show the explorer link and
+        // SKIP the fromXDR + sign + sendTransaction block entirely — re-broadcasting
+        // a hash would throw ("Kit set-message failed") and double-submitting is wrong.
+        if ("submitted" in result && result.submitted) {
+          const txHash = result.signedTxXdr;
+          kitSetStatus("Message updated via the kit!");
+          // Validate the hash is hex-only before embedding in a URL (XSS guard:
+          // only allow known-safe characters so a crafted return value can't
+          // inject a javascript: URI or path traversal).
+          if (/^[0-9a-f]{64}$/i.test(txHash)) {
+            $kitTxLink.href = `https://stellar.expert/explorer/testnet/tx/${txHash}`;
+            $kitTxLink.style.display = "inline";
+          }
+          try { await loadMessage(kitAccount); } catch (_) { /* non-critical */ }
+          return;
+        }
+
+        const { signedTxXdr } = result;
+
+        // 3. Legacy/classic path: the returned tx is signed by the smart account
+        //    but still needs the fee-payer (tx source) signature. Add it and submit.
         kitSetStatus("Submitting signed transaction…");
         const server = new rpc.Server(RPC_URL);
         const signedTx = TransactionBuilder.fromXDR(signedTxXdr, Networks.TESTNET) as Transaction;

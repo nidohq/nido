@@ -802,28 +802,32 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       }
     }
 
-    // --- Auto-run on ?sm-sign=<xdr>&sm-return=<url> (status-message handoff) ---
-    // status-message redirects here (on the account's subdomain) carrying the
-    // assembled tx XDR and a return URL. We stash a SignRequest in sessionStorage
-    // (now on the correct origin) and redirect to /sign/?req=<id>, exactly like
-    // the ?claim= handoff above. The return URL already encodes the contract
-    // address so the status-message page can repopulate its input on return.
-    const smSignXdr = params.get("sm-sign");
-    const smReturnUrl = params.get("sm-return");
-    if (smSignXdr && smReturnUrl && contractId) {
-      const req: SignRequest = {
-        v: 1,
-        kind: "generic",
-        account: contractId,
-        operation: { type: "raw-xdr", xdr: smSignXdr },
-        title: "Set your note",
-        subtitle: "Sign the on-chain status-message update.",
-        submitMode: "relayer",
-        returnTarget: { type: "route", url: smReturnUrl },
-      };
-      const id = stashSignRequest(req);
-      window.location.href = `/sign/?req=${id}`;
-    }
+  }
 
+  // --- Auto-run on ?sm-sign=<xdr>&sm-return=<url> (status-message handoff) ---
+  // status-message redirects here (on the account's subdomain) carrying the
+  // assembled tx XDR and a return URL. We stash a SignRequest in sessionStorage
+  // (now on the correct origin) and redirect to /sign/?req=<id>, exactly like
+  // the ?claim= handoff above. The return URL already encodes the contract
+  // address so the status-message page can repopulate its input on return.
+  //
+  // Hoisted out of the name-section gate: this bridge has nothing to do with the
+  // name section; it only needs an account context (`contractId`), so it runs on
+  // its own condition. Behavior is unchanged.
+  const smSignXdr = params.get("sm-sign");
+  const smReturnUrl = params.get("sm-return");
+  if (smSignXdr && smReturnUrl && contractId) {
+    const req: SignRequest = {
+      v: 1,
+      kind: "generic",
+      account: contractId,
+      operation: { type: "raw-xdr", xdr: smSignXdr },
+      title: "Set your note",
+      subtitle: "Sign the on-chain status-message update.",
+      submitMode: "relayer",
+      returnTarget: { type: "route", url: smReturnUrl },
+    };
+    const id = stashSignRequest(req);
+    window.location.href = `/sign/?req=${id}`;
   }
 </script>
