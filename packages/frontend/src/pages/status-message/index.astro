@@ -202,7 +202,6 @@ import Icon from "../../components/Icon.astro";
     getAuthEntry,
     injectPasskeySignature,
     hex2buf,
-    buf2hex,
     accountUrl,
     stripSubdomain,
     loadSessionKeyMaterial,
@@ -278,7 +277,7 @@ import Icon from "../../components/Icon.astro";
 
   const params = new URLSearchParams(window.location.search);
   const contractParam = params.get("contract");
-  const isResult = params.get("result") === "1";
+  const txhashParam = params.get("txhash");
 
   if (contractParam) {
     $contractInput.value = contractParam;
@@ -641,28 +640,20 @@ import Icon from "../../components/Icon.astro";
         return;
       }
 
-      // --- Fallback: redirect to wallet for passkey signing ---
-      // OZ v0.7 accounts verify against computeAuthDigest(signature_payload,
-      // context_rule_ids), NOT the bare signature_payload. The /account/
-      // signing-mode signs this challenge with the PRIMARY passkey on the
-      // Default rule, and the callback below injects with the default
-      // contextRuleIds=[0] — so sign the [0] digest, else the verifier rejects
-      // with ChallengeInvalid (#3114). Mirrors account/index.astro name-claim.
-      const authHashHex = buf2hex(computeAuthDigest(new Uint8Array(authHash), [0]));
-
-      // Store transaction data for after redirect
-      localStorage.setItem("sm:txXdr", tx.built!.toXDR());
-      localStorage.setItem("sm:lastLedger", lastLedger.toString());
-      localStorage.setItem("sm:contract", contract);
-
-      // Redirect to account subdomain for passkey signing
-      const callback = `${window.location.origin}/status-message/?result=1&contract=${contract}`;
-      const signUrl = accountUrl(
+      // --- Fallback: route to /sign/ via the canonical signing surface ---
+      // Navigate to the contract's account subdomain with the assembled tx XDR
+      // and the return URL encoded as ?sm-sign=&sm-return= params. The account
+      // page (running on the contract's subdomain) stashes a SignRequest in
+      // sessionStorage and redirects to /sign/?req=<id> on the same origin,
+      // so the passkey ceremony uses the correct WebAuthn rpId. On return,
+      // ?txhash=<hash> is appended so we can show the explorer link.
+      const returnUrl = `${window.location.origin}/status-message/?contract=${encodeURIComponent(contract)}`;
+      const smSignUrl = accountUrl(
         window.location.host,
         contract,
-        `/account/?sign=${authHashHex}&callback=${encodeURIComponent(callback)}`
+        `/account/?sm-sign=${encodeURIComponent(tx.built!.toXDR())}&sm-return=${encodeURIComponent(returnUrl)}`
       );
-      window.location.href = signUrl;
+      window.location.href = smSignUrl;
     } catch (err: any) {
       showError(`Failed to build transaction: ${err.message}`);
       $setForm.disabled = false;
@@ -670,111 +661,32 @@ import Icon from "../../components/Icon.astro";
     }
   });
 
-  // --- Handle return from signing ---
+  // --- Handle return from /sign/ ---
 
-  if (isResult) {
-    const authenticatorData = params.get("authenticatorData");
-    const clientDataJSON = params.get("clientDataJSON");
-    const signature = params.get("signature");
-    const publicKeyHex = params.get("publicKey");
-
-    if (params.get("error")) {
-      showError("Signature request was denied.");
-    } else if (authenticatorData && clientDataJSON && signature && publicKeyHex) {
-      (async () => {
-        try {
-          const txXdr = localStorage.getItem("sm:txXdr");
-          const lastLedgerStr = localStorage.getItem("sm:lastLedger");
-          const keypairSecret = localStorage.getItem("sm:keypairSecret");
-          const callbackContract = localStorage.getItem("sm:contract");
-
-          if (!txXdr || !lastLedgerStr || !keypairSecret || !callbackContract) {
-            throw new Error("Missing stored transaction data. Please try again.");
-          }
-
-          const lastLedger = parseInt(lastLedgerStr, 10);
-          const keypair = Keypair.fromSecret(keypairSecret);
-
-          // Reconstruct transaction from stored XDR
-          const authTxn = TransactionBuilder.fromXDR(txXdr, Networks.TESTNET) as Transaction;
-
-          // Inject passkey signature into auth entry (OZ smart account format).
-          // Read the verifier off the account's own rule rather than a stale
-          // hardcoded derivation — same reason as the in-page session path.
-          const verifierAddress = await fetchVerifierAddress(callbackContract);
-          injectPasskeySignature(
-            authTxn,
-            {
-              authenticatorData: hex2buf(authenticatorData),
-              clientDataJson: hex2buf(clientDataJSON),
-              signature: hex2buf(signature),
-            },
-            verifierAddress,
-            hex2buf(publicKeyHex),
-            lastLedger
-          );
-
-          // Re-simulate with real signature for accurate resource estimates
-          const server = new rpc.Server(RPC_URL);
-          const sim = await server.simulateTransaction(authTxn);
-
-          if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
-            throw new Error(`Re-simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
-          }
-
-          // Re-assemble with updated resources/fees
-          const finalTx = rpc.assembleTransaction(authTxn, sim).build();
-
-          // Sign envelope with source keypair
-          finalTx.sign(keypair);
-
-          // Submit to the network
-          $resultSection.classList.remove("hidden");
-          $statusValue.textContent = "Submitting transaction...";
-          const sendResult = await server.sendTransaction(finalTx);
-
-          if (sendResult.status === "ERROR") {
-            throw new Error(`Transaction rejected: ${sendResult.errorResult?.toXDR("base64") ?? "unknown"}`);
-          }
-
-          // Poll for confirmation
-          $statusValue.textContent = "Waiting for confirmation...";
-          let getResult = await server.getTransaction(sendResult.hash);
-          while (getResult.status === "NOT_FOUND") {
-            await new Promise((r) => setTimeout(r, 1500));
-            getResult = await server.getTransaction(sendResult.hash);
-          }
-
-          if (getResult.status === "SUCCESS") {
-            $statusValue.textContent = "Message updated successfully!";
-            $txLink.href = `https://stellar.expert/explorer/testnet/tx/${sendResult.hash}`;
-            $txLink.style.display = "inline";
-
-            // Reload the current message
-            const contract = $contractInput.value.trim();
-            if (contract) {
-              try {
-                await loadMessage(contract);
-              } catch (_) {
-                // non-critical, ignore
-              }
-            }
-          } else {
-            throw new Error(`Transaction failed: ${getResult.status}`);
-          }
-
-          // Clean up stored transaction data and URL params
-          localStorage.removeItem("sm:txXdr");
-          localStorage.removeItem("sm:lastLedger");
-          localStorage.removeItem("sm:contract");
-          const cleanUrl = new URL(window.location.href);
-          cleanUrl.search = contractParam ? `?contract=${contractParam}` : "";
-          window.history.replaceState({}, "", cleanUrl);
-        } catch (err: any) {
-          showError(`Failed: ${err.message}`);
-        }
-      })();
+  if (txhashParam) {
+    // We returned from the canonical /sign/ surface after a successful Set-note
+    // signing. Show the result section with the explorer link, then clean the
+    // txhash out of the URL so reloads don't re-show the banner.
+    $resultSection.classList.remove("hidden");
+    $statusValue.textContent = "Message updated successfully!";
+    // Validate hash is hex-only before embedding in a URL (XSS guard: only
+    // allow known-safe characters so a crafted ?txhash= can't inject a
+    // javascript: URI or path traversal).
+    if (/^[0-9a-f]{64}$/i.test(txhashParam)) {
+      $txLink.href = `https://stellar.expert/explorer/testnet/tx/${txhashParam}`;
+      $txLink.style.display = "inline";
     }
+
+    // Non-critical: reload the current message to reflect the new note.
+    const returnContract = $contractInput.value.trim();
+    if (returnContract) {
+      loadMessage(returnContract).catch(() => { /* non-critical */ });
+    }
+
+    // Drop ?txhash from the URL, keeping ?contract if present.
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("txhash");
+    window.history.replaceState({}, "", cleanUrl.toString());
   }
 
   // ===================================================================

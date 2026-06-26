@@ -565,8 +565,11 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           // SUBMITTED-MARKER: dApp must not re-broadcast; return hash only.
           setTimeout(() => finish('?nido_submitted=' + encodeURIComponent(result.hash) + '&kind=tx'), 300);
         } else {
-          // own-action (route): navigate internally.
-          window.location.href = req.returnTarget.url;
+          // own-action (route): navigate internally, appending txhash so the
+          // return page (e.g. status-message) can display an explorer link.
+          const base = req.returnTarget.url;
+          const sep = base.includes('?') ? '&' : '?';
+          window.location.href = base + sep + 'txhash=' + encodeURIComponent(result.hash);
         }
       } catch (err) {
         const e = err as { name?: string; message?: string; code?: string; details?: { hash?: string | null } };
