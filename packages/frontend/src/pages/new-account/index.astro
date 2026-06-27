@@ -395,7 +395,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       .setTimeout(60)
       .build();
 
-    const sim = await server.simulateTransaction(txn);
+    const SIM_ATTEMPTS = 6;
+    let sim = await server.simulateTransaction(txn);
+    for (let simAttempt = 1; simAttempt < SIM_ATTEMPTS; simAttempt++) {
+      if (!rpc.Api.isSimulationError(sim) && !rpc.Api.isSimulationRestore(sim)) break;
+      await sleep(1500);
+      sim = await server.simulateTransaction(txn);
+    }
     if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
       throw new Error(`Funding simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
     }
