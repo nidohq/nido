@@ -46,6 +46,37 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     <div id="error-box" role="alert" class="alert danger" style="display:none; margin:8px 22px;"></div>
 
     <!-- ============================================================= -->
+    <!-- NAMEPASSKEY MODE — focused full-viewport passkey-registration  -->
+    <!-- takeover for ?namepasskey=1 + no cred + detectedName.         -->
+    <!-- Fixed overlay covering the entire viewport (including sidebar  -->
+    <!-- at desktop widths). Hidden by default; JS reveals it.         -->
+    <!-- ============================================================= -->
+    <div
+      id="namepasskey-mode"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Set up your passkey for this name"
+      style="display:none; position:fixed; inset:0; z-index:1000; align-items:center; justify-content:center; background:var(--paper); padding:24px;"
+    >
+      <div class="card" style="width:100%; max-width:400px; padding:32px 28px; text-align:center;">
+        <div style="display:grid; place-items:center; margin-bottom:22px;">
+          <Logo size={19} mark markSize={36} />
+        </div>
+        <h1 class="disp" style="font-weight:800; font-size:26px; line-height:1.08; margin:0 0 14px;">
+          Set up your passkey
+        </h1>
+        <p id="namepasskey-copy" class="mut" style="font-size:14.5px; line-height:1.55; margin:0 0 26px; max-width:320px; margin-inline:auto;"></p>
+        <button id="namepasskey-register-btn" class="btn acc" style="width:100%;">
+          <Icon name="key" size={20} color="#fff" />
+          <span id="namepasskey-label">Register passkey</span>
+        </button>
+        <button id="namepasskey-skip" type="button" class="btn ghost sm" style="margin-top:14px; width:100%; font-size:13.5px; color:var(--mut);">
+          Skip for now
+        </button>
+      </div>
+    </div>
+
+    <!-- ============================================================= -->
     <!-- CLAIM ENTRY — unclaimed name subdomain, non-signing            -->
     <!-- ============================================================= -->
     <!-- A standalone top-level view (sibling of #home-mode),
@@ -564,10 +595,14 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   // HOME MODE
   // =====================
 
-  function initHomeMode() {
+  // Reveal the full dashboard (#home-mode) and mark as used.
+  function showHomeDashboard() {
     document.getElementById("home-mode")!.classList.remove("hidden");
-
     if (contractId) markUsed(contractId);
+  }
+
+  function initHomeMode() {
+    showHomeDashboard();
 
     const cred = loadCredential();
     const $registerSection = document.getElementById("register-section")!;
@@ -575,7 +610,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     const $registerCopy = document.getElementById("register-copy");
     const $registerLabel = document.getElementById("register-label");
 
-    if (!cred) {
+    if (!cred && shouldRegisterNamePasskey && detectedName) {
+      // ?namepasskey=1 + no cred + known name → takeover overlay.
+      // #home-mode is already revealed so dismissing the overlay shows it immediately.
+      // The register-section is NOT shown (the takeover replaces it for this path).
+    } else if (!cred) {
       $registerSection.classList.remove("hidden");
       if (detectedName && $registerCopy) {
         $registerCopy.textContent =
@@ -629,14 +668,15 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       );
     }
 
-    // Register passkey (when none exists yet)
-    async function runPasskeyRegistration(options?: { namePasskey?: boolean }) {
+    // Register passkey (when none exists yet).
+    // Returns true on success, false on failure (errors are surfaced via showError).
+    async function runPasskeyRegistration(options?: { namePasskey?: boolean }): Promise<boolean> {
       clearError();
       const support = checkPasskeySupport();
       if (!support.ok) {
         if (options?.namePasskey) clearNamePasskeyParam();
         showError(support.message!);
-        return;
+        return false;
       }
       try {
         $registerBtn.disabled = true;
@@ -654,6 +694,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         $registerSection.classList.add("hidden");
         if (options?.namePasskey) clearNamePasskeyParam();
         toast({ msg: options?.namePasskey ? "Passkey ready for this name" : "Passkey ready", icon: "check" });
+        return true;
       } catch (err: any) {
         if (options?.namePasskey) clearNamePasskeyParam();
         if (err.name === "NotAllowedError") {
@@ -661,6 +702,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         } else {
           showError(`Couldn't set up your passkey: ${err.message}`);
         }
+        return false;
       } finally {
         $registerBtn.disabled = false;
       }
@@ -670,16 +712,45 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       void runPasskeyRegistration(shouldRegisterNamePasskey ? { namePasskey: true } : undefined);
     });
 
-    // Arriving on the freshly-claimed name subdomain (?namepasskey=1): bring the
-    // "Register passkey for <name>" button into view and let the user TAP it.
-    // Do NOT auto-fire navigator.credentials.create() from a timer — WebAuthn
-    // needs a transient user gesture to surface the passkey UI (1Password on
-    // Firefox/Zen and iOS Safari enforce this; see attemptAutoPasskey in
-    // new-account). A programmatic call just darkens our sheet with no provider
-    // prompt and can trap the user behind the scrim. The button runs the same
-    // registration, gesture-activated.
+    // ?namepasskey=1 + no cred + known name → focused takeover overlay.
+    // Wire the overlay buttons here (after runPasskeyRegistration is in scope).
     if (!cred && shouldRegisterNamePasskey && detectedName) {
-      $registerSection.scrollIntoView({ behavior: "smooth", block: "center" });
+      const $overlay = document.getElementById("namepasskey-mode")!;
+      const $overlayRegBtn = document.getElementById("namepasskey-register-btn") as HTMLButtonElement;
+      const $overlayCopy = document.getElementById("namepasskey-copy")!;
+      const $overlayLabel = document.getElementById("namepasskey-label")!;
+      const $overlaySkip = document.getElementById("namepasskey-skip") as HTMLButtonElement;
+
+      // Set copy + label (textContent — no innerHTML — for safety).
+      $overlayCopy.textContent =
+        `Your Nido now opens at ${detectedName}. Browsers bind passkeys to each domain address, so register a passkey here before approving from this name.`;
+      $overlayLabel.textContent = `Register passkey for ${detectedName}`;
+
+      // Reveal overlay and focus the register button.
+      $overlay.style.display = "flex";
+      $overlayRegBtn.focus();
+
+      const dismissOverlay = () => {
+        $overlay.style.display = "none";
+      };
+
+      $overlayRegBtn.addEventListener("click", async () => {
+        // runPasskeyRegistration handles error display and clearNamePasskeyParam.
+        // It returns true on success, false on failure.
+        $overlayRegBtn.disabled = true;
+        try {
+          const ok = await runPasskeyRegistration({ namePasskey: true });
+          if (ok) dismissOverlay();
+          // On failure: error is shown via showError; keep overlay visible.
+        } finally {
+          $overlayRegBtn.disabled = false;
+        }
+      });
+
+      $overlaySkip.addEventListener("click", () => {
+        clearNamePasskeyParam();
+        dismissOverlay();
+      });
     }
   }
 
