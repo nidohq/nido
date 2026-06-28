@@ -129,7 +129,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
             <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
               <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
               <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-                <span class="check-text" style="font-size:14.5px; font-weight:600;">Confirmed on-chain</span>
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Confirming on-chain</span>
                 <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
               </span>
             </div>
@@ -195,7 +195,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
 
 <script>
   import { contractIdFromHostname } from '@nidohq/passkey-sdk';
-  import { loadCredential, loadAccountName } from '@nidohq/passkey-sdk';
+  import { loadCredential, loadAccountName, lookupName, resolveName } from '@nidohq/passkey-sdk';
   import { avatarBackground } from '../../lib/avatarStyle';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
   import { signTransactionXdr, signMessageRaw, signAuthEntryXdr } from '../../lib/walletSign.js';
@@ -206,7 +206,8 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { buildOperation } from '../../lib/signing/operationBuilders.js';
   import { renderTransferReview, renderGenericOp, renderNameRegister, renderSessionGrant, type TransferView } from '../../lib/transfer/review.js';
   import { probeSep41Token } from '../../lib/assets/balances.js';
-  import { NATIVE_SAC_ID } from '../../lib/network.js';
+  import { NATIVE_SAC_ID, RPC_URL, NETWORK_PASSPHRASE } from '../../lib/network.js';
+  import { fetchRegistryAddress } from '../../lib/policyChainFetch.js';
   import { loadSignRequest, signRequestFromParams, clearSignRequest, safeRouteUrl, type SignRequest } from '../../lib/signing/signRequest';
   import { renderTechDetails } from '../../lib/transfer/techDetails.js';
   import {
@@ -813,11 +814,61 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     }
   }
 
+  // Name-claim guard. The registry's register() traps when the name is taken or
+  // when this account already owns a name — but the optimized wasm strips the
+  // assert strings, so a failed claim surfaces only as an opaque "Simulation
+  // failed" / "Relayer transaction failed". We ask the registry directly
+  // instead. Best-effort: returns 'ok' (run the normal ceremony) when the reads
+  // are inconclusive. 'own' is NOT an error — it means a prior claim already
+  // went through (e.g. the user retried), so the name is already theirs.
+  type ClaimVerdict = { kind: 'own'; existing: string } | { kind: 'taken' } | { kind: 'ok' };
+  async function classifyClaim(acct: string, name: string): Promise<ClaimVerdict> {
+    try {
+      const registryId = await fetchRegistryAddress('name-registry');
+      const existing = await lookupName(RPC_URL, registryId, acct, NETWORK_PASSPHRASE);
+      if (existing) return { kind: 'own', existing };
+      const owner = await resolveName(RPC_URL, registryId, name, NETWORK_PASSPHRASE);
+      if (owner && owner !== acct) return { kind: 'taken' };
+    } catch { /* inconclusive — fall through and let the ceremony/sim decide */ }
+    return { kind: 'ok' };
+  }
+
+  // Settle a claim that turned out to be already-theirs as a SUCCESS, not an
+  // error: the claim's returnTarget is the name subdomain's
+  // /account/?namepasskey=1 — exactly where they should land to set up that
+  // name's passkey.
+  function settleAlreadyClaimed(existing: string): void {
+    if (reqId) clearSignRequest(reqId);
+    $err.style.display = 'none';
+    $status.textContent = `This account already has the name "${existing}" — you're all set. Returning…`;
+    const url = req && req.returnTarget.type === 'route' ? req.returnTarget.url : '/account/';
+    const base = safeRouteUrl(url, window.location.origin) ?? '/account/';
+    setTimeout(() => { window.location.href = base; }, 1200);
+  }
+
   approve.addEventListener('click', async () => {
     approve.disabled = true;
     $err.style.display = 'none';
 
     if (req) {
+      const claimName = req.operation.type === 'register' ? req.operation.name : null;
+
+      // Name-claim pre-flight: resolve "already taken" / "already mine" BEFORE
+      // the passkey ceremony so a retry-after-success or a taken name gets a
+      // clear answer instead of an opaque on-chain failure after Face ID.
+      if (claimName && account) {
+        $status.textContent = 'Checking name…';
+        const verdict = await classifyClaim(account, claimName);
+        if (verdict.kind === 'own') { settleAlreadyClaimed(verdict.existing); return; }
+        if (verdict.kind === 'taken') {
+          $status.textContent = '';
+          showError(`"${claimName}" is already taken. Pick another name.`);
+          approve.disabled = false;
+          return;
+        }
+        $status.textContent = '';
+      }
+
       // New path: drive runSign — handles build → sign → submit → confirm.
       // Collapse review chrome into a progress-only view so the ticker is
       // visible at the top without scrolling.
@@ -875,12 +926,29 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           $status.textContent = '';
           // approve stays disabled intentionally; footer/review stay hidden.
         } else {
-          // Regular error — restore review chrome so the user can read the error
-          // and retry (approve is re-enabled by exitProgressView restoring the footer).
-          exitProgressView();
-          showError(`Failed: ${msg}`);
-          $status.textContent = '';
-          approve.disabled = false;
+          // Regular error. A name-claim failure is opaque (the optimized wasm
+          // strips assert strings), and the relayer's enforce re-sim can catch a
+          // claim our client sim missed under RPC read-lag — so ask the registry
+          // what actually happened and show a clear message, including the
+          // "I retried and the first one already went through" case.
+          let verdict: ClaimVerdict = { kind: 'ok' };
+          if (claimName && account) verdict = await classifyClaim(account, claimName);
+          if (verdict.kind === 'own') {
+            settleAlreadyClaimed(verdict.existing);
+          } else if (verdict.kind === 'taken') {
+            // Restore review chrome so they can edit and retry with a new name.
+            exitProgressView();
+            $status.textContent = '';
+            showError(`"${claimName}" is already taken. Pick another name.`);
+            approve.disabled = false;
+          } else {
+            // Restore review chrome so the user can read the error and retry
+            // (approve is re-enabled by exitProgressView restoring the footer).
+            exitProgressView();
+            showError(`Failed: ${msg}`);
+            $status.textContent = '';
+            approve.disabled = false;
+          }
         }
       } finally {
         // Always close the passkey sheet on exit — covers errors and any path
