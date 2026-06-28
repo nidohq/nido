@@ -107,6 +107,12 @@ import Nest from '../../components/Nest.astro';
 <script>
   import {
     contractIdFromHostname,
+    nameFromHostname,
+    isContractId,
+    resolveNameCached,
+    stripSubdomain,
+    accountUrl,
+    fetchRegistryAddress,
     loadPolicyBlocks,
     loadFriendNicknames,
     loadBlockLabels,
@@ -114,6 +120,7 @@ import Nest from '../../components/Nest.astro';
     loadCredential,
     buf2base64url,
   } from '@nidohq/passkey-sdk';
+  import { RPC_URL, NETWORK_PASSPHRASE } from '../../lib/network.js';
   import { fetchAllChainRules, fetchPolicyState } from '../../lib/policyChainFetch.js';
   import { forgetRevokedMaterial, ruleStillExists } from '../../lib/sessionKeyActions.js';
   import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
@@ -122,7 +129,39 @@ import Nest from '../../components/Nest.astro';
   import { mountDelegationForm } from '../../lib/delegationForm.js';
   import { toast } from '../../lib/toast.js';
 
-  const account = contractIdFromHostname(window.location.hostname);
+  let account = contractIdFromHostname(window.location.hostname);
+
+  // Name subdomain → resolve the name and redirect to the contract-id
+  // subdomain. Every security action signs in-page (signAndSubmit binds the
+  // passkey ceremony to window.location.hostname) and the device passkey lives
+  // on the contract-id subdomain, so the whole page must run there — mirrors
+  // /transfer/ and /account/ signing. NOTE: contractIdFromHostname does no
+  // strkey validation, so on a name subdomain (e.g. `qqqaa.nido.fyi`) it
+  // returns "QQQAA", an invalid contract id — hence the resolve-or-null below.
+  {
+    const detectedName = nameFromHostname(window.location.hostname);
+    if (detectedName && !isContractId(detectedName)) {
+      account = null;
+      try {
+        const resolved = await resolveNameCached(
+          RPC_URL,
+          await fetchRegistryAddress('name-registry'),
+          detectedName,
+          NETWORK_PASSPHRASE,
+        );
+        if (resolved) {
+          const rootHost = stripSubdomain(window.location.host);
+          const target = accountUrl(rootHost, resolved, window.location.pathname + window.location.search);
+          window.location.replace(window.location.protocol + target);
+          throw new Error('redirecting');
+        }
+        // Unregistered name: leave account null so the guidance branch renders.
+      } catch (err) {
+        if (err instanceof Error && err.message === 'redirecting') throw err;
+        // Registry unreachable: leave account null; guidance branch renders.
+      }
+    }
+  }
 
   // Return handler: /sign/ navigates back to /security/?revoked=<ruleId>
   // after a successful session-key revoke. Clean up local material here —
