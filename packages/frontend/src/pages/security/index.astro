@@ -51,11 +51,10 @@ import Nest from '../../components/Nest.astro';
               <p class="mut" style="font-size:13px;margin:0 0 14px;line-height:1.55;">
                 Apps you let act on your behalf for a while. You can cut them off any time.
               </p>
+              <!-- No "Let in an app" button: apps are let in via the dApp's own
+                   connect/delegate flow, never user-initiated from here. This
+                   card only lists (and revokes) what's already been granted. -->
               <div id="delegation-list"></div>
-              <button id="add-delegation" class="btn soft sm" style="margin-top:14px;">
-                <Icon name="plus" size={17} /> Let in an app
-              </button>
-              <div id="delegation-form" class="nido-form" hidden></div>
             </div>
           </section>
         </div>
@@ -126,7 +125,6 @@ import Nest from '../../components/Nest.astro';
   import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
   import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
   import { mountRecoveryForm } from '../../lib/recoveryForm.js';
-  import { mountDelegationForm } from '../../lib/delegationForm.js';
   import { toast } from '../../lib/toast.js';
 
   let account = contractIdFromHostname(window.location.hostname);
@@ -292,11 +290,6 @@ import Nest from '../../components/Nest.astro';
     if (!account) { alert('No account selected.'); return; }
     const formContainer = document.getElementById('recovery-form')!;
     mountRecoveryForm(formContainer, account);
-  });
-  document.getElementById('add-delegation')!.addEventListener('click', () => {
-    if (!account) { alert('No account selected.'); return; }
-    const formContainer = document.getElementById('delegation-form')!;
-    mountDelegationForm(formContainer, account);
   });
 </script>
 
