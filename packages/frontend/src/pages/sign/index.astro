@@ -25,7 +25,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       </div>
 
       <h1 class="disp head">Confirm it's you</h1>
-      <p class="lead mut">
+      <p class="lead mut" id="lead">
         <code class="hl" id="dapp-origin">…</code> wants this account to sign a
         <span id="kind-label">request</span>.
       </p>
@@ -65,6 +65,30 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       <div id="tx-detail" class="hidden" style="margin-bottom:16px;"></div>
       <button id="toggle-raw" type="button" class="hidden" style="background:none;border:none;color:var(--acc-ink);font-weight:700;cursor:pointer;font-size:12.5px;padding:0;margin:-2px 0 16px;">Show raw transaction</button>
 
+      <!-- Editable spending-limit control (revealed only for a session-grant
+           request whose `editable` carries a spending-limit field). Moved from
+           security/delegate/index.astro — same element ids, same wiring. -->
+      <div id="limit-edit" class="hidden card" style="padding:14px 16px;margin-bottom:16px;">
+        <div style="font-weight:700;font-size:13.5px;">Spending limit</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+          <input id="limit-amount" class="input" inputmode="decimal" placeholder="Amount"
+                 autocomplete="off" spellcheck="false"
+                 style="height:40px;font-size:13.5px;flex:1;min-width:0;" />
+          <span class="mut" style="font-size:12.5px;flex:0 0 auto;">XLM</span>
+          <select id="limit-period" class="input"
+                  style="height:40px;font-size:13.5px;flex:0 0 auto;width:auto;padding:0 10px;">
+            <option value="day">per day</option>
+            <option value="week">per week</option>
+            <option value="30d">per 30 days</option>
+          </select>
+        </div>
+        <label class="mut" style="display:flex;align-items:center;gap:7px;margin-top:10px;font-size:12.5px;cursor:pointer;">
+          <input id="limit-none" type="checkbox" />
+          No limit
+        </label>
+        <div class="mut" id="limit-summary" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
+      </div>
+
       <div id="error-box" role="alert" class="alert danger" style="display:none"></div>
 
       <div id="needs-register" class="hidden">
@@ -76,6 +100,42 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       </div>
 
       <p id="status" role="status" aria-live="polite" class="status mut"></p>
+
+      <!-- Progress ticker — revealed when runSign starts (new-path only). -->
+      <section id="sign-progress" class="hidden" style="margin-top:8px;">
+        <div class="card" style="padding:16px;">
+          <div style="display:flex; flex-direction:column; gap:13px;">
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Building transaction</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Sign with your passkey</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Submitting to Stellar</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+            <div class="checkitem" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
+              <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                <span class="check-text" style="font-size:14.5px; font-weight:600;">Confirming on-chain</span>
+                <span class="check-sub" style="display:none; font-size:12px; color:var(--mut);"></span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -128,28 +188,60 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     padding: 14px 22px calc(18px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--line); background: var(--paper-2);
   }
+
+  #limit-edit .input:disabled { opacity: 0.5; }
+  #limit-none { accent-color: var(--acc); }
 </style>
 
 <script>
   import { contractIdFromHostname } from '@nidohq/passkey-sdk';
-  import { loadCredential, loadAccountName } from '@nidohq/passkey-sdk';
+  import { loadCredential, loadAccountName, lookupName, resolveName } from '@nidohq/passkey-sdk';
   import { avatarBackground } from '../../lib/avatarStyle';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
   import { signTransactionXdr, signMessageRaw, signAuthEntryXdr } from '../../lib/walletSign.js';
-  import { withPasskeySheet } from '../../lib/passkeySheet';
+  import { withPasskeySheet, openPasskeySheet, closePasskeySheet } from '../../lib/passkeySheet';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
   import { shortAddr } from '../../lib/address';
-  import { describeTransaction } from '../../lib/transfer/txSummary.js';
-  import { renderTransferReview, renderGenericOp, type TransferView } from '../../lib/transfer/review.js';
+  import { describeTransaction, describeOperation, type OpSummary } from '../../lib/transfer/txSummary.js';
+  import { buildOperation } from '../../lib/signing/operationBuilders.js';
+  import { renderTransferReview, renderGenericOp, renderNameRegister, renderSessionGrant, type TransferView } from '../../lib/transfer/review.js';
   import { probeSep41Token } from '../../lib/assets/balances.js';
-  import { NATIVE_SAC_ID } from '../../lib/network.js';
+  import { NATIVE_SAC_ID, RPC_URL, NETWORK_PASSPHRASE } from '../../lib/network.js';
+  import { fetchRegistryAddress } from '../../lib/policyChainFetch.js';
+  import { loadSignRequest, signRequestFromParams, clearSignRequest, safeRouteUrl, type SignRequest } from '../../lib/signing/signRequest';
+  import { renderTechDetails } from '../../lib/transfer/techDetails.js';
+  import {
+    PERIOD_LEDGERS,
+    PERIOD_LABEL,
+    stroopsFromXlm,
+    type LimitPeriod,
+  } from '../../lib/spendingLimitParams';
+  import { stroopsToXlm } from '../../lib/money.js';
+  import { runSign } from '../../lib/signing/runSign';
+  import { mountSteps } from '../../lib/progressSteps';
+  import { EXPLORER_BASE } from '../../lib/network.js';
 
   const params = new URLSearchParams(window.location.search);
   const kind = params.get('kind') ?? 'tx';
-  const dappOrigin = params.get('dapp') ?? '';
-  const returnUrl = params.get('return') ?? '';
+  let dappOrigin = params.get('dapp') ?? '';
+  let returnUrl = params.get('return') ?? '';
   const network = params.get('network') ?? undefined;
   const account = contractIdFromHostname(window.location.hostname);
+
+  // Resolve a SignRequest: from sessionStorage (?req=<id>) or normalised from
+  // legacy query params (?kind=tx&xdr=…&dapp=…). message/authEntry kinds return
+  // null from signRequestFromParams and keep their own path below.
+  const reqId = params.get('req');
+  const req: SignRequest | null =
+    (reqId ? loadSignRequest(reqId) : null) ?? signRequestFromParams(params, account);
+
+  // When the request was loaded from sessionStorage, pull the dapp origin and
+  // return URL into the variables validatedOrigin() reads below, so the existing
+  // anti-redirect-abuse validation continues to protect the finish() call.
+  if (req?.returnTarget.type === 'dapp') {
+    dappOrigin = req.returnTarget.origin;
+    returnUrl = req.returnTarget.returnUrl ?? '';
+  }
 
   const $err = document.getElementById('error-box')!;
   const $status = document.getElementById('status')!;
@@ -186,26 +278,287 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     chip.hidden = false;
   }
 
-  const payload =
+  // payload is mutable so the req path can override it (for validate() below).
+  let payload =
     kind === 'tx' ? (params.get('xdr') ?? '')
     : kind === 'message' ? (params.get('message') ?? '')
     : kind === 'authEntry' ? (params.get('authEntry') ?? '')
     : '';
-  document.getElementById('kind-label')!.textContent =
-    kind === 'tx' ? 'transaction' : kind === 'message' ? 'message' : kind === 'authEntry' ? 'auth entry' : 'request';
-  document.getElementById('payload-label')!.textContent =
-    kind === 'message' ? 'Message' : kind === 'tx' ? 'Transaction XDR' : 'Auth entry XDR';
-  document.getElementById('payload-text')!.textContent = payload || '(missing)';
 
-  // For transactions, decode the XDR into human-readable detail so the user
-  // sees what they're approving, not a base64 blob. The raw XDR stays available
-  // behind a toggle. Best-effort: any decode/enrich failure leaves the raw
-  // payload visible, exactly as before this enhancement.
-  if (kind === 'tx' && payload && account) {
-    void renderTxDetail(payload, account);
+  if (req) {
+    // SignRequest path — set title copy and render the operation review.
+    // The page <title> and lead paragraph copy come from the request metadata.
+    document.title = req.title;
+    document.getElementById('kind-label')!.textContent = req.subtitle ?? req.title;
+
+    const op = req.operation;
+
+    if (op.type === 'raw-xdr') {
+      // Treat raw-xdr just like the legacy ?kind=tx&xdr=… path:
+      // show the XDR in the payload row and decode it into a human-readable
+      // detail panel. Reuse the existing renderTxDetail function.
+      payload = op.xdr;
+      document.getElementById('payload-label')!.textContent = 'Transaction XDR';
+      document.getElementById('payload-text')!.textContent = payload || '(missing)';
+      if (payload && account) {
+        const passphrase = req.networkPassphrase ?? network ?? 'Test SDF Network ; September 2015';
+        void renderTxDetail(payload, account, passphrase);
+      }
+    } else if (op.type === 'transfer') {
+      // Descriptor transfer — render directly without XDR decode.
+      payload = op.amountRaw; // non-empty so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      const native = op.token === NATIVE_SAC_ID;
+      const view: TransferView = {
+        token: op.token,
+        to: op.to,
+        from: account ?? '',
+        amountRaw: BigInt(op.amountRaw),
+        decimals: native ? 7 : op.decimals,
+        code: native ? 'XLM' : op.code,
+        verified: native,
+      };
+      $detail.innerHTML = renderTransferReview(view);
+      $detail.classList.remove('hidden');
+      // Wire the toggle-raw button to show renderTechDetails. The details (decoded
+      // op + raw operation XDR) are built offline from the descriptor after the
+      // human-readable card renders, so the expander shows real technical detail
+      // instead of the empty "No technical details available" placeholder.
+      const $toggle = document.getElementById('toggle-raw') as HTMLButtonElement;
+      $toggle.classList.remove('hidden');
+      $toggle.textContent = 'Show technical details';
+      let techHtml: string | null = null;
+      // F10: hoist techShown so the async build can repaint an already-open
+      // panel when it resolves — otherwise a user who opens the expander before
+      // the build finishes is stuck on the empty placeholder until the next toggle.
+      let techShown = false;
+      void ownActionTechDetails(op, account ?? '').then((html) => {
+        techHtml = html;
+        if (techShown && html) $detail.innerHTML = html;
+      });
+      $toggle.addEventListener('click', () => {
+        techShown = !techShown;
+        if (techShown) {
+          $detail.innerHTML = techHtml ?? renderTechDetails({ txXdr: undefined });
+          $toggle.textContent = 'Hide technical details';
+        } else {
+          $detail.innerHTML = renderTransferReview(view);
+          $toggle.textContent = 'Show technical details';
+        }
+      });
+    } else if (op.type === 'register') {
+      // Name-registration descriptor — render directly.
+      payload = op.name; // non-empty so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      // renderNameRegister expects an OpSummary name-register shape.
+      const nameOp = { kind: 'name-register' as const, contract: '', account: req.account, name: op.name };
+      const registerView = renderNameRegister(nameOp);
+      $detail.innerHTML = registerView;
+      $detail.classList.remove('hidden');
+      // Technical-details expander: built offline from the register descriptor
+      // (registry lookup + decoded op + raw operation XDR), shown after the
+      // human-readable card so the expander isn't an empty placeholder.
+      const $toggleReg = document.getElementById('toggle-raw') as HTMLButtonElement;
+      $toggleReg.classList.remove('hidden');
+      $toggleReg.textContent = 'Show technical details';
+      let regTechHtml: string | null = null;
+      // F10: hoist regTechShown so the async build repaints an already-open panel.
+      let regTechShown = false;
+      void ownActionTechDetails(op, account ?? '').then((html) => {
+        regTechHtml = html;
+        if (regTechShown && html) $detail.innerHTML = html;
+      });
+      $toggleReg.addEventListener('click', () => {
+        regTechShown = !regTechShown;
+        if (regTechShown) {
+          $detail.innerHTML = regTechHtml ?? renderTechDetails({ txXdr: undefined });
+          $toggleReg.textContent = 'Hide technical details';
+        } else {
+          $detail.innerHTML = registerView;
+          $toggleReg.textContent = 'Show technical details';
+        }
+      });
+    } else if (op.type === 'add-context-rule') {
+      // Session-grant descriptor — render via renderSessionGrant. `op` is a live
+      // reference into req.operation, so the editable spending-limit control
+      // below mutates op.limit in place; runSign rebuilds the op from this
+      // edited descriptor at approve time (no live re-simulation needed).
+      payload = op.target; // non-empty (target address) so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      const grantOrigin =
+        req.returnTarget.type === 'dapp' ? req.returnTarget.origin : (req.subtitle ?? op.target);
+      // Map period ledgers back to a LimitPeriod label: day=17280, week=120960, 30d=518400.
+      const periodMap: Array<[number, LimitPeriod]> = [
+        [17280, 'day'], [120960, 'week'], [518400, '30d'],
+      ];
+      // Re-render the grant card from the CURRENT descriptor — called once now
+      // and again on every spending-limit edit.
+      const renderGrant = () => {
+        const period: LimitPeriod =
+          op.limit
+            ? (periodMap.find(([l]) => l === op.limit!.periodLedgers)?.[1] ?? 'day')
+            : 'day';
+        // Use the human-readable label the delegate caller set (e.g. "7 days",
+        // "Until revoked"). Fall back gracefully: null validUntil → "Until revoked",
+        // else note that we only have a ledger sequence (not a date) to avoid
+        // displaying a nonsensical timestamp.
+        const expiryLabel =
+          op.expiryLabel != null
+            ? op.expiryLabel
+            : op.validUntil == null
+              ? 'Until revoked'
+              : `Ledger ${op.validUntil}`;
+        $detail.innerHTML = renderSessionGrant(
+          {
+            kind: 'session-grant',
+            contract: account ?? '',
+            name: op.label ?? 'session-key',
+            target: op.target,
+            validUntil: op.validUntil ?? null,
+          },
+          {
+            origin: grantOrigin,
+            limitStroops: op.limit ? op.limit.stroops : null,
+            period,
+            expiryLabel,
+          },
+        );
+      };
+      renderGrant();
+      $detail.classList.remove('hidden');
+
+      // Editable spending-limit slot: only when the request asks for it. Moved
+      // verbatim (markup + wiring) from security/delegate/index.astro.
+      const editLimit = req.editable?.find((e) => e.field === 'spending-limit');
+      if (editLimit) {
+        const $limitEdit = document.getElementById('limit-edit')!;
+        const limitAmount = document.getElementById('limit-amount') as HTMLInputElement;
+        const limitPeriod = document.getElementById('limit-period') as HTMLSelectElement;
+        const limitNone = document.getElementById('limit-none') as HTMLInputElement;
+        const limitSummary = document.getElementById('limit-summary')!;
+
+        const initialPeriod: LimitPeriod =
+          editLimit.initialPeriod in PERIOD_LEDGERS ? editLimit.initialPeriod : 'day';
+        limitAmount.value =
+          editLimit.initialStroops != null ? stroopsToXlm(editLimit.initialStroops) : '';
+        limitPeriod.value = initialPeriod;
+        limitNone.checked = editLimit.initialStroops == null;
+
+        const selectedPeriod = (): LimitPeriod =>
+          limitPeriod.value in PERIOD_LEDGERS ? (limitPeriod.value as LimitPeriod) : 'day';
+
+        // Push the controls' state into the in-memory descriptor, then re-render
+        // the grant card + summary. No re-simulation: buildOperation reads
+        // op.limit at approve time.
+        const syncLimitControls = () => {
+          const none = limitNone.checked;
+          limitAmount.disabled = none;
+          limitPeriod.disabled = none;
+          if (none) {
+            op.limit = null;
+            limitSummary.textContent =
+              'No cap — the app can move any amount this contract allows until the key expires.';
+            renderGrant();
+            return;
+          }
+          try {
+            const stroops = stroopsFromXlm(limitAmount.value); // throws a user-facing message
+            op.limit = {
+              stroops: stroops.toString(),
+              periodLedgers: PERIOD_LEDGERS[selectedPeriod()],
+            };
+            // The policy is deny-by-default: with a limit installed, ONLY token
+            // transfers are authorized — any other call in the scoped contract is
+            // blocked outright, not merely unmetered.
+            limitSummary.textContent =
+              `Only token transfers are allowed, capped at ${stroopsToXlm(stroops)} XLM ` +
+              `${PERIOD_LABEL[selectedPeriod()]} (rolling window) — other calls in this ` +
+              `contract will be blocked.`;
+            renderGrant();
+          } catch (e) {
+            // Leave op.limit at its last valid value so the card doesn't flicker;
+            // surface the parse error in the summary line only.
+            limitSummary.textContent = e instanceof Error ? e.message : String(e);
+          }
+        };
+
+        limitNone.addEventListener('change', syncLimitControls);
+        limitAmount.addEventListener('input', syncLimitControls);
+        limitPeriod.addEventListener('change', syncLimitControls);
+        syncLimitControls();
+        $limitEdit.classList.remove('hidden');
+      }
+    } else if (op.type === 'remove-context-rule') {
+      // Session-revoke descriptor — render the human-readable revoke line
+      // (F7) instead of dumping raw JSON into the payload row.
+      payload = op.target; // non-empty (target address) so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      $detail.innerHTML = renderGenericOp({
+        kind: 'session-revoke',
+        contract: account ?? '',
+        ruleId: op.ruleId,
+      });
+      $detail.classList.remove('hidden');
+    } else {
+      // Any unknown descriptor kind: fall through to the raw payload row
+      // (nothing specific to render).
+      document.getElementById('kind-label')!.textContent = req.subtitle ?? 'request';
+      document.getElementById('payload-label')!.textContent = 'Operation';
+      document.getElementById('payload-text')!.textContent = JSON.stringify(op);
+      payload = JSON.stringify(op);
+    }
+  } else {
+    // Legacy / message / authEntry path — unchanged.
+    document.getElementById('kind-label')!.textContent =
+      kind === 'tx' ? 'transaction' : kind === 'message' ? 'message' : kind === 'authEntry' ? 'auth entry' : 'request';
+    document.getElementById('payload-label')!.textContent =
+      kind === 'message' ? 'Message' : kind === 'tx' ? 'Transaction XDR' : 'Auth entry XDR';
+    document.getElementById('payload-text')!.textContent = payload || '(missing)';
+
+    // For transactions, decode the XDR into human-readable detail so the user
+    // sees what they're approving, not a base64 blob. The raw XDR stays available
+    // behind a toggle. Best-effort: any decode/enrich failure leaves the raw
+    // payload visible, exactly as before this enhancement.
+    if (kind === 'tx' && payload && account) {
+      void renderTxDetail(payload, account, network ?? 'Test SDF Network ; September 2015');
+    }
   }
 
-  async function renderTxDetail(txXdr: string, acct: string) {
+  // Build the technical-details HTML for an own-action descriptor (transfer /
+  // register / session-grant). The op is built offline (transfer) or with a
+  // best-effort registry lookup (register / session-grant) and decoded into a
+  // human-readable OpSummary, then rendered with its raw operation XDR. The fee
+  // isn't known until runSign simulates at approve time, so we omit the fee row
+  // (empty `fee` string) rather than show a fabricated number. Async + best-effort:
+  // any failure leaves the caller's empty-placeholder fallback in place.
+  async function ownActionTechDetails(
+    op: Exclude<import('../../lib/signing/signRequest').OperationDescriptor, { type: 'raw-xdr' }>,
+    acct: string,
+  ): Promise<string | null> {
+    try {
+      // XDR encode/decode needs the Buffer global (same lazy polyfill as renderTxDetail).
+      const { Buffer: B } = await import('buffer');
+      if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
+      const builtOp = await buildOperation(op, acct);
+      const summary: OpSummary = describeOperation(builtOp);
+      return renderTechDetails({
+        summary: { fee: '', ops: [summary] },
+        txXdr: builtOp.toXDR('base64'),
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async function renderTxDetail(txXdr: string, acct: string, passphrase: string) {
     const $detail = document.getElementById('tx-detail')!;
     try {
       // stellar-sdk's XDR parsing needs the Buffer global (same lazy polyfill
@@ -213,7 +566,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       const { Buffer: B } = await import('buffer');
       if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
 
-      const summary = describeTransaction(txXdr, network ?? 'Test SDF Network ; September 2015');
+      const summary = describeTransaction(txXdr, passphrase);
       if (summary.ops.length === 0) return;
 
       // decimals/symbol for non-native tokens, filled in by an async probe.
@@ -287,8 +640,18 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   }
 
   // anti-redirect-abuse: only post back to the origin that asked.
+  // For own-action SignRequests (returnTarget: route), dappOrigin is empty and
+  // there is nothing to validate against — silently return null so the approve
+  // button stays intact until Task 11 wires the own-action submit path.
   function validatedOrigin(): string | null {
-    if (!dappOrigin) { showError('Missing dapp origin parameter.'); return null; }
+    if (!dappOrigin) {
+      // Suppress the "missing dapp origin" error for own-action sign requests
+      // that route back to an internal page rather than a dApp.
+      if (!req || req.returnTarget.type !== 'route') {
+        showError('Missing dapp origin parameter.');
+      }
+      return null;
+    }
     let origin: string;
     try { origin = new URL(dappOrigin).origin; } catch { showError('Malformed dapp origin.'); return null; }
     if (returnUrl) {
@@ -303,19 +666,41 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   }
 
   const origin = validatedOrigin();
-  // Write the validated origin to the DOM (only after validation, so a
-  // malicious ?dapp= value is never displayed as a trusted-looking name).
-  document.getElementById('dapp-origin')!.textContent = origin ?? '(unknown)';
+  // F8 (lead copy): the default lead is the dApp framing
+  // "<origin> wants this account to sign a <noun>." — designed for an ORIGIN +
+  // a bare NOUN. Own-action requests (returnTarget: route) ship full titles /
+  // sentences ("Claim alice", "Send 5 XLM to alice", "Revoke access for X")
+  // into those slots, which reads as "(unknown) wants this account to sign a
+  // Claim alice." So own actions get their OWN lead line: just req.title,
+  // standing alone, with no origin framing. dApp + legacy paths keep the
+  // origin-and-noun template untouched.
+  const isOwnActionLead = req?.returnTarget.type === 'route';
+  if (isOwnActionLead) {
+    // Replace the whole lead with the request title as a standalone sentence.
+    // textContent escapes — no HTML is interpolated, so this is XSS-safe.
+    document.getElementById('lead')!.textContent = req!.title;
+  } else {
+    // dApp / legacy framing. Write the validated origin to the DOM (only after
+    // validation, so a malicious ?dapp= value is never displayed as a
+    // trusted-looking name).
+    document.getElementById('dapp-origin')!.textContent = origin ?? '(unknown)';
+  }
 
   function finish(search: string) {
     if (!origin) return;
     postResultToOpener(search, origin, returnUrl || undefined);
   }
 
+  // own-action (route) requests legitimately have no dApp origin — finish() is
+  // not called for them; the handler navigates via window.location.href instead.
+  const isOwnAction = req?.returnTarget.type === 'route';
+
   function validate(): string | null {
     if (!account) return 'This page must be opened on an account subdomain.';
     if (!payload) return 'Missing payload to sign.';
-    if (!origin) return 'Invalid app origin / return URL.';
+    // Skip the origin check for own-action requests — they have no dApp origin.
+    // dApp requests and the legacy path still require a validated origin.
+    if (!isOwnAction && !origin) return 'Invalid app origin / return URL.';
     if (!loadCredential(account)) {
       document.getElementById('needs-register')!.classList.remove('hidden');
       return 'No passkey registered for this account on this device.';
@@ -326,9 +711,32 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   const err = validate();
   if (err) { showError(err); approve.disabled = true; }
 
+  // The cancel query mirrors the dApp's success contract: a session-grant
+  // return uses `?delegation=ok` on success, so cancel must send the matching
+  // `?delegation=cancelled`. For the default dapp-tx path (no successQuery) we
+  // keep the historical `?nido_sign=cancelled`. Derived from successQuery's
+  // single param so the two stay in lockstep without a second config field.
+  function dappCancelQuery(): string {
+    if (req?.returnTarget.type === 'dapp' && req.returnTarget.successQuery) {
+      const sp = new URLSearchParams(req.returnTarget.successQuery);
+      const key = [...sp.keys()][0];
+      if (key) return '?' + new URLSearchParams({ [key]: 'cancelled' }).toString();
+    }
+    return '?nido_sign=cancelled';
+  }
+
   cancel.addEventListener('click', () => {
-    if (!origin) { window.location.href = '/account/'; return; }
-    finish('?nido_sign=cancelled');
+    if (!origin) {
+      // Own-action (route) request: return to the originating page but strip
+      // query params so success handlers (?txhash=, ?revoked=, ?namepasskey=)
+      // do NOT fire on a decline.
+      const safe = req?.returnTarget.type === 'route'
+        ? safeRouteUrl(req.returnTarget.url, window.location.origin)
+        : null;
+      window.location.href = safe ? new URL(safe, window.location.origin).pathname : '/account/';
+      return;
+    }
+    finish(dappCancelQuery());
   });
 
   // #89: "Use a different account" — this page can't switch in place (the
@@ -342,8 +750,215 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     finish('?nido_sign=switch-account');
   });
 
+  // Mount the progress ticker — driven from the new-path (runSign) approve handler.
+  const $signProgress = document.getElementById('sign-progress')!;
+  const steps = mountSteps($signProgress);
+
+  // Map runSign phase names to step indices: build→0, sign→1, submit→2, confirm→3.
+  const PHASE_STEP: Record<string, number> = { build: 0, sign: 1, submit: 2, confirm: 3 };
+
+  // Progress-view helpers: collapse review chrome and surface the ticker at top.
+  // Selectors that make up the "review chrome" — these are hidden during signing
+  // and restored on error so the user can read the error and retry.
+  const PROGRESS_VIEW_SELECTORS = [
+    '.card.identity',
+    '.card.review',
+    '#tx-detail',
+    '#toggle-raw',
+    '#limit-edit',
+    '.footer',
+  ] as const;
+
+  // Elements that were actually hidden by enterProgressView() — only those are
+  // restored by exitProgressView(), so pre-hidden elements stay hidden.
+  let collapsed: HTMLElement[] = [];
+
+  function enterProgressView(): void {
+    collapsed = [];
+    for (const sel of PROGRESS_VIEW_SELECTORS) {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (!el) continue;
+      // Skip if already hidden via class or inline display:none.
+      const alreadyHidden =
+        el.classList.contains('hidden') ||
+        el.style.display === 'none' ||
+        getComputedStyle(el).display === 'none';
+      if (alreadyHidden) continue;
+      el.classList.add('hidden');
+      collapsed.push(el);
+    }
+    $signProgress.classList.remove('hidden');
+    window.scrollTo({ top: 0 });
+  }
+
+  function exitProgressView(): void {
+    for (const el of collapsed) {
+      el.classList.remove('hidden');
+    }
+    collapsed = [];
+    $signProgress.classList.add('hidden');
+  }
+
+  function onProgress(p: { phase: string; detail?: string }) {
+    // Close the passkey sheet once the ceremony is done (submit/confirm phase)
+    // so the progress ticker is visible during relayer submit + on-chain confirmation.
+    // The sheet is opened at the handler start (before runSign) to cover ALL paths
+    // including dApp single-passkey which never fires 'sign' via onStatus.
+    if (p.phase === 'submit' || p.phase === 'confirm') {
+      closePasskeySheet();
+    }
+    const stepIdx = PHASE_STEP[p.phase] ?? -1;
+    if (stepIdx >= 0) {
+      steps.setProgress(stepIdx, stepIdx);
+      if (p.detail) steps.ticker(stepIdx, p.detail);
+    }
+  }
+
+  // Name-claim guard. The registry's register() traps when the name is taken or
+  // when this account already owns a name — but the optimized wasm strips the
+  // assert strings, so a failed claim surfaces only as an opaque "Simulation
+  // failed" / "Relayer transaction failed". We ask the registry directly
+  // instead. Best-effort: returns 'ok' (run the normal ceremony) when the reads
+  // are inconclusive. 'own' is NOT an error — it means a prior claim already
+  // went through (e.g. the user retried), so the name is already theirs.
+  type ClaimVerdict = { kind: 'own'; existing: string } | { kind: 'taken' } | { kind: 'ok' };
+  async function classifyClaim(acct: string, name: string): Promise<ClaimVerdict> {
+    try {
+      const registryId = await fetchRegistryAddress('name-registry');
+      const existing = await lookupName(RPC_URL, registryId, acct, NETWORK_PASSPHRASE);
+      if (existing) return { kind: 'own', existing };
+      const owner = await resolveName(RPC_URL, registryId, name, NETWORK_PASSPHRASE);
+      if (owner && owner !== acct) return { kind: 'taken' };
+    } catch { /* inconclusive — fall through and let the ceremony/sim decide */ }
+    return { kind: 'ok' };
+  }
+
+  // Settle a claim that turned out to be already-theirs as a SUCCESS, not an
+  // error: the claim's returnTarget is the name subdomain's
+  // /account/?namepasskey=1 — exactly where they should land to set up that
+  // name's passkey.
+  function settleAlreadyClaimed(existing: string): void {
+    if (reqId) clearSignRequest(reqId);
+    $err.style.display = 'none';
+    $status.textContent = `This account already has the name "${existing}" — you're all set. Returning…`;
+    const url = req && req.returnTarget.type === 'route' ? req.returnTarget.url : '/account/';
+    const base = safeRouteUrl(url, window.location.origin) ?? '/account/';
+    setTimeout(() => { window.location.href = base; }, 1200);
+  }
+
   approve.addEventListener('click', async () => {
     approve.disabled = true;
+    $err.style.display = 'none';
+
+    if (req) {
+      const claimName = req.operation.type === 'register' ? req.operation.name : null;
+
+      // Name-claim pre-flight: resolve "already taken" / "already mine" BEFORE
+      // the passkey ceremony so a retry-after-success or a taken name gets a
+      // clear answer instead of an opaque on-chain failure after Face ID.
+      if (claimName && account) {
+        $status.textContent = 'Checking name…';
+        const verdict = await classifyClaim(account, claimName);
+        if (verdict.kind === 'own') { settleAlreadyClaimed(verdict.existing); return; }
+        if (verdict.kind === 'taken') {
+          $status.textContent = '';
+          showError(`"${claimName}" is already taken. Pick another name.`);
+          approve.disabled = false;
+          return;
+        }
+        $status.textContent = '';
+      }
+
+      // New path: drive runSign — handles build → sign → submit → confirm.
+      // Collapse review chrome into a progress-only view so the ticker is
+      // visible at the top without scrolling.
+      enterProgressView();
+      steps.setProgress(0, 0);
+      // Open the passkey sheet immediately (before runSign) so it's shown for
+      // ALL new-path flows — own-action AND dApp single-passkey. The single-passkey
+      // dApp path goes through signTransactionXdr which only calls onStatus for
+      // multi-passkey ceremonies, so waiting for 'sign' in onProgress would leave
+      // the sheet closed for the most common dApp-tx case.
+      openPasskeySheet({ title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` });
+      try {
+        const result = await runSign(req!, { onProgress });
+        steps.finish();
+        $status.textContent = 'Done — returning…';
+        // F3: drop the stashed SignRequest now that it submitted successfully,
+        // so back/forward to `/sign/?req=<id>` can't reload and re-submit it.
+        // Only on success — a failed attempt (catch below) must stay retryable.
+        if (reqId) clearSignRequest(reqId);
+        if (req.returnTarget.type === 'dapp') {
+          // A dApp return can override the success query (e.g. the session-grant
+          // caller sets `?delegation=ok` for delegationHandover.readDelegationReturn).
+          // Absent (the dapp-tx path) → SUBMITTED-MARKER: the dApp must not
+          // re-broadcast, so we return the hash only.
+          const successQuery =
+            req.returnTarget.successQuery ??
+            '?nido_submitted=' + encodeURIComponent(result.hash) + '&kind=tx';
+          setTimeout(() => finish(successQuery), 300);
+        } else {
+          // own-action (route): navigate internally, appending txhash so the
+          // return page (e.g. status-message) can display an explorer link.
+          // SECURITY (F1, defense-in-depth): even though the source validates
+          // returnTarget.url before stashing, re-validate here as a same-origin
+          // http(s) URL and fall back to /account/ if anything is off — never
+          // navigate to an attacker-controlled `javascript:`/cross-origin URL.
+          const base = safeRouteUrl(req.returnTarget.url, window.location.origin) ?? '/account/';
+          const sep = base.includes('?') ? '&' : '?';
+          window.location.href = base + sep + 'txhash=' + encodeURIComponent(result.hash);
+        }
+      } catch (err) {
+        const e = err as { name?: string; message?: string; code?: string; details?: { hash?: string | null } };
+        const msg = e?.message ?? String(err);
+        if (e?.name === 'RelayerError' && e?.code === 'WAIT_TIMEOUT') {
+          // The tx may still land — do NOT re-enable approve (double-send risk).
+          // Keep the progress view so the ticker stays visible; surface the error
+          // and explorer link in the error box (already above the ticker in DOM order
+          // after the review chrome is hidden). Do NOT restore review/footer — that
+          // would re-enable a path that could double-submit.
+          const hash = e.details?.hash;
+          const explorerLink = hash && /^[0-9a-f]{64}$/i.test(hash)
+            ? ` <a href="${EXPLORER_BASE}/tx/${hash}" target="_blank" rel="noopener">Check status on Stellar Expert →</a>`
+            : '';
+          $err.innerHTML = `Still waiting for the network — this transaction may yet go through. Check the result before trying again.${explorerLink}`;
+          $err.style.display = 'block';
+          $status.textContent = '';
+          // approve stays disabled intentionally; footer/review stay hidden.
+        } else {
+          // Regular error. A name-claim failure is opaque (the optimized wasm
+          // strips assert strings), and the relayer's enforce re-sim can catch a
+          // claim our client sim missed under RPC read-lag — so ask the registry
+          // what actually happened and show a clear message, including the
+          // "I retried and the first one already went through" case.
+          let verdict: ClaimVerdict = { kind: 'ok' };
+          if (claimName && account) verdict = await classifyClaim(account, claimName);
+          if (verdict.kind === 'own') {
+            settleAlreadyClaimed(verdict.existing);
+          } else if (verdict.kind === 'taken') {
+            // Restore review chrome so they can edit and retry with a new name.
+            exitProgressView();
+            $status.textContent = '';
+            showError(`"${claimName}" is already taken. Pick another name.`);
+            approve.disabled = false;
+          } else {
+            // Restore review chrome so the user can read the error and retry
+            // (approve is re-enabled by exitProgressView restoring the footer).
+            exitProgressView();
+            showError(`Failed: ${msg}`);
+            $status.textContent = '';
+            approve.disabled = false;
+          }
+        }
+      } finally {
+        // Always close the passkey sheet on exit — covers errors and any path
+        // that didn't reach the 'submit'/'confirm' phase to close it normally.
+        closePasskeySheet();
+      }
+      return;
+    }
+
+    // LEGACY path (message / authEntry / null req): unchanged.
     try {
       $status.textContent = `Confirming with ${passkey.label}…`;
       // Drive the REAL signing ceremony through the Nido confirm sheet. The

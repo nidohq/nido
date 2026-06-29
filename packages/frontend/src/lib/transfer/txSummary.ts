@@ -9,6 +9,8 @@ import { Address, TransactionBuilder, scValToNative, xdr } from "@stellar/stella
 export type OpSummary =
   | { kind: "transfer"; token: string; from: string; to: string; amount: bigint }
   | { kind: "name-register"; contract: string; account: string; name: string }
+  | { kind: "session-grant"; contract: string; name: string; target: string; validUntil: number | null }
+  | { kind: "session-revoke"; contract: string; ruleId: number }
   | { kind: "invoke"; contract: string; fn: string; argsCount: number }
   | { kind: "other"; type: string };
 
@@ -63,6 +65,32 @@ function describeInvokeContract(ic: xdr.InvokeContractArgs): OpSummary {
       if (typeof account === "string" && typeof name === "string") {
         return { kind: "name-register", contract, account, name };
       }
+    }
+
+    // smart-account remove_context_rule(context_rule_id: u32)
+    if (fn === "remove_context_rule" && args.length === 1) {
+      const ruleId = scValToNative(args[0]) as number;
+      if (typeof ruleId === "number") return { kind: "session-revoke", contract, ruleId };
+    }
+
+    // smart-account add_context_rule({ context_type, name, valid_until, signers, policies })
+    if (fn === "add_context_rule" && args.length === 1) {
+      const rule = scValToNative(args[0]) as {
+        context_type?: { tag?: string; values?: unknown[] };
+        name?: string;
+        valid_until?: number | null;
+      };
+      const target =
+        Array.isArray(rule.context_type?.values) && typeof rule.context_type!.values![0] === "string"
+          ? (rule.context_type!.values![0] as string)
+          : "";
+      return {
+        kind: "session-grant",
+        contract,
+        name: typeof rule.name === "string" ? rule.name : "session-key",
+        target,
+        validUntil: typeof rule.valid_until === "number" ? rule.valid_until : null,
+      };
     }
   } catch {
     /* fall through to the generic invoke summary */

@@ -51,11 +51,10 @@ import Nest from '../../components/Nest.astro';
               <p class="mut" style="font-size:13px;margin:0 0 14px;line-height:1.55;">
                 Apps you let act on your behalf for a while. You can cut them off any time.
               </p>
+              <!-- No "Let in an app" button: apps are let in via the dApp's own
+                   connect/delegate flow, never user-initiated from here. This
+                   card only lists (and revokes) what's already been granted. -->
               <div id="delegation-list"></div>
-              <button id="add-delegation" class="btn soft sm" style="margin-top:14px;">
-                <Icon name="plus" size={17} /> Let in an app
-              </button>
-              <div id="delegation-form" class="nido-form" hidden></div>
             </div>
           </section>
         </div>
@@ -107,6 +106,12 @@ import Nest from '../../components/Nest.astro';
 <script>
   import {
     contractIdFromHostname,
+    nameFromHostname,
+    isContractId,
+    resolveNameCached,
+    stripSubdomain,
+    accountUrl,
+    fetchRegistryAddress,
     loadPolicyBlocks,
     loadFriendNicknames,
     loadBlockLabels,
@@ -114,13 +119,84 @@ import Nest from '../../components/Nest.astro';
     loadCredential,
     buf2base64url,
   } from '@nidohq/passkey-sdk';
+  import { RPC_URL, NETWORK_PASSPHRASE } from '../../lib/network.js';
   import { fetchAllChainRules, fetchPolicyState } from '../../lib/policyChainFetch.js';
+  import { forgetRevokedMaterial, ruleStillExists } from '../../lib/sessionKeyActions.js';
   import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
   import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
   import { mountRecoveryForm } from '../../lib/recoveryForm.js';
-  import { mountDelegationForm } from '../../lib/delegationForm.js';
+  import { toast } from '../../lib/toast.js';
 
-  const account = contractIdFromHostname(window.location.hostname);
+  let account = contractIdFromHostname(window.location.hostname);
+
+  // Name subdomain → resolve the name and redirect to the contract-id
+  // subdomain. Every security action signs in-page (signAndSubmit binds the
+  // passkey ceremony to window.location.hostname) and the device passkey lives
+  // on the contract-id subdomain, so the whole page must run there — mirrors
+  // /transfer/ and /account/ signing. NOTE: contractIdFromHostname does no
+  // strkey validation, so on a name subdomain (e.g. `qqqaa.nido.fyi`) it
+  // returns "QQQAA", an invalid contract id — hence the resolve-or-null below.
+  {
+    const detectedName = nameFromHostname(window.location.hostname);
+    if (detectedName && !isContractId(detectedName)) {
+      account = null;
+      try {
+        const resolved = await resolveNameCached(
+          RPC_URL,
+          await fetchRegistryAddress('name-registry'),
+          detectedName,
+          NETWORK_PASSPHRASE,
+        );
+        if (resolved) {
+          const rootHost = stripSubdomain(window.location.host);
+          const target = accountUrl(rootHost, resolved, window.location.pathname + window.location.search);
+          window.location.replace(window.location.protocol + target);
+          throw new Error('redirecting');
+        }
+        // Unregistered name: leave account null so the guidance branch renders.
+      } catch (err) {
+        if (err instanceof Error && err.message === 'redirecting') throw err;
+        // Registry unreachable: leave account null; guidance branch renders.
+      }
+    }
+  }
+
+  // Return handler: /sign/ navigates back to /security/?revoked=<ruleId>
+  // after a successful session-key revoke. Clean up local material here —
+  // the on-chain remove already happened, so this is pure localStorage hygiene.
+  {
+    const sp = new URLSearchParams(window.location.search);
+    const revokedId = sp.get('revoked');
+    if (revokedId != null && account) {
+      const target = sp.get('target') ?? '';
+      const pubkeyHex = sp.get('pubkey') ?? '';
+      const txhash = sp.get('txhash') ?? '';
+      // F2: only run cleanup + toast when there's PROOF a revoke actually
+      // happened — a /sign/ success carries a 64-hex txhash, AND the rule must
+      // really be gone on-chain. Otherwise (a bare/crafted `?revoked=` URL) do
+      // nothing: don't wipe local material, don't show a misleading toast.
+      const ruleId = Number(revokedId);
+      const hasProofShape =
+        /^[0-9a-f]{64}$/i.test(txhash) && Number.isInteger(ruleId) && ruleId >= 0;
+      const proven = hasProofShape && (await ruleStillExists(account, ruleId)) === false;
+      if (proven) {
+        // Ownership-safe cleanup via the shared forgetRevokedMaterial helper.
+        // With two live rules on the same target (re-delegation), the single
+        // per-target material slot belongs to the NEWER credential — revoking
+        // the stale rule must not wipe it.
+        forgetRevokedMaterial(account, target, pubkeyHex || undefined);
+        toast({ msg: 'Session key revoked', icon: 'check' });
+      }
+      // Clean the ?revoked= params from the URL so a refresh doesn't re-run
+      // cleanup — even when unproven (don't leave a hostile URL primed).
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete('revoked');
+      clean.searchParams.delete('pubkey');
+      clean.searchParams.delete('target');
+      clean.searchParams.delete('txhash');
+      window.history.replaceState(null, '', clean.toString());
+    }
+  }
 
   // Passkey details for this device (relocated here from the account page).
   const deviceCred = account ? loadCredential(account) : null;
@@ -214,11 +290,6 @@ import Nest from '../../components/Nest.astro';
     if (!account) { alert('No account selected.'); return; }
     const formContainer = document.getElementById('recovery-form')!;
     mountRecoveryForm(formContainer, account);
-  });
-  document.getElementById('add-delegation')!.addEventListener('click', () => {
-    if (!account) { alert('No account selected.'); return; }
-    const formContainer = document.getElementById('delegation-form')!;
-    mountDelegationForm(formContainer, account);
   });
 </script>
 

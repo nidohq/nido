@@ -8,8 +8,9 @@ import {
   StrKey,
   TransactionBuilder,
   nativeToScVal,
+  xdr,
 } from "@stellar/stellar-sdk";
-import { describeOperation, describeTransaction } from "./txSummary";
+import { describeHostFunction, describeOperation, describeTransaction } from "./txSummary";
 import { buildSendOperation } from "./buildSend";
 
 const SMART = StrKey.encodeContract(Buffer.alloc(32, 0xaa));
@@ -110,6 +111,25 @@ describe("describeOperation", () => {
     });
     const s = describeOperation(op);
     expect(s.kind).toBe("other");
+  });
+});
+
+const CONTRACT = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+
+function invoke(fn: string, args: xdr.ScVal[]): xdr.HostFunction {
+  return xdr.HostFunction.hostFunctionTypeInvokeContract(
+    new xdr.InvokeContractArgs({
+      contractAddress: Address.fromString(CONTRACT).toScAddress(),
+      functionName: fn,
+      args,
+    }),
+  );
+}
+
+describe("describeHostFunction — context rules", () => {
+  it("summarizes remove_context_rule(id)", () => {
+    const fn = invoke("remove_context_rule", [nativeToScVal(7, { type: "u32" })]);
+    expect(describeHostFunction(fn)).toEqual({ kind: "session-revoke", contract: CONTRACT, ruleId: 7 });
   });
 });
 

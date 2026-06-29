@@ -70,34 +70,19 @@ import Icon from '../../../components/Icon.astro';
         <div class="navrow" style="cursor:default;border-bottom:none;">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:700;font-size:13.5px;">Spending limit</div>
-            <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
-              <input id="limit-amount" class="input" inputmode="decimal" placeholder="Amount"
-                     autocomplete="off" spellcheck="false"
-                     style="height:40px;font-size:13.5px;flex:1;min-width:0;" />
-              <span class="mut" style="font-size:12.5px;flex:0 0 auto;">XLM</span>
-              <select id="limit-period" class="input"
-                      style="height:40px;font-size:13.5px;flex:0 0 auto;width:auto;padding:0 10px;">
-                <option value="day">per day</option>
-                <option value="week">per week</option>
-                <option value="30d">per 30 days</option>
-              </select>
-            </div>
-            <label class="mut" style="display:flex;align-items:center;gap:7px;margin-top:10px;font-size:12.5px;cursor:pointer;">
-              <input id="limit-none" type="checkbox" />
-              No limit
-            </label>
             <div class="mut" id="limit-summary" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
           </div>
         </div>
       </div>
 
       <p class="mut" style="font-size:12.5px;line-height:1.55;margin:14px 0 0;">
-        After you approve, we'll send you back to the app. To cut it off later,
-        visit <a href="/security/" class="link">your safety settings</a>.
+        Next you'll review and confirm with your passkey. You can adjust the
+        spending limit on the review screen. To cut it off later, visit
+        <a href="/security/" class="link">your safety settings</a>.
       </p>
 
       <div class="actions" style="display:flex;gap:10px;margin-top:18px;">
-        <button id="approve" class="btn acc" type="button" style="flex:1;">Approve &amp; sign</button>
+        <button id="approve" class="btn acc" type="button" style="flex:1;">Review &amp; continue</button>
         <button id="deny" class="btn ghost" type="button" style="flex:0 0 auto;width:auto;">Cancel</button>
       </div>
       <p id="status" role="status" aria-live="polite" class="mut" style="font-size:12.5px;margin-top:12px;"></p>
@@ -109,19 +94,16 @@ import Icon from '../../../components/Icon.astro';
 </NidoLayout>
 
 <script>
-  import { contractIdFromHostname, extractXdrOperations, hex2buf } from '@nidohq/passkey-sdk';
-  import { Client as SmartAccountClient } from '@nidohq/smart-account';
-  import { Networks } from '@stellar/stellar-sdk';
-  import { fetchRegistryAddress, fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
-  import { signAndSubmit } from '../../../lib/primaryPasskeySigner.js';
+  import { contractIdFromHostname } from '@nidohq/passkey-sdk';
+  import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
   import { stroopsToXlm } from '../../../lib/money.js';
   import {
     PERIOD_LEDGERS,
     PERIOD_LABEL,
     stroopsFromXlm,
-    spendingLimitParamsScVal,
     type LimitPeriod,
   } from '../../../lib/spendingLimitParams.js';
+  import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest';
 
   const RPC_URL = 'https://soroban-testnet.stellar.org';
   const DURATIONS: Record<string, number | null> = {
@@ -129,6 +111,14 @@ import Icon from '../../../components/Icon.astro';
     '7d': 17280 * 7,
     '30d': 17280 * 30,
     'none': null,
+  };
+  // Human-readable expiry labels matching the <select> option text, used to carry
+  // the display label through to /sign/ so it never has to interpret validUntil.
+  const DURATION_LABEL: Record<string, string> = {
+    '24h': '24 hours',
+    '7d': '7 days',
+    '30d': '30 days',
+    'none': 'Until revoked',
   };
 
   const params = new URLSearchParams(window.location.search);
@@ -138,7 +128,8 @@ import Icon from '../../../components/Icon.astro';
   const duration = params.get('duration') ?? '30d';
   // Optional spending limit: `limit` (decimal XLM string) + `limit_period`
   // (day|week|30d, default day). Absent or EMPTY `limit` = no cap (today's
-  // behavior) — `?limit=` should not pre-block approval with a parse error.
+  // behavior). The dApp's request seeds the editable control on /sign/; it
+  // must NOT pre-block here with a parse error.
   const limitParam = params.get('limit') || null;
   const limitPeriodParam = params.get('limit_period') ?? 'day';
   const limitPeriodInitial: LimitPeriod =
@@ -154,7 +145,7 @@ import Icon from '../../../components/Icon.astro';
   const expirySpan = document.getElementById('expiry-text')!;
   const durationSel = document.getElementById('duration-sel') as HTMLSelectElement;
   // Pre-select the dApp's requested duration when it's one we offer; otherwise
-  // fall back to the 30-day default. The user can change it before approving —
+  // fall back to the 30-day default. The user can change it before continuing —
   // the selected value (not the URL param) is what gets installed.
   durationSel.value = duration in DURATIONS ? duration : '30d';
 
@@ -176,70 +167,53 @@ import Icon from '../../../components/Icon.astro';
   const approveBtn = document.getElementById('approve') as HTMLButtonElement;
   const status = document.getElementById('status')!;
 
-  // Spending-limit controls. "No limit" is checked when the dApp didn't ask
-  // for one; the user can always tighten (or loosen) before approving.
-  const limitAmount = document.getElementById('limit-amount') as HTMLInputElement;
-  const limitPeriod = document.getElementById('limit-period') as HTMLSelectElement;
-  const limitNone = document.getElementById('limit-none') as HTMLInputElement;
+  // Read-only spending-limit summary — the EDITABLE control now lives on the
+  // /sign/ review screen. We compute the limit the dApp seeded (if any) so the
+  // user sees it before continuing; the actual editing happens on /sign/.
   const limitSummary = document.getElementById('limit-summary')!;
-
-  limitAmount.value = limitParam ?? '';
-  limitPeriod.value = limitPeriodInitial;
-  limitNone.checked = limitParam == null;
-
-  function selectedPeriod(): LimitPeriod {
-    return limitPeriod.value in PERIOD_LEDGERS ? (limitPeriod.value as LimitPeriod) : 'day';
-  }
-
-  function syncLimitControls() {
-    const none = limitNone.checked;
-    limitAmount.disabled = none;
-    limitPeriod.disabled = none;
-    if (none) {
-      limitSummary.textContent =
-        'No cap — the app can move any amount this contract allows until the key expires.';
-      return;
-    }
+  let initialStroops: string | null = null;
+  if (limitParam != null) {
     try {
-      const stroops = stroopsFromXlm(limitAmount.value);
-      // The policy is deny-by-default: with a limit installed, ONLY token
-      // transfers are authorized — any other call in the scoped contract is
-      // blocked outright, not merely unmetered.
+      initialStroops = stroopsFromXlm(limitParam).toString();
       limitSummary.textContent =
-        `Only token transfers are allowed, capped at ${stroopsToXlm(stroops)} XLM ` +
-        `${PERIOD_LABEL[selectedPeriod()]} (rolling window) — other calls in this ` +
-        `contract will be blocked.`;
-    } catch (e) {
-      limitSummary.textContent = e instanceof Error ? e.message : String(e);
+        `Requested cap: ${stroopsToXlm(initialStroops)} XLM ${PERIOD_LABEL[limitPeriodInitial]} ` +
+        `(rolling window). You can change this on the next screen.`;
+    } catch {
+      // A malformed dApp-supplied limit is ignored (treated as no cap); the
+      // user can set one on /sign/. Never block the flow on a bad ?limit=.
+      initialStroops = null;
+      limitSummary.textContent =
+        'No cap requested — you can set a spending limit on the next screen.';
     }
+  } else {
+    limitSummary.textContent =
+      'No cap requested — you can set a spending limit on the next screen.';
   }
 
-  limitNone.addEventListener('change', syncLimitControls);
-  limitAmount.addEventListener('input', syncLimitControls);
-  limitPeriod.addEventListener('change', syncLimitControls);
-  syncLimitControls();
-
-  // Return-URL must be the dApp origin (anti-redirect-abuse).
-  function backToDapp(qs: string) {
-    if (!returnUrl) return;
+  // Return-URL must be the dApp origin (anti-redirect-abuse). Returns the
+  // validated, query-rewritten URL string, or null if it fails validation.
+  function backToDapp(qs: string): string | null {
+    if (!returnUrl) return null;
     try {
       const url = new URL(returnUrl);
       if (url.origin !== dappOrigin) {
         status.textContent = `Refusing to redirect: return URL origin (${url.origin}) does not match request origin (${dappOrigin}).`;
-        return;
+        return null;
       }
       url.search = qs;
-      window.location.href = url.toString();
+      return url.toString();
     } catch {
       status.textContent = 'Invalid return URL; not redirecting.';
+      return null;
     }
   }
 
   denyBtn.addEventListener('click', () => {
-    backToDapp('?delegation=cancelled');
+    const back = backToDapp('?delegation=cancelled');
+    if (back) window.location.href = back;
   });
 
-  // Sanity-check request parameters before allowing approval.
+  // Sanity-check request parameters before allowing the handoff.
   function validate(): string | null {
     if (!account) return 'This page must be opened on an account subdomain.';
     if (!dappOrigin) return 'Missing origin parameter.';
@@ -261,73 +235,70 @@ import Icon from '../../../components/Icon.astro';
   approveBtn.addEventListener('click', async () => {
     approveBtn.disabled = true;
     try {
-      // Spending limit: validate + resolve the policy BEFORE any signing so
-      // we never install a rule missing the limit the user saw on screen.
-      // No limit → empty map, byte-identical to the pre-limit behavior.
-      let policies = new Map<string, ReturnType<typeof spendingLimitParamsScVal>>();
-      if (!limitNone.checked) {
-        const stroops = stroopsFromXlm(limitAmount.value); // throws a user-facing message
-        status.textContent = 'Resolving spending-limit policy…';
-        let policyAddr: string;
-        try {
-          policyAddr = await fetchRegistryAddress('spending-limit-policy');
-        } catch {
-          throw new Error(
-            'spending-limit policy unavailable — try again or approve without a limit',
-          );
-        }
-        policies = new Map([
-          [policyAddr, spendingLimitParamsScVal(stroops, PERIOD_LEDGERS[selectedPeriod()])],
-        ]);
+      // Validate the dApp return URL BEFORE we do any work — keeps the
+      // anti-redirect-abuse guard at the front of the flow.
+      const successReturn = backToDapp('?delegation=ok');
+      if (!successReturn) {
+        // backToDapp already wrote the reason to `status`.
+        approveBtn.disabled = false;
+        return;
       }
 
+      // Resolve the verifier THIS account trusts (read from rule 0) so the
+      // installed External signer cites the right verifier. Done in the caller
+      // to keep /sign/ generic — the descriptor carries the resolved address.
       status.textContent = 'Resolving verifier address…';
-      const verifierAddr = await fetchVerifierAddress(account!);
+      const verifierAddress = await fetchVerifierAddress(account!);
 
+      // Compute the absolute expiry ledger from the chosen duration. A `none`
+      // selection installs no expiry (validUntil = null → valid until revoked).
       status.textContent = 'Computing expiry…';
       const { rpc } = await import('@stellar/stellar-sdk');
       const server = new rpc.Server(RPC_URL);
       const latest = await server.getLatestLedger();
       const off = selectedExpiryOffset();
-      const validUntil =
-        off == null ? undefined : latest.sequence + off;
+      const validUntil = off == null ? null : latest.sequence + off;
 
-      status.textContent = 'Building install transaction…';
-      const client = new SmartAccountClient({
-        contractId: account!,
-        networkPassphrase: Networks.TESTNET,
-        rpcUrl: RPC_URL,
-      });
+      const limit =
+        initialStroops != null
+          ? { stroops: initialStroops, periodLedgers: PERIOD_LEDGERS[limitPeriodInitial] }
+          : null;
 
-      const sessionPubkey = hex2buf(pubkeyHex);
-      const tx = await client.add_context_rule({
-        context_type: { tag: 'CallContract', values: [target] as readonly [string] },
-        name: 'session-key',
-        valid_until: validUntil,
-        signers: [
-          {
-            tag: 'External' as const,
-            values: [verifierAddr, sessionPubkey as Buffer] as readonly [string, Buffer],
-          },
-        ],
-        policies, // empty unless the user kept a spending limit (see above)
-      });
-
-      // Re-encode the AssembledTransaction's operations into proper XDR
-      // operations. See `extractXdrOperations` docs for the why
-      // (TransactionBuilder.addOperation requires XDR, not the JS POJO
-      // shape `tx.built.operations` returns).
-      const [operation] = extractXdrOperations(tx, 'delegate');
-
-      status.textContent = 'Signing with your passkey…';
-      await signAndSubmit({
+      // Build the canonical SignRequest and hand off to /sign/. The grant runs
+      // on this account's contract-id subdomain, so sessionStorage is
+      // same-origin and `?req=<id>` resolves on the next page.
+      const req: SignRequest = {
+        v: 1,
+        kind: 'session-grant',
         account: account!,
-        operation,
-        verifierAddress: verifierAddr,
-      });
+        operation: {
+          type: 'add-context-rule',
+          target,
+          signerPublicKeyHex: pubkeyHex,
+          verifierAddress,
+          validUntil,
+          limit,
+          label: 'session-key',
+          expiryLabel: DURATION_LABEL[durationSel.value] ?? (validUntil == null ? 'Until revoked' : `${durationSel.value}`),
+        },
+        title: 'Grant a session key',
+        subtitle: `${dappOrigin} wants to act on your behalf.`,
+        submitMode: 'relayer',
+        editable: [
+          { field: 'spending-limit', initialStroops, initialPeriod: limitPeriodInitial },
+        ],
+        // dApp return: /sign/ posts `?delegation=ok` on success (and
+        // `?delegation=cancelled` on cancel) — the delegationHandover contract.
+        returnTarget: {
+          type: 'dapp',
+          origin: dappOrigin,
+          returnUrl,
+          successQuery: '?delegation=ok',
+        },
+      };
 
-      status.textContent = 'Done — redirecting back to app…';
-      setTimeout(() => backToDapp('?delegation=ok'), 500);
+      const id = stashSignRequest(req);
+      window.location.href = `/sign/?req=${id}`;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       status.textContent = `Failed: ${msg}`;
@@ -339,6 +310,4 @@ import Icon from '../../../components/Icon.astro';
 <style>
   .pad code { font-family: var(--mono); }
   code.wrap { word-break: break-all; }
-  .pad .input:disabled { opacity: 0.5; }
-  #limit-none { accent-color: var(--acc); }
 </style>

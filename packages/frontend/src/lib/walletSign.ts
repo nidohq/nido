@@ -48,6 +48,8 @@ import {
   fetchDefaultRuleAuthInfo,
   type DefaultRuleAuthInfo,
 } from './policyChainFetch.js';
+import { relayerEnabled } from './relayerClient';
+import { RELAYER_EXPIRATION_OFFSET } from './network';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 
@@ -166,7 +168,15 @@ export async function signTransactionXdr(args: {
 
   const authEntry = getAuthEntry(successSim);
   const lastLedger = successSim.latestLedger;
-  const signaturePayload = buildAuthHash(authEntry, networkPassphrase, lastLedger);
+  // SECURITY (F6): the signed XDR this function returns is ALWAYS relayer-
+  // submitted by runSign (the dApp raw-xdr path ships the signed auth entry to
+  // the external Channels relayer). In relayer mode bound the auth-entry
+  // validity to the same tight ~10-minute window primaryPasskeySigner uses, so
+  // a relayer holding the body can't replay it for ~14h. The offset MUST be
+  // identical between buildAuthHash and the injector(s) or the digest the
+  // contract recomputes won't match this signature.
+  const expirationOffset = relayerEnabled() ? RELAYER_EXPIRATION_OFFSET : undefined;
+  const signaturePayload = buildAuthHash(authEntry, networkPassphrase, lastLedger, expirationOffset);
   const contextRuleIds = [0];
   const challengeBytes = computeAuthDigest(signaturePayload, contextRuleIds);
 
@@ -181,7 +191,7 @@ export async function signTransactionXdr(args: {
       verifierAddress,
       hex2buf(cred.publicKey),
       lastLedger,
-      undefined,
+      expirationOffset,
       contextRuleIds,
     );
   } else {
@@ -196,7 +206,7 @@ export async function signTransactionXdr(args: {
       storedCred: cred,
       onStatus: args.onStatus,
     });
-    injectSignedAuthPayload(assembledTx, signers, lastLedger, undefined, contextRuleIds);
+    injectSignedAuthPayload(assembledTx, signers, lastLedger, expirationOffset, contextRuleIds);
   }
 
   // Re-simulate in enforce mode to recompute the footprint that __check_auth

@@ -294,12 +294,49 @@ export const StatusMessage = () => {
 					onProgress: setSaveProgress,
 				})
 			} else {
-				// Classic wallet: a G-address is a valid source + author; sign normally.
+				// Classic wallet: sign and broadcast normally.
+				//
+				// Guard: if the wallet signals it already submitted the tx on-chain
+				// (Nido relayer / model A — `submitted: true` on the kit result),
+				// we must NOT re-broadcast.  We detect this by wrapping
+				// `signTransaction` so that a submitted-marker throws a sentinel
+				// that short-circuits `signAndSend`'s internal broadcast step.
+				class AlreadySubmittedError extends Error {
+					constructor() {
+						super("nido:already_submitted")
+						this.name = "AlreadySubmittedError"
+					}
+				}
 				const tx = await statusMessage.update_message(
 					{ message: draft, author: address },
 					{ publicKey: address },
 				)
-				await tx.signAndSend({ signTransaction })
+				try {
+					await tx.signAndSend({
+						signTransaction: async (xdr, opts) => {
+							const result = await signTransaction(xdr, opts)
+							// When the Nido relayer submitted on our behalf, `result`
+							// carries `submitted: true` and `signedTxXdr` is the tx hash.
+							// Throw sentinel so `signAndSend` never tries to broadcast.
+							if (result && "submitted" in result && result.submitted) {
+								throw new AlreadySubmittedError()
+							}
+							return result
+						},
+					})
+				} catch (e) {
+					// Re-throw anything that isn't our own sentinel.
+					//
+					// IMPLEMENTATION ASSUMPTION: stellar-sdk's `signAndSend` does NOT
+					// catch or wrap errors thrown from the `signTransaction` callback —
+					// it lets them propagate as-is to the outer try/catch. This sentinel
+					// pattern relies on that behaviour. If a future stellar-sdk version
+					// wraps callback errors, AlreadySubmittedError would be re-thrown
+					// here and the `submitted: true` path would incorrectly surface as
+					// a failure.
+					if (!(e instanceof AlreadySubmittedError)) throw e
+					// Otherwise: tx was already submitted by the relayer — treat as success.
+				}
 			}
 			setSaveState("success")
 			// Confirmation of the write → surface it by reading the account back.

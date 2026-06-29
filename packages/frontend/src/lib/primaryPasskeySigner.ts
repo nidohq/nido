@@ -13,27 +13,21 @@ import {
   injectPasskeySignature,
   parseAssertionResponse,
   hex2buf,
+  buf2hex,
 } from '@nidohq/passkey-sdk';
 import { fetchVerifierAddress } from './policyChainFetch.js';
 import {
   relayerEnabled,
-  extractFuncAndAuth,
-  submitSorobanTransaction,
-  waitForConfirmation,
 } from './relayerClient';
-import { RELAYER_SIM_SOURCE } from './network';
+import { RELAYER_SIM_SOURCE, RELAYER_EXPIRATION_OFFSET } from './network';
+import { relayerSubmitAndConfirm, classicSubmitAndPoll } from './signing/submit';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 
-/** Signature validity in relayer mode: ~10 minutes. The sdk default (10000
- *  ledgers ≈ 14h) is fine when the signed entry never leaves the browser, but
- *  in relayer mode we hand it to an external service — whoever holds the body
- *  can submit at any moment until expiry. The relayer only needs it valid for
- *  well under a minute (channel tx lifetime is 60s; the plugin's minimum
- *  buffer is 2 ledgers), so keep the window tight. MUST be passed identically
- *  to buildAuthHash and injectPasskeySignature or the digest won't verify. */
-const RELAYER_EXPIRATION_OFFSET = 120;
+// RELAYER_EXPIRATION_OFFSET (relayer-mode auth-entry validity window) now lives
+// in ./network so every relayer-submitting signing path (here + walletSign)
+// shares one bound. See the comment there for the security rationale.
 
 /** localStorage key shared with `account/index.astro` so we don't
  *  proliferate ephemeral submitter accounts. */
@@ -85,7 +79,9 @@ export async function signAndSubmit(args: {
    *  already fetched. Otherwise we'll read it from the account's default
    *  rule. */
   verifierAddress?: string;
-}): Promise<rpc.Api.SendTransactionResponse> {
+  /** Optional progress callback fired at each phase of the signing flow. */
+  onProgress?: (p: { phase: "build" | "sign" | "submit" | "confirm"; detail?: string }) => void;
+}): Promise<rpc.Api.SendTransactionResponse & { authHashHex: string }> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
 
@@ -126,6 +122,7 @@ export async function signAndSubmit(args: {
   // from an op with no auth entries so the simulator generates them
   // fresh in recording mode. Clone the XDR op so we don't mutate the
   // caller's operation.
+  args.onProgress?.({ phase: "build" });
   const opClone = xdr.Operation.fromXDR(args.operation.toXDR());
   opClone.body().invokeHostFunctionOp().auth([]);
   const sim_tx = new TransactionBuilder(sourceAccount, {
@@ -155,11 +152,13 @@ export async function signAndSubmit(args: {
   const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger, expirationOffset);
   const contextRuleIds = [0];
   const challengeBytes = computeAuthDigest(signaturePayload, contextRuleIds);
+  const authHashHex = buf2hex(challengeBytes);
 
   // 4. Assemble so auth entries are baked into the tx XDR before signing.
   const assembled_tx = rpc.assembleTransaction(sim_tx, successSim).build();
 
   // 5. Get a WebAuthn assertion over the challenge.
+  args.onProgress?.({ phase: "sign" });
   const challengeBuf = new ArrayBuffer(challengeBytes.byteLength);
   new Uint8Array(challengeBuf).set(challengeBytes);
   const assertion = (await navigator.credentials.get({
@@ -191,104 +190,32 @@ export async function signAndSubmit(args: {
     contextRuleIds,
   );
 
+  args.onProgress?.({ phase: "submit" });
   if (relayerEnabled()) {
     // The Channels plugin re-simulates server-side in enforce mode, builds
     // the footprint itself, and a channel account becomes the tx source with
     // the fund account fee-bumping — the enforce re-sim + fee refit + G
     // signature + RPC submission below are all its job now. We ship only the
     // host function and the passkey-signed auth entry.
-    const { func, auth } = extractFuncAndAuth(assembled_tx);
-    if (auth.length > 1) {
-      throw new Error(`Expected a single auth entry, got ${auth.length} — only the first is passkey-signed.`);
-    }
-    const submitted = await submitSorobanTransaction({ func, auth });
-    if (!submitted.transactionId) {
-      throw new Error('Relayer accepted the transaction but returned no transaction id');
-    }
-    const confirmed = await waitForConfirmation(submitted.transactionId);
-    if (!confirmed.hash) throw new Error('Relayer confirmed without a transaction hash');
+    args.onProgress?.({ phase: "confirm" });
+    const { hash } = await relayerSubmitAndConfirm(assembled_tx);
     // Only `hash` is real (the transfer page links it to the explorer) —
     // latestLedger/latestLedgerCloseTime are placeholder zeros and the tx is
     // already confirmed ('PENDING' kept for shape compatibility).
     return {
       status: 'PENDING',
-      hash: confirmed.hash,
+      hash,
       latestLedger: 0,
       latestLedgerCloseTime: 0,
+      authHashHex,
     };
   }
 
-  // 7. Re-simulate the now-signed tx in ENFORCE mode — both to verify
-  //    the auth (surfaces bad sig / wrong rule before submit) AND to
-  //    recompute the resource footprint to cover __check_auth's reads.
-  //
-  //    The initial assemble in step 4 sized resources based on a
-  //    simulation we ran with auth=[] (had to, otherwise the unsigned
-  //    auth templates would trap recording-mode __check_auth against
-  //    `signatures: Void`). That footprint covers the operation but
-  //    NOT the storage keys __check_auth touches when actually
-  //    verifying signers — so submit would later trap with
-  //    "trying to access contract data key outside of the footprint"
-  //    (scecExceededLimit on ContextRuleData), even though everything
-  //    else was correct.
-  //
-  //    `simulateTransaction` defaults to "record" mode which ignores
-  //    provided auth entries entirely. Passing "enforce" makes it run
-  //    __check_auth against our injected signature, producing both a
-  //    pass/fail signal AND a fresh `transactionData` (sorobanData)
-  //    with the correct read-write footprint and resource fees.
-  //
-  //    Splice that fresh sorobanData into the existing assembled tx
-  //    via TransactionBuilder.cloneFrom — do NOT call
-  //    `rpc.assembleTransaction` to do it: that function rebuilds the
-  //    auth entries from the sim result's UNSIGNED templates and
-  //    silently discards our signature.
-  const final_sim = await server.simulateTransaction(assembled_tx, undefined, 'enforce');
-  if (rpc.Api.isSimulationError(final_sim)) {
-    throw new Error(`Final simulation failed: ${(final_sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
-  }
-  const successFinalSim = final_sim as rpc.Api.SimulateTransactionSuccessResponse;
-  const newSorobanData = successFinalSim.transactionData.build();
-  const newResourceFee = BigInt(newSorobanData.resourceFee().toString());
-  const classicFee = BigInt(assembled_tx.fee) - BigInt(
-    // Walk the previous sorobanData's resourceFee out of the envelope.
-    (assembled_tx.toEnvelope().v1().tx().ext().value() as xdr.SorobanTransactionData | undefined)
-      ?.resourceFee().toString() ?? '0',
-  );
-  const refittedBuilder = TransactionBuilder.cloneFrom(assembled_tx, {
-    fee: (classicFee + newResourceFee).toString(),
-    sorobanData: newSorobanData,
-    networkPassphrase: Networks.TESTNET,
-  });
-  // cloneFrom carries operations across as-is (including the signed
-  // auth entries on our InvokeHostFunction op). build() emits a new
-  // Transaction with the right footprint AND our signature intact.
-  const refitted_tx = refittedBuilder.build();
+  // 7. Re-simulate + fee refit + sign + submit + poll (classic path).
+  //    See classicSubmitAndPoll for full commentary on why enforce re-sim
+  //    is required and why cloneFrom is used instead of assembleTransaction.
   if (!submitter) throw new Error('unreachable: classic path without submitter');
-  refitted_tx.sign(submitter);
-  // 8. Submit and wait for chain confirmation. A successful enforce-mode
-  //    sim isn't proof the tx lands — fee-bid races, ledger close failures,
-  //    or out-of-band footprint errors can still drop a tx. Returning the
-  //    PENDING SendTransactionResponse without polling let callers happily
-  //    say "Done" while the rule we just paid to install never persisted
-  //    (rediscovered when the dApp then tried to use it and __check_auth
-  //    failed because no such rule was on-chain).
-  const sendResult = await server.sendTransaction(refitted_tx);
-  if (sendResult.status === 'ERROR') {
-    const detail = sendResult.errorResult?.toXDR('base64') ?? 'unknown';
-    throw new Error(`Submit rejected: ${detail}`);
-  }
-  if (sendResult.status === 'DUPLICATE' || sendResult.status === 'TRY_AGAIN_LATER') {
-    throw new Error(`Submit ${sendResult.status}: ${sendResult.hash}`);
-  }
-  // PENDING — poll until we see SUCCESS or FAILED.
-  let getResult = await server.getTransaction(sendResult.hash);
-  for (let i = 0; getResult.status === 'NOT_FOUND' && i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1500));
-    getResult = await server.getTransaction(sendResult.hash);
-  }
-  if (getResult.status !== 'SUCCESS') {
-    throw new Error(`Tx ${sendResult.hash} ${getResult.status}`);
-  }
-  return sendResult;
+  args.onProgress?.({ phase: "confirm" });
+  const classicResult = await classicSubmitAndPoll(assembled_tx, submitter, server);
+  return { ...classicResult, authHashHex };
 }

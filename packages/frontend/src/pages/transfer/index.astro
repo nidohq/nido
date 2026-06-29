@@ -84,19 +84,7 @@ import Icon from "../../components/Icon.astro";
       <div id="review-status" role="status" aria-live="polite" class="mut mono" style="font-size:12.5px;margin-top:12px;text-align:center;line-height:1.5;"></div>
     </section>
 
-    <!-- ===================== STEP 3 · RESULT ===================== -->
-    <section id="result-step" class="pad hidden" style="padding-top:18px;text-align:center;">
-      <div style="width:72px;height:72px;border-radius:20px;background:var(--good-soft);display:grid;place-items:center;margin:0 auto 14px;">
-        <Icon name="check" size={36} color="var(--good)" />
-      </div>
-      <h1 class="disp" style="font-weight:800;font-size:26px;">Sent</h1>
-      <p id="result-detail" class="mut" style="font-size:14px;line-height:1.5;max-width:320px;margin:8px auto 0;"></p>
-      <a id="result-explorer" class="link" target="_blank" rel="noopener" style="display:inline-block;margin-top:14px;font-size:13.5px;">View on Stellar Expert →</a>
-      <div style="margin-top:24px;display:flex;flex-direction:column;gap:10px;">
-        <button id="again-btn" type="button" class="btn soft">Send something else</button>
-        <a href="/account/" class="btn ghost">Back to your Nido</a>
-      </div>
-    </section>
+    <!-- STEP 3 · RESULT: owned by /sign/ — this page navigates there on confirm. -->
   </div>
 
   <Toast />
@@ -166,15 +154,13 @@ import Icon from "../../components/Icon.astro";
   import { buildSendOperation } from "../../lib/transfer/buildSend.js";
   import { previewOperation } from "../../lib/transfer/preview.js";
   import { renderTransferReview, type TransferView } from "../../lib/transfer/review.js";
-  import { signAndSubmit } from "../../lib/primaryPasskeySigner.js";
   import { resolveSendRecipient } from "../../lib/recipientInput.js";
-  import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
-  import { toast } from "../../lib/toast";
   import { shortAddr } from "../../lib/address";
   import { esc } from "../../lib/html";
-  import { EXPLORER_BASE, RPC_URL } from "../../lib/network.js";
+  import { RPC_URL } from "../../lib/network.js";
+  import { stashSignRequest, type SignRequest } from "../../lib/signing/signRequest";
 
   const NAME_NETWORK = "Test SDF Network ; September 2015";
   const CHEVRON = `<svg class="tsend-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>`;
@@ -189,7 +175,6 @@ import Icon from "../../components/Icon.astro";
   const $errorBox = document.getElementById("error-box")!;
   const $formStep = document.getElementById("form-step")!;
   const $reviewStep = document.getElementById("review-step")!;
-  const $resultStep = document.getElementById("result-step")!;
   const $assetSelect = document.getElementById("asset-select") as HTMLButtonElement;
   const $assetMenu = document.getElementById("asset-menu")!;
   const $assetBalance = document.getElementById("asset-balance")!;
@@ -201,6 +186,7 @@ import Icon from "../../components/Icon.astro";
   const $reviewBody = document.getElementById("review-body")!;
   const $reviewStatus = document.getElementById("review-status")!;
   const $confirmBtn = document.getElementById("confirm-btn") as HTMLButtonElement;
+  // $resultStep is no longer rendered — /sign/ owns post-submit UI.
 
   function showError(msg: string) {
     $errorBox.textContent = msg;
@@ -209,10 +195,6 @@ import Icon from "../../components/Icon.astro";
   function clearError() {
     $errorBox.style.display = "none";
   }
-  function passkeyBlockedHint() {
-    return `Passkey signing was blocked. If you're in an in-app browser (Twitter, Instagram, etc.), tap the menu (…) and choose "Open in Safari" or "Open in Browser".`;
-  }
-
   // --- account resolution (signing needs the contract-id subdomain) ---
   let contractId = contractIdFromHostname(window.location.hostname);
 
@@ -498,10 +480,9 @@ import Icon from "../../components/Icon.astro";
   // is byte-identical to what was previewed (TOCTOU-safe).
   let pending: { view: TransferView; operation: import("@stellar/stellar-sdk").xdr.Operation; amountLabel: string; toLabel: string } | null = null;
 
-  function showStep(step: "form" | "review" | "result") {
+  function showStep(step: "form" | "review") {
     $formStep.classList.toggle("hidden", step !== "form");
     $reviewStep.classList.toggle("hidden", step !== "review");
-    $resultStep.classList.toggle("hidden", step !== "result");
   }
 
   function initSteps() {
@@ -509,22 +490,10 @@ import Icon from "../../components/Icon.astro";
     document.getElementById("back-btn")!.addEventListener("click", () => {
       pending = null; // discard the previewed op; the next Review rebuilds it fresh
       $reviewStatus.textContent = "";
-      // The WAIT_TIMEOUT lock is scoped to the timed-out attempt: going Back
-      // discards it, and the next Review→Confirm signs a fresh nonce well past
-      // the 60s channel-tx validity window — safe to confirm again.
       $confirmBtn.disabled = false;
       showStep("form");
     });
     $confirmBtn.addEventListener("click", onConfirm);
-    document.getElementById("again-btn")!.addEventListener("click", () => {
-      pending = null;
-      $to.value = "";
-      $toResolve.textContent = "";
-      $amount.value = "";
-      $amountHint.textContent = "";
-      clearError();
-      showStep("form");
-    });
   }
 
   async function onReview() {
@@ -622,49 +591,34 @@ import Icon from "../../components/Icon.astro";
     }
   }
 
-  async function onConfirm() {
+  function onConfirm() {
     if (!pending || !contractId) return;
     clearError();
-    const $backBtn = document.getElementById("back-btn") as HTMLButtonElement;
-    $confirmBtn.disabled = true;
-    // Lock Back too: leaving the review step mid-flight would hide the status
-    // line (and the explorer link a timeout writes there).
-    $backBtn.disabled = true;
-    $reviewStatus.textContent = `Confirm with ${passkey.label} to send ${pending.amountLabel} to ${pending.toLabel}…`;
-    try {
-      const sent = await withPasskeySheet(
-        () => signAndSubmit({ account: contractId!, operation: pending!.operation }),
-        { title: confirmLabel, sub: `Sending ${pending.amountLabel} to ${pending.toLabel}.` },
-      );
 
-      document.getElementById("result-detail")!.textContent =
-        `${pending.amountLabel} to ${pending.toLabel}.`;
-      const explorer = document.getElementById("result-explorer") as HTMLAnchorElement;
-      explorer.href = `${EXPLORER_BASE}/tx/${sent.hash}`;
-      $backBtn.disabled = false;
-      showStep("result");
-    } catch (err) {
-      const e = err as { name?: string; message?: string; code?: string; details?: { hash?: string | null } };
-      $backBtn.disabled = false;
-      if (e?.name === "NotAllowedError") {
-        showError(passkeyBlockedHint());
-      } else if (e?.name === "RelayerError" && e?.code === "WAIT_TIMEOUT") {
-        // The relayer stopped answering (or we out-polled it) but the tx may
-        // STILL land — re-enabling Confirm here is a double-send invitation.
-        // Keep THIS attempt's Confirm disabled (Back resets it for the next
-        // one) and point at the explorer instead.
-        showError("Still waiting for the network — this transfer may yet go through. Check the result before sending again.");
-        const hash = e.details?.hash;
-        $reviewStatus.innerHTML = hash && /^[0-9a-f]{64}$/i.test(hash)
-          ? `<a href="${EXPLORER_BASE}/tx/${hash}" target="_blank" rel="noopener">Check status on Stellar Expert →</a>`
-          : "";
-        return;
-      } else {
-        showError(`Couldn't send: ${e?.message ?? String(err)}`);
-      }
-      $reviewStatus.textContent = "";
-      $confirmBtn.disabled = false;
-    }
+    // Hand off to /sign/ which owns the passkey ceremony, submission, and result.
+    // The view already captured all the raw descriptor fields we need.
+    const v = pending.view;
+    const req: SignRequest = {
+      v: 1,
+      kind: "transfer",
+      account: contractId,
+      operation: {
+        type: "transfer",
+        token: v.token,
+        to: v.to,
+        amountRaw: v.amountRaw.toString(),
+        decimals: v.decimals,
+        code: v.code,
+      },
+      title: `Send ${pending.amountLabel} to ${pending.toLabel}`,
+      submitMode: "relayer",
+      // After /sign/ confirms and submits, it navigates back to /account/.
+      // The account page shows the updated balance; the explorer link is
+      // available via the tx hash that /sign/ appends to the return URL.
+      returnTarget: { type: "route", url: "/account/" },
+    };
+    const id = stashSignRequest(req);
+    window.location.href = `/sign/?req=${id}`;
   }
 
   void main();

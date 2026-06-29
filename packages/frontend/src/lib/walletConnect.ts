@@ -169,7 +169,7 @@ export interface KitLike {
   signTransaction(
     xdr: string,
     opts?: { networkPassphrase?: string; address?: string; path?: string },
-  ): Promise<{ signedTxXdr: string; signerAddress?: string }>;
+  ): Promise<{ signedTxXdr: string; signerAddress?: string; submitted?: true }>;
 }
 
 /**
@@ -302,10 +302,19 @@ export function restore(): WalletSession | null {
   return restoreWith(StellarWalletsKit as unknown as KitLike, defaultStorage());
 }
 
-/** Sign a transaction XDR with the active wallet (SEP-43: sign, not submit). */
+/**
+ * Sign (or submit) a transaction XDR with the active wallet.
+ *
+ * SEP-43 wallets return `{ signedTxXdr }` (a signed XDR the dApp must submit).
+ * The Nido smart-account path may instead have the relayer SUBMIT the tx
+ * on-chain (model A) and return `{ signedTxXdr: <tx hash>, submitted: true }`.
+ * When `submitted` is `true` the caller MUST NOT re-broadcast — `signedTxXdr`
+ * is the on-chain transaction hash. The `submitted?: true` field is additive;
+ * legacy callers that ignore it keep working with the signed-XDR contract.
+ */
 export async function signTransaction(
   xdr: string,
   opts?: { networkPassphrase?: string; address?: string; path?: string },
-): Promise<{ signedTxXdr: string; signerAddress?: string }> {
+): Promise<{ signedTxXdr: string; signerAddress?: string; submitted?: true }> {
   return StellarWalletsKit.signTransaction(xdr, opts);
 }

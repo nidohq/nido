@@ -50,6 +50,16 @@ describe('parseSignReturn', () => {
       status: 'ok', kind: 'message', result: 'ZZZ',
     });
   });
+  it('extracts a submitted tx hash (relayer already broadcast)', () => {
+    expect(parseSignReturn('?nido_submitted=DEADBEEF&kind=tx')).toEqual({
+      status: 'submitted', kind: 'tx', result: 'DEADBEEF',
+    });
+  });
+  it('nido_signed takes precedence over nido_submitted when both present', () => {
+    expect(parseSignReturn('?nido_signed=AAAA&nido_submitted=BBBB&kind=tx')).toEqual({
+      status: 'ok', kind: 'tx', result: 'AAAA',
+    });
+  });
   it('reports cancellation', () => {
     expect(parseSignReturn('?nido_sign=cancelled')).toEqual({ status: 'cancelled' });
   });
