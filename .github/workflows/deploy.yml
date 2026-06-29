@@ -58,3 +58,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Name resolver: serves <subdomain>.nido.fyi/.well-known/nido.json. Its
+      # route is more specific than the proxy's "*.nido.fyi/*", so Cloudflare
+      # dispatches the well-known path here and everything else stays on the
+      # proxy. Same token scopes as the proxy (Workers Scripts:Edit + Routes:Edit).
+      - name: Deploy nido-resolver worker
+        run: npx wrangler deploy --config infra/nido-resolver/wrangler.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
