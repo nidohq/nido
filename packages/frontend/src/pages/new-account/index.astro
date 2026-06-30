@@ -87,34 +87,30 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         </div>
         <h1 class="disp" style="font-weight:800; font-size:26px; margin-top:28px;">Setting up your Nido</h1>
 
-        <div style="display:flex; flex-direction:column; gap:13px; margin-top:24px; width:100%; max-width:320px;">
-          <div class="checkitem" id="check-0" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
-            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
-            <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-              <span class="check-text" style="font-size:18px; font-weight:600; white-space:nowrap;">Locked to you</span>
-              <span class="check-sub" id="sub-0" style="display:none; font-size:14px; line-height:1.35; color:var(--mut); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
-            </span>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:24px; width:100%; max-width:340px;">
+          <div class="setup-card" id="check-0">
+            <span class="check-mark"></span>
+            <span class="check-text">Locked to you</span>
           </div>
-          <div class="checkitem" id="check-1" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
-            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
-            <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-              <span class="check-text" style="font-size:18px; font-weight:600; white-space:nowrap;">Publishing to Stellar</span>
-              <span class="check-sub" id="sub-1" style="display:none; font-size:14px; line-height:1.35; color:var(--mut); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
-            </span>
+          <div class="setup-card" id="check-1">
+            <span class="check-mark"></span>
+            <span class="check-text">Preparing transaction</span>
           </div>
-          <div class="checkitem" id="check-2" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
-            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
-            <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-              <span class="check-text" style="font-size:18px; font-weight:600; white-space:nowrap;">Adding testnet funds</span>
-              <span class="check-sub" id="sub-2" style="display:none; font-size:14px; line-height:1.35; color:var(--mut); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
-            </span>
+          <div class="setup-card" id="check-2">
+            <span class="check-mark"></span>
+            <span class="check-text">Submitting to the network</span>
           </div>
-          <div class="checkitem" id="check-3" style="display:flex; align-items:flex-start; gap:12px; opacity:.4; transition:opacity .3s;">
-            <span class="check-mark" style="width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; margin-top:1px;"></span>
-            <span style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-              <span class="check-text" style="font-size:18px; font-weight:600; white-space:nowrap;">Your Nido is ready</span>
-              <span class="check-sub" id="sub-3" style="display:none; font-size:14px; line-height:1.35; color:var(--mut); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
-            </span>
+          <div class="setup-card" id="check-3">
+            <span class="check-mark"></span>
+            <span class="check-text">Confirming on-chain</span>
+          </div>
+          <div class="setup-card" id="check-4">
+            <span class="check-mark"></span>
+            <span class="check-text">Finalizing your wallet</span>
+          </div>
+          <div class="setup-card" id="check-5">
+            <span class="check-mark"></span>
+            <span class="check-text">Your Nido is ready</span>
           </div>
         </div>
       </div>
@@ -173,6 +169,23 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   #preparing-section:not(.hidden) { display: flex; flex-direction: column; }
   /* On a reservation failure the flow stops here, so halt the spinner. */
   #preparing-section.is-error .nest-ring { animation-play-state: paused; }
+
+  /* Setting-up checklist — full-sized boxed checkbox cards. A card dims while
+     pending, lifts (accent border + soft shadow) while active, and shows a teal
+     square checkmark when done. renderCheck fills the square .check-mark slot. */
+  .setup-card {
+    display: flex; align-items: center; gap: 14px;
+    padding: 13px 15px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--paper-2);
+    opacity: .5;
+    transition: opacity .3s ease, border-color .3s ease, box-shadow .3s ease;
+  }
+  .setup-card.is-active { opacity: 1; border-color: var(--acc); box-shadow: var(--sh-1); }
+  .setup-card.is-done { opacity: 1; }
+  .setup-card .check-mark { width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; }
+  .setup-card .check-text { font-size: 16px; font-weight: 600; color: var(--ink); line-height: 1.2; }
 </style>
 
 <script>
@@ -197,7 +210,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
   import { NATIVE_SAC_ID, RELAYER_SIM_SOURCE, RELAYER_URL } from "../../lib/network";
-  import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation, type RelayerStatus } from "../../lib/relayerClient";
+  import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
   import { syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
@@ -261,35 +274,27 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     $errorBox.style.display = "none";
   }
 
-  // Animated "Setting up your Nido" checklist. Each step is one of:
-  //   "pending" (dim ring) · "active" (spinner) · "done" (teal check).
-  const CHECK_LABELS = ["check-0", "check-1", "check-2", "check-3"];
-
-  // Live sub-step ticker under a main step. Only the active step shows one;
-  // it's cleared automatically when the step is marked done or pending.
-  function setTicker(i: number, text: string) {
-    const sub = document.getElementById(`sub-${i}`);
-    if (!sub) return;
-    sub.textContent = text;
-    sub.style.display = text ? "block" : "none";
-  }
+  // Animated "Setting up your Nido" checklist — full-sized boxed checkbox cards.
+  // Each step is one of: "pending" (dim box) · "active" (spinner) · "done" (teal
+  // checkmark). The friendbot funding that backs "Finalizing your wallet" runs
+  // concurrently behind the scenes and is never surfaced as a testnet detail.
+  const CHECK_LABELS = ["check-0", "check-1", "check-2", "check-3", "check-4", "check-5"];
 
   function renderCheck(i: number, state: "pending" | "active" | "done") {
     const item = document.getElementById(CHECK_LABELS[i]);
     if (!item) return;
     const mark = item.querySelector(".check-mark") as HTMLElement;
-    item.style.opacity = state === "pending" ? ".4" : "1";
-    // A step only carries a ticker while it's the active one.
-    if (state !== "active") setTicker(i, "");
+    item.classList.toggle("is-active", state === "active");
+    item.classList.toggle("is-done", state === "done");
     if (state === "done") {
       mark.innerHTML =
-        `<span style="width:24px;height:24px;border-radius:50%;background:var(--good);display:grid;place-items:center;">` +
-        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>`;
+        `<span style="width:28px;height:28px;border-radius:8px;background:var(--good);display:grid;place-items:center;">` +
+        `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>`;
     } else if (state === "active") {
       mark.innerHTML =
-        `<svg class="spin" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg>`;
+        `<svg class="spin" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg>`;
     } else {
-      mark.innerHTML = `<span style="width:24px;height:24px;border-radius:50%;border:2px solid var(--line);display:block;"></span>`;
+      mark.innerHTML = `<span style="width:28px;height:28px;border-radius:8px;border:2px solid var(--line);display:block;"></span>`;
     }
   }
 
@@ -429,10 +434,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   if (contractId) $accountChip.title = contractId;
   // First step is in progress.
   $step1.classList.add("on");
-  renderCheck(0, "pending");
-  renderCheck(1, "pending");
-  renderCheck(2, "pending");
-  renderCheck(3, "pending");
+  setCheckProgress(0, -1);
 
   if (!contractId && !isSetupReservation) {
     showError("That link looks off. Please start again from the home page.");
@@ -653,10 +655,11 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     }
 
     try {
-      // 0 · "Locked to you" is already done; main step 1 · "Publishing to Stellar"
-      // begins. Its ticker narrates the sub-steps: prepare → submit → confirm.
+      // 0 · "Locked to you" is already done; 1 · "Preparing transaction" begins.
+      // Friendbot funding (a testnet-only detail) is already running from
+      // completeRegistration, concurrent with this whole deploy — it backs the
+      // "Finalizing your wallet" step below and is never surfaced to the user.
       setCheckProgress(1, 1);
-      setTicker(1, "preparing transaction…");
 
       if (!RELAYER_URL || !RELAYER_SIM_SOURCE) {
         throw new Error("Relayer is not configured for account setup.");
@@ -691,65 +694,46 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       const transaction = rpc.assembleTransaction(simTxn, sim).setTimeout(0).build();
       const { func, auth } = extractFuncAndAuth(transaction);
 
-      // Prepared — hand the signed call off to the relayer.
-      setTicker(1, "submitting to the network…");
+      // Prepared — 1 done, 2 · "Submitting to the network" begins.
+      setCheckProgress(2, 2);
       const submitted = await submitSorobanTransaction({ func, auth });
       if (!submitted.transactionId) {
         throw new Error("Relayer accepted account setup but returned no transaction id");
       }
 
-      // Submitted — now the long wait. Surface the relayer's own status plus a
-      // ledger heartbeat so the step reads as live rather than stalled.
-      const confirmLabel = (status: RelayerStatus | null) =>
-        status === "sent" ? "sent to the network"
-        : status === "submitted" ? "submitted — waiting for confirmation"
-        : status === "confirmed" ? "confirmed on-chain"
-        : "waiting for the network";
-      let tickStatus = "waiting for the network";
-      // Guards the ticker render: a late poll may fire after the wait is over and
-      // the step is already done — without this it would re-show a stale ticker.
-      let confirming = true;
-      const renderConfirmTicker = () => {
-        if (!confirming) return;
-        setTicker(1, `${tickStatus}…`);
-      };
-      renderConfirmTicker();
-      const confirmed = await waitForConfirmation(submitted.transactionId, undefined, {
-        onPoll: ({ status }) => {
-          tickStatus = confirmLabel(status);
-          renderConfirmTicker();
-        },
-      });
-      confirming = false;
+      // Submitted — 2 done, 3 · "Confirming on-chain" begins (the long wait).
+      setCheckProgress(3, 3);
+      const confirmed = await waitForConfirmation(submitted.transactionId);
       if (!confirmed.hash) throw new Error("Relayer confirmed account setup without a transaction hash");
 
       activateAccount(contractId!);
       clearSetupSaltCookie(contractId!);
       await syncNidoStorageViaBridge();
 
-      // Confirmed — main step 1 done; 2 · "Adding testnet funds" begins.
-      setCheckProgress(2, 2);
-      setTicker(2, "requesting testnet funds…");
-      let fundingComplete = true;
+      // Confirmed — 3 done, 4 · "Finalizing your wallet" begins. Behind this card
+      // we drain the friendbot-funded keypair into the account; it must follow
+      // deploy since the account contract is the transfer destination. The funding
+      // itself already ran in parallel with steps 1–3, so this is usually a quick
+      // transfer rather than a fresh wait.
+      setCheckProgress(4, 4);
       try {
         await drainTestnetFunding(server, contractId!);
-        // Funded — 3 · "Your Nido is ready" begins.
-        setCheckProgress(3, 3);
       } catch (fundingErr) {
-        fundingComplete = false;
-        console.warn("[nido] testnet funding failed", fundingErr);
-        renderCheck(2, "pending");
-        renderCheck(3, "pending");
+        console.warn("[nido] wallet finalize failed", fundingErr);
+        renderCheck(4, "pending");
+        renderCheck(5, "pending");
         $deployNestSpinning.style.display = "none";
         $deployNestStatic.style.display = "block";
         showError(
           fundingErr instanceof Error
-            ? `Testnet funding failed after setup: ${fundingErr.message}`
-            : "Testnet funding failed after setup."
+            ? `Couldn't finish setting up your wallet: ${fundingErr.message}`
+            : "Couldn't finish setting up your wallet."
         );
         return;
       }
-      if (fundingComplete) setCheckProgress(4, -1);
+
+      // Finalized — every card lands its checkmark, including "Your Nido is ready".
+      setCheckProgress(6, -1);
       $deployNestSpinning.style.display = "none";
       $deployNestStatic.style.display = "block";
 
