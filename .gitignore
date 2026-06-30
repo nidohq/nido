@@ -62,6 +62,9 @@ test-results/
 /playwright-report/
 /blob-report/
 
+# e2e create-run perf artifacts (raw traces + aggregates; regenerate with `just perf-create`)
+/perf-results/
+
 # testnet bank secret (never commit)
 tests/.env.testnet
 .env.testnet

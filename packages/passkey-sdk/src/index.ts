@@ -99,3 +99,6 @@ export * from './sessionKey.js';
 export * from './syntheticAssertion.js';
 
 export * from './friendSigning.js';
+
+export { PERF_PREFIX, markName, parseMarkName, perfMark, clearPerfMarks } from './perf.js';
+export type { Edge } from './perf.js';

@@ -110,3 +110,15 @@ test-e2e-testnet: build-astro
     set -euo pipefail
     if [ -f tests/.env.testnet ]; then set -a; source tests/.env.testnet; set +a; fi
     npx playwright test --project=testnet-chromium --project=testnet-webkit
+
+# E2E create-run perf harness: REAL CDP virtual authenticator on REAL testnet.
+# Runs the perf spec PERF_RUNS times (default 5), prints a per-phase
+# `% of total` table, and writes perf-results/<ts>-create.json (gitignored).
+# Investigation tool, NOT a CI gate — never fails on slowness. Builds the
+# frontend first; sources tests/.env.testnet (NIDO_TEST_BANK_SECRET skips
+# friendbot for the name submitter). Usage: `just perf-create` or `just perf-create 10`.
+perf-create runs="5": build-astro
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -f tests/.env.testnet ]; then set -a; source tests/.env.testnet; set +a; fi
+    PERF_RUNS={{runs}} npx playwright test --project=testnet-chromium tests/e2e/testnet/account-create-perf.testnet.spec.ts
