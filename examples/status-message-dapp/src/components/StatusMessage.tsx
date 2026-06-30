@@ -1,4 +1,5 @@
 import { isContractId, RelayerError } from "@nidohq/passkey-sdk"
+import { resolveNidoName, lookupNidoName } from "../lib/nidoResolver"
 import { accountOrigin } from "@nidohq/stellar-wallets-kit-module"
 import { Button, Card, Icon, Input, Text } from "@stellar/design-system"
 import { useEffect, useState } from "react"
@@ -148,6 +149,12 @@ export const StatusMessage = () => {
 	// The author whose status is currently displayed (set on read SUCCESS) —
 	// the tip affordance attaches to THIS address, not the still-editable input.
 	const [lookupAuthor, setLookupAuthor] = useState<string | null>(null)
+	const [lookupError, setLookupError] = useState<string | null>(null)
+	// Reverse-resolved Nido names (resolver `.well-known/nido.json`) for the
+	// connected account and the displayed author — shown alongside / instead of
+	// the raw C-address when the account has a registered name.
+	const [accountName, setAccountName] = useState<string | null>(null)
+	const [authorName, setAuthorName] = useState<string | null>(null)
 
 	const [tipState, setTipState] = useState<TipState>("idle")
 	const [tipError, setTipError] = useState<string>()
@@ -178,6 +185,32 @@ export const StatusMessage = () => {
 	useEffect(() => {
 		if (address && !lookupAddr) setLookupAddr(address)
 	}, [address]) // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Reverse-resolve the connected account's Nido name via the resolver.
+	useEffect(() => {
+		setAccountName(null)
+		if (!nidoAccount) return
+		let cancelled = false
+		void lookupNidoName(nidoAccount, nidoBase()).then((n) => {
+			if (!cancelled) setAccountName(n)
+		})
+		return () => {
+			cancelled = true
+		}
+	}, [nidoAccount])
+
+	// Reverse-resolve the displayed author's Nido name via the resolver.
+	useEffect(() => {
+		setAuthorName(null)
+		if (!lookupAuthor) return
+		let cancelled = false
+		void lookupNidoName(lookupAuthor, nidoBase()).then((n) => {
+			if (!cancelled) setAuthorName(n)
+		})
+		return () => {
+			cancelled = true
+		}
+	}, [lookupAuthor])
 
 	// On return from the wallet's delegate page, clear the stored request and
 	// drop the ?delegation param so a reload doesn't re-trigger anything. If
@@ -351,9 +384,27 @@ export const StatusMessage = () => {
 		}
 	}
 
-	const lookup = () => {
-		const author = lookupAddr.trim() || address
-		if (author) void readStatus(author)
+	const lookup = async () => {
+		const raw = (lookupAddr.trim() || address || "").trim()
+		if (!raw) return
+		setLookupError(null)
+		// A C-/G- strkey reads directly; anything else is treated as a Nido name
+		// and resolved to its address via the resolver before reading.
+		if (/^[GC][A-Z2-7]{55}$/.test(raw)) {
+			void readStatus(raw)
+			return
+		}
+		setLookupBusy(true)
+		const resolved = await resolveNidoName(raw, nidoBase())
+		setLookupBusy(false)
+		if (!resolved) {
+			setLookupResult(undefined)
+			setLookupAuthor(null)
+			setLookupError(`No Nido account named “${raw}”.`)
+			return
+		}
+		setLookupAddr(resolved)
+		void readStatus(resolved)
 	}
 
 	// Delegate a tipping session key scoped to the XLM SAC, capped at 5 XLM per
@@ -450,6 +501,11 @@ export const StatusMessage = () => {
 
 				{nidoAccount && (
 					<Text as="p" size="sm" addlClassName={styles.accountLink}>
+						{accountName && (
+							<>
+								Your Nido name: <strong>{accountName}</strong> ·{" "}
+							</>
+						)}
 						<a
 							href={accountOrigin(nidoBase(), nidoAccount)}
 							target="_blank"
@@ -507,9 +563,12 @@ export const StatusMessage = () => {
 					<Input
 						id="status-lookup"
 						fieldSize="md"
-						placeholder="C… or G… address"
+						placeholder="C…/G… address or a Nido name"
 						value={lookupAddr}
-						onChange={(e) => setLookupAddr(e.target.value)}
+						onChange={(e) => {
+							setLookupAddr(e.target.value)
+							setLookupError(null)
+						}}
 					/>
 					<Button
 						variant="secondary"
@@ -521,8 +580,18 @@ export const StatusMessage = () => {
 						Read
 					</Button>
 				</div>
+				{lookupError && (
+					<Text as="div" size="sm" addlClassName={styles.result}>
+						<em>{lookupError}</em>
+					</Text>
+				)}
 				{lookupResult !== undefined && (
 					<Text as="div" size="sm" addlClassName={styles.result}>
+						{authorName && (
+							<div>
+								Status for <strong>{authorName}</strong>:
+							</div>
+						)}
 						{lookupResult === null ? (
 							<em>No status set for that account.</em>
 						) : (

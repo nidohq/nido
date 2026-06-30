@@ -1,0 +1,17 @@
+name = "nido-resolver"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+# stellar-sdk pulls Node built-ins (Buffer, etc.); enable the Workers Node shim.
+compatibility_flags = ["nodejs_compat"]
+
+# More specific than nido-proxy's "*.nido.fyi/*", so Cloudflare routes
+# /.well-known/nido.json here and everything else stays on the proxy.
+routes = [
+  { pattern = "*.nido.fyi/.well-known/nido.json", zone_name = "nido.fyi" }
+]
+
+[vars]
+NIDO_NETWORK = "testnet"
+NIDO_RPC_URL = "https://soroban-testnet.stellar.org"
+NIDO_REGISTRY_ID = "CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX"
+NIDO_NETWORK_PASSPHRASE = "Test SDF Network ; September 2015"
