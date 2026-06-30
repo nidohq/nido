@@ -7,20 +7,18 @@
  * signs the target contract's calls locally with that passkey (Touch ID /
  * device unlock at the dApp origin) and submits.
  *
- * Two flows share one signing core (`signSessionCallInPage`):
+ * Two flows share one signing core (`signSessionCallInPage`), and BOTH submit
+ * gaslessly through the Nido relayer: the signed `{func, auth}` pair ships to
+ * the relayer, whose channel accounts source + fee-bump the transaction. No fee
+ * payer, no friendbot anywhere in either path.
  *
- *  - `signUpdateMessageInPage` — the status-message write. A smart account
- *    (C-address) can't be a classic transaction source, so a throwaway
- *    friendbot-funded G-address pays the fee and submits; the smart account is
- *    only the auth *author*. Ported from the Nido frontend's `status-message`
- *    page so the example is self-contained.
+ *  - `signUpdateMessageInPage` — the status-message write. The smart account
+ *    (C-address) is only the auth *author*; recording simulation borrows the
+ *    relayer's public fund address as a throwaway source.
  *
- *  - `tipAuthorInPage` — a GASLESS native-XLM tip via a direct
+ *  - `tipAuthorInPage` — a native-XLM tip via a direct
  *    `SAC.transfer(smartAccount → author, amount)`. The session key is scoped
- *    to the XLM Stellar Asset Contract (with a wallet-installed spending
- *    limit), the signed `{func, auth}` pair goes to the Nido relayer, and the
- *    relayer's channel accounts source + fee-bump the transaction — no fee
- *    payer, no friendbot anywhere in the path.
+ *    to the XLM Stellar Asset Contract with a wallet-installed spending limit.
  */
 
 import {
@@ -39,24 +37,17 @@ import {
 import {
 	Address,
 	Asset,
-	Keypair,
 	Operation,
 	TransactionBuilder,
 	type Transaction,
 	nativeToScVal,
 	rpc,
-	type xdr,
 } from "@stellar/stellar-sdk"
 import { Client } from "status_message"
 import { rpcUrl, networkPassphrase, relayerUrl, stellarNetwork } from "../contracts/util"
-import { getFriendbotUrl } from "../util/friendbot"
 import { withPasskeySheet } from "./passkeySheet"
 import { decodeContractCall, buildApprovalDetails } from "./describeAuthEntry"
 import { findRuleForPubkey, fetchVerifierAddress } from "./policyChainFetch"
-
-// Same storage key the Nido frontend uses for its status-message fee payer, so tooling
-// that seeds a funded bank account (e.g. the e2e harness) funds this too.
-const FEE_PAYER_KEY = "sm:keypairSecret"
 
 /** Native-XLM Stellar Asset Contract id for the configured network — the
  *  target contract a tipping session key is scoped to. */
@@ -64,12 +55,12 @@ export const XLM_SAC_ID = Asset.native().contractId(networkPassphrase)
 
 /**
  * Recording-mode simulation needs SOME existing on-chain source account; the
- * source neither signs nor pays in the gasless path (the relayer's channel
+ * source neither signs nor pays in either gasless path (the relayer's channel
  * accounts become the real source later). The Nido relayer's fund address is
  * public and always funded on testnet, so it serves as a constant sim source
  * — no friendbot, no locally stored keypair required.
  */
-const TIP_SIM_SOURCE = "GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2"
+const RELAYER_SIM_SOURCE = "GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2"
 
 /** True when a session passkey is already delegated for (account, contract). */
 export function hasSessionKey(account: string, contractId: string): boolean {
@@ -84,21 +75,6 @@ function specParamNames(client: Client, fnName: string): string[] {
 	} catch {
 		return []
 	}
-}
-
-/**
- * Get (or lazily friendbot-fund) a throwaway G-address to pay fees and submit.
- * The smart account can't be a tx source; this classic account is.
- * (Classic self-submission only — the relayer tip path never calls this.)
- */
-async function getOrCreateFeePayer(): Promise<Keypair> {
-	const stored = localStorage.getItem(FEE_PAYER_KEY)
-	if (stored) return Keypair.fromSecret(stored)
-	const kp = Keypair.random()
-	const resp = await fetch(getFriendbotUrl(kp.publicKey()))
-	if (!resp.ok) throw new Error(`Friendbot funding failed: ${resp.statusText}`)
-	localStorage.setItem(FEE_PAYER_KEY, kp.secret())
-	return kp
 }
 
 export type SignProgress = (message: string) => void
@@ -126,9 +102,8 @@ export interface BuiltSessionCall<T extends InjectableTx> {
  * material, let the caller build + recording-simulate the call, discover the
  * on-chain context rule for the key, compute the OZ v0.7 auth digest, run the
  * passkey ceremony inside the Nido-styled sheet, and inject the signature into
- * the built tx's auth entry. Submission is the CALLER's concern — the
- * update_message flow self-submits with its own fee payer, the tip flow ships
- * `{func, auth}` to the relayer.
+ * the built tx's auth entry. Submission is the CALLER's concern — both flows
+ * ship `{func, auth}` to the relayer.
  */
 export async function signSessionCallInPage<T extends InjectableTx>(opts: {
 	account: string
@@ -231,27 +206,25 @@ export async function signUpdateMessageInPage(opts: {
 	const { account, message, contractId, onProgress } = opts
 	const note = (m: string) => onProgress?.(m)
 
-	// Assigned inside buildTx (which the core always runs before returning);
-	// needed again below to sign the final fee-bearing envelope.
-	let keypair: Keypair | null = null
-
-	const { tx: authTxn } = await signSessionCallInPage({
+	const { tx: signedTx } = await signSessionCallInPage({
 		account,
 		targetContract: contractId,
+		// Signed entry ships to the relayer — keep the validity window tight
+		// (~10 min), mirroring the wallet's relayer mode.
+		expirationOffset: 120,
 		approvalTitle: "Approve status update",
 		onProgress,
 		buildTx: async () => {
-			note("Funding a fee payer…")
-			keypair = await getOrCreateFeePayer()
-
 			note("Building transaction…")
-			// A fresh client whose source/fee-payer is the funded G-address (the
-			// smart account is only the auth author, passed as `author`).
+			// Recording simulation borrows the relayer's public fund address as the
+			// source; the smart account is only the auth author. The relayer's
+			// channel accounts source + fee-bump the real submission, so there is no
+			// fee payer or friendbot in the path.
 			const client = new Client({
 				contractId,
 				networkPassphrase,
 				rpcUrl,
-				publicKey: keypair.publicKey(),
+				publicKey: RELAYER_SIM_SOURCE,
 			})
 			const tx = await client.update_message({ message, author: account }, { simulate: true })
 			return {
@@ -262,54 +235,29 @@ export async function signUpdateMessageInPage(opts: {
 			}
 		},
 	})
-	if (!keypair) throw new Error("unreachable: fee payer not initialised")
 
-	note("Submitting…")
-	const server = new rpc.Server(rpcUrl)
-	// Re-simulate in enforce mode to recompute the footprint covering __check_auth.
-	const sim2 = await server.simulateTransaction(authTxn, undefined, "enforce")
-	if (rpc.Api.isSimulationError(sim2) || rpc.Api.isSimulationRestore(sim2)) {
-		throw new Error(`Re-simulation failed: ${"error" in sim2 ? sim2.error : "restore needed"}`)
-	}
-	const successSim2 = sim2 as rpc.Api.SimulateTransactionSuccessResponse
-	const newSorobanData = successSim2.transactionData.build()
-	const newResourceFee = BigInt(newSorobanData.resourceFee().toString())
-
-	// Round-trip through XDR to materialise a Transaction in THIS bundle's
-	// stellar-sdk (TransactionBuilder.cloneFrom's instanceof check fails on the
-	// bindings' bundled copy). Signed auth entries survive in the XDR.
-	const reparsedAuthTxn = TransactionBuilder.fromXDR(
-		authTxn.toEnvelope().toXDR("base64"),
+	note("Submitting via relayer…")
+	// The relayer re-simulates server-side in enforce mode (running the smart
+	// account's __check_auth + the session-key policy), sources the tx from a
+	// channel account, and fee-bumps it from the fund address. We ship ONLY the
+	// host function + the passkey-signed auth entry. Materialise in THIS bundle's
+	// stellar-sdk first (the bindings ship their own copy); the signed auth
+	// entries survive the XDR round-trip.
+	const reparsed = TransactionBuilder.fromXDR(
+		signedTx.toEnvelope().toXDR("base64"),
 		networkPassphrase,
 	) as Transaction
-	const oldResourceFee = BigInt(
-		(reparsedAuthTxn.toEnvelope().v1().tx().ext().value() as xdr.SorobanTransactionData | undefined)
-			?.resourceFee()
-			.toString() ?? "0",
-	)
-	const classicFee = BigInt(reparsedAuthTxn.fee) - oldResourceFee
-	const finalTx = TransactionBuilder.cloneFrom(reparsedAuthTxn, {
-		fee: (classicFee + newResourceFee).toString(),
-		sorobanData: newSorobanData,
-		networkPassphrase,
-	}).build()
-	finalTx.sign(keypair)
-
-	const sendResult = await server.sendTransaction(finalTx)
-	if (sendResult.status === "ERROR") {
-		throw new Error(
-			`Transaction rejected: ${sendResult.errorResult?.toXDR("base64") ?? "unknown"}`,
-		)
+	const { func, auth } = extractFuncAndAuth(reparsed)
+	if (auth.length > 1) {
+		throw new Error(`Expected a single auth entry, got ${auth.length} — only the first is passkey-signed.`)
 	}
-	let getResult = await server.getTransaction(sendResult.hash)
-	while (getResult.status === "NOT_FOUND") {
-		await new Promise((r) => setTimeout(r, 1500))
-		getResult = await server.getTransaction(sendResult.hash)
+	const submitted = await submitSorobanTransaction({ func, auth }, relayerUrl)
+	if (!submitted.transactionId) {
+		throw new Error("Relayer accepted the update but returned no transaction id")
 	}
-	if (getResult.status !== "SUCCESS") {
-		throw new Error(`Transaction failed: ${getResult.status}`)
-	}
-	return { hash: sendResult.hash }
+	const confirmed = await waitForConfirmation(submitted.transactionId, relayerUrl)
+	if (!confirmed.hash) throw new Error("Relayer confirmed without a transaction hash")
+	return { hash: confirmed.hash }
 }
 
 /**
@@ -356,7 +304,7 @@ export async function tipAuthorInPage(opts: {
 		buildTx: async () => {
 			note("Building transaction…")
 			const server = new rpc.Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
-			const source = await server.getAccount(TIP_SIM_SOURCE)
+			const source = await server.getAccount(RELAYER_SIM_SOURCE)
 			const op = Operation.invokeContractFunction({
 				contract: XLM_SAC_ID,
 				function: "transfer",
