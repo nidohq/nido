@@ -1,39 +1,20 @@
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import { useIdentity } from './fixtures';
+import { createNidoAccount } from './createFlow';
 
 /**
  * Create + deploy a fresh v0.7 account whose primary passkey is the shim's
  * `identityLabel` identity (distinct per actor — without this, every account
  * registers the SAME 'default' key, so the originator and a friend would share
- * a keypair and the recovery test would be meaningless). Mirrors
- * account-lifecycle.testnet.spec.ts steps 1-3. Returns the C-address + its
- * subdomain host.
+ * a keypair and the recovery test would be meaningless). Returns the C-address
+ * + its subdomain host.
  */
 export async function createAndDeployAs(
   page: Page,
   PORT: number,
   identityLabel: string,
 ): Promise<{ cAddress: string; host: string }> {
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
-  await page.locator('#create-btn').click();
-  await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
-  const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
-  expect(cAddress).toMatch(/^C[A-Z2-7]{55}$/);
-
-  const setupHref = await page.locator('#setup-link').getAttribute('href');
-  const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-  const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
-  await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
-    waitUntil: 'domcontentloaded',
-  });
-  // Distinct identity for THIS account's primary passkey, set BEFORE register.
-  // The shim mints the create()-time key from `nextLabel`; the stored
-  // credentialId then deterministically reproduces the key on every get().
-  await useIdentity(page, identityLabel);
-  await page.locator('#register-btn').click();
-  await page.locator('#done-section').waitFor({ state: 'visible', timeout: 120_000 });
-  return { cAddress, host };
+  return createNidoAccount(page, PORT, { identityLabel });
 }
 
 /**

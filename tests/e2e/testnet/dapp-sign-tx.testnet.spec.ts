@@ -1,4 +1,5 @@
 import { test, expect, SEED_HEX } from '../../support/fixtures';
+import { createNidoAccount } from '../../support/createFlow';
 import { seedBank } from '../../support/testnet';
 import { seedCredential } from '../../support/auth/seed';
 import {
@@ -87,28 +88,11 @@ test.describe('@testnet dapp tx signing (udpate_message)', () => {
     // PART A — create + deploy a v0.7 account (mirrors account-lifecycle)
     // -----------------------------------------------------------------
 
-    // 1) Home → create account (friendbot fund + factory.get_c_address).
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
-    await page.locator('#create-btn').click();
-    await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
-    const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
-    expect(cAddress).toMatch(/^C[A-Z2-7]{55}$/);
-
-    // 2) Follow the setup link (carries ?key=<secret>) to the C-address subdomain.
-    const setupHref = await page.locator('#setup-link').getAttribute('href');
-    expect(setupHref).toContain('/new-account/');
-    expect(setupHref).toContain('key=');
-    const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-    const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
-    await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
-      waitUntil: 'domcontentloaded',
-    });
-
-    // 3) Register passkey (shim) → auto-deploy → #done-section. Registration
-    //    stores the primary ('default') credential on the C-address origin, so
-    //    the /sign/ page (same origin) finds it via loadCredential.
-    await page.locator('#register-btn').click();
-    await expect(page.locator('#done-section')).toBeVisible({ timeout: 120_000 });
+    // 1-3) Create + deploy via the My Nido menu, register the passkey (shim) →
+    //       #done-section. Registration stores the primary ('default') credential
+    //       on the C-address origin, so the /sign/ page (same origin) finds it via
+    //       loadCredential. C-address + its subdomain host.
+    const { cAddress, host } = await createNidoAccount(page, PORT);
     const cred = await page.evaluate(
       (cid) => localStorage.getItem(`passkey:${cid}:credentialId`),
       cAddress,

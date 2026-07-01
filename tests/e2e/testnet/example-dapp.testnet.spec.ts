@@ -1,4 +1,5 @@
 import { test, expect, useIdentity } from '../../support/fixtures';
+import { createNidoAccount } from '../../support/createFlow';
 import { seedBank, withRetry } from '../../support/testnet';
 import {
   Account,
@@ -126,20 +127,8 @@ test.describe('@testnet example status-message dApp — Nido delegation + in-pag
     });
 
     // -------- PART A — create + deploy a v0.7 account (wallet frontend) --------
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
-    await page.locator('#create-btn').click();
-    await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
-    const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
-    expect(cAddress).toMatch(/^C[A-Z2-7]{55}$/);
-
-    const setupHref = await page.locator('#setup-link').getAttribute('href');
-    const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-    const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
-    await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
-      waitUntil: 'domcontentloaded',
-    });
-    await page.locator('#register-btn').click();
-    await expect(page.locator('#done-section')).toBeVisible({ timeout: 120_000 });
+    // Create via the My Nido menu (real create path); returns C-address + host.
+    const { cAddress, host } = await createNidoAccount(page, PORT);
 
     // -------- PART B — open the EXAMPLE and seed the connected Nido account ----
     // The example's storage util JSON-encodes values; WalletProvider reads these

@@ -1,5 +1,6 @@
 import { test, expect } from '../../support/fixtures';
 import { seedBank, uniqueName } from '../../support/testnet';
+import { createNidoAccount } from '../../support/createFlow';
 
 const PORT = Number(process.env.E2E_PORT || 4399);
 
@@ -9,26 +10,10 @@ test.describe('@testnet send to a named nido', () => {
   // ~20-30s per signAndSubmit (queue + fee-bump + confirmation polling).
   test.describe.configure({ timeout: 360_000 });
 
-  // Helper: create an account via the home page, register its passkey (shim),
-  // and return its C-address. The page host must be the C-address subdomain so
-  // WebAuthn rpId matches the shim credential.
-  async function createAccount(page: import('@playwright/test').Page) {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
-    // Account creation lives in the My Nido menu: "Get started" opens it, then
-    // .mn-create-btn runs createNido (friendbot + factory) and navigates to the
-    // new account's C-address subdomain at /new-account/?key=<secret>.
-    await page.locator('#get-started-hero').click();
-    await expect(page.locator('[data-mynido]')).toHaveClass(/mynido-open/);
-    await page.locator('.mn-create-btn').click();
-    await page.waitForURL(/\/new-account\/\?key=/, { timeout: 60_000 });
-    // The C-address is the first label of the (now navigated) subdomain host.
-    const host = new URL(page.url()).host;
-    const cAddress = host.split('.')[0].toUpperCase();
-    expect(cAddress).toMatch(/^C[A-Z2-7]{55}$/);
-    await page.locator('#register-btn').click();
-    await expect(page.locator('#done-section')).toBeVisible({ timeout: 120_000 });
-    return { cAddress, host };
-  }
+  // Create an account via the My Nido menu, register its passkey (shim), return
+  // its C-address + subdomain host. The page host must be the C-address subdomain
+  // so WebAuthn rpId matches the shim credential.
+  const createAccount = (page: import('@playwright/test').Page) => createNidoAccount(page, PORT);
 
   test('claim a name on the recipient, then send to it by name', async ({ page, context }) => {
     await seedBank(context);

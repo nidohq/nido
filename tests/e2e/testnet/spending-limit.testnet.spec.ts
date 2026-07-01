@@ -1,5 +1,6 @@
 import { test, expect, SEED_HEX } from '../../support/fixtures';
 import { seedBank, withRetry, FRIENDBOT_URL } from '../../support/testnet';
+import { createNidoAccount } from '../../support/createFlow';
 import { credentialFor } from '../../support/auth/seed';
 import { credentialIdForLabel, privateKeyForCredentialId } from '../../support/auth/vault';
 import { buildSyntheticAssertion } from '../../../packages/passkey-sdk/src/syntheticAssertion';
@@ -359,18 +360,9 @@ test.describe('@testnet spending-limit session key: delegate-page install + rela
     };
 
     // -----------------------------------------------------------------
-    // PART A — create + deploy a fresh smart account (send-to-name pattern)
+    // PART A — create + deploy a fresh smart account (My Nido menu path)
     // -----------------------------------------------------------------
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
-    await page.locator('#get-started-hero').click();
-    await expect(page.locator('[data-mynido]')).toHaveClass(/mynido-open/);
-    await page.locator('.mn-create-btn').click();
-    await page.waitForURL(/\/new-account\/\?key=/, { timeout: 60_000 });
-    const host = new URL(page.url()).host;
-    const cAddress = host.split('.')[0].toUpperCase();
-    expect(cAddress).toMatch(/^C[A-Z2-7]{55}$/);
-    await page.locator('#register-btn').click();
-    await expect(page.locator('#done-section')).toBeVisible({ timeout: 120_000 });
+    const { cAddress, host } = await createNidoAccount(page, PORT);
     annotate('cAddress', cAddress);
 
     // -----------------------------------------------------------------
