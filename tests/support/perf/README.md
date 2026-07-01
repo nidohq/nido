@@ -16,10 +16,13 @@ just perf-create 10     # 10 runs
 ```
 
 Builds the frontend, then runs `account-create-perf.testnet.spec.ts` under the
-`testnet-chromium` project. Sources `tests/.env.testnet` if present
-(`NIDO_TEST_BANK_SECRET` skips friendbot for the name submitter). The frontend
-build must have `PUBLIC_RELAYER_URL` / `PUBLIC_RELAYER_SIM_SOURCE` configured —
-account creation goes through the Channels relayer.
+`testnet-chromium` project. Account creation goes through the Channels relayer,
+so the build needs `PUBLIC_RELAYER_URL` / `PUBLIC_RELAYER_SIM_SOURCE`; the recipe
+bakes in the canonical testnet values (same as `deploy.yml` /
+`infra/relayer/README.md`), so it works out of the box — the create flow
+self-funds via friendbot, no bank secret required. Override either var (or add
+`NIDO_TEST_BANK_SECRET`) via `tests/.env.testnet`. First run downloads Chromium
+if missing (`npx playwright install chromium`).
 
 Output: a markdown table on the console + `perf-results/<ISO-ts>-create.json`
 (raw per-run traces + aggregate; gitignored). Each run drives the real reserve

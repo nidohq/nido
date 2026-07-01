@@ -23,12 +23,13 @@ test.describe('@testnet create-run perf', () => {
   // fail, under testnet-webkit (which also matches this dir).
   test.skip(({ browserName }) => browserName !== 'chromium', 'CDP virtual authenticator is Chromium-only');
 
-  // Each create-run is a friendbot fund + factory deploy + ~82s poll ceiling +
-  // funding drain; budget generously and scale with the run count.
-  test.describe.configure({ timeout: 200_000 * RUNS });
+  // Each create-run is a reservation + friendbot fund + factory deploy + ~82s
+  // poll ceiling + funding drain; budget generously and scale with the run count.
+  test.describe.configure({ timeout: 260_000 * RUNS });
 
   test(`create lifecycle × ${RUNS} (real CDP authenticator on testnet)`, async ({ browser }, testInfo) => {
     const traces: Trace[] = [];
+    const failures: string[] = [];
 
     for (let i = 0; i < RUNS; i++) {
       const { context, page, cdp } = await newCdpRunCtx(browser);
@@ -48,12 +49,24 @@ test.describe('@testnet create-run perf', () => {
           type: 'perf-run',
           description: `run ${i + 1}: total ${Math.round(trace.totalMs)}ms · ${marks.length} marks · ${relay.length} /relay reqs · tx ${trace.txId ?? '—'}`,
         });
+      } catch (err) {
+        // Investigation tool, not a CI gate: real-chain flakiness on one run
+        // (slow friendbot, relayer poll ceiling, a dropped tx) must not sink the
+        // whole dataset. Record it, keep going, aggregate the successes.
+        const msg = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+        failures.push(`run ${i + 1}: ${msg}`);
+        testInfo.annotations.push({ type: 'perf-run-failed', description: `run ${i + 1}: ${msg}` });
       } finally {
         await context.close();
       }
     }
 
-    expect(traces.length).toBe(RUNS);
+    if (failures.length) {
+      // No silent truncation — say what was dropped.
+      // eslint-disable-next-line no-console
+      console.log(`\n${failures.length}/${RUNS} run(s) failed (real-chain flakiness):\n  ${failures.join('\n  ')}\n`);
+    }
+    expect(traces.length, `all ${RUNS} run(s) failed — no perf data`).toBeGreaterThan(0);
 
     const agg = aggregate(traces);
     const markdown = toMarkdownTable(agg);
@@ -98,9 +111,31 @@ async function driveCreateRun(page: Page, port: number): Promise<string> {
     waitUntil: 'domcontentloaded',
   });
 
-  // Reservation reserves the C-address, then enables "Continue".
+  // Reservation either reserves the C-address and enables "Continue", or fails
+  // into #error-box (e.g. a misconfigured relayer). Race them so a bad env fails
+  // fast with the real reason instead of a blind 60s "Continue never enabled".
   const continueBtn = page.locator('#preparing-continue');
-  await expect(continueBtn).toBeEnabled({ timeout: 60_000 });
+  const errorBox = page.locator('#error-box');
+  const outcome = await Promise.race([
+    expect(continueBtn)
+      .toBeEnabled({ timeout: 60_000 })
+      .then(() => 'ready' as const)
+      .catch(() => 'timeout' as const),
+    errorBox
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'error' as const)
+      .catch(() => 'timeout' as const),
+  ]);
+  if (outcome === 'error') {
+    const msg = ((await errorBox.textContent()) ?? '').trim();
+    throw new Error(
+      `Account reservation failed: ${msg || 'unknown error'} — is the relayer configured ` +
+        `(PUBLIC_RELAYER_URL / PUBLIC_RELAYER_SIM_SOURCE at build time)?`,
+    );
+  }
+  if (outcome === 'timeout') {
+    throw new Error('Reservation neither enabled Continue nor surfaced an error within 60s.');
+  }
   await continueBtn.click();
 
   // Redirect to the account's own subdomain (<cAddress>.localhost) new-account page.
@@ -110,15 +145,21 @@ async function driveCreateRun(page: Page, port: number): Promise<string> {
   );
 
   // Real ceremony: the virtual authenticator (installed on this page's target by
-  // newCdpRunCtx) satisfies navigator.credentials.create() with no shim. Either
-  // autopass already advanced to done, or the passkey step awaits a manual tap.
+  // newCdpRunCtx) satisfies navigator.credentials.create() with no shim. On
+  // Chromium the subdomain's `autopass` auto-starts the ceremony and advances
+  // straight into #deploy-section (both #register-btn and #done-section hidden
+  // for the whole deploy). If autopass did NOT start it (no post-redirect user
+  // activation), the passkey step is shown → tap #register-btn. Race the two,
+  // then wait out the full deploy (webauthn + factory sim + relayer submit +
+  // ~82s poll ceiling + funding drain).
   const done = page.locator('#done-section');
   const registerBtn = page.locator('#register-btn');
-  await expect(done.or(registerBtn).first()).toBeVisible({ timeout: 60_000 });
-  if (!(await done.isVisible())) {
-    await registerBtn.click();
-  }
-  await expect(done).toBeVisible({ timeout: 120_000 });
+  const first = await Promise.race([
+    registerBtn.waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'register' as const).catch(() => 'none' as const),
+    done.waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'done' as const).catch(() => 'none' as const),
+  ]);
+  if (first === 'register') await registerBtn.click();
+  await expect(done).toBeVisible({ timeout: 180_000 });
 
   return new URL(page.url()).hostname;
 }
