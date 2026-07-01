@@ -67,12 +67,15 @@ the shared naming) and the seam call sites: `new-account/index.astro`,
 
 ## Status / follow-ups
 
-This is the **foundation tier**. Relayer-side phases (`relayer.enforce`,
-`relayer.channel`, `relayer.feebump`, `relayer.rpc.*`) are defined in the
-taxonomy but not yet emitted — they need the Channels plugin instrumented
-(handler-boundary wrap) + a fly.io redeploy, surfacing a phase array on the
-`getTransaction` payload. The collector and reporter already accept them
-(`buildTrace({ relayerPhases })`), so wiring is additive.
+Relayer-side phases (server status bands `relayer.pending->submitted`,
+`relayer.submitted->confirmed`) are **wired end to end but dormant** until the
+Channels plugin instrumentation is deployed. The collector harvests a `phases`
+array off the `/relay` `getTransaction` response body (`startRelayCapture`) and
+`buildTrace({ relayerPhases })` folds it in; the reporter tags any `relayer.*`
+band as relayer-side. Until the relayer emits them the array is empty and the
+table shows only the browser phases (as in the reference trace). Deploy the
+relayer instrumentation (fly.io redeploy) to light them up — they split the ~5s
+`relayer.submit` and reveal where the confirm wait goes server-side.
 
 A committed reference trace under `docs/` is intentionally **not** fabricated —
 capture one with `just perf-create` against live testnet and commit the

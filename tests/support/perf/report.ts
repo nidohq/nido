@@ -8,6 +8,7 @@
 import {
   CREATE_PHASES,
   TOTAL_PHASE,
+  defaultWhere,
   parseMarkName,
   phaseDef,
   phaseRank,
@@ -41,7 +42,7 @@ export function percentile(xs: number[], p: number): number {
 }
 
 function whereOf(phase: string): Where {
-  return phaseDef(phase)?.where ?? 'browser';
+  return phaseDef(phase)?.where ?? defaultWhere(phase);
 }
 
 /**
@@ -74,7 +75,7 @@ export function stitch(marks: PerfMark[], relayerPhases: RelayerPhase[] = []): S
   for (const rp of relayerPhases) {
     spans.push({
       phase: rp.phase,
-      where: phaseDef(rp.phase)?.where ?? 'relayer',
+      where: whereOf(rp.phase),
       startMs: rp.ts ?? 0,
       endMs: (rp.ts ?? 0) + rp.durMs,
       durMs: rp.durMs,
@@ -142,7 +143,7 @@ export function aggregate(traces: Trace[]): Aggregate {
     const med = median(durs);
     phases.push({
       phase,
-      where: def?.where ?? 'browser',
+      where: def?.where ?? defaultWhere(phase),
       label: def?.label ?? phase,
       count: durs.length,
       medianMs: med,

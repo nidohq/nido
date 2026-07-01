@@ -164,4 +164,18 @@ describe('aggregate + markdown', () => {
     expect(md).toContain('factory.simulate');
     expect(md).toMatch(/\|\s*-+/); // separator row
   });
+
+  it('tags a relayer-emitted phase (even one not in the taxonomy) as relayer-side', () => {
+    // #132 emits dynamic band names like relayer.submitted->expired; the reporter
+    // must attribute any relayer.* phase to the relayer, not default it to browser.
+    const trace = buildTrace({
+      runId: 'r',
+      txId: 't',
+      marks: [{ name: markName('create-run', 'start'), startTime: 0 }, { name: markName('create-run', 'end'), startTime: 1000 }],
+      relayerPhases: [{ phase: 'relayer.submitted->expired', durMs: 400 }],
+    });
+    const agg = aggregate([trace]);
+    const p = agg.phases.find((x) => x.phase === 'relayer.submitted->expired')!;
+    expect(p.where).toBe('relayer');
+  });
 });

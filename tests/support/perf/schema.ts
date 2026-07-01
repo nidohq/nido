@@ -44,12 +44,12 @@ export const CREATE_PHASES: PhaseDef[] = [
   { key: 'factory.simulate', label: 'factory simulate (RPC)', where: 'browser' },
   { key: 'assemble.extract', label: 'assemble + extract XDR', where: 'browser' },
   { key: 'relayer.submit', label: 'relayer submit (HTTP)', where: 'browser' },
-  { key: 'relayer.receive', label: 'relayer: receive', where: 'relayer' },
-  { key: 'relayer.enforce', label: 'relayer: enforce re-sim', where: 'relayer' },
-  { key: 'relayer.channel', label: 'relayer: channel pick', where: 'relayer' },
-  { key: 'relayer.feebump', label: 'relayer: fee-bump + sign', where: 'relayer' },
-  { key: 'relayer.rpc.submit', label: 'relayer: rpc submit', where: 'relayer' },
-  { key: 'relayer.rpc.poll', label: 'relayer: rpc confirm-poll', where: 'relayer' },
+  // Server-side status bands, emitted by the Channels plugin instrumentation and
+  // harvested off the getTransaction payload (see relayer PR). Names are dynamic
+  // (`relayer.<from>-><to>`); the common happy-path bands are listed here for
+  // ordering + labels, and `defaultWhere` catches any other `relayer.*` band.
+  { key: 'relayer.pending->submitted', label: 'relayer: build→submit', where: 'relayer' },
+  { key: 'relayer.submitted->confirmed', label: 'relayer: ledger confirm', where: 'relayer' },
   { key: 'poll.confirm', label: 'browser poll → confirmed', where: 'browser' },
   { key: 'funding.drain', label: 'funding drain', where: 'browser' },
 ];
@@ -60,6 +60,15 @@ const PHASE_INDEX = new Map(CREATE_PHASES.map((p, i) => [p.key, i]));
 export function phaseDef(key: string): PhaseDef | undefined {
   const i = PHASE_INDEX.get(key);
   return i === undefined ? undefined : CREATE_PHASES[i];
+}
+
+/**
+ * Side for a phase not in the taxonomy. Relayer bands are emitted with dynamic
+ * `relayer.<from>-><to>` names, so prefix-match them to the relayer; everything
+ * else is browser-side.
+ */
+export function defaultWhere(key: string): Where {
+  return key.startsWith('relayer.') ? 'relayer' : 'browser';
 }
 
 /**

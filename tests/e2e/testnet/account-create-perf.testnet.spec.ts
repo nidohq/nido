@@ -37,17 +37,18 @@ test.describe('@testnet create-run perf', () => {
       try {
         await driveCreateRun(page, PORT);
         const marks = await collectPerfMarks(page);
+        const relay = await net.stop();
         const trace = buildTrace({
           runId: `run-${i + 1}`,
           txId: txIdFromMarks(marks),
           marks,
+          relayerPhases: relay.relayerPhases,
           startedAt: new Date().toISOString(),
         });
         traces.push(trace);
-        const relay = net.stop();
         testInfo.annotations.push({
           type: 'perf-run',
-          description: `run ${i + 1}: total ${Math.round(trace.totalMs)}ms · ${marks.length} marks · ${relay.length} /relay reqs · tx ${trace.txId ?? '—'}`,
+          description: `run ${i + 1}: total ${Math.round(trace.totalMs)}ms · ${marks.length} marks · ${relay.timings.length} /relay reqs · ${relay.relayerPhases.length} relayer phases · tx ${trace.txId ?? '—'}`,
         });
       } catch (err) {
         // Investigation tool, not a CI gate: real-chain flakiness on one run

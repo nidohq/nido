@@ -6,6 +6,7 @@ import {
   markName,
   parseMarkName,
   phaseDef,
+  defaultWhere,
 } from './schema';
 
 describe('perf mark naming', () => {
@@ -43,9 +44,14 @@ describe('create-run phase taxonomy', () => {
     }
   });
 
-  it('marks the relayer suspects as relayer-side', () => {
-    expect(phaseDef('relayer.enforce')?.where).toBe('relayer');
+  it('marks the relayer status bands as relayer-side', () => {
+    expect(phaseDef('relayer.submitted->confirmed')?.where).toBe('relayer');
     expect(phaseDef('poll.confirm')?.where).toBe('browser');
+  });
+
+  it('prefix-defaults any relayer.* band to the relayer side', () => {
+    expect(defaultWhere('relayer.submitted->failed')).toBe('relayer');
+    expect(defaultWhere('poll.confirm')).toBe('browser');
   });
 
   it('has unique phase keys', () => {
