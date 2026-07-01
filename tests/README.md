@@ -44,3 +44,10 @@ the `testnet-chromium` / `testnet-webkit` projects (retries: 2), kept out of
    (#3002). The lifecycle test **pins** this — flip its final assertion to
    expect success once the contract auth-model authorizes the context. (No prior
    test caught it: `register_name_via_smart_account` uses `env.mock_all_auths()`.)
+
+## Create-run perf tier (`just perf-create`)
+
+Real CDP virtual authenticator (genuine WebAuthn ceremony) on real testnet,
+timing the full create→deploy→fund lifecycle and printing a per-phase
+`% of total` table aggregated over N runs. Investigation tool, not a CI gate.
+See [`support/perf/README.md`](support/perf/README.md).

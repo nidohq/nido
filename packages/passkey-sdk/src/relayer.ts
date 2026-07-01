@@ -5,6 +5,7 @@
  * its `PUBLIC_RELAYER_URL` default, and dApps pass their own.
  */
 import type { Transaction } from "@stellar/stellar-sdk";
+import { perfMark } from "./perf.js";
 
 /** Statuses emitted by the Channels plugin. */
 export type RelayerStatus = "pending" | "sent" | "submitted" | "confirmed" | "failed" | "expired";
@@ -65,7 +66,10 @@ export async function submitSorobanTransaction(
   args: { func: string; auth: string[]; skipWait?: boolean },
   baseUrl: string,
 ): Promise<RelayerTxResponse> {
-  return call({ func: args.func, auth: args.auth, skipWait: args.skipWait ?? true }, baseUrl);
+  perfMark("relayer.submit", "start");
+  const res = await call({ func: args.func, auth: args.auth, skipWait: args.skipWait ?? true }, baseUrl);
+  perfMark("relayer.submit", "end", res.transactionId ? { txId: res.transactionId } : undefined);
+  return res;
 }
 
 export async function getRelayerTransaction(
@@ -95,29 +99,39 @@ export async function waitForConfirmation(
   const maxAttempts = opts?.maxAttempts ?? 55;
   let last: RelayerTxResponse | undefined;
   let pollFailures = 0;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const res = await getRelayerTransaction(transactionId, baseUrl);
-      last = res;
-      pollFailures = 0;
-      opts?.onPoll?.({ status: res.status, attempt: i + 1, maxAttempts });
-      if (res.status === "confirmed") return res;
-      if (res.status === "failed" || res.status === "expired") {
-        throw new RelayerError(`Relayer transaction ${res.status}`, "ONCHAIN_FAILED", res);
+  // poll.confirm bounds the whole wait (the ~82s ceiling lives here). The
+  // finally pairs the end mark on every exit — confirmed, on-chain failure, or
+  // timeout — and records how many attempts it took for the perf report.
+  perfMark("poll.confirm", "start", { txId: transactionId });
+  let attempts = 0;
+  try {
+    for (let i = 0; i < maxAttempts; i++) {
+      attempts = i + 1;
+      try {
+        const res = await getRelayerTransaction(transactionId, baseUrl);
+        last = res;
+        pollFailures = 0;
+        opts?.onPoll?.({ status: res.status, attempt: i + 1, maxAttempts });
+        if (res.status === "confirmed") return res;
+        if (res.status === "failed" || res.status === "expired") {
+          throw new RelayerError(`Relayer transaction ${res.status}`, "ONCHAIN_FAILED", res);
+        }
+      } catch (err) {
+        if (err instanceof RelayerError && err.code === "ONCHAIN_FAILED") throw err;
+        // A transient poll failure (network blip, 5xx) must not abort the wait —
+        // the tx is already in flight. Only give up after several in a row.
+        if (++pollFailures >= 5) {
+          throw new RelayerError("Lost contact with the relayer while waiting", "WAIT_TIMEOUT", last);
+        }
       }
-    } catch (err) {
-      if (err instanceof RelayerError && err.code === "ONCHAIN_FAILED") throw err;
-      // A transient poll failure (network blip, 5xx) must not abort the wait —
-      // the tx is already in flight. Only give up after several in a row.
-      if (++pollFailures >= 5) {
-        throw new RelayerError("Lost contact with the relayer while waiting", "WAIT_TIMEOUT", last);
-      }
+      if (i < maxAttempts - 1) await new Promise((r) => setTimeout(r, interval));
     }
-    if (i < maxAttempts - 1) await new Promise((r) => setTimeout(r, interval));
+    // The tx may still land after we give up (typically still "submitted") —
+    // attach the last poll so the UI can surface a hash if one exists.
+    throw new RelayerError("Timed out waiting for relayer confirmation", "WAIT_TIMEOUT", last);
+  } finally {
+    perfMark("poll.confirm", "end", { txId: transactionId, attempts });
   }
-  // The tx may still land after we give up (typically still "submitted") —
-  // attach the last poll so the UI can surface a hash if one exists.
-  throw new RelayerError("Timed out waiting for relayer confirmation", "WAIT_TIMEOUT", last);
 }
 
 /** Pull the base64 HostFunction + auth-entry XDRs off a built invoke tx —

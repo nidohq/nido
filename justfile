@@ -110,3 +110,30 @@ test-e2e-testnet: build-astro
     set -euo pipefail
     if [ -f tests/.env.testnet ]; then set -a; source tests/.env.testnet; set +a; fi
     npx playwright test --project=testnet-chromium --project=testnet-webkit
+
+# E2E create-run perf harness: REAL CDP virtual authenticator on REAL testnet.
+# Runs the perf spec PERF_RUNS times (default 5), prints a per-phase
+# `% of total` table, and writes perf-results/<ts>-create.json (gitignored).
+# Investigation tool, NOT a CI gate — never fails on slowness.
+#
+# Account creation goes through the Channels relayer, so the frontend must be
+# BUILT with PUBLIC_RELAYER_URL / PUBLIC_RELAYER_SIM_SOURCE. The canonical
+# testnet values (same as .github/workflows/deploy.yml and
+# infra/relayer/README.md) are baked in below, so this works out of the box —
+# the create flow self-funds via friendbot, no bank secret needed. Override
+# either var (or add NIDO_TEST_BANK_SECRET) via tests/.env.testnet.
+# Usage: `just perf-create` or `just perf-create 10`.
+perf-create runs="5":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # tests/.env.testnet takes precedence; canonical testnet defaults fill the rest.
+    if [ -f tests/.env.testnet ]; then set -a; source tests/.env.testnet; set +a; fi
+    export PUBLIC_RELAYER_URL="${PUBLIC_RELAYER_URL:-https://nido.fly.dev}"
+    export PUBLIC_RELAYER_SIM_SOURCE="${PUBLIC_RELAYER_SIM_SOURCE:-GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2}"
+    if ! [[ "$PUBLIC_RELAYER_SIM_SOURCE" =~ ^G[A-Z2-7]{55}$ ]]; then
+      echo "error: PUBLIC_RELAYER_SIM_SOURCE is not a 56-char G-address: '$PUBLIC_RELAYER_SIM_SOURCE'" >&2
+      echo "       fix or remove it in tests/.env.testnet — canonical value ends ...IR63JFK2" >&2
+      exit 1
+    fi
+    npx astro build --root ./packages/frontend
+    PERF_RUNS={{runs}} npx playwright test --project=testnet-chromium tests/e2e/testnet/account-create-perf.testnet.spec.ts

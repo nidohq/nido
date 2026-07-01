@@ -204,6 +204,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     fetchRegistryAddress,
     accountUrl,
     stripSubdomain,
+    perfMark,
   } from "@nidohq/passkey-sdk";
   import { parseReturnIntent, buildClaimReturnUrl } from "../../lib/claimFlow";
   import { withPasskeySheet } from "../../lib/passkeySheet";
@@ -611,12 +612,18 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
     try {
       $registerBtn.disabled = true;
+      // create-run wall clock opens at the ceremony (first real work) and closes
+      // when the wallet is ready in deploy(). webauthn.create brackets just the
+      // OS passkey ceremony.
+      perfMark("create-run", "start");
+      perfMark("webauthn.create", "start");
       // Drive the REAL ceremony through the sheet — no fake timer. The OS
       // passkey dialog is the source of truth; the sheet closes when it settles.
       const credential = (await withPasskeySheet(
         () => navigator.credentials.create(buildPasskeyCreateOptions()),
         { title: "Lock it to you", sub: "Confirm with your passkey to finish setting up." },
       )) as PublicKeyCredential;
+      perfMark("webauthn.create", "end");
       await completeRegistration(credential);
     } catch (err: any) {
       if (err.name === "NotAllowedError") {
@@ -643,7 +650,10 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     const options = buildPasskeyCreateOptions();
     options.signal = autoPasskeyController.signal;
     try {
+      perfMark("create-run", "start");
+      perfMark("webauthn.create", "start");
       const credential = (await navigator.credentials.create(options)) as PublicKeyCredential;
+      perfMark("webauthn.create", "end");
       await completeRegistration(credential);
     } catch {
       // Rejected (no user activation on iOS Safari), declined, or aborted by a
@@ -692,15 +702,20 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         .setTimeout(0)
         .build();
 
+      perfMark("factory.simulate", "start");
       const sim = await server.simulateTransaction(simTxn);
       if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
         throw new Error(`Simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
       }
+      perfMark("factory.simulate", "end");
 
+      perfMark("assemble.extract", "start");
       const transaction = rpc.assembleTransaction(simTxn, sim).setTimeout(0).build();
       const { func, auth } = extractFuncAndAuth(transaction);
+      perfMark("assemble.extract", "end");
 
       // Prepared — 1 done, 2 · "Submitting to the network" begins.
+      // relayer.submit + poll.confirm are marked inside the SDK relayer client.
       setCheckProgress(2, 2);
       const submitted = await submitSorobanTransaction({ func, auth });
       if (!submitted.transactionId) {
@@ -723,7 +738,9 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // transfer rather than a fresh wait.
       setCheckProgress(4, 4);
       try {
+        perfMark("funding.drain", "start");
         await drainTestnetFunding(server, contractId!);
+        perfMark("funding.drain", "end");
       } catch (fundingErr) {
         console.warn("[nido] wallet finalize failed", fundingErr);
         renderCheck(4, "pending");
@@ -740,6 +757,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
       // Finalized — every card lands its checkmark, including "Your Nido is ready".
       setCheckProgress(6, -1);
+      // create-run wall clock closes: account deployed, confirmed, funded.
+      perfMark("create-run", "end");
       $deployNestSpinning.style.display = "none";
       $deployNestStatic.style.display = "block";
 

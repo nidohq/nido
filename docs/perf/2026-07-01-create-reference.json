@@ -1,0 +1,307 @@
+{
+  "generatedAt": "2026-07-01T04:54:49.160Z",
+  "runs": 4,
+  "aggregate": {
+    "runs": 4,
+    "totalMedianMs": 18536.650000095367,
+    "phases": [
+      {
+        "phase": "webauthn.create",
+        "where": "browser",
+        "label": "WebAuthn create ceremony",
+        "count": 4,
+        "medianMs": 5.550000190734863,
+        "minMs": 3.5,
+        "maxMs": 10.899999618530273,
+        "p95Ms": 10.31499967575073,
+        "pctOfTotal": 0.029940686104049596
+      },
+      {
+        "phase": "factory.simulate",
+        "where": "browser",
+        "label": "factory simulate (RPC)",
+        "count": 4,
+        "medianMs": 90.75,
+        "minMs": 87,
+        "maxMs": 94.20000076293945,
+        "p95Ms": 94.14000067710876,
+        "pctOfTotal": 0.4895706613629383
+      },
+      {
+        "phase": "assemble.extract",
+        "where": "browser",
+        "label": "assemble + extract XDR",
+        "count": 4,
+        "medianMs": 2.5,
+        "minMs": 2.3000001907348633,
+        "maxMs": 3,
+        "p95Ms": 2.925,
+        "pctOfTotal": 0.013486795078868826
+      },
+      {
+        "phase": "relayer.submit",
+        "where": "browser",
+        "label": "relayer submit (HTTP)",
+        "count": 4,
+        "medianMs": 5126.949999809265,
+        "minMs": 4388.900000572205,
+        "maxMs": 9939.599999427795,
+        "p95Ms": 9254.099999427794,
+        "pctOfTotal": 27.658449610813644
+      },
+      {
+        "phase": "poll.confirm",
+        "where": "browser",
+        "label": "browser poll → confirmed",
+        "count": 4,
+        "medianMs": 9521.650000095367,
+        "minMs": 8886.29999923706,
+        "maxMs": 12002.900000572205,
+        "p95Ms": 11703.065000486373,
+        "pctOfTotal": 51.36661694559902
+      },
+      {
+        "phase": "funding.drain",
+        "where": "browser",
+        "label": "funding drain",
+        "count": 4,
+        "medianMs": 3448.050000190735,
+        "minMs": 3414.9000005722046,
+        "maxMs": 6647,
+        "p95Ms": 6171.545000028609,
+        "pctOfTotal": 18.60125750970642
+      }
+    ]
+  },
+  "traces": [
+    {
+      "runId": "run-1",
+      "txId": "d7f00fb4-b80f-4eb8-be13-c7dc96cf8d08",
+      "startedAt": "2026-07-01T04:50:28.830Z",
+      "totalMs": 18753,
+      "spans": [
+        {
+          "phase": "create-run",
+          "where": "browser",
+          "startMs": 435.79999923706055,
+          "endMs": 19188.79999923706,
+          "durMs": 18753
+        },
+        {
+          "phase": "webauthn.create",
+          "where": "browser",
+          "startMs": 435.8999996185303,
+          "endMs": 446.79999923706055,
+          "durMs": 10.899999618530273
+        },
+        {
+          "phase": "factory.simulate",
+          "where": "browser",
+          "startMs": 689.5999994277954,
+          "endMs": 777.2999992370605,
+          "durMs": 87.69999980926514
+        },
+        {
+          "phase": "assemble.extract",
+          "where": "browser",
+          "startMs": 777.2999992370605,
+          "endMs": 779.7999992370605,
+          "durMs": 2.5
+        },
+        {
+          "phase": "relayer.submit",
+          "where": "browser",
+          "startMs": 780.1999998092651,
+          "endMs": 5664.5,
+          "durMs": 4884.300000190735
+        },
+        {
+          "phase": "poll.confirm",
+          "where": "browser",
+          "startMs": 5665.299999237061,
+          "endMs": 15669.29999923706,
+          "durMs": 10004
+        },
+        {
+          "phase": "funding.drain",
+          "where": "browser",
+          "startMs": 15773.29999923706,
+          "endMs": 19188.199999809265,
+          "durMs": 3414.9000005722046
+        }
+      ]
+    },
+    {
+      "runId": "run-2",
+      "txId": "f4045bde-abe1-4ad6-a620-ee3d35d9c0d9",
+      "startedAt": "2026-07-01T04:50:48.921Z",
+      "totalMs": 17133,
+      "spans": [
+        {
+          "phase": "create-run",
+          "where": "browser",
+          "startMs": 406.80000019073486,
+          "endMs": 17539.800000190735,
+          "durMs": 17133
+        },
+        {
+          "phase": "webauthn.create",
+          "where": "browser",
+          "startMs": 406.8999996185303,
+          "endMs": 410.3999996185303,
+          "durMs": 3.5
+        },
+        {
+          "phase": "factory.simulate",
+          "where": "browser",
+          "startMs": 652.3000001907349,
+          "endMs": 746.1000003814697,
+          "durMs": 93.80000019073486
+        },
+        {
+          "phase": "assemble.extract",
+          "where": "browser",
+          "startMs": 746.1000003814697,
+          "endMs": 749.1000003814697,
+          "durMs": 3
+        },
+        {
+          "phase": "relayer.submit",
+          "where": "browser",
+          "startMs": 749.6999998092651,
+          "endMs": 5138.60000038147,
+          "durMs": 4388.900000572205
+        },
+        {
+          "phase": "poll.confirm",
+          "where": "browser",
+          "startMs": 5139.10000038147,
+          "endMs": 14025.39999961853,
+          "durMs": 8886.29999923706
+        },
+        {
+          "phase": "funding.drain",
+          "where": "browser",
+          "startMs": 14120.300000190735,
+          "endMs": 17539.10000038147,
+          "durMs": 3418.800000190735
+        }
+      ]
+    },
+    {
+      "runId": "run-4",
+      "txId": "20eea0bd-5108-46d9-8cc2-8085b6b0e96a",
+      "startedAt": "2026-07-01T04:54:28.024Z",
+      "totalMs": 29183.60000038147,
+      "spans": [
+        {
+          "phase": "create-run",
+          "where": "browser",
+          "startMs": 400.5,
+          "endMs": 29584.10000038147,
+          "durMs": 29183.60000038147
+        },
+        {
+          "phase": "webauthn.create",
+          "where": "browser",
+          "startMs": 400.5,
+          "endMs": 407.5,
+          "durMs": 7
+        },
+        {
+          "phase": "factory.simulate",
+          "where": "browser",
+          "startMs": 792,
+          "endMs": 886.2000007629395,
+          "durMs": 94.20000076293945
+        },
+        {
+          "phase": "assemble.extract",
+          "where": "browser",
+          "startMs": 886.3000001907349,
+          "endMs": 888.8000001907349,
+          "durMs": 2.5
+        },
+        {
+          "phase": "relayer.submit",
+          "where": "browser",
+          "startMs": 889.2000007629395,
+          "endMs": 10828.800000190735,
+          "durMs": 9939.599999427795
+        },
+        {
+          "phase": "poll.confirm",
+          "where": "browser",
+          "startMs": 10829.300000190735,
+          "endMs": 22832.20000076294,
+          "durMs": 12002.900000572205
+        },
+        {
+          "phase": "funding.drain",
+          "where": "browser",
+          "startMs": 22936.5,
+          "endMs": 29583.5,
+          "durMs": 6647
+        }
+      ]
+    },
+    {
+      "runId": "run-5",
+      "txId": "7ea55ce0-f5aa-48dd-a452-ea205d62f08b",
+      "startedAt": "2026-07-01T04:54:49.148Z",
+      "totalMs": 18320.300000190735,
+      "spans": [
+        {
+          "phase": "create-run",
+          "where": "browser",
+          "startMs": 399.69999980926514,
+          "endMs": 18720,
+          "durMs": 18320.300000190735
+        },
+        {
+          "phase": "webauthn.create",
+          "where": "browser",
+          "startMs": 399.69999980926514,
+          "endMs": 403.80000019073486,
+          "durMs": 4.100000381469727
+        },
+        {
+          "phase": "factory.simulate",
+          "where": "browser",
+          "startMs": 637.8999996185303,
+          "endMs": 724.8999996185303,
+          "durMs": 87
+        },
+        {
+          "phase": "assemble.extract",
+          "where": "browser",
+          "startMs": 724.8999996185303,
+          "endMs": 727.1999998092651,
+          "durMs": 2.3000001907348633
+        },
+        {
+          "phase": "relayer.submit",
+          "where": "browser",
+          "startMs": 727.8000001907349,
+          "endMs": 6097.39999961853,
+          "durMs": 5369.599999427795
+        },
+        {
+          "phase": "poll.confirm",
+          "where": "browser",
+          "startMs": 6097.89999961853,
+          "endMs": 15137.199999809265,
+          "durMs": 9039.300000190735
+        },
+        {
+          "phase": "funding.drain",
+          "where": "browser",
+          "startMs": 15242.099999427795,
+          "endMs": 18719.39999961853,
+          "durMs": 3477.300000190735
+        }
+      ]
+    }
+  ],
+  "markdown": "### Create-run perf — 4 run(s), total median 18.54s\n\n| phase | where | median | min | max | p95 | % of total |\n| --- | --- | --- | --- | --- | --- | --- |\n| webauthn.create | browser | 6ms | 4ms | 11ms | 10ms | 0.0% |\n| factory.simulate | browser | 91ms | 87ms | 94ms | 94ms | 0.5% |\n| assemble.extract | browser | 3ms | 2ms | 3ms | 3ms | 0.0% |\n| relayer.submit | browser | 5.13s | 4.39s | 9.94s | 9.25s | 27.7% |\n| poll.confirm | browser | 9.52s | 8.89s | 12.00s | 11.70s | 51.4% |\n| funding.drain | browser | 3.45s | 3.41s | 6.65s | 6.17s | 18.6% |"
+}

@@ -14,6 +14,7 @@ import {
   parseAssertionResponse,
   hex2buf,
   buf2hex,
+  perfMark,
 } from '@nidohq/passkey-sdk';
 import { fetchVerifierAddress } from './policyChainFetch.js';
 import {
@@ -157,10 +158,14 @@ export async function signAndSubmit(args: {
   // 4. Assemble so auth entries are baked into the tx XDR before signing.
   const assembled_tx = rpc.assembleTransaction(sim_tx, successSim).build();
 
-  // 5. Get a WebAuthn assertion over the challenge.
+  // 5. Get a WebAuthn assertion over the challenge. webauthn.get brackets the
+  //    OS passkey ceremony — the signing-flow analog of webauthn.create. The
+  //    relayer submit/poll spans for this flow's relayer branch come from the
+  //    SDK relayer client (relayer.ts) via relayerSubmitAndConfirm.
   args.onProgress?.({ phase: "sign" });
   const challengeBuf = new ArrayBuffer(challengeBytes.byteLength);
   new Uint8Array(challengeBuf).set(challengeBytes);
+  perfMark("webauthn.get", "start");
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge: challengeBuf,
@@ -170,6 +175,7 @@ export async function signAndSubmit(args: {
       timeout: 60000,
     },
   })) as PublicKeyCredential | null;
+  perfMark("webauthn.get", "end");
   if (!assertion) throw new Error('Passkey signing was cancelled.');
 
   const response = assertion.response as AuthenticatorAssertionResponse;
