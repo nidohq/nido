@@ -24,7 +24,7 @@ use nido_zk_recovery::hash::leaf_inner;
 use nido_zk_recovery::pool::{ZkRecovery, ZkRecoveryClient};
 use nido_zk_recovery::types::{NullifierState, RecoveryError, RecoveryInitiated, RecoveryKey};
 use soroban_sdk::address_payload::AddressPayload;
-use soroban_sdk::testutils::{Address as _, Events as _};
+use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::{Address, Bytes, BytesN, Env, Error as SdkError, Event};
 
 mod zk_verifier_contract {
@@ -385,4 +385,131 @@ fn tampered_new_pubkey_fails_proof_verification() {
         &proof,
     );
     assert_eq!(contract_error(&res), RecoveryError::VerificationFailed);
+}
+
+/// Regression for the M1 Task 5 liveness bug: `initiate_recovery`'s
+/// existing-pending check (step 1) allowed superseding a STALE pending
+/// (`now >= expires_at`) without ever releasing that pending's nullifier
+/// reservation. Because `nullifier = Poseidon2(DOM_NULL, account, secret)`
+/// is deterministic per (account, secret) -- no nonce folded in -- the next
+/// `initiate_recovery` for the same account recomputed the SAME nullifier,
+/// found it still `Reserved` in step 3, and panicked `NullifierReserved`:
+/// the account was permanently bricked for recovery after any single
+/// expired attempt.
+///
+/// This is the PREFERRED regression form (see the fix's task report): a
+/// SECOND real proof for the identical witness but `nonce = 2`
+/// (`zk_fixture::lifecycle_fixture_nonce2`, generated the same way as the
+/// nonce=1 fixture -- see
+/// `circuits/zk_recovery/fixtures/lifecycle_nonce2/prover_inputs.json`).
+/// This mirrors the real recovery flow exactly: a user re-initiating after
+/// an expiry does so with a FRESH proof carrying the incremented nonce (a
+/// circuit public input the user controls), so the whole
+/// `initiate_recovery` call succeeds end-to-end and the nullifier release
+/// persists atomically with the new pending record being stored and the
+/// nullifier being re-reserved.
+#[test]
+fn stale_pending_can_be_superseded_by_a_fresh_nonce_proof() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let (client, account, fixture) = setup(&env);
+
+    let new_pubkey = BytesN::from_array(&env, &fixture.new_pubkey);
+    let root = BytesN::from_array(&env, &fixture.root);
+    let nullifier = BytesN::from_array(&env, &fixture.nullifier);
+    let proof = Bytes::from_slice(&env, &fixture.proof);
+
+    // First initiation (nonce=1), as in the keystone test.
+    let first_executable_after = client.initiate_recovery(
+        &account,
+        &new_pubkey,
+        &fixture.nonce,
+        &fixture.timelock_secs,
+        &root,
+        &nullifier,
+        &proof,
+    );
+    let first_pending = client
+        .get_pending(&account)
+        .expect("get_pending must be Some after the first initiate_recovery");
+    assert_eq!(first_pending.executable_after, first_executable_after);
+
+    // The nullifier is reserved to `account` after the first initiation.
+    let state_after_first: Option<NullifierState> = env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .get(&RecoveryKey::Nullifier(nullifier.clone()))
+    });
+    assert_eq!(
+        state_after_first,
+        Some(NullifierState::Reserved(account.clone())),
+        "nullifier must be reserved to the recovering account after the first initiation"
+    );
+
+    // Advance the ledger past the first pending's `expires_at` -- it is now
+    // stale/supersedable, not blocking (step 1's documented semantics).
+    env.ledger().with_mut(|li| {
+        li.timestamp = first_pending.expires_at;
+    });
+
+    // Second initiation for the SAME account, using a fresh real proof for
+    // nonce=2 (same root/nullifier -- neither depends on nonce; different
+    // auth_hash, since nonce is folded into auth_hash). Before the fix this
+    // panicked `NullifierReserved` because step 1 never released the stale
+    // pending's nullifier reservation; the fix releases it when the pending
+    // found in step 1 is stale, so step 3 now sees the nullifier unused
+    // again and this call SUCCEEDS -- proving the account is not
+    // permanently bricked after a single expired attempt.
+    let fixture2 = zk_fixture::lifecycle_fixture_nonce2(&env);
+    assert_eq!(
+        fixture2.root, fixture.root,
+        "sanity: nonce=2 fixture must share the same root as the nonce=1 fixture"
+    );
+    assert_eq!(
+        fixture2.nullifier, fixture.nullifier,
+        "sanity: nonce=2 fixture must share the same nullifier as the nonce=1 fixture \
+         -- the nullifier does not depend on nonce, which is exactly why the stale \
+         reservation must be explicitly released"
+    );
+    let proof2 = Bytes::from_slice(&env, &fixture2.proof);
+
+    let now = env.ledger().timestamp();
+    let second_executable_after = client.initiate_recovery(
+        &account,
+        &new_pubkey,
+        &fixture2.nonce,
+        &fixture2.timelock_secs,
+        &root,
+        &nullifier,
+        &proof2,
+    );
+    assert_eq!(
+        second_executable_after,
+        now + DELAY_SECS,
+        "the superseding initiate_recovery must return now + config.delay_secs"
+    );
+
+    let second_pending = client
+        .get_pending(&account)
+        .expect("get_pending must be Some after the superseding initiate_recovery");
+    assert_eq!(second_pending.executable_after, second_executable_after);
+    assert!(
+        second_pending.initiated_at > first_pending.initiated_at,
+        "the second pending record must be a fresh one, not the stale first one"
+    );
+
+    // The nullifier is (re-)reserved to `account` after the second
+    // initiation -- proving the release-then-reserve round trip left the
+    // nullifier usable, not stuck or spent.
+    let state_after_second: Option<NullifierState> = env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .get(&RecoveryKey::Nullifier(nullifier.clone()))
+    });
+    assert_eq!(
+        state_after_second,
+        Some(NullifierState::Reserved(account)),
+        "nullifier must be reserved to the recovering account after the superseding \
+         initiation"
+    );
 }

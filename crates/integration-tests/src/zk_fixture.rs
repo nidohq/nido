@@ -92,6 +92,32 @@ const PROOF_BYTES: &[u8] = include_bytes!("../../../circuits/zk_recovery/fixture
 const PUBLIC_INPUTS_BYTES: &[u8] =
     include_bytes!("../../../circuits/zk_recovery/fixtures/lifecycle/public_inputs");
 
+/// A SECOND real proof for the exact same witness as [`lifecycle_fixture`]
+/// (same account/controller/secret/leaf/root/nullifier), except `nonce = 2`
+/// instead of `1` -- which changes `auth_hash` (nonce is a circuit public
+/// input folded into `auth_hash`, see `circuits/zk_recovery/src/main.nr:40-42`)
+/// but leaves `root`/`nullifier` untouched (neither depends on nonce).
+/// Generated the same way as the nonce=1 fixture (temporarily bumping
+/// `zk_fixture::NONCE` to `2`, then `gen_lifecycle_fixture.sh`'s
+/// nargo/bb steps) -- see `circuits/zk_recovery/fixtures/lifecycle_nonce2/prover_inputs.json`
+/// for provenance.
+///
+/// Exists to prove the M1 Task 5 liveness fix in
+/// `contracts/zk-recovery/src/controller.rs::initiate_recovery`: after a
+/// pending recovery goes stale (`now >= expires_at`), the account must be
+/// able to re-initiate with a FRESH proof (real flow: user re-proves with
+/// the incremented nonce) instead of being permanently bricked by a stale
+/// nullifier reservation. See
+/// `crates/integration-tests/tests/it/zk_recovery_lifecycle.rs::stale_pending_can_be_superseded_by_a_fresh_nonce_proof`.
+pub const NONCE_2: u64 = 2;
+
+const PROOF_BYTES_NONCE2: &[u8] =
+    include_bytes!("../../../circuits/zk_recovery/fixtures/lifecycle_nonce2/proof");
+const PUBLIC_INPUTS_BYTES_NONCE2: &[u8] =
+    include_bytes!("../../../circuits/zk_recovery/fixtures/lifecycle_nonce2/public_inputs");
+const AUTH_HASH_NONCE2_HEX: &str =
+    "0x006e82d3800eb1e7971856bf624cf5d2b6604878ab6fdfd178f1849b74373ee2";
+
 // Computed witness values for the pinned constants above. Regenerate with
 // `just gen-zk-lifecycle-fixture` and copy the emitted values from
 // `circuits/zk_recovery/fixtures/lifecycle/prover_inputs.json` here if the
@@ -192,5 +218,66 @@ pub fn lifecycle_fixture(env: &Env) -> LifecycleFixture {
         auth_hash,
         proof: PROOF_BYTES.to_vec(),
         public_inputs: PUBLIC_INPUTS_BYTES.to_vec(),
+    }
+}
+
+/// Loads the [`NONCE_2`] variant of the lifecycle fixture: the SAME witness
+/// as [`lifecycle_fixture`] (same account/controller/secret/leaf/root/
+/// nullifier) but `nonce = 2`, with its own real `proof`/`public_inputs`.
+/// See [`NONCE_2`] for why this exists.
+///
+/// # Panics
+///
+/// Panics under the same conditions as [`lifecycle_fixture`], applied to
+/// the `lifecycle_nonce2` fixture files.
+#[allow(unused_variables)]
+#[must_use]
+pub fn lifecycle_fixture_nonce2(env: &Env) -> LifecycleFixture {
+    let new_pubkey_sec1 = crate::test_key(NEW_PUBKEY_SEED)
+        .verifying_key()
+        .to_sec1_bytes();
+    let mut new_pubkey = [0u8; 65];
+    new_pubkey.copy_from_slice(&new_pubkey_sec1);
+
+    let root = hex32(ROOT_HEX);
+    let nullifier = hex32(NULLIFIER_HEX);
+    let auth_hash = hex32(AUTH_HASH_NONCE2_HEX);
+
+    assert_eq!(
+        PUBLIC_INPUTS_BYTES_NONCE2.len(),
+        96,
+        "public_inputs (nonce=2) fixture must be 96 bytes"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_NONCE2[0..32],
+        &root[..],
+        "public_inputs (nonce=2) [0..32] must equal root -- root does not depend on nonce"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_NONCE2[32..64],
+        &nullifier[..],
+        "public_inputs (nonce=2) [32..64] must equal nullifier -- nullifier does not \
+         depend on nonce"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_NONCE2[64..96],
+        &auth_hash[..],
+        "public_inputs (nonce=2) [64..96] must equal auth_hash"
+    );
+
+    LifecycleFixture {
+        account: ACCOUNT,
+        controller: CONTROLLER,
+        network_passphrase: NETWORK_PASSPHRASE,
+        new_pubkey,
+        nonce: NONCE_2,
+        timelock_secs: TIMELOCK_SECS,
+        secret_hex: SECRET_HEX,
+        leaf_stored: hex32(LEAF_STORED_HEX),
+        root,
+        nullifier,
+        auth_hash,
+        proof: PROOF_BYTES_NONCE2.to_vec(),
+        public_inputs: PUBLIC_INPUTS_BYTES_NONCE2.to_vec(),
     }
 }

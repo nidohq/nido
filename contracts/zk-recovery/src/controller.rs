@@ -145,7 +145,18 @@ impl ZkRecovery {
         let now = env.ledger().timestamp();
 
         // 1. No live pending -- a pending past its `expires_at` is
-        // stale/supersedable, not blocking.
+        // stale/supersedable, not blocking. Superseding a stale pending must
+        // also release its nullifier reservation: `N = Poseidon2(DOM_NULL,
+        // account, secret)` is deterministic per (account, secret) with no
+        // nonce, so without this release the next `initiate_recovery` for
+        // this account would recompute the SAME `N`, find it still
+        // `Reserved` in step 3 below, and panic `NullifierReserved` --
+        // permanently bricking recovery for the account after any single
+        // expired attempt. Only release on the STALE path (a LIVE pending
+        // still panics `PendingExists`, unchanged), and only when the
+        // reservation is still `Reserved(account)` -- a `Spent` nullifier
+        // (already permanently consumed by a completion) is deliberately
+        // left untouched.
         let pending_key = RecoveryKey::Pending(account.clone());
         if let Some(existing) = env
             .storage()
@@ -154,6 +165,16 @@ impl ZkRecovery {
         {
             if now < existing.expires_at {
                 panic_with_error!(&env, RecoveryError::PendingExists);
+            }
+            let existing_nullifier_key = RecoveryKey::Nullifier(existing.nullifier.clone());
+            if let Some(NullifierState::Reserved(reserved_for)) =
+                env.storage()
+                    .persistent()
+                    .get::<_, NullifierState>(&existing_nullifier_key)
+            {
+                if reserved_for == account {
+                    env.storage().persistent().remove(&existing_nullifier_key);
+                }
             }
         }
 
