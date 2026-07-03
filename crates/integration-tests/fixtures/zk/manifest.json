@@ -1,0 +1,7 @@
+{
+  "vkSha256": "ba39b4ac4350a655792aa55acdf2a4855e099f48809db8569c88f2ed18ad3922",
+  "proofSha256": "ac7cdbe247c06b3fadd8c6503c424558a724515787f2d5fdf393f613413bd1fa",
+  "publicInputsSha256": "6d5aa337af748dd36802e99b812b29ade948a010ac4a043afe706d56085b813b",
+  "sourceCircuitManifest": "circuits/zk_recovery/public/circuits/manifest.json",
+  "builtAt": "2026-07-03T02:26:48Z"
+}

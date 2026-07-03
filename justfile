@@ -17,6 +17,37 @@ build:
 build-circuits:
     bash circuits/zk_recovery/scripts/gen_artifacts.sh
 
+# Rerun the zk_recovery circuit build and re-stage its vk/proof/public_inputs
+# artifacts as test fixtures under crates/integration-tests/fixtures/zk/ (used
+# by crates/zk-bench's real-metering budget gate and any other zk-verifier
+# integration tests). Records the staged fixtures' sha256 into
+# crates/integration-tests/fixtures/zk/manifest.json, alongside a pointer at
+# the circuit build's own manifest (circuits/zk_recovery/public/circuits/manifest.json)
+# for cross-checking provenance.
+gen-zk-fixtures:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just build-circuits
+    mkdir -p crates/integration-tests/fixtures/zk
+    cp circuits/zk_recovery/target/vk crates/integration-tests/fixtures/zk/vk
+    cp circuits/zk_recovery/target/proof crates/integration-tests/fixtures/zk/proof
+    cp circuits/zk_recovery/target/public_inputs crates/integration-tests/fixtures/zk/public_inputs
+    vk_sha=$(sha256sum crates/integration-tests/fixtures/zk/vk | cut -d' ' -f1)
+    proof_sha=$(sha256sum crates/integration-tests/fixtures/zk/proof | cut -d' ' -f1)
+    pub_sha=$(sha256sum crates/integration-tests/fixtures/zk/public_inputs | cut -d' ' -f1)
+    built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    printf '{\n  "vkSha256": "%s",\n  "proofSha256": "%s",\n  "publicInputsSha256": "%s",\n  "sourceCircuitManifest": "circuits/zk_recovery/public/circuits/manifest.json",\n  "builtAt": "%s"\n}\n' \
+        "$vk_sha" "$proof_sha" "$pub_sha" "$built_at" > crates/integration-tests/fixtures/zk/manifest.json
+    echo "[ok] Staged zk fixtures + wrote manifest:"
+    cat crates/integration-tests/fixtures/zk/manifest.json
+
+# Task 4 GO/NO-GO gate: real-metering verify_proof CPU cost (<=80M), measured
+# against the real depth-24 circuit's proof/vk/public_inputs fixtures via a
+# registered (not native) Wasm verifier contract. See
+# crates/zk-bench/tests/budget.rs for the full metering methodology.
+bench-zk:
+    cargo test -p nido-zk-bench --test budget -- --nocapture
+
 # Build and optimize Soroban contracts.
 # `stellar-scaffold build` topologically sorts the contract crates (via the
 # `[package.metadata.stellar] contract = true` edges) so dependencies build
