@@ -1,0 +1,29 @@
+# bb 3.x requires glibc >= 2.38. On hosts that ship an older glibc (e.g.
+# Ubuntu/Pop!_OS 22.04, glibc 2.35), `bb` can't run natively. This image
+# gives gen_artifacts.sh a throwaway Ubuntu 24.04 container with the same
+# nargo/bb versions installed as the local toolchain, so `just
+# build-circuits` still works. Mirrors
+# ../../../../zk/rs-soroban-ultrahonk/scripts/circuits.Dockerfile (a sibling
+# repo's identical fix for the same problem), trimmed to what this circuit
+# needs (no Rust toolchain -- we don't build any Rust example here).
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NOIR_VERSION=1.0.0-beta.18
+
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+        curl ca-certificates git xxd python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.nargo/bin:/root/.bb:${PATH}"
+
+RUN curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash && \
+    /root/.nargo/bin/noirup -v ${NOIR_VERSION}
+
+RUN curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/bbup/install | bash && \
+    /root/.bb/bbup -nv ${NOIR_VERSION}
+
+RUN nargo --version && bb --version || true
+
+WORKDIR /work

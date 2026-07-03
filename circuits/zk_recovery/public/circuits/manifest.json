@@ -1,0 +1,7 @@
+{
+  "circuitSha256": "bfb14bb25e356411245c7a1ae1a997b3ee8e5c5cdb8e1627aad87b68015a1ec4",
+  "vkSha256": "ba39b4ac4350a655792aa55acdf2a4855e099f48809db8569c88f2ed18ad3922",
+  "nargo": "nargo version = 1.0.0-beta.18",
+  "bb": "3.0.0-nightly.20260102",
+  "builtAt": "2026-07-03T02:15:38Z"
+}

@@ -10,6 +10,13 @@ test:
 build:
     cargo build --workspace
 
+# Compile the zk_recovery Noir circuit and generate its VK/proof/public-inputs
+# artifacts + manifest under circuits/zk_recovery/{target,public/circuits}.
+# See circuits/zk_recovery/scripts/gen_artifacts.sh for details (falls back
+# to docker for the bb steps if the local bb can't run -- e.g. glibc < 2.38).
+build-circuits:
+    bash circuits/zk_recovery/scripts/gen_artifacts.sh
+
 # Build and optimize Soroban contracts.
 # `stellar-scaffold build` topologically sorts the contract crates (via the
 # `[package.metadata.stellar] contract = true` edges) so dependencies build

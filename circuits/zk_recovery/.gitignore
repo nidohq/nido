@@ -1,0 +1,13 @@
+# The repo-root .gitignore blanket-ignores any directory literally named
+# "target" (Cargo convention). Un-ignore this circuit's target/ so the
+# checked-in VK, proof, public inputs, and ACIR (needed by later ZK-recovery
+# tasks) can be committed, while still ignoring the regenerable witness blob
+# and bb's raw vk_hash byproduct.
+!target/
+!target/zk_recovery.json
+!target/vk
+!target/proof
+!target/public_inputs
+
+target/zk_recovery.gz
+target/vk_hash
