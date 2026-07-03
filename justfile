@@ -105,6 +105,14 @@ check:
     cargo fmt --all -- --check
     cargo clippy  --all --tests -- -Dclippy::pedantic
 
+# Verify the vendored (unaudited, third-party) UltraHonk Soroban verifier
+# crate under contracts/vendor/ultrahonk-soroban-verifier/src/ hasn't been
+# hand-edited, by comparing its sha256 manifest against the committed
+# CHECKSUMS.sha256. See scripts/check-vendor-drift.sh for details and how
+# to regenerate the baseline after a deliberate, reviewed vendor bump.
+check-vendor-drift:
+    bash scripts/check-vendor-drift.sh
+
 # Format all code
 fmt:
     cargo fmt --all

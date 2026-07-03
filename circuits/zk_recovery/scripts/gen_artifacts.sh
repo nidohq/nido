@@ -117,6 +117,23 @@ run_bb() {
   fi
 }
 
+# NOTE on --oracle_hash: the on-chain UltraHonk verifier requires
+# keccak-oracle proofs. It would be nice to pin that explicitly with
+# `--oracle_hash keccak` so a future bb default change can't silently swap
+# it out from under us -- but bb (checked against
+# 3.0.0-nightly.20260102, the version pinned via ./Dockerfile's `bbup -nv
+# ${REQUIRED_NARGO_VERSION}`) hard-rejects combining --oracle_hash with
+# --verifier_target in *both* write_vk and prove:
+#   "Cannot use --verifier_target with --oracle_hash. The --verifier_target
+#   flag sets oracle_hash automatically."
+# (confirmed via `bb write_vk --help-extended` / `bb prove --help-extended`,
+# order-independent). So --verifier_target evm-no-zk (documented by bb
+# itself as the keccak/no-ZK EVM target, mirroring plain `evm`'s
+# "(keccak, ZK)") is bb's *only* supported way to select keccak here; there
+# is no separate explicit flag to add. The real drift guard is the pinned
+# nargo/bb version above + REQUIRED_NARGO_VERSION check, which fails loudly
+# if bb's resolved version (and thus this target-to-oracle mapping) ever
+# moves.
 echo "[3/5] bb write_vk --verifier_target evm-no-zk"
 rm -rf target/vk
 run_bb write_vk \
