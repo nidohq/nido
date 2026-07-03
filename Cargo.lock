@@ -1024,6 +1024,7 @@ name = "nido-factory"
 version = "0.1.0"
 dependencies = [
  "nido-smart-account",
+ "nido-zk-recovery",
  "soroban-sdk",
  "soroban-sdk-tools",
  "stellar-accounts",
