@@ -134,8 +134,31 @@ pub fn build_contract_assertion(
 /// Deploy the `WebAuthn` verifier and smart account contracts, initialising the
 /// account with a single passkey signer. Returns the client, account address,
 /// verifier address, and signing key.
+///
+/// Constructs the account with `recovery_controller: None` — the account gets
+/// ONLY the Default rule (unchanged behavior for the many callers of this
+/// helper that have nothing to do with zk-recovery). Tests that need the
+/// recovery rule installed at construction should use
+/// [`deploy_smart_account_with_recovery`] instead.
 pub fn deploy_smart_account(
     env: &soroban_sdk::Env,
+) -> (
+    SmartAccountClient<'_>,
+    soroban_sdk::Address,
+    soroban_sdk::Address,
+    SigningKey,
+) {
+    deploy_smart_account_with_recovery(env, None)
+}
+
+/// Like [`deploy_smart_account`], but passes `recovery_controller` through to
+/// the constructor's 3rd argument. `Some(controller)` installs the
+/// zero-signer `CallContract(self)` recovery rule with `controller` as its
+/// policy (triggering the controller's `Policy::install`); `None` behaves
+/// exactly like [`deploy_smart_account`].
+pub fn deploy_smart_account_with_recovery(
+    env: &soroban_sdk::Env,
+    recovery_controller: Option<soroban_sdk::Address>,
 ) -> (
     SmartAccountClient<'_>,
     soroban_sdk::Address,
@@ -158,7 +181,10 @@ pub fn deploy_smart_account(
         soroban_sdk::Map::new(env);
 
     // Deploy the smart account with the passkey signer
-    let account_addr = env.register(SMART_ACCOUNT_WASM, (&signers, &policies));
+    let account_addr = env.register(
+        SMART_ACCOUNT_WASM,
+        (&signers, &policies, &recovery_controller),
+    );
 
     let client = SmartAccountClient::new(env, &account_addr);
     (client, account_addr, verifier_addr, signing_key)

@@ -48,8 +48,7 @@ use soroban_sdk::xdr::{
     SorobanCredentials, VecM,
 };
 use soroban_sdk::{
-    Address, Bytes, BytesN, Env, Event, IntoVal, Map, String, Symbol, TryFromVal, Val,
-    Vec as SVec,
+    Address, Bytes, BytesN, Env, Event, IntoVal, Map, String, Symbol, TryFromVal, Val, Vec as SVec,
 };
 use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRuleType, Signer};
 
@@ -114,7 +113,15 @@ fn deploy(env: &Env) -> CompletionSetup<'_> {
     let signers = soroban_sdk::vec![env, orig_signer];
     let policies: Map<Address, Val> = Map::new(env);
     let account_addr = addr_from(env, &fixture.account);
-    env.register_at(&account_addr, SMART_ACCOUNT_WASM, (signers, policies));
+    // `recovery_controller: None` — this test installs the zero-signer
+    // recovery rule itself below (via `add_context_rule`) so it can control
+    // exactly when/how the policy is installed; passing `Some` here would
+    // double-install a recovery rule.
+    env.register_at(
+        &account_addr,
+        SMART_ACCOUNT_WASM,
+        (signers, policies, None::<Address>),
+    );
     let account = SmartAccountClient::new(env, &account_addr);
 
     // --- M0 zk-verifier + ZkRecovery controller, pinned at CONTROLLER. ---

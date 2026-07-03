@@ -117,8 +117,30 @@ impl Contract {
         e.deployer().with_current_contract(salt.clone())
     }
 
+    /// Builds the `Symbol` cache key for `resolve`'s instance-storage cache.
+    /// Registry names may contain `-` (e.g. `"zk-recovery"`), which `Symbol`
+    /// rejects (its charset is `[a-zA-Z0-9_]` only, no hyphen) -- this maps
+    /// `-` -> `_` for the CACHE KEY ONLY; the registry lookup itself still
+    /// uses `name` unchanged (`fetch_contract_id` takes a plain `String`, no
+    /// charset restriction), so this changes nothing about which name is
+    /// resolved, only what the resulting address is cached under. No `alloc`
+    /// needed (this crate is `#![no_std]`): names are short static literals,
+    /// comfortably under the 32-byte stack buffer.
+    fn cache_key(env: &Env, name: &str) -> Symbol {
+        const MAX: usize = 32;
+        let bytes = name.as_bytes();
+        assert!(bytes.len() <= MAX, "resolve() name too long for cache key");
+        let mut buf = [0u8; MAX];
+        for (i, &b) in bytes.iter().enumerate() {
+            buf[i] = if b == b'-' { b'_' } else { b };
+        }
+        let s = core::str::from_utf8(&buf[..bytes.len()])
+            .unwrap_or_else(|_| panic!("resolve() name must be valid UTF-8"));
+        Symbol::new(env, s)
+    }
+
     fn resolve(env: &Env, name: &str) -> Address {
-        let key = Symbol::new(env, name);
+        let key = Self::cache_key(env, name);
         if let Some(addr) = env.storage().instance().get::<_, Address>(&key) {
             return addr;
         }
@@ -134,7 +156,15 @@ impl Contract {
         let signers = soroban_sdk::vec![e, signer];
         let policies: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val> =
             soroban_sdk::Map::new(e);
-        Self::deployer(e, salt).deploy_v2(Self::account_wasm_hash(e), (&signers, &policies))
+        // Production deploys always install the M1 zk-recovery controller as
+        // the account's recovery rule policy (uniform across the anonymity
+        // set) — resolved the same cached way as "verifier". The genesis
+        // leaf insert for this account is a later task (not here).
+        let recovery_controller = Self::resolve(e, "zk-recovery");
+        Self::deployer(e, salt).deploy_v2(
+            Self::account_wasm_hash(e),
+            (&signers, &policies, &Some(recovery_controller)),
+        )
     }
 
     /// SHA-256 of the embedded smart-account wasm — equal to the installed
@@ -166,8 +196,11 @@ impl Contract {
 #[cfg(test)]
 mod test {
     use super::*;
+    use soroban_sdk::auth::Context;
     use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{contract, contractimpl, Env, IntoVal};
+    use soroban_sdk::{contract, contractimpl, contracttype, Env, IntoVal, TryFromVal};
+    use stellar_accounts::policies::Policy;
+    use stellar_accounts::smart_account::ContextRule;
 
     // Minimal mock: every `fetch_contract_id` call returns a fixed address.
     #[contract]
@@ -185,6 +218,78 @@ mod test {
                 .instance()
                 .get::<_, Address>(&Symbol::new(env, "fixed"))
                 .unwrap()
+        }
+    }
+
+    /// Install-param shape matching `nido_zk_recovery::types::
+    /// ZkRecoveryInstallParams` structurally (a single `version: u32` field)
+    /// without adding a real dependency on that crate here — `#[contracttype]`
+    /// structs encode purely by field name/order on the ledger, so this
+    /// decodes identically to the real type's `Val`.
+    #[contracttype]
+    #[derive(Clone)]
+    struct StubInstallParams {
+        pub version: u32,
+    }
+
+    /// Minimal stub implementing OZ's `Policy`, standing in for the real
+    /// `nido-zk-recovery` controller so `deploy_account_contract`'s
+    /// `add_context_rule` cross-call into `Policy::install` has somewhere
+    /// real to land. ALSO doubles as the "verifier" `fetch_contract_id`
+    /// result in `get_c_address_unaffected_by_recovery_controller_arg` below
+    /// -- registering an `External` signer (the Default rule's passkey
+    /// signer) cross-calls the verifier's `batch_canonicalize_key`
+    /// (`stellar-accounts` `storage.rs::validate_no_canonical_duplicates`),
+    /// so this contract implements that entry point too (trivially, via the
+    /// inherent-method `impl` block below -- not the real `Verifier` trait,
+    /// which needs an associated `KeyData`/`SigData` type this test doesn't
+    /// care about).
+    #[contract]
+    struct StubController;
+
+    #[contractimpl]
+    impl Policy for StubController {
+        type AccountParams = StubInstallParams;
+
+        fn install(
+            _e: &Env,
+            _install_params: Self::AccountParams,
+            _context_rule: ContextRule,
+            smart_account: Address,
+        ) {
+            smart_account.require_auth();
+        }
+
+        fn enforce(
+            _e: &Env,
+            _context: Context,
+            _authenticated_signers: soroban_sdk::Vec<stellar_accounts::smart_account::Signer>,
+            _context_rule: ContextRule,
+            smart_account: Address,
+        ) {
+            smart_account.require_auth();
+        }
+
+        fn uninstall(_e: &Env, _context_rule: ContextRule, smart_account: Address) {
+            smart_account.require_auth();
+        }
+    }
+
+    #[contractimpl]
+    impl StubController {
+        /// Trivial "canonicalization": returns the raw key bytes unchanged.
+        /// Good enough for a single-signer registration (this test's Default
+        /// rule has exactly one signer, so `validate_no_canonical_duplicates`
+        /// never compares two canonical outputs against each other).
+        pub fn batch_canonicalize_key(
+            e: &Env,
+            key_data: soroban_sdk::Vec<soroban_sdk::Val>,
+        ) -> soroban_sdk::Vec<Bytes> {
+            let mut out = soroban_sdk::Vec::new(e);
+            for k in key_data.iter() {
+                out.push_back(Bytes::try_from_val(e, &k).unwrap_or_else(|_| Bytes::new(e)));
+            }
+            out
         }
     }
 
@@ -223,6 +328,49 @@ mod test {
 
         assert_ne!(first, second);
         assert_eq!(first, first_again);
+    }
+
+    /// The deterministic-address invariant: threading the new
+    /// `recovery_controller` argument through `deploy_account_contract` into
+    /// the smart-account constructor must NOT change the deployer-derived
+    /// address. `get_c_address` (== `deployed_address()`) is a pure function
+    /// of deployer + salt + wasm-hash, computed before the constructor ever
+    /// runs, so it must equal the address `create_account` (which now passes
+    /// a resolved `Some(controller)`) actually deploys to.
+    #[test]
+    fn get_c_address_unaffected_by_recovery_controller_arg() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        // "verifier" and "zk-recovery" both resolve to the same stub
+        // controller (a real `Policy` implementer, so the constructor's
+        // `add_context_rule` -> `Policy::install` cross-call has somewhere
+        // real to land; never actually invoked as a verifier here).
+        let controller_addr = env.register(StubController, ());
+
+        // Install the embedded smart-account wasm on-chain at its own
+        // sha256, mirroring `account_wasm_hash_equals_uploaded_wasm_hash` --
+        // `deploy_v2` needs the wasm actually installed at the hash
+        // `account_wasm_hash` derives, which the real deploy script (not
+        // this unit test) is normally responsible for.
+        env.deployer().upload_contract_wasm(smart_account::WASM);
+
+        let registry_addr = Address::from_str(&env, REGISTRY);
+        env.register_at(&registry_addr, MockRegistry, (controller_addr.clone(),));
+
+        let admin = Address::generate(&env);
+        let factory_addr = env.register(Contract, (admin,));
+        let salt = BytesN::from_array(&env, &[9; 32]);
+        let key = BytesN::from_array(&env, &[3; 65]);
+
+        let predicted = env.as_contract(&factory_addr, || Contract::get_c_address(&env, &salt));
+        let deployed =
+            env.as_contract(&factory_addr, || Contract::create_account(&env, &salt, key));
+
+        assert_eq!(
+            predicted, deployed,
+            "recovery_controller ctor arg must not affect the deployer-derived address"
+        );
     }
 
     /// The property that actually matters: the hash the factory hands to
