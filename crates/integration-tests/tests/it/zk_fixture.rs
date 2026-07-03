@@ -373,6 +373,136 @@ fn print_lifecycle_cancel_prover_toml() {
     println!("###PROVER_JSON_END###");
 }
 
+/// M1 Task 9: the REVOKE-variant generator, invoked by
+/// `circuits/zk_recovery/scripts/gen_lifecycle_revoke_fixture.sh`. Computes
+/// the witness for a real `action=3` ("revoke"/burn, spec §2.3) proof over
+/// the SAME leaf/secret/root/nullifier as the base lifecycle fixture, with
+/// `pk_prefix`/`pk_x`/`pk_y`/`timelock_secs` all ZEROED (same convention as
+/// the cancel fixture) and `nonce = zk_fixture::REVOKE_NONCE` (`1` -- this
+/// fixture models "burn without a prior initiate", spec §2.3's escape
+/// hatch). This mirrors `print_lifecycle_cancel_prover_toml` exactly except
+/// for the `action`/`nonce` substitutions.
+#[test]
+#[ignore = "generator invoked by `circuits/zk_recovery/scripts/gen_lifecycle_revoke_fixture.sh`, \
+            not part of the normal suite"]
+fn print_lifecycle_revoke_prover_toml() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    let dom_leaf = hex32(DOM_LEAF);
+    let dom_bind = hex32(DOM_BIND);
+    let dom_null = hex32(DOM_NULL);
+    let dom_auth = hex32(DOM_AUTH);
+
+    let secret = lifecycle_secret();
+    let (acct_hi, acct_lo) = split16(&zk_fixture::ACCOUNT);
+    let (ctrl_hi, ctrl_lo) = split16(&zk_fixture::CONTROLLER);
+
+    let npass_hash: [u8; 32] = Sha256::digest(zk_fixture::NETWORK_PASSPHRASE.as_bytes()).into();
+    let (npass_hi, npass_lo) = split16(&npass_hash);
+
+    // Revoke's `auth_hash` zeroes pk_prefix/pk_x/pk_y/timelock_secs, same
+    // convention as the cancel fixture (spec §2.4).
+    let pk_x_hi = [0u8; 32];
+    let pk_x_lo = [0u8; 32];
+    let pk_y_hi = [0u8; 32];
+    let pk_y_lo = [0u8; 32];
+    let pk_prefix = field_u64(0);
+    let timelock_secs = field_u64(0);
+
+    let action = field_u64(zk_fixture::ACTION_REVOKE);
+    let nonce = field_u64(zk_fixture::REVOKE_NONCE);
+
+    let zeros = zero_hashes(&env);
+
+    let inner = p2(&env, &[dom_leaf, secret]);
+    let stored = p2(&env, &[dom_bind, acct_hi, acct_lo, inner]);
+
+    let mut cur = stored;
+    for z in &zeros {
+        cur = p2(&env, &[cur, *z]);
+    }
+    let root = cur;
+
+    let nullifier = p2(&env, &[dom_null, acct_hi, acct_lo, secret]);
+
+    let auth_hash = p2(
+        &env,
+        &[
+            dom_auth,
+            action,
+            acct_hi,
+            acct_lo,
+            npass_hi,
+            npass_lo,
+            ctrl_hi,
+            ctrl_lo,
+            pk_prefix,
+            pk_x_hi,
+            pk_x_lo,
+            pk_y_hi,
+            pk_y_lo,
+            nonce,
+            timelock_secs,
+        ],
+    );
+
+    println!("###PROVER_TOML_BEGIN###");
+    println!("root = \"{}\"", to_hex(&root));
+    println!("nullifier = \"{}\"", to_hex(&nullifier));
+    println!("auth_hash = \"{}\"", to_hex(&auth_hash));
+    println!("secret = \"{}\"", to_hex(&secret));
+    println!("acct_hi = \"{}\"", to_hex(&acct_hi));
+    println!("acct_lo = \"{}\"", to_hex(&acct_lo));
+    println!("path_bits = [");
+    for _ in 0..DEPTH {
+        println!("  \"0x00\",");
+    }
+    println!("]");
+    println!("path_siblings = [");
+    for z in &zeros {
+        println!("  \"{}\",", to_hex(z));
+    }
+    println!("]");
+    println!("action = \"{}\"", to_hex(&action));
+    println!("npass_hi = \"{}\"", to_hex(&npass_hi));
+    println!("npass_lo = \"{}\"", to_hex(&npass_lo));
+    println!("ctrl_hi = \"{}\"", to_hex(&ctrl_hi));
+    println!("ctrl_lo = \"{}\"", to_hex(&ctrl_lo));
+    println!("pk_prefix = \"{}\"", to_hex(&pk_prefix));
+    println!("pk_x_hi = \"{}\"", to_hex(&pk_x_hi));
+    println!("pk_x_lo = \"{}\"", to_hex(&pk_x_lo));
+    println!("pk_y_hi = \"{}\"", to_hex(&pk_y_hi));
+    println!("pk_y_lo = \"{}\"", to_hex(&pk_y_lo));
+    println!("nonce = \"{}\"", to_hex(&nonce));
+    println!("timelock_secs = \"{}\"", to_hex(&timelock_secs));
+    println!("###PROVER_TOML_END###");
+
+    println!("###PROVER_JSON_BEGIN###");
+    println!("{{");
+    println!("  \"account\": \"{}\",", to_hex(&zk_fixture::ACCOUNT));
+    println!("  \"controller\": \"{}\",", to_hex(&zk_fixture::CONTROLLER));
+    println!(
+        "  \"network_passphrase\": \"{}\",",
+        zk_fixture::NETWORK_PASSPHRASE
+    );
+    println!("  \"nonce\": {},", zk_fixture::REVOKE_NONCE);
+    println!("  \"timelock_secs\": 0,");
+    println!("  \"action\": {},", zk_fixture::ACTION_REVOKE);
+    println!("  \"new_pubkey\": \"0x{}\",", "00".repeat(65));
+    println!(
+        "  \"secret_label\": \"{}\",",
+        String::from_utf8_lossy(zk_fixture::SECRET_LABEL)
+    );
+    println!("  \"secret\": \"{}\",", to_hex(&secret));
+    println!("  \"leaf_stored\": \"{}\",", to_hex(&stored));
+    println!("  \"root\": \"{}\",", to_hex(&root));
+    println!("  \"nullifier\": \"{}\",", to_hex(&nullifier));
+    println!("  \"auth_hash\": \"{}\"", to_hex(&auth_hash));
+    println!("}}");
+    println!("###PROVER_JSON_END###");
+}
+
 /// Deploy a throwaway contract (the M0 stateless WebAuthn verifier wasm --
 /// zero constructor args, no state) at a chosen contract-id via
 /// `env.register_at`, then round-trip the resolved `Address` back to its
@@ -483,5 +613,38 @@ fn fixture_cancel_proof_verifies() {
     assert!(
         result.is_ok(),
         "fixture cancel proof must verify under the M0 verifier + vk: {result:?}"
+    );
+}
+
+/// M1 Task 9 sibling of `fixture_proof_verifies`, for the REVOKE
+/// (`action=3`) fixture: proves `lifecycle_fixture_revoke`'s `proof`/
+/// `public_inputs` bytes are a REAL `bb prove` output the M0 verifier
+/// actually accepts, before `zk_recovery_lifecycle.rs` relies on it to
+/// exercise the proof-gated `burn_nullifier` end-to-end.
+#[test]
+fn fixture_revoke_proof_verifies() {
+    mod zk_verifier_contract {
+        soroban_sdk::contractimport!(
+            file = "../../target/wasm32v1-none/contract/nido_zk_verifier.wasm"
+        );
+    }
+
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    let vk_bytes_raw: &[u8] = include_bytes!("../../fixtures/zk/vk");
+    let vk_bytes = Bytes::from_slice(&env, vk_bytes_raw);
+
+    let fixture = zk_fixture::lifecycle_fixture_revoke(&env);
+    let proof_bytes = Bytes::from_slice(&env, &fixture.proof);
+    let public_inputs = Bytes::from_slice(&env, &fixture.public_inputs);
+
+    let contract_id = env.register(zk_verifier_contract::WASM, (vk_bytes,));
+    let client = zk_verifier_contract::Client::new(&env, &contract_id);
+
+    let result = client.try_verify_proof(&public_inputs, &proof_bytes);
+    assert!(
+        result.is_ok(),
+        "fixture revoke proof must verify under the M0 verifier + vk: {result:?}"
     );
 }

@@ -148,6 +148,46 @@ const PUBLIC_INPUTS_BYTES_CANCEL: &[u8] =
 const AUTH_HASH_CANCEL_HEX: &str =
     "0x177b69399bdb43e62195ecc35572a7fa99462d5694df2349e892447731dd17f0";
 
+/// `action` bound into `auth_hash` for a REVOKE proof -- `3` means "revoke"
+/// (burn a nullifier) per the `zk_recovery` circuit's protocol
+/// (`circuits/zk_recovery/src/main.nr`), spec §2.3. M1 Task 9: this closes
+/// the public-nullifier grief (see
+/// `contracts/zk-recovery/src/controller.rs::burn_nullifier`'s doc comment)
+/// by requiring a REAL proof of knowledge of the nullifier's secret, not
+/// just the caller's own account auth.
+pub const ACTION_REVOKE: u64 = 3;
+
+/// The nonce this fixture's REVOKE proof is bound to. Chosen to match the
+/// "burn without a prior initiate" scenario -- `stored_nonce` is `0` for a
+/// fresh account, so the first accepted nonce for any of
+/// `initiate_recovery`/`cancel_recovery`/`burn_nullifier` is `1`.
+pub const REVOKE_NONCE: u64 = 1;
+
+/// A FOURTH real proof for the exact same leaf/secret/root/nullifier as
+/// [`lifecycle_fixture`], but `action = 3` ("revoke"/burn, spec §2.3) with
+/// `pk_prefix`/`pk_x`/`pk_y`/`timelock_secs` all ZEROED (same convention as
+/// the cancel fixture) and `nonce = REVOKE_NONCE`. Generated the same way as
+/// the other lifecycle fixtures -- see
+/// `circuits/zk_recovery/scripts/gen_lifecycle_revoke_fixture.sh` and
+/// `circuits/zk_recovery/fixtures/lifecycle_revoke/prover_inputs.json` for
+/// provenance.
+///
+/// Exists to prove `contracts/zk-recovery/src/controller.rs::burn_nullifier`
+/// end-to-end against a REAL `action=3` proof (M1 Task 9): the legitimate
+/// owner's proof-gated revoke. Because this proof is bound (via `auth_hash`)
+/// to [`ACCOUNT`] specifically, it is ALSO the fixture the griefing-closed
+/// regression test reuses to prove a DIFFERENT account cannot burn this same
+/// public nullifier -- recomputing `auth_hash` for a foreign account no
+/// longer matches the triple this proof verifies against. See
+/// `crates/integration-tests/tests/it/zk_recovery_lifecycle.rs::real_revoke_proof_burns_nullifier_and_blocks_later_initiate`
+/// and `...::burn_nullifier_cannot_grief_a_different_accounts_public_nullifier`.
+const PROOF_BYTES_REVOKE: &[u8] =
+    include_bytes!("../../../circuits/zk_recovery/fixtures/lifecycle_revoke/proof");
+const PUBLIC_INPUTS_BYTES_REVOKE: &[u8] =
+    include_bytes!("../../../circuits/zk_recovery/fixtures/lifecycle_revoke/public_inputs");
+const AUTH_HASH_REVOKE_HEX: &str =
+    "0x2fa906404635a0b01019c09371c0e6054d8c5d051b1f0b1996cebd6dc53c6f4a";
+
 // Computed witness values for the pinned constants above. Regenerate with
 // `just gen-zk-lifecycle-fixture` and copy the emitted values from
 // `circuits/zk_recovery/fixtures/lifecycle/prover_inputs.json` here if the
@@ -371,5 +411,68 @@ pub fn lifecycle_fixture_cancel(_env: &Env) -> LifecycleFixture {
         auth_hash,
         proof: PROOF_BYTES_CANCEL.to_vec(),
         public_inputs: PUBLIC_INPUTS_BYTES_CANCEL.to_vec(),
+    }
+}
+
+/// Loads the REVOKE variant of the lifecycle fixture: the SAME
+/// leaf/secret/root/nullifier as [`lifecycle_fixture`], `action = 3`,
+/// `pk_prefix`/`pk_x`/`pk_y`/`timelock_secs` all zeroed (`new_pubkey` is
+/// therefore the all-zero 65-byte array), and `nonce = REVOKE_NONCE`. See
+/// [`REVOKE_NONCE`] for why this exists.
+///
+/// `timelock_secs` on the returned [`LifecycleFixture`] is `0` -- callers
+/// computing the revoke `auth_hash` via `hash::compute_auth_hash` must pass
+/// `0` for `timelock_secs` and a zeroed `BytesN<65>` for the pubkey, exactly
+/// matching this fixture's witness (spec §2.4's zeroing convention, reused
+/// for `action=3` the same way `cancel_recovery`'s `action=2` proof does).
+///
+/// # Panics
+///
+/// Panics under the same conditions as [`lifecycle_fixture`], applied to the
+/// `lifecycle_revoke` fixture files.
+#[must_use]
+pub fn lifecycle_fixture_revoke(_env: &Env) -> LifecycleFixture {
+    let new_pubkey = [0u8; 65];
+
+    let root = hex32(ROOT_HEX);
+    let nullifier = hex32(NULLIFIER_HEX);
+    let auth_hash = hex32(AUTH_HASH_REVOKE_HEX);
+
+    assert_eq!(
+        PUBLIC_INPUTS_BYTES_REVOKE.len(),
+        96,
+        "public_inputs (revoke) fixture must be 96 bytes"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_REVOKE[0..32],
+        &root[..],
+        "public_inputs (revoke) [0..32] must equal root -- root does not depend on action"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_REVOKE[32..64],
+        &nullifier[..],
+        "public_inputs (revoke) [32..64] must equal nullifier -- nullifier does not \
+         depend on action"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_REVOKE[64..96],
+        &auth_hash[..],
+        "public_inputs (revoke) [64..96] must equal auth_hash"
+    );
+
+    LifecycleFixture {
+        account: ACCOUNT,
+        controller: CONTROLLER,
+        network_passphrase: NETWORK_PASSPHRASE,
+        new_pubkey,
+        nonce: REVOKE_NONCE,
+        timelock_secs: 0,
+        secret_hex: SECRET_HEX,
+        leaf_stored: hex32(LEAF_STORED_HEX),
+        root,
+        nullifier,
+        auth_hash,
+        proof: PROOF_BYTES_REVOKE.to_vec(),
+        public_inputs: PUBLIC_INPUTS_BYTES_REVOKE.to_vec(),
     }
 }

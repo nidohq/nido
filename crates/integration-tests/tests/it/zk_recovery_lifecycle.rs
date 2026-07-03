@@ -23,8 +23,8 @@ use nido_integration_tests::zk_fixture::{self, LifecycleFixture};
 use nido_zk_recovery::hash::leaf_inner;
 use nido_zk_recovery::pool::{ZkRecovery, ZkRecoveryClient};
 use nido_zk_recovery::types::{
-    NullifierState, PendingRecovery, RecoveryCanceled, RecoveryError, RecoveryInitiated,
-    RecoveryKey,
+    NullifierBurned, NullifierState, PendingRecovery, RecoveryCanceled, RecoveryError,
+    RecoveryInitiated, RecoveryKey,
 };
 use soroban_sdk::address_payload::AddressPayload;
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
@@ -737,14 +737,16 @@ fn cancel_cooldown_active_is_rejected_before_proof_verification() {
     assert_eq!(contract_error(&res), RecoveryError::CooldownActive);
 }
 
-/// `burn_nullifier` happy path (spec §2.3): marks the nullifier `Spent`, and
-/// a later `initiate_recovery` attempt with that same nullifier is rejected
-/// `NullifierSpent` -- even though the root/proof it's paired with are
-/// otherwise entirely valid. This is the escape hatch: the legitimate owner
-/// who learns their enrollment secret leaked can instantly kill it without
-/// waiting out a self-recovery.
+/// `burn_nullifier` happy path (spec §2.3, M1 Task 9 -- proof-gated
+/// REVOKE): a REAL `action=3` proof (`zk_fixture::lifecycle_fixture_revoke`)
+/// marks the nullifier `Spent`, and a later `initiate_recovery` attempt with
+/// that same nullifier is rejected `NullifierSpent` -- even though the
+/// root/proof it's paired with are otherwise entirely valid. This is the
+/// legitimate owner's escape hatch: proving knowledge of a leaked
+/// enrollment secret instantly kills it without waiting out a
+/// self-recovery.
 #[test]
-fn burn_nullifier_marks_spent_and_blocks_a_later_initiate() {
+fn real_revoke_proof_burns_nullifier_and_blocks_later_initiate() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
     let (client, account, fixture) = setup(&env); // known root, mock_all_auths on
@@ -752,7 +754,41 @@ fn burn_nullifier_marks_spent_and_blocks_a_later_initiate() {
     let nullifier = BytesN::from_array(&env, &fixture.nullifier);
     assert_eq!(nullifier_state(&env, &client, &nullifier), None);
 
-    client.burn_nullifier(&account, &nullifier);
+    let revoke_fixture = zk_fixture::lifecycle_fixture_revoke(&env);
+    assert_eq!(
+        revoke_fixture.root, fixture.root,
+        "sanity: the revoke fixture must share the same root as the base fixture -- \
+         revoking does not touch the Merkle tree"
+    );
+    assert_eq!(
+        revoke_fixture.nullifier, fixture.nullifier,
+        "sanity: the revoke fixture must share the same nullifier as the base fixture"
+    );
+    let revoke_root = BytesN::from_array(&env, &revoke_fixture.root);
+    let revoke_nullifier = BytesN::from_array(&env, &revoke_fixture.nullifier);
+    let revoke_proof = Bytes::from_slice(&env, &revoke_fixture.proof);
+
+    client.burn_nullifier(
+        &account,
+        &revoke_fixture.nonce,
+        &revoke_root,
+        &revoke_nullifier,
+        &revoke_proof,
+    );
+
+    // `events().all()` only returns events from the LAST invocation -- must
+    // be captured before any further client calls (including read-only
+    // storage inspection via `nullifier_state`'s `env.as_contract`).
+    let expected_event = NullifierBurned {
+        account: &account,
+        nullifier: &nullifier,
+    };
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        [expected_event.to_xdr(&env, &client.address)],
+        "NullifierBurned must be emitted with account/nullifier"
+    );
+
     assert_eq!(
         nullifier_state(&env, &client, &nullifier),
         Some(NullifierState::Spent),
@@ -779,37 +815,55 @@ fn burn_nullifier_marks_spent_and_blocks_a_later_initiate() {
     );
 }
 
-/// `burn_nullifier` requires `account`'s own auth. Mirrors
+/// `burn_nullifier` requires `account`'s own auth -- `account.require_auth()`
+/// is the very first check, so it must reject before the (dummy, otherwise
+/// nonsense) root/nullifier/proof are even inspected. Mirrors
 /// `cancel_recovery_requires_account_auth`: no auth mocked at all.
 #[test]
 fn burn_nullifier_requires_account_auth() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
-    let (client, account, fixture) = deploy(&env);
+    let (client, account, _fixture) = deploy(&env); // no leaf, no auth mocked
 
-    let nullifier = BytesN::from_array(&env, &fixture.nullifier);
-    let res = client.try_burn_nullifier(&account, &nullifier);
+    let dummy_root = BytesN::from_array(&env, &[0u8; 32]);
+    let dummy_nullifier = BytesN::from_array(&env, &[0u8; 32]);
+    let dummy_proof = Bytes::from_slice(&env, &[]);
+    let res =
+        client.try_burn_nullifier(&account, &1u64, &dummy_root, &dummy_nullifier, &dummy_proof);
     assert!(
         res.is_err(),
         "burn_nullifier without the account's auth must fail"
     );
 }
 
-/// `burn_nullifier` must reject burning a nullifier currently `Reserved` by
-/// a DIFFERENT account's pending -- otherwise one account could grief
-/// another's in-flight recovery by burning its nullifier out from under it.
+/// The griefing-closed regression test (spec §2.3, M1 Task 9 -- the whole
+/// point of this fix): account `A`'s nullifier is made PUBLIC (revealed as a
+/// proof public input by a real `initiate_recovery`) and then RELEASED (by a
+/// real `cancel_recovery`) -- exactly the sequence the pre-fix
+/// account-auth-only `burn_nullifier` was vulnerable to. A DIFFERENT account
+/// `B` then tries to burn that same public nullifier using the ONLY real
+/// `action=3` proof that exists for it (`zk_fixture::lifecycle_fixture_revoke`,
+/// bound to `A`'s address via `auth_hash`) -- this MUST fail, because `B`
+/// calling `burn_nullifier` makes this contract recompute `auth_hash` from
+/// `B`'s own address, which no longer matches the triple the fixture proof
+/// verifies against. A real griefer (who does not know `A`'s secret) cannot
+/// produce ANY valid `action=3` proof binding `B`'s own address to `A`'s
+/// leaf/nullifier, so reusing the only proof that exists is the closest a
+/// test can get to demonstrating that impossibility. Proves the grief is
+/// closed: `B` cannot kill `A`'s enrollment credential.
 #[test]
-fn burn_nullifier_rejects_nullifier_reserved_by_another_account() {
+fn burn_nullifier_cannot_grief_a_different_accounts_public_nullifier() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
-    let (client, account, fixture) = setup(&env);
+    let (client, account, fixture) = setup(&env); // known root, mock_all_auths on
 
     let new_pubkey = BytesN::from_array(&env, &fixture.new_pubkey);
     let root = BytesN::from_array(&env, &fixture.root);
     let nullifier = BytesN::from_array(&env, &fixture.nullifier);
     let proof = Bytes::from_slice(&env, &fixture.proof);
 
-    // `account` reserves the nullifier via a real initiate.
+    // `A` initiates (reveals `nullifier` as a real proof PUBLIC INPUT --
+    // it is now public knowledge, exactly as it would be on a real chain).
     client.initiate_recovery(
         &account,
         &new_pubkey,
@@ -824,17 +878,51 @@ fn burn_nullifier_rejects_nullifier_reserved_by_another_account() {
         Some(NullifierState::Reserved(account.clone()))
     );
 
-    // A different account tries to burn it -- must be rejected.
-    let other = Address::generate(&env);
-    let res = client.try_burn_nullifier(&other, &nullifier);
-    assert_eq!(
-        contract_error(&res),
-        RecoveryError::NullifierReservedElsewhere
+    // `A` cancels (RELEASES the reservation -- spec §2.3: "a cancel never
+    // burns the enrollment", so the nullifier stays usable, but it is
+    // already public).
+    let cancel_fixture = zk_fixture::lifecycle_fixture_cancel(&env);
+    let cancel_root = BytesN::from_array(&env, &cancel_fixture.root);
+    let cancel_nullifier = BytesN::from_array(&env, &cancel_fixture.nullifier);
+    let cancel_proof = Bytes::from_slice(&env, &cancel_fixture.proof);
+    client.cancel_recovery(
+        &account,
+        &cancel_fixture.nonce,
+        &cancel_root,
+        &cancel_nullifier,
+        &cancel_proof,
     );
-
-    // The reservation is untouched by the rejected attempt.
     assert_eq!(
         nullifier_state(&env, &client, &nullifier),
-        Some(NullifierState::Reserved(account))
+        None,
+        "the reservation must be released (not spent) by the cancel -- the nullifier is \
+         public but unclaimed, exactly the griefing window this fix closes"
+    );
+
+    // `B` (a totally different, unrelated account) tries to burn `A`'s now-
+    // public nullifier using the only real `action=3` proof that exists --
+    // the one bound to `A`. `B`'s own nonce sequence is independent and
+    // fresh, so `nonce = 1` is what `B` must pass to clear the replay check
+    // and reach proof verification.
+    let other = Address::generate(&env);
+    let revoke_fixture = zk_fixture::lifecycle_fixture_revoke(&env);
+    let revoke_root = BytesN::from_array(&env, &revoke_fixture.root);
+    let revoke_proof = Bytes::from_slice(&env, &revoke_fixture.proof);
+
+    let res = client.try_burn_nullifier(&other, &1u64, &revoke_root, &nullifier, &revoke_proof);
+    assert_eq!(
+        contract_error(&res),
+        RecoveryError::VerificationFailed,
+        "a foreign account must NOT be able to burn a victim's public nullifier -- \
+         the recomputed auth_hash binds THIS call's account, so it cannot match a proof \
+         generated for a different account"
+    );
+
+    // The grief attempt must leave the nullifier exactly as it was --
+    // released, not spent, and still burnable by its rightful owner later.
+    assert_eq!(
+        nullifier_state(&env, &client, &nullifier),
+        None,
+        "a failed grief attempt must not change the nullifier's state"
     );
 }

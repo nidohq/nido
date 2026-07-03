@@ -47,6 +47,22 @@ const ACTION_INITIATE: u32 = 1;
 /// stopping THIS pending recovery, not installing any particular new key.
 const ACTION_CANCEL: u32 = 2;
 
+/// `action = 3` means "revoke" (burn a nullifier) in the `zk_recovery`
+/// circuit's protocol (`circuits/zk_recovery/src/main.nr`), spec §2.3. Like
+/// a cancel proof, a revoke proof's `auth_hash` ZEROES the pubkey/timelock
+/// fields (see `burn_nullifier` below) -- a revoke proves "I know the
+/// secret behind this nullifier and want it dead", not "install this key".
+/// This is what closes the public-nullifier grief: `nullifier` becomes
+/// PUBLIC the moment any `initiate_recovery` reveals it as a proof public
+/// input, and a `cancel_recovery` releases its reservation while it stays
+/// public -- so account-auth alone (the pre-fix shape) let ANY third party
+/// `burn_nullifier(their_own_account, victim_nullifier)` and permanently
+/// kill the victim's enrollment credential. Only PROVING knowledge of the
+/// secret (via the SAME `acct_hi`/`acct_lo` witness the circuit uses for
+/// the Merkle leaf, the nullifier, AND `auth_hash`) distinguishes the
+/// legitimate owner from a griefer once `nullifier` is public.
+const ACTION_REVOKE: u32 = 3;
+
 /// Rolling rate-limit window: 90 days, in seconds (spec §3.3).
 const RATE_WINDOW_SECS: u64 = 90 * 24 * 3600;
 /// Max initiations allowed per account within `RATE_WINDOW_SECS` (spec §3.3).
@@ -424,33 +440,137 @@ impl ZkRecovery {
         new_used
     }
 
-    /// The legitimate owner's escape hatch for a (possibly leaked)
-    /// enrollment secret (spec §2.3): instantly spends that secret's
-    /// nullifier without waiting out a self-recovery, so a later
-    /// `initiate_recovery` attempt with the same nullifier fails
+    /// The legitimate owner's proof-gated REVOKE for a (possibly leaked)
+    /// enrollment secret (spec §2.3): a REAL `action=3` proof of knowledge of
+    /// the secret behind `nullifier`'s Merkle leaf permanently spends it, so
+    /// a later `initiate_recovery` attempt with the same nullifier fails
     /// `NullifierSpent` -- even one from an attacker who legitimately knows
-    /// the leaked secret. Requires `account`'s own auth.
+    /// the leaked secret. Requires BOTH `account`'s own auth AND the proof,
+    /// analogous to how `cancel_recovery` requires an `action=2` proof.
     ///
-    /// Guard: a nullifier currently `Reserved` by a DIFFERENT account's
-    /// pending must not be burnable by this account (that would let one
-    /// account grief another's in-flight recovery) -- rejected with
-    /// `NullifierReservedElsewhere`. A nullifier `Reserved` by THIS account
-    /// (its own pending), already `Spent`, or unset are all burnable/
-    /// idempotent.
-    pub fn burn_nullifier(env: Env, account: Address, nullifier: BytesN<32>) {
+    /// Why account-auth alone is not enough (the pre-fix shape of this
+    /// function): `nullifier` becomes PUBLIC the moment any
+    /// `initiate_recovery` reveals it as a proof public input, and a
+    /// `cancel_recovery` RELEASES its reservation while it stays public. So
+    /// after a legitimate cancel, ANY third party could call
+    /// `burn_nullifier(their_own_account, victim_nullifier)` and permanently
+    /// kill the victim's enrollment credential -- violating spec §2.3 ("a
+    /// cancel never burns the enrollment"). Since `nullifier` is public,
+    /// only PROVING knowledge of the secret behind it distinguishes the
+    /// legitimate owner from a griefer, exactly like `cancel_recovery`
+    /// proof-gates stopping a pending recovery.
+    ///
+    /// Ordered checks: (1) account auth, (2) `root` must be a currently-
+    /// known Merkle root (the leaf must be in the tree -- proves an enrolled
+    /// credential), (3) `nonce` must be exactly one past the stored value
+    /// (bumped on success -- shared nonce counter with
+    /// `initiate_recovery`/`cancel_recovery`), (4) the nullifier must not
+    /// already be `Spent` (burning twice is a no-op error -- a nullifier
+    /// currently `Reserved`, by this account or any other, is still a valid
+    /// burn TARGET at this state-check step, because step 5's proof is what
+    /// actually enforces ownership), (5) a REAL `action=3` proof -- with the
+    /// pubkey/timelock fields ZEROED, same convention as `cancel_recovery`'s
+    /// `action=2` proof (spec §2.4) -- must verify against this call's own
+    /// recomputed `auth_hash`.
+    ///
+    /// Note on the removed `NullifierReservedElsewhere` guard (spec §2.3, M1
+    /// Task 6): the circuit's `acct_hi`/`acct_lo` witness is the SAME value
+    /// used to derive the Merkle leaf, the nullifier, AND `auth_hash`
+    /// (`circuits/zk_recovery/src/main.nr`). A verifying proof is bound to
+    /// the exact `(root, nullifier, auth_hash)` triple it was generated
+    /// for, and `auth_hash` here is recomputed from THIS call's `account`
+    /// argument -- so a caller cannot swap in a foreign `account` and reuse
+    /// someone else's public `nullifier`/`root`: the recomputed `auth_hash`
+    /// no longer matches the one the proof was generated against (a
+    /// griefer would additionally need to find a different secret whose
+    /// nullifier collides with the victim's under a fresh proof of their
+    /// own, a Poseidon2 preimage attack, not a real capability). The state
+    /// guard is therefore no longer load-bearing and is not reinstated
+    /// here -- ownership is enforced entirely by the proof, exactly like
+    /// `cancel_recovery`.
+    ///
+    /// On success: also clears `account`'s `Pending` record if it was
+    /// reserving exactly this nullifier -- revoking aborts an in-flight
+    /// recovery for that credential too, since there is nothing left to
+    /// complete once its enrollment secret is dead.
+    pub fn burn_nullifier(
+        env: Env,
+        account: Address,
+        nonce: u64,
+        root: BytesN<32>,
+        nullifier: BytesN<32>,
+        proof: Bytes,
+    ) {
         account.require_auth();
 
-        let key = RecoveryKey::Nullifier(nullifier.clone());
-        if let Some(NullifierState::Reserved(reserved_for)) =
-            env.storage().persistent().get::<_, NullifierState>(&key)
+        let cfg = config(&env);
+
+        // 2. `root` must be a currently-known Merkle root.
+        if !is_known_root(&env, &root) {
+            panic_with_error!(&env, RecoveryError::UnknownRoot);
+        }
+
+        // 3. `nonce` must be exactly one past the stored value; bump it (a
+        // fresh proof per revoke, replay-protected exactly like
+        // `initiate_recovery`/`cancel_recovery`, sharing the same counter).
+        let expected_nonce = stored_nonce(&env, &account) + 1;
+        if nonce != expected_nonce {
+            panic_with_error!(&env, RecoveryError::InvalidNonce);
+        }
+        bump_nonce(&env, &account, nonce);
+
+        // 4. Already-`Spent` is a no-op error; `Reserved` (by anyone) or
+        // absent are both valid burn targets at this state-check step --
+        // ownership is enforced by step 5's proof, not by state here.
+        let nullifier_key = RecoveryKey::Nullifier(nullifier.clone());
+        if let Some(NullifierState::Spent) = env
+            .storage()
+            .persistent()
+            .get::<_, NullifierState>(&nullifier_key)
         {
-            if reserved_for != account {
-                panic_with_error!(&env, RecoveryError::NullifierReservedElsewhere);
+            panic_with_error!(&env, RecoveryError::NullifierSpent);
+        }
+
+        // 5. A REAL proof must verify against the REVOKE auth_hash this call
+        // recomputes itself: `action=3`, pubkey and timelock ZEROED per the
+        // same convention as `cancel_recovery`'s `action=2` proof (spec
+        // §2.4). This is what actually proves ownership of the nullifier's
+        // secret -- see the note above.
+        let zero_pubkey = BytesN::from_array(&env, &[0u8; 65]);
+        let expected_auth_hash = compute_auth_hash(
+            &env,
+            ACTION_REVOKE,
+            &account,
+            &cfg.network_passphrase,
+            &env.current_contract_address(),
+            &zero_pubkey,
+            nonce,
+            0,
+        );
+        let public_inputs = assemble_public_inputs(&env, &root, &nullifier, &expected_auth_hash);
+        if verify_proof(&env, &cfg.verifier, public_inputs, proof).is_err() {
+            panic_with_error!(&env, RecoveryError::VerificationFailed);
+        }
+
+        // 6. Success: revoking also aborts an in-flight recovery for this
+        // credential -- if `account`'s Pending was reserving exactly this
+        // nullifier, clear it (there is nothing left to complete once the
+        // reserved secret's nullifier is permanently `Spent`).
+        let pending_key = RecoveryKey::Pending(account.clone());
+        if let Some(pending) = env
+            .storage()
+            .persistent()
+            .get::<_, PendingRecovery>(&pending_key)
+        {
+            if pending.nullifier == nullifier {
+                env.storage().persistent().remove(&pending_key);
             }
         }
 
-        env.storage().persistent().set(&key, &NullifierState::Spent);
-        extend_persistent_max(&env, &key);
+        env.storage()
+            .persistent()
+            .set(&nullifier_key, &NullifierState::Spent);
+        extend_persistent_max(&env, &nullifier_key);
 
         NullifierBurned {
             account: &account,

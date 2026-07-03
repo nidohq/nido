@@ -144,8 +144,13 @@ pub enum RecoveryError {
     AlreadyInstalled = 19,
     Unauthorized = 20,
 
-    // controller.rs `burn_nullifier` (spec §2.3): appended, does not
-    // renumber any existing variant.
+    // Formerly raised by controller.rs `burn_nullifier`'s pre-fix
+    // account-only guard (spec §2.3, M1 Task 6). That guard is no longer
+    // reachable -- the fixed, proof-gated `burn_nullifier` (M1 Task 9)
+    // enforces ownership entirely via its `action=3` ZK proof instead of
+    // reserved-by-whom state (see `controller.rs::burn_nullifier`'s doc
+    // comment). Kept, unused, so this variant's explicit discriminant is
+    // never renumbered/reassigned.
     NullifierReservedElsewhere = 22,
 }
 
@@ -187,9 +192,12 @@ pub struct RecoveryCompleted<'a> {
     pub nullifier: &'a BytesN<32>,
 }
 
-/// `burn_nullifier` (controller.rs, later task): account-authed escape
-/// hatch that spends a (possibly leaked) enrollment secret's nullifier
-/// without waiting out a self-recovery.
+/// `burn_nullifier` (controller.rs): proof-gated REVOKE (an `action=3` ZK
+/// proof of knowledge of the nullifier's secret, plus account auth) that
+/// spends a (possibly leaked) enrollment secret's nullifier without waiting
+/// out a self-recovery -- proof-gating (not account-auth alone) is what
+/// prevents a third party from burning a victim's PUBLIC nullifier after a
+/// legitimate cancel (spec §2.3).
 #[contractevent(topics = ["nullifier_burned"], data_format = "map")]
 pub struct NullifierBurned<'a> {
     #[topic]
