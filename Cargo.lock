@@ -1036,7 +1036,9 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "p256",
+ "serde_json",
  "sha2",
+ "soroban-poseidon",
  "soroban-sdk",
  "stellar-accounts",
 ]
@@ -1653,6 +1655,14 @@ dependencies = [
  "soroban-env-common",
  "soroban-env-host",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "soroban-poseidon"
+version = "26.0.0"
+source = "git+https://github.com/stellar/rs-soroban-poseidon?branch=main#b4bf706b7d0d602f9389280d259c0fb9f19983bf"
+dependencies = [
+ "soroban-sdk",
 ]
 
 [[package]]
