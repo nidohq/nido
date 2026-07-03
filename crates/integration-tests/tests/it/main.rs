@@ -7,4 +7,5 @@ mod scoped_session_key;
 mod smart_account_auth;
 mod smart_account_setup;
 mod spending_limit_policy;
+mod zk_completion_spike;
 mod zk_vectors;
