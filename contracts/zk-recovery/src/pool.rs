@@ -311,4 +311,61 @@ mod tests {
         assert_eq!(idx, 0);
         let _ = cfg;
     }
+
+    /// `insert_for` (the account's re-enroll path) requires the `account`'s
+    /// auth, not a caller-supplied or unrelated address. Without the account's
+    /// auth it panics; with it mocked it succeeds.
+    #[test]
+    fn insert_for_requires_account_auth() {
+        let env = Env::default();
+        let (id, _cfg) = setup(&env);
+        let account = Address::generate(&env);
+        let other = Address::generate(&env);
+        let commitment = commitment_from_u64(&env, 42);
+        let client = ZkRecoveryClient::new(&env, &id);
+
+        // No authorizations mocked at all -- the account's require_auth must
+        // reject.
+        assert!(
+            client.try_insert_for(&account, &commitment).is_err(),
+            "insert_for without the account's auth must fail"
+        );
+
+        // Only an unrelated address authorizes (not the account) -- still must
+        // fail, proving `insert_for` checks the account specifically.
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        use soroban_sdk::IntoVal;
+        let res = client
+            .mock_auths(&[MockAuth {
+                address: &other,
+                invoke: &MockAuthInvoke {
+                    contract: &id,
+                    fn_name: "insert_for",
+                    args: (account.clone(), commitment.clone()).into_val(&env),
+                    sub_invokes: &[],
+                },
+            }])
+            .try_insert_for(&account, &commitment);
+        assert!(
+            res.is_err(),
+            "insert_for authorized only by unrelated address (not the account) must fail"
+        );
+
+        // With the account's auth mocked, it succeeds.
+        let res = client
+            .mock_auths(&[MockAuth {
+                address: &account,
+                invoke: &MockAuthInvoke {
+                    contract: &id,
+                    fn_name: "insert_for",
+                    args: (account.clone(), commitment.clone()).into_val(&env),
+                    sub_invokes: &[],
+                },
+            }])
+            .try_insert_for(&account, &commitment);
+        assert!(
+            res.is_ok(),
+            "insert_for authorized by the account must succeed"
+        );
+    }
 }
