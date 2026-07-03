@@ -59,6 +59,9 @@ trait SmartAccountInterface {
     fn recovery_controller(env: soroban_sdk::Env) -> Option<soroban_sdk::Address>;
     fn initiate_recovery_rule_removal(env: soroban_sdk::Env);
     fn execute_recovery_rule_removal(env: soroban_sdk::Env);
+    // M2 Task 6: the migration path for a NEW-wasm account deployed with
+    // `recovery_controller: None` (`contract.rs::enroll_zk_recovery`).
+    fn enroll_zk_recovery(env: soroban_sdk::Env, recovery_controller: soroban_sdk::Address);
 }
 
 /// Create a deterministic P-256 signing key from a `u64` seed.

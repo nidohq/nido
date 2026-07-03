@@ -13,4 +13,5 @@ mod zk_fixture;
 mod zk_recovery_completion;
 mod zk_recovery_guard;
 mod zk_recovery_lifecycle;
+mod zk_recovery_migration;
 mod zk_vectors;

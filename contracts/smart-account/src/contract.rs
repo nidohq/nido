@@ -54,6 +54,13 @@ pub enum NidoSmartAccountError {
     /// called on an account constructed with `recovery_controller: None` --
     /// there is no recovery rule to remove.
     NoRecoveryConfigured = 5,
+    /// `enroll_zk_recovery` (M2 Task 6's migration path) was called on an
+    /// account that already has a recovery rule installed -- either from
+    /// construction (`Some(recovery_controller)`) or a prior
+    /// `enroll_zk_recovery` call. To swap controllers, remove the existing
+    /// rule first via `initiate_recovery_rule_removal`/
+    /// `execute_recovery_rule_removal`, then enroll again.
+    RecoveryAlreadyEnrolled = 6,
 }
 
 /// Minimal cross-call stub for `nido-zk-recovery`'s `has_pending` view.
@@ -159,6 +166,35 @@ pub struct ZkRecoveryInstallParams {
     pub version: u32,
 }
 
+/// Installs the zero-signer `CallContract(self)` recovery `ContextRule` with
+/// `controller` as its sole policy (via `add_context_rule`, triggering the
+/// controller's `Policy::install` cross-call), and stores
+/// `RECOVERY_RULE_ID`/`RECOVERY_CONTROLLER`. Returns the new rule's id.
+///
+/// Shared by the constructor's `Some(recovery_controller)` path (M2 Task 3)
+/// and `enroll_zk_recovery` (M2 Task 6's post-deploy migration path, below)
+/// -- both must install exactly the same rule shape, so this is the single
+/// place that shape is defined.
+fn install_recovery_rule(e: &Env, controller: &Address) -> u32 {
+    let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(e);
+    let mut recovery_policies: Map<Address, Val> = Map::new(e);
+    recovery_policies.set(controller.clone(), install);
+
+    let no_signers: Vec<Signer> = Vec::new(e);
+    let rule = add_context_rule(
+        e,
+        &ContextRuleType::CallContract(e.current_contract_address()),
+        &String::from_str(e, "zk-recovery"),
+        None,
+        &no_signers,
+        &recovery_policies,
+    );
+
+    e.storage().instance().set(&RECOVERY_RULE_ID, &rule.id);
+    e.storage().instance().set(&RECOVERY_CONTROLLER, controller);
+    rule.id
+}
+
 #[contract]
 pub struct NidoSmartAccount;
 
@@ -197,24 +233,7 @@ impl NidoSmartAccount {
         );
 
         if let Some(controller) = recovery_controller {
-            let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(e);
-            let mut recovery_policies: Map<Address, Val> = Map::new(e);
-            recovery_policies.set(controller.clone(), install);
-
-            let no_signers: Vec<Signer> = Vec::new(e);
-            let rule = add_context_rule(
-                e,
-                &ContextRuleType::CallContract(e.current_contract_address()),
-                &String::from_str(e, "zk-recovery"),
-                None,
-                &no_signers,
-                &recovery_policies,
-            );
-
-            e.storage().instance().set(&RECOVERY_RULE_ID, &rule.id);
-            e.storage()
-                .instance()
-                .set(&RECOVERY_CONTROLLER, &controller);
+            install_recovery_rule(e, &controller);
         }
     }
 
@@ -298,6 +317,86 @@ impl NidoSmartAccount {
         e.storage().instance().remove(&RECOVERY_RULE_ID);
         e.storage().instance().remove(&RECOVERY_CONTROLLER);
         e.storage().instance().remove(&RECOVERY_REMOVAL_AT);
+    }
+
+    /// M2 Task 6 migration path: lets an account that was deployed WITHOUT a
+    /// recovery controller (constructor `recovery_controller: None`) opt
+    /// into ZK recovery afterwards, as a self-authorized, VISIBLE call --
+    /// unlike the invisible factory-genesis path (constructor
+    /// `Some(recovery_controller)`, which installs the rule inside the
+    /// deploy transaction itself, before the account address is ever
+    /// observed on-chain).
+    ///
+    /// Requires this account's own auth
+    /// (`e.current_contract_address().require_auth()`) -- the same
+    /// self-auth model as `add_multisig_recovery`/
+    /// `initiate_recovery_rule_removal`: the account opts itself in, nobody
+    /// else can enroll it on the account's behalf.
+    ///
+    /// Panics `RecoveryAlreadyEnrolled` if a recovery rule is already
+    /// installed (`recovery_rule_id()` is `Some`) -- either from
+    /// construction or a prior `enroll_zk_recovery` call. To swap
+    /// controllers, first remove the existing rule via
+    /// `initiate_recovery_rule_removal`/`execute_recovery_rule_removal`,
+    /// then enroll again.
+    ///
+    /// On success, delegates to the same [`install_recovery_rule`] helper
+    /// the constructor's `Some(recovery_controller)` path uses: installs the
+    /// zero-signer `CallContract(self)` recovery `ContextRule` with
+    /// `recovery_controller` as its policy (triggering the controller's
+    /// `Policy::install` cross-call) and stores `RECOVERY_RULE_ID`/
+    /// `RECOVERY_CONTROLLER` -- the exact same state the constructor path
+    /// leaves behind, so the in-account guard (`guard_no_pending`, which
+    /// reads `RECOVERY_CONTROLLER`) applies identically to a migrated
+    /// account from this point on.
+    ///
+    /// # Two-step flow
+    ///
+    /// This method ONLY installs the rule on THIS account. It deliberately
+    /// does NOT also call the pool's `insert_for(account, commitment)` --
+    /// that is a separate, distinct, account-authed call against the
+    /// `nido-zk-recovery` POOL contract (a different contract from this
+    /// account), driven by the SDK/off-chain flow once it has generated a
+    /// fresh commitment/secret for this account. A fully enrolled account
+    /// requires BOTH steps:
+    ///
+    ///   1. `account.enroll_zk_recovery(recovery_controller)` (this method)
+    ///      -- installs the rule on the account.
+    ///   2. `pool.insert_for(account, commitment)` -- inserts the account's
+    ///      recovery leaf into the pool's Merkle tree, visibly bound to
+    ///      `account` (see `nido_zk_recovery::pool`'s `insert_for` doc
+    ///      comment).
+    ///
+    /// The two steps can be separate transactions or bundled into one --
+    /// both are independently account-authed, so ordering between them
+    /// doesn't matter for correctness. But a real `initiate_recovery` proof
+    /// only verifies once BOTH have completed: the rule must exist for the
+    /// completion path (`add_context_rule` cross-check), and the leaf must
+    /// be in the tree for the Merkle-membership proof.
+    ///
+    /// # Degraded mode -- what this does NOT retrofit
+    ///
+    /// Be honest about the scope: this is a migration path for a NEW-wasm
+    /// account -- one whose deployed bytecode already contains this
+    /// `enroll_zk_recovery` entry point and the in-account guard -- that
+    /// happened to be constructed with `recovery_controller: None`. It is
+    /// NOT a way to retrofit a genuinely OLD-wasm account (one deployed
+    /// before this code existed). Soroban contract wasm is immutable once
+    /// deployed: an old account has no `enroll_zk_recovery` entry point (nor
+    /// the guard) to call in the first place -- there is no mechanism here
+    /// to add a new exported function to already-deployed bytecode. A truly
+    /// old account would first have to migrate to this new wasm by some
+    /// OTHER means entirely outside this method's scope (e.g. moving to a
+    /// freshly deployed account) before `enroll_zk_recovery` becomes
+    /// reachable at all. Do not read this method as a general legacy-account
+    /// migration story -- it only covers the "deployed with the new code,
+    /// but skipped recovery at construction time" case.
+    pub fn enroll_zk_recovery(e: &Env, recovery_controller: Address) {
+        e.current_contract_address().require_auth();
+        if NidoSmartAccount::recovery_rule_id(e).is_some() {
+            panic_with_error!(e, NidoSmartAccountError::RecoveryAlreadyEnrolled);
+        }
+        install_recovery_rule(e, &recovery_controller);
     }
 
     /// Install a social-recovery rule scoped to calls on this account, gated
@@ -987,6 +1086,147 @@ mod test {
             client.try_execute_recovery_rule_removal(),
             NidoSmartAccountError::RemovalNotAnnounced,
         );
+    }
+
+    // ---------------------------------------------------------------
+    // M2 Task 6: `enroll_zk_recovery`, the post-deploy migration path for
+    // a NEW-wasm account constructed with `recovery_controller: None`.
+    // The end-to-end version (real fixture proof + guard, after a real
+    // `pool.insert_for`) lives in
+    // `crates/integration-tests/tests/it/zk_recovery_migration.rs`.
+    // ---------------------------------------------------------------
+
+    /// An account deployed with `recovery_controller: None` has no recovery
+    /// rule (`recovery_rule_id()` is `None`). Calling `enroll_zk_recovery`
+    /// installs the exact same shape the constructor's `Some(controller)`
+    /// path would: exactly two context rules, the second `CallContract(self)`
+    /// with zero signers and one policy == the controller, and both view
+    /// methods now return `Some`.
+    #[test]
+    fn enroll_zk_recovery_installs_rule_on_none_account() {
+        let e = Env::default();
+        e.mock_all_auths();
+
+        let controller = e.register(StubRecoveryPolicy, ());
+        let account_addr = e.register(
+            NidoSmartAccount,
+            (one_signer(&e), empty_policies(&e), None::<Address>),
+        );
+        let client = NidoSmartAccountClient::new(&e, &account_addr);
+
+        e.as_contract(&account_addr, || {
+            assert_eq!(NidoSmartAccount::recovery_rule_id(&e), None);
+            assert_eq!(NidoSmartAccount::recovery_controller(&e), None);
+        });
+
+        client.enroll_zk_recovery(&controller);
+
+        e.as_contract(&account_addr, || {
+            assert_eq!(get_context_rules_count(&e), 2);
+
+            let recovery_rule = get_context_rule(&e, 1);
+            assert_eq!(
+                recovery_rule.context_type,
+                ContextRuleType::CallContract(account_addr.clone())
+            );
+            assert!(recovery_rule.signers.is_empty());
+            assert_eq!(recovery_rule.policies.len(), 1);
+            assert_eq!(recovery_rule.policies.get(0), Some(controller.clone()));
+
+            assert_eq!(
+                NidoSmartAccount::recovery_rule_id(&e),
+                Some(recovery_rule.id)
+            );
+            assert_eq!(
+                NidoSmartAccount::recovery_controller(&e),
+                Some(controller.clone())
+            );
+        });
+    }
+
+    /// A second `enroll_zk_recovery` call, once a rule already exists
+    /// (whether from construction or a prior enroll), panics
+    /// `RecoveryAlreadyEnrolled` rather than installing a second rule.
+    #[test]
+    fn enroll_zk_recovery_twice_is_rejected() {
+        let e = Env::default();
+        e.mock_all_auths();
+
+        let controller = e.register(StubRecoveryPolicy, ());
+        let account_addr = e.register(
+            NidoSmartAccount,
+            (one_signer(&e), empty_policies(&e), None::<Address>),
+        );
+        let client = NidoSmartAccountClient::new(&e, &account_addr);
+
+        client.enroll_zk_recovery(&controller);
+        assert_account_error(
+            client.try_enroll_zk_recovery(&controller),
+            NidoSmartAccountError::RecoveryAlreadyEnrolled,
+        );
+
+        // Also rejected against an account that already had a controller
+        // installed AT CONSTRUCTION (not just via a prior enroll).
+        let setup = deploy_with_stub(&e);
+        let client2 = NidoSmartAccountClient::new(&e, &setup.account_addr);
+        assert_account_error(
+            client2.try_enroll_zk_recovery(&setup.controller),
+            NidoSmartAccountError::RecoveryAlreadyEnrolled,
+        );
+    }
+
+    /// `enroll_zk_recovery` requires the account's own auth: without any
+    /// authorization mocked, it fails; with only an UNRELATED address's auth
+    /// mocked (not the account itself), it still fails, proving the check is
+    /// specifically the account's `require_auth`, not just "someone
+    /// authorized". Mirrors `nido-zk-recovery`'s
+    /// `insert_for_requires_account_auth` `MockAuth` pattern.
+    #[test]
+    fn enroll_zk_recovery_requires_account_auth() {
+        let e = Env::default();
+
+        let controller = e.register(StubRecoveryPolicy, ());
+        // Registration itself needs no auth from the account (the
+        // constructor path with `None` never calls `require_auth`).
+        let account_addr = e.register(
+            NidoSmartAccount,
+            (one_signer(&e), empty_policies(&e), None::<Address>),
+        );
+        let client = NidoSmartAccountClient::new(&e, &account_addr);
+
+        // No authorizations mocked at all -- must fail.
+        assert!(
+            client.try_enroll_zk_recovery(&controller).is_err(),
+            "enroll_zk_recovery without the account's auth must fail"
+        );
+
+        // Only an unrelated address authorizes (not the account) -- still
+        // must fail.
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        let other = Address::generate(&e);
+        let res = client
+            .mock_auths(&[MockAuth {
+                address: &other,
+                invoke: &MockAuthInvoke {
+                    contract: &account_addr,
+                    fn_name: "enroll_zk_recovery",
+                    args: (controller.clone(),).into_val(&e),
+                    sub_invokes: &[],
+                },
+            }])
+            .try_enroll_zk_recovery(&controller);
+        assert!(
+            res.is_err(),
+            "enroll_zk_recovery authorized only by an unrelated address must fail"
+        );
+
+        e.as_contract(&account_addr, || {
+            assert_eq!(
+                NidoSmartAccount::recovery_rule_id(&e),
+                None,
+                "a failed enroll_zk_recovery must not install a rule"
+            );
+        });
     }
 
     // The deterministic-address invariant (constructor args, including the
