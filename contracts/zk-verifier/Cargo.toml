@@ -1,0 +1,20 @@
+[package]
+name = "nido-zk-verifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+# "alloc" mirrors upstream rs-soroban-ultrahonk's root Cargo.toml: the
+# vendored verifier lib needs a global allocator on wasm32v1-none, which
+# soroban-sdk only wires up when this feature is enabled.
+soroban-sdk = { workspace = true, features = ["alloc"] }
+ultrahonk_soroban_verifier = { path = "../vendor/ultrahonk-soroban-verifier", default-features = false }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["alloc", "testutils"] }
