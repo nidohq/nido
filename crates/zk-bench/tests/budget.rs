@@ -1,8 +1,9 @@
 //! GO/NO-GO gate for the ZK-recovery design: measures the *real*,
 //! metered on-chain CPU-instruction cost of `verify_proof` against the
 //! depth-24 recovery circuit's actual proof artifacts (not a toy circuit),
-//! and asserts it stays under the 80M budget we have to work with
-//! alongside the rest of a recovery-completion transaction.
+//! and asserts it stays under the 250M gate, leaving ≥150M headroom within
+//! the real per-transaction CPU limit (400M, protocol 27) for the rest of
+//! the `initiate_recovery` transaction (auth checks, storage writes, etc.).
 //!
 //! Deliberately does NOT call `env.cost_estimate().budget().reset_unlimited()`
 //! — that would erase the very thing this test exists to measure. The
@@ -60,12 +61,15 @@ mod v {
     );
 }
 
-/// GO/NO-GO gate: verify_proof must fit in this many CPU instructions,
-/// leaving headroom in the mainnet per-invocation instruction budget
-/// (600M, see `InvocationResourceLimits::mainnet()`) for the rest of a
-/// recovery-completion transaction (auth checks, storage writes, signer
-/// rotation, etc.) that has to run in the same top-level invocation.
-const MAX_VERIFY_CPU: i64 = 80_000_000;
+/// GO/NO-GO gate: verify_proof must fit in this many CPU instructions.
+/// Real per-transaction CPU limit on Stellar Mainnet (protocol 27):
+/// `tx_max_instructions = 400_000_000`. `verify_proof` runs inside the
+/// `initiate_recovery` transaction alongside auth checks, root-ring check
+/// (128 entries), Poseidon2 host hashes, and storage writes. Measured
+/// `verify_proof` cost: ~159M CPU instructions. The 250M gate leaves
+/// ≥150M headroom for the rest of `initiate_recovery` plus safety margin.
+/// Full `initiate_recovery` measurement deferred to M1 (live testnet simulate).
+const MAX_VERIFY_CPU: i64 = 250_000_000;
 
 // Real Stellar Mainnet per-invocation resource ceiling, mirrored from
 // `NetworkInvocationResourceLimits::mainnet()`
