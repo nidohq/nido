@@ -21,6 +21,16 @@ pub const MULTISIG_POLICY_WASM: &[u8] =
 pub const SPENDING_LIMIT_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_spending_limit_policy.wasm");
 
+/// M2 Task 5's factory contract wasm — embeds the same smart-account wasm
+/// bytes as [`SMART_ACCOUNT_WASM`] internally (see
+/// `contracts/factory/src/contract.rs`'s `smart_account` module doc
+/// comment), so uploading [`SMART_ACCOUNT_WASM`] via
+/// `env.deployer().upload_contract_wasm` before calling the factory's
+/// `create_account`/`create_account_v2` satisfies its `deploy_v2` wasm-hash
+/// lookup.
+pub const FACTORY_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
+
 #[allow(dead_code)]
 #[soroban_sdk::contractclient(name = "SmartAccountClient")]
 trait SmartAccountInterface {
