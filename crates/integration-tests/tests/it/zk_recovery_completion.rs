@@ -36,7 +36,7 @@ use nido_integration_tests::{
 use nido_zk_recovery::hash::leaf_inner;
 use nido_zk_recovery::pool::{ZkRecovery, ZkRecoveryClient};
 use nido_zk_recovery::types::{
-    NullifierState, RecoveryCompleted, RecoveryKey, ZkRecoveryInstallParams,
+    NullifierState, RecoveryCompleted, RecoveryError, RecoveryKey, ZkRecoveryInstallParams,
 };
 use soroban_sdk::address_payload::AddressPayload;
 use soroban_sdk::auth::{Context, ContractContext};
@@ -48,7 +48,8 @@ use soroban_sdk::xdr::{
     SorobanCredentials, VecM,
 };
 use soroban_sdk::{
-    Address, Bytes, BytesN, Env, Event, IntoVal, Map, String, Symbol, TryFromVal, Val, Vec as SVec,
+    Address, Bytes, BytesN, Env, Event, IntoVal, Map, String, Symbol, TryFromVal, Val,
+    Vec as SVec,
 };
 use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRuleType, Signer};
 
@@ -233,6 +234,29 @@ fn add_context_rule_context(env: &Env, account_addr: &Address, args: SVec<Val>) 
     })
 }
 
+/// Asserts a caught `do_check_auth` panic is specifically the given
+/// `RecoveryError` (and not e.g. an unrelated `require_auth`/decode
+/// failure) -- mirrors `spending_limit_policy.rs`'s `assert_limit_exceeded`.
+/// The host escalates contract errors via `panic!("{:?}", ...)`; the panic
+/// payload is a `String` carrying `Error(Contract, #<code>)`.
+fn assert_recovery_error_panic(
+    result: std::thread::Result<()>,
+    expected: RecoveryError,
+    expectation: &str,
+) {
+    let payload = result.expect_err(expectation);
+    let msg = payload
+        .downcast_ref::<std::string::String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_default();
+    let needle = std::format!("#{}", expected as u32);
+    assert!(
+        msg.contains(&needle),
+        "expected {expected:?} (Error(Contract, {needle})), got: {msg}"
+    );
+}
+
 /// Builds a `SorobanAuthorizationEntry` for a SELF-authorizing call (the
 /// account requiring its own auth from within one of its own entry points,
 /// e.g. `add_context_rule`/`remove_signer`), carrying a zero-signer
@@ -361,12 +385,25 @@ fn real_proof_completion_rotates_key_via_enforce() {
 }
 
 /// **The fn_name gate.** Same rule id, same elapsed timelock as the passing
-/// baseline above -- the ONLY thing that differs is the completing call's
-/// `fn_name` (`remove_signer` instead of `add_context_rule`). OZ's own
-/// matching only checks the rule's `contract` scope (the M1 hard
-/// requirement's whole premise), so this genuinely reaches `enforce`; the
-/// fn_name gate must reject it there with `ContextMismatch`, proving `enforce`
-/// does not treat the zero-signer rule as "authorize any self-call".
+/// baseline above, and -- critically -- an OTHERWISE-FULLY-VALID
+/// `add_context_rule`-shaped context: 5 args, `args[3]` is the EXACT expected
+/// new-signer set (`[Signer::External(webauthn_verifier, pending.new_pubkey)]`
+/// -- the same one the happy path uses), `args[4]` is empty policies. The
+/// ONLY thing that differs from the passing baseline is the completing
+/// call's `fn_name` (`remove_signer` instead of `add_context_rule`). Because
+/// every other check the gate performs (arg count, new-signer set, policies)
+/// would ALSO pass here, the only REACHABLE rejection is the fn_name check
+/// (`policy.rs:163`) -- so this isolates that check specifically, rather
+/// than being satisfiable by the arg-count check alone (a 2-arg
+/// `remove_signer`-shaped context, as before, would ALSO trip
+/// `args.len() != 5` with the same `ContextMismatch` code, so it wouldn't
+/// prove the fn_name check does anything).
+///
+/// This still goes through the direct-`do_check_auth` path (not the
+/// `try_add_context_rule` real-host path the other two negatives below use)
+/// because there is no REAL account entry point named e.g. `remove_signer`
+/// that takes this 5-arg `add_context_rule` shape -- constructing that
+/// mismatch requires building the `Context` by hand.
 #[test]
 fn wrong_fn_name_is_rejected_by_enforce() {
     let env = Env::default();
@@ -378,7 +415,12 @@ fn wrong_fn_name_is_rejected_by_enforce() {
         li.timestamp = executable_after;
     });
 
-    let args: SVec<Val> = soroban_sdk::vec![&env, 0u32.into_val(&env), 0u32.into_val(&env)];
+    let context_type = ContextRuleType::Default;
+    let name = String::from_str(&env, "recovered");
+    let signers = soroban_sdk::vec![&env, expected_new_signer(&env, &setup)];
+    let policies: Map<Address, Val> = Map::new(&env);
+    let args = add_context_rule_args(&env, &context_type, &name, None, &signers, &policies);
+    assert_eq!(args.len(), 5, "sanity: must carry the real 5-arg arity");
     let context = Context::Contract(ContractContext {
         contract: setup.account_addr.clone(),
         fn_name: Symbol::new(&env, "remove_signer"),
@@ -396,10 +438,11 @@ fn wrong_fn_name_is_rejected_by_enforce() {
             do_check_auth(&env, &hash, &payload, &soroban_sdk::vec![&env, context]).unwrap();
         });
     }));
-    assert!(
-        result.is_err(),
-        "enforce must reject a remove_signer context reached via the zero-signer \
-         recovery rule (fn_name gate)"
+    assert_recovery_error_panic(
+        result,
+        RecoveryError::ContextMismatch,
+        "enforce must reject an otherwise-fully-valid completion whose fn_name is \
+         remove_signer instead of add_context_rule (fn_name gate) with ContextMismatch",
     );
 
     // The rejected attempt must not have consumed anything.
@@ -419,6 +462,17 @@ fn wrong_fn_name_is_rejected_by_enforce() {
 /// of `pending.new_pubkey`. `enforce` must reject with `ContextMismatch`,
 /// proving it does not just check `fn_name` but the ACTUAL proposed new
 /// signer against the proven pending.
+///
+/// This stays on the direct-`do_check_auth` path rather than the keystone
+/// test's real-host `try_add_context_rule` dispatch: empirically, Soroban's
+/// host sanitizes errors raised DURING authorization resolution (i.e. inside
+/// `__check_auth`/`enforce`, as opposed to the invoked function's own body)
+/// down to a generic `Error(Context, InvalidAction)` before they reach the
+/// top-level `try_` caller -- losing the specific `RecoveryError` code. The
+/// direct `do_check_auth` call (still real `enforce` logic, just invoked
+/// without going through the outer auth-sanitizing layer) preserves the
+/// original `Error(Contract, #<code>)` in the panic payload, which is what
+/// lets this assert the SPECIFIC code below instead of a bare `is_err()`.
 #[test]
 fn wrong_new_signer_is_rejected_by_enforce() {
     let env = Env::default();
@@ -461,10 +515,12 @@ fn wrong_new_signer_is_rejected_by_enforce() {
             do_check_auth(&env, &hash, &payload, &soroban_sdk::vec![&env, context]).unwrap();
         });
     }));
-    assert!(
-        result.is_err(),
+    assert_recovery_error_panic(
+        result,
+        RecoveryError::ContextMismatch,
         "enforce must reject an add_context_rule call installing a DIFFERENT \
-         new-signer set than the pending's proven new_pubkey (args gate)"
+         new-signer set than the pending's proven new_pubkey (args gate) with \
+         ContextMismatch",
     );
 
     assert!(setup.zk.get_pending(&setup.account_addr).is_some());
@@ -475,6 +531,13 @@ fn wrong_new_signer_is_rejected_by_enforce() {
 /// baseline is timing: this attempts completion immediately after
 /// `initiate_recovery`, before `executable_after`. `enforce` must reject
 /// with `TimelockNotElapsed`.
+///
+/// This stays on the direct-`do_check_auth` path for the same reason
+/// `wrong_new_signer_is_rejected_by_enforce` does: the host sanitizes errors
+/// raised during authorization resolution to a generic
+/// `Error(Context, InvalidAction)` before they reach a top-level `try_`
+/// caller, so only the direct `do_check_auth` panic payload preserves the
+/// specific `Error(Contract, #<code>)` this test needs to assert against.
 #[test]
 fn completion_before_timelock_is_rejected() {
     let env = Env::default();
@@ -507,9 +570,11 @@ fn completion_before_timelock_is_rejected() {
             do_check_auth(&env, &hash, &payload, &soroban_sdk::vec![&env, context]).unwrap();
         });
     }));
-    assert!(
-        result.is_err(),
-        "enforce must reject completion before executable_after (timelock)"
+    assert_recovery_error_panic(
+        result,
+        RecoveryError::TimelockNotElapsed,
+        "enforce must reject completion before executable_after (timelock) with \
+         TimelockNotElapsed",
     );
 
     assert!(setup.zk.get_pending(&setup.account_addr).is_some());
