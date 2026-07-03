@@ -16,4 +16,5 @@ mod zk_recovery_e2e;
 mod zk_recovery_guard;
 mod zk_recovery_lifecycle;
 mod zk_recovery_migration;
+mod zk_recovery_neuter;
 mod zk_vectors;

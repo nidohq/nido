@@ -72,6 +72,37 @@ impl Policy for ZkRecovery {
     /// spec §3.1) and scoped to `CallContract(smart_account)` (self only --
     /// never a rule that could authorize calls against a DIFFERENT
     /// contract).
+    ///
+    /// # Stolen-passkey hardening (spec §3.1, the direct-call neuter fix)
+    ///
+    /// `smart_account.require_auth()` alone is NOT a sufficient gate: a thief
+    /// holding a stolen WebAuthn passkey satisfies the account's Default rule,
+    /// so they can call this `install` ENTRY POINT DIRECTLY (top-level, or via
+    /// the account's `execute`) -- bypassing the M2 in-account guard and the
+    /// 7-day removal delay. Without further checks, a direct
+    /// `install(params, fabricated_rule, account)` on an ALREADY-enrolled
+    /// account would silently REPOINT `RecoveryKey::Installed(account)` to a
+    /// bogus rule id, so every future completion `enforce` panics
+    /// `RuleMismatch` -- recovery permanently neutered, on-chain rule
+    /// untouched.
+    ///
+    /// The **`AlreadyInstalled` guard** below closes that: once an account has
+    /// this policy installed, `install` refuses to run again for it. The only
+    /// legitimate `install` per account fires EXACTLY ONCE, atomically inside
+    /// the account's own construction (`Some(recovery_controller)`) or its
+    /// `enroll_zk_recovery` migration -- at which point `Installed(account)` is
+    /// absent, so the guard passes. Any later direct call (the thief's repoint)
+    /// finds it set and panics.
+    ///
+    /// A genuine rule-EXISTENCE cross-check (verifying the account actually
+    /// holds `context_rule` with this controller in its policy set) is
+    /// deliberately NOT attempted: `install` runs while the account is already
+    /// on the call stack (`account.add_context_rule -> controller.install`), so
+    /// any cross-call back into the account (`get_context_rule`) hits Soroban's
+    /// reentrancy ban and TRAPS -- which would brick ALL account creation. The
+    /// `context_rule` argument is therefore treated as untrusted for
+    /// authenticity; only its shape is validated. See the module notes and the
+    /// `uninstall` doc for the full reentrancy-constraint reasoning.
     fn install(
         e: &Env,
         _install_params: Self::AccountParams,
@@ -79,6 +110,15 @@ impl Policy for ZkRecovery {
         smart_account: Address,
     ) {
         smart_account.require_auth();
+
+        // Stolen-passkey neuter fix: refuse to (re)install for an account that
+        // already has this policy installed -- blocks a direct repoint of
+        // `Installed(account)` to a fabricated rule id. Reentrancy-free
+        // (controller-local storage only).
+        let key = RecoveryKey::Installed(smart_account.clone());
+        if e.storage().persistent().get::<_, u32>(&key).is_some() {
+            panic_with_error!(e, RecoveryError::AlreadyInstalled);
+        }
 
         if !context_rule.signers.is_empty() {
             panic_with_error!(e, RecoveryError::ContextMismatch);
@@ -88,7 +128,6 @@ impl Policy for ZkRecovery {
             _ => panic_with_error!(e, RecoveryError::ContextMismatch),
         }
 
-        let key = RecoveryKey::Installed(smart_account);
         e.storage().persistent().set(&key, &context_rule.id);
         extend_persistent_max(e, &key);
     }
@@ -211,15 +250,55 @@ impl Policy for ZkRecovery {
         .publish(e);
     }
 
-    /// Requires the account's own auth; clears the `Installed` marker
-    /// (`NotInstalled` if there wasn't one).
+    /// UNCONDITIONALLY REFUSES (spec §3.1, the direct-call neuter fix).
+    ///
+    /// # Why refusing is the only reentrancy-safe choice
+    ///
+    /// The pre-fix `uninstall` cleared `RecoveryKey::Installed(account)` on any
+    /// call gated solely by `smart_account.require_auth()`. A thief holding a
+    /// stolen WebAuthn passkey satisfies that, so a direct
+    /// `uninstall(any_rule, account)` (top-level, or via the account's
+    /// `execute`) cleared `Installed` while the account's recovery rule stayed
+    /// intact on-chain -- every future completion `enforce` then panics
+    /// `NotInstalled`, permanently neutering recovery, instantly, bypassing the
+    /// M2 in-account guard and the 7-day removal delay.
+    ///
+    /// A discriminator that PASSES the legitimate teardown but FAILS a thief's
+    /// direct call is not achievable at this contract:
+    /// - The account's on-chain state (does the rule still reference this
+    ///   controller? has removal been announced-and-elapsed?) is the only thing
+    ///   that distinguishes them -- but `uninstall` is invoked from WITHIN the
+    ///   account's own `remove_context_rule`/`remove_policy` (account already on
+    ///   the call stack), so any cross-call back into the account
+    ///   (`get_context_rule`, a removal-ready view, ...) hits Soroban's
+    ///   reentrancy ban and TRAPS -- which would break the legitimate teardown
+    ///   itself (empirically confirmed: `Error(Context, InvalidAction)`).
+    /// - Controller-local signals (`has_pending`, the `context_rule` argument)
+    ///   are identical between a genuine `execute_recovery_rule_removal`
+    ///   teardown and a thief's forged call: OZ invokes `uninstall` BEFORE
+    ///   deleting the rule, so the rule still references this controller in
+    ///   BOTH cases, and the thief picks a no-pending moment and forges a
+    ///   matching `context_rule`.
+    ///
+    /// So this refuses ALL `uninstall` calls. This is safe for the ONE
+    /// legitimate invocation -- OZ's `remove_context_rule`/`remove_policy` call
+    /// this via `try_uninstall`, which SWALLOWS a policy panic by design ("so
+    /// that if the policy panics (recoverable failure), context rule removal
+    /// can still be completed", `stellar-accounts` `storage.rs`). The account's
+    /// 7-day-gated `execute_recovery_rule_removal` therefore still removes the
+    /// recovery rule end-to-end; the now-orphaned `Installed(account)` marker
+    /// is inert (no rule routes to this controller, so `enforce` is
+    /// unreachable). A thief's direct `uninstall` likewise only earns this
+    /// panic and CANNOT clear `Installed`, so a live recovery survives.
+    ///
+    /// Trade-off (documented, low-severity): because the marker is not cleared
+    /// on removal, re-enrolling the SAME account into recovery after an opt-out
+    /// would hit the `install` `AlreadyInstalled` guard. The clean path is a
+    /// fresh account (the privacy-preserving norm); this cannot be relaxed
+    /// without a reentrancy-safe way to clear `Installed`, which does not exist
+    /// here.
     fn uninstall(e: &Env, _context_rule: ContextRule, smart_account: Address) {
         smart_account.require_auth();
-
-        let key = RecoveryKey::Installed(smart_account);
-        if e.storage().persistent().get::<_, u32>(&key).is_none() {
-            panic_with_error!(e, RecoveryError::NotInstalled);
-        }
-        e.storage().persistent().remove(&key);
+        panic_with_error!(e, RecoveryError::Unauthorized);
     }
 }
