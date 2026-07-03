@@ -4,12 +4,17 @@
 //! M1 Task 2 only scaffolds these -- they are consumed by `merkle.rs`,
 //! `pool.rs`, `controller.rs`, and `policy.rs` in later M1 tasks.
 
-use soroban_sdk::{contracterror, contractevent, contracttype, Address, BytesN};
+use soroban_sdk::{contracterror, contractevent, contracttype, Address, Bytes, BytesN};
 
 /// Immutable-at-deploy configuration for the pool + controller (spec §3.3,
 /// §3.4). `factory` is the only caller allowed to bind an arbitrary account
 /// on `insert` (genesis authority); `verifier` is the `zk-verifier`
-/// contract's address; the remaining fields are the timelock/rate-limit
+/// contract's address; `network_passphrase` is the raw (not pre-hashed)
+/// network passphrase bytes -- `hash::compute_auth_hash` sha256's it
+/// internally, exactly mirroring the circuit's `npass_hi`/`npass_lo`
+/// derivation (`main.nr:40-42`), so `initiate_recovery` must recompute
+/// `auth_hash` using the SAME passphrase bytes a proof's witness was
+/// generated against; the remaining fields are the timelock/rate-limit
 /// defaults (spec §3.3 "Defaults").
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +25,7 @@ pub struct RecoveryConfig {
     pub completion_window_secs: u64,
     pub max_cancels: u32,
     pub timelock_floor_secs: u64,
+    pub network_passphrase: Bytes,
 }
 
 /// A live timelocked recovery in flight for one account (spec §3.3
@@ -66,6 +72,10 @@ pub enum RecoveryKey {
     Installed(Address),
     Cancels(Address),
     Config,
+    // Added by M1 Task 5 (`controller.rs::initiate_recovery`) -- appended
+    // at the end so existing variants keep their XDR ordinals.
+    Nonce(Address),
+    RateWindow(Address),
 }
 
 /// Contract error codes (spec §3.3 interface/checks, §3.1 completion

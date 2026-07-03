@@ -1035,6 +1035,7 @@ name = "nido-integration-tests"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "nido-zk-recovery",
  "p256",
  "serde_json",
  "sha2",

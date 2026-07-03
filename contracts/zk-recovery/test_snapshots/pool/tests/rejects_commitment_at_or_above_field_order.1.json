@@ -225,6 +225,14 @@
                           },
                           {
                             "key": {
+                              "symbol": "network_passphrase"
+                            },
+                            "val": {
+                              "bytes": "5465737420534446204e6574776f726b203b2053657074656d6265722032303135"
+                            }
+                          },
+                          {
+                            "key": {
                               "symbol": "timelock_floor_secs"
                             },
                             "val": {

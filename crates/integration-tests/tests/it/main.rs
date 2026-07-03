@@ -9,4 +9,5 @@ mod smart_account_setup;
 mod spending_limit_policy;
 mod zk_completion_spike;
 mod zk_fixture;
+mod zk_recovery_lifecycle;
 mod zk_vectors;

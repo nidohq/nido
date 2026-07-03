@@ -17,6 +17,19 @@ use crate::merkle;
 use crate::types::{LeafInserted, RecoveryConfig, RecoveryError, RecoveryKey};
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Bytes, BytesN, Env, U256};
 
+// `controller.rs` (M1 Task 5) is declared as a *submodule of `pool`* (not a
+// sibling top-level module in `lib.rs`) even though it physically lives at
+// `src/controller.rs` (`#[path]` points there). This is required, not
+// stylistic: `soroban_sdk::contractimpl`'s generated per-function client
+// methods (under the `testutils` feature) read private fields
+// (`set_auths`/`mock_auths`/`mock_all_auths`/`allow_non_root_auth`) on
+// `ZkRecoveryClient`, which `#[contract]` (below) declares as
+// module-private -- visible to `pool` and its descendants only. A sibling
+// top-level `mod controller` cannot see them and fails to compile under
+// `testutils`; a `pool::controller` submodule can.
+#[path = "controller.rs"]
+pub mod controller;
+
 /// The BN254 scalar field order `r` (spec §2.2): every real `inner` leaf is
 /// a Poseidon2 output, hence already `< r` by construction; `r` itself and
 /// anything above it can never be produced by the circuit and is rejected
@@ -43,7 +56,8 @@ fn require_canonical(env: &Env, commitment: &BytesN<32>) {
     }
 }
 
-fn config(env: &Env) -> RecoveryConfig {
+/// `pub(crate)` so `controller.rs` (M1 Task 5) can read the same config.
+pub(crate) fn config(env: &Env) -> RecoveryConfig {
     env.storage()
         .instance()
         .get(&RecoveryKey::Config)
@@ -82,6 +96,7 @@ impl ZkRecovery {
         completion_window_secs: u64,
         max_cancels: u32,
         timelock_floor_secs: u64,
+        network_passphrase: Bytes,
     ) {
         let cfg = RecoveryConfig {
             factory,
@@ -90,6 +105,7 @@ impl ZkRecovery {
             completion_window_secs,
             max_cancels,
             timelock_floor_secs,
+            network_passphrase,
         };
         env.storage().instance().set(&RecoveryKey::Config, &cfg);
     }
@@ -157,6 +173,7 @@ mod tests {
             completion_window_secs: 7 * 24 * 3600,
             max_cancels: 3,
             timelock_floor_secs: 24 * 3600,
+            network_passphrase: Bytes::from_slice(env, b"Test SDF Network ; September 2015"),
         };
         let id = env.register(
             ZkRecovery,
@@ -167,6 +184,7 @@ mod tests {
                 cfg.completion_window_secs,
                 cfg.max_cancels,
                 cfg.timelock_floor_secs,
+                cfg.network_passphrase.clone(),
             ),
         );
         (id, cfg)
