@@ -41,7 +41,7 @@ gen-zk-fixtures:
     echo "[ok] Staged zk fixtures + wrote manifest:"
     cat crates/integration-tests/fixtures/zk/manifest.json
 
-# Task 4 GO/NO-GO gate: real-metering verify_proof CPU cost (<=80M), measured
+# Task 4 GO/NO-GO gate: real-metering verify_proof CPU cost (<=250M gate, real 400M tx cap), measured
 # against the real depth-24 circuit's proof/vk/public_inputs fixtures via a
 # registered (not native) Wasm verifier contract. See
 # crates/zk-bench/tests/budget.rs for the full metering methodology.

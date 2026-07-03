@@ -31,16 +31,17 @@
 //! above the 100M SDK-testutils default, so under `Env::default()` as-is
 //! the call aborts mid-verification (inside a `bn254_g1_add` host call)
 //! before completing — we can't read a real number at all, let alone
-//! compare it to our 80M gate. To actually observe the true total, we
-//! raise the *live* budget's CPU/mem limits to match the real mainnet
-//! per-invocation ceiling (`InvocationResourceLimits::mainnet()`:
-//! 600M CPU / 40MB mem) via `budget().reset_limits(...)` — i.e. we replace
-//! one arbitrary SDK default (100M) with the real network's own limit
-//! (600M), not with `u64::MAX`. This does not change how many instructions
-//! the computation actually takes; it only stops the harness from aborting
-//! early on an SDK-internal default that has nothing to do with the real
-//! network, so the true total consumed can be measured and then checked
-//! against our own, stricter 80M project gate below.
+//! compare it to our gate. To actually observe the true total, we raise the
+//! *live* budget's CPU/mem limits high enough that the call completes, via
+//! `budget().reset_limits(...)` — replacing the arbitrary 100M SDK default
+//! with a headroom value that exceeds the measured cost, not with `u64::MAX`.
+//! This does not change how many instructions the computation actually takes;
+//! it only stops the harness from aborting early on an SDK-internal default
+//! that has nothing to do with the real network, so the true total consumed
+//! can be measured and then checked against our project gate below. The real
+//! per-transaction ceiling is `tx_max_instructions = 400,000,000` (live
+//! testnet/mainnet config, protocol 27); the 250M gate below leaves headroom
+//! under it for the rest of the initiate_recovery transaction.
 //!
 //! If verify_proof's real cost were ever to exceed 600M, that would be an
 //! even harder failure (can't run in one invocation on mainnet at all,
