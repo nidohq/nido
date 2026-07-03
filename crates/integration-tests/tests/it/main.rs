@@ -11,5 +11,6 @@ mod spending_limit_policy;
 mod zk_completion_spike;
 mod zk_fixture;
 mod zk_recovery_completion;
+mod zk_recovery_guard;
 mod zk_recovery_lifecycle;
 mod zk_vectors;

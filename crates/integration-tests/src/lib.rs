@@ -52,6 +52,13 @@ trait SmartAccountInterface {
         policy: soroban_sdk::Address,
         install_param: soroban_sdk::Val,
     ) -> u32;
+    fn remove_policy(env: soroban_sdk::Env, context_rule_id: u32, policy_id: u32);
+    // M2 Task 4: the in-account recovery guard's views/entry points
+    // (`contracts/smart-account/src/contract.rs`).
+    fn recovery_rule_id(env: soroban_sdk::Env) -> Option<u32>;
+    fn recovery_controller(env: soroban_sdk::Env) -> Option<soroban_sdk::Address>;
+    fn initiate_recovery_rule_removal(env: soroban_sdk::Env);
+    fn execute_recovery_rule_removal(env: soroban_sdk::Env);
 }
 
 /// Create a deterministic P-256 signing key from a `u64` seed.

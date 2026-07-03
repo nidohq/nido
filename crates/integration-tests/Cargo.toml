@@ -34,3 +34,9 @@ serde_json = "1"
 # M1 Task 5's zk_recovery_lifecycle test exercises the real
 # `ZkRecovery::initiate_recovery` contract entry point end-to-end.
 nido-zk-recovery = { path = "../../contracts/zk-recovery" }
+# M2 Task 4's zk_recovery_guard end-to-end test decodes
+# `contract::NidoSmartAccountError` error codes from the account's guard --
+# a plain `rlib` dependency (this crate is not a `#[contract]`/cdylib, so no
+# wasm-export collision; the account under test is still deployed from
+# `SMART_ACCOUNT_WASM` bytes, not this Rust type).
+nido-smart-account = { path = "../../contracts/smart-account" }

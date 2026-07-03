@@ -321,6 +321,26 @@ impl ZkRecovery {
             .get(&RecoveryKey::Pending(account))
     }
 
+    /// View: `true` iff a LIVE pending recovery exists for `account` (has
+    /// NOT yet crossed `expires_at`). This is the cheap boolean signal the
+    /// smart-account in-account guard (spec §3.2,
+    /// `contracts/smart-account/src/contract.rs::guard_no_pending`)
+    /// cross-calls before allowing `remove_signer`/`remove_context_rule`/
+    /// `remove_policy`/`update_context_rule_valid_until` -- a plain `bool`
+    /// avoids needing to decode the full `PendingRecovery` struct
+    /// cross-contract just to check liveness. A pending past `expires_at` is
+    /// stale/supersedable (see `initiate_recovery`'s step 1 comment above)
+    /// and this returns `false` for it, exactly as if there were no pending
+    /// at all -- callers wanting the stale-or-live record itself should use
+    /// `get_pending` and compare `expires_at` themselves.
+    pub fn has_pending(env: Env, account: Address) -> bool {
+        let now = env.ledger().timestamp();
+        env.storage()
+            .persistent()
+            .get::<_, PendingRecovery>(&RecoveryKey::Pending(account))
+            .is_some_and(|pending| now < pending.expires_at)
+    }
+
     /// View: the next nonce `initiate_recovery` will accept for `account`.
     pub fn next_nonce(env: Env, account: Address) -> u64 {
         stored_nonce(&env, &account) + 1
@@ -577,5 +597,98 @@ impl ZkRecovery {
             nullifier: &nullifier,
         }
         .publish(&env);
+    }
+}
+
+#[cfg(test)]
+mod has_pending_tests {
+    //! `has_pending` in isolation (no real proof needed): a `PendingRecovery`
+    //! is written directly into persistent storage, sidestepping
+    //! `initiate_recovery`'s proof-verification cross-call entirely --
+    //! `has_pending` itself doesn't care how the record got there, only
+    //! whether `now < expires_at`.
+    use super::*;
+    use crate::pool::{ZkRecovery, ZkRecoveryClient};
+    use soroban_sdk::testutils::{Address as _, Ledger as _};
+    use soroban_sdk::{Address, Bytes, Env};
+
+    fn deploy(env: &Env) -> Address {
+        let factory = Address::generate(env);
+        let verifier = Address::generate(env);
+        let webauthn_verifier = Address::generate(env);
+        env.register(
+            ZkRecovery,
+            (
+                factory,
+                verifier,
+                3 * 24 * 3600_u64,
+                7 * 24 * 3600_u64,
+                3_u32,
+                24 * 3600_u64,
+                Bytes::from_slice(env, b"Test SDF Network ; September 2015"),
+                webauthn_verifier,
+            ),
+        )
+    }
+
+    fn store_pending(env: &Env, id: &Address, account: &Address, expires_at: u64) {
+        let now = env.ledger().timestamp();
+        let pending = PendingRecovery {
+            new_pubkey: BytesN::from_array(env, &[0u8; 65]),
+            nullifier: BytesN::from_array(env, &[0u8; 32]),
+            initiated_at: now,
+            executable_after: now,
+            expires_at,
+        };
+        env.as_contract(id, || {
+            env.storage()
+                .persistent()
+                .set(&RecoveryKey::Pending(account.clone()), &pending);
+        });
+    }
+
+    /// No pending record at all -> `false`.
+    #[test]
+    fn no_pending_is_false() {
+        let env = Env::default();
+        let id = deploy(&env);
+        let account = Address::generate(&env);
+        let client = ZkRecoveryClient::new(&env, &id);
+
+        assert!(!client.has_pending(&account));
+    }
+
+    /// A pending whose `expires_at` is still in the future -> `true`.
+    #[test]
+    fn live_pending_is_true() {
+        let env = Env::default();
+        let id = deploy(&env);
+        let account = Address::generate(&env);
+        let client = ZkRecoveryClient::new(&env, &id);
+
+        let now = env.ledger().timestamp();
+        store_pending(&env, &id, &account, now + 1_000);
+
+        assert!(client.has_pending(&account));
+    }
+
+    /// A pending whose `expires_at` has already passed -> `false` (a stale
+    /// pending is supersedable, not a live/active recovery -- mirrors
+    /// `initiate_recovery`'s own `now < existing.expires_at` liveness
+    /// check).
+    #[test]
+    fn expired_pending_is_false() {
+        let env = Env::default();
+        let id = deploy(&env);
+        let account = Address::generate(&env);
+        let client = ZkRecoveryClient::new(&env, &id);
+
+        let now = env.ledger().timestamp();
+        store_pending(&env, &id, &account, now + 1_000);
+        assert!(client.has_pending(&account), "sanity: starts live");
+
+        env.ledger().with_mut(|l| l.timestamp = now + 1_001);
+
+        assert!(!client.has_pending(&account));
     }
 }
