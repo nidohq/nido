@@ -1100,6 +1100,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nido-zk-recovery"
+version = "0.1.0"
+dependencies = [
+ "soroban-poseidon",
+ "soroban-sdk",
+ "stellar-accounts",
+]
+
+[[package]]
 name = "nido-zk-verifier"
 version = "0.1.0"
 dependencies = [
