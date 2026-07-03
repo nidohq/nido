@@ -28,7 +28,8 @@ use crate::merkle::is_known_root;
 // directly by name in this file's source.
 use crate::pool::{config, ZkRecovery, ZkRecoveryArgs, ZkRecoveryClient};
 use crate::types::{
-    NullifierState, PendingRecovery, RecoveryError, RecoveryInitiated, RecoveryKey,
+    NullifierBurned, NullifierState, PendingRecovery, RecoveryCanceled, RecoveryError,
+    RecoveryInitiated, RecoveryKey,
 };
 use soroban_sdk::{
     contractimpl, panic_with_error, Address, Bytes, BytesN, Env, IntoVal, InvokeError, Symbol, Val,
@@ -39,10 +40,21 @@ use soroban_sdk::{
 /// protocol (`circuits/zk_recovery/src/main.nr`).
 const ACTION_INITIATE: u32 = 1;
 
+/// `action = 2` means "cancel recovery" in the `zk_recovery` circuit's
+/// protocol (`circuits/zk_recovery/src/main.nr`), spec §2.4. A cancel
+/// proof's `auth_hash` ZEROES the pubkey/timelock fields (see
+/// `cancel_recovery` below) -- a cancel proves the owner authorizes
+/// stopping THIS pending recovery, not installing any particular new key.
+const ACTION_CANCEL: u32 = 2;
+
 /// Rolling rate-limit window: 90 days, in seconds (spec §3.3).
 const RATE_WINDOW_SECS: u64 = 90 * 24 * 3600;
 /// Max initiations allowed per account within `RATE_WINDOW_SECS` (spec §3.3).
 const RATE_LIMIT_MAX: u32 = 3;
+
+/// Minimum time between two successful cancels for the same account (spec
+/// §2.4): 24 hours, in seconds.
+const CANCEL_COOLDOWN_SECS: u64 = 24 * 3600;
 
 /// Extends a persistent entry's TTL to the network max, mirroring
 /// `merkle.rs::extend_persistent_max` (duplicated rather than made `pub` --
@@ -63,6 +75,31 @@ fn bump_nonce(env: &Env, account: &Address, nonce: u64) {
     let key = RecoveryKey::Nonce(account.clone());
     env.storage().persistent().set(&key, &nonce);
     extend_persistent_max(env, &key);
+}
+
+fn cancels_used(env: &Env, account: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&RecoveryKey::Cancels(account.clone()))
+        .unwrap_or(0)
+}
+
+/// If `nullifier_key` is currently `Reserved(account)`, releases it
+/// (removes the entry, making the nullifier usable again). A `Spent`
+/// reservation, a reservation held by a DIFFERENT account, or no entry at
+/// all are all left untouched. Shared by `initiate_recovery`'s
+/// stale-pending-supersede path and `cancel_recovery`'s release-on-cancel
+/// step -- both release exactly one pending's own reservation, never
+/// another account's.
+fn release_reservation_if_owned(env: &Env, nullifier: &BytesN<32>, account: &Address) {
+    let key = RecoveryKey::Nullifier(nullifier.clone());
+    if let Some(NullifierState::Reserved(reserved_for)) =
+        env.storage().persistent().get::<_, NullifierState>(&key)
+    {
+        if &reserved_for == account {
+            env.storage().persistent().remove(&key);
+        }
+    }
 }
 
 /// Prunes timestamps older than `RATE_WINDOW_SECS`, panics
@@ -166,16 +203,7 @@ impl ZkRecovery {
             if now < existing.expires_at {
                 panic_with_error!(&env, RecoveryError::PendingExists);
             }
-            let existing_nullifier_key = RecoveryKey::Nullifier(existing.nullifier.clone());
-            if let Some(NullifierState::Reserved(reserved_for)) =
-                env.storage()
-                    .persistent()
-                    .get::<_, NullifierState>(&existing_nullifier_key)
-            {
-                if reserved_for == account {
-                    env.storage().persistent().remove(&existing_nullifier_key);
-                }
-            }
+            release_reservation_if_owned(&env, &existing.nullifier, &account);
         }
 
         // 2. `root` must be a currently-known Merkle root.
@@ -280,5 +308,154 @@ impl ZkRecovery {
     /// View: the next nonce `initiate_recovery` will accept for `account`.
     pub fn next_nonce(env: Env, account: Address) -> u64 {
         stored_nonce(&env, &account) + 1
+    }
+
+    /// View: how many cancels `account` has used against its `max_cancels`
+    /// cap (spec §2.4).
+    pub fn cancels_used(env: Env, account: Address) -> u32 {
+        cancels_used(&env, &account)
+    }
+
+    /// The legitimate owner's defense against a malicious/stale recovery in
+    /// flight (spec §2.4, §3.3): stops the pending recovery during its
+    /// timelock. Requires `account`'s own auth (the WebAuthn passkey signer
+    /// in production) -- exactly what an attacker who only knows a leaked
+    /// enrollment secret CANNOT provide, since a cancel does not consume
+    /// that secret's nullifier (it stays usable, only the pending record and
+    /// its nullifier RESERVATION are cleared).
+    ///
+    /// Ordered checks, mirroring `initiate_recovery`'s style: (1) account
+    /// auth, (2) a live pending must exist, (3) the per-account cancel cap
+    /// must not be reached, (4) a 24h cooldown since the last successful
+    /// cancel must have elapsed, (5) `nonce` must be exactly one past the
+    /// stored value (bumped on success), (6) a REAL `action=2` proof -- with
+    /// the pubkey/timelock fields ZEROED per spec §2.4 -- must verify
+    /// against this call's own recomputed `auth_hash` and a known root.
+    pub fn cancel_recovery(
+        env: Env,
+        account: Address,
+        nonce: u64,
+        root: BytesN<32>,
+        nullifier: BytesN<32>,
+        proof: Bytes,
+    ) -> u32 {
+        account.require_auth();
+
+        let cfg = config(&env);
+        let now = env.ledger().timestamp();
+
+        // 1. A live pending must exist -- a stale one (now >= expires_at) is
+        // nothing left to cancel.
+        let pending_key = RecoveryKey::Pending(account.clone());
+        let pending = env
+            .storage()
+            .persistent()
+            .get::<_, PendingRecovery>(&pending_key)
+            .filter(|p| now < p.expires_at)
+            .unwrap_or_else(|| panic_with_error!(&env, RecoveryError::NoPending));
+
+        // 2. Cancel cap.
+        let used = cancels_used(&env, &account);
+        if used >= cfg.max_cancels {
+            panic_with_error!(&env, RecoveryError::CancelCapReached);
+        }
+
+        // 3. Cooldown since the last successful cancel (first cancel has no
+        // prior, always allowed).
+        let last_cancel_key = RecoveryKey::LastCancel(account.clone());
+        if let Some(last) = env.storage().persistent().get::<_, u64>(&last_cancel_key) {
+            if now.saturating_sub(last) < CANCEL_COOLDOWN_SECS {
+                panic_with_error!(&env, RecoveryError::CooldownActive);
+            }
+        }
+
+        // 4. `nonce` must be exactly one past the stored value; bump it (a
+        // fresh proof per cancel, replay-protected exactly like
+        // `initiate_recovery`).
+        let expected_nonce = stored_nonce(&env, &account) + 1;
+        if nonce != expected_nonce {
+            panic_with_error!(&env, RecoveryError::InvalidNonce);
+        }
+        bump_nonce(&env, &account, nonce);
+
+        // 5. `root` must be known, and a REAL proof must verify against the
+        // CANCEL auth_hash this call recomputes itself: `action=2`, pubkey
+        // and timelock ZEROED per spec §2.4 (a cancel proves "I authorize
+        // stopping this recovery", not "install this key").
+        if !is_known_root(&env, &root) {
+            panic_with_error!(&env, RecoveryError::UnknownRoot);
+        }
+        let zero_pubkey = BytesN::from_array(&env, &[0u8; 65]);
+        let expected_auth_hash = compute_auth_hash(
+            &env,
+            ACTION_CANCEL,
+            &account,
+            &cfg.network_passphrase,
+            &env.current_contract_address(),
+            &zero_pubkey,
+            nonce,
+            0,
+        );
+        let public_inputs = assemble_public_inputs(&env, &root, &nullifier, &expected_auth_hash);
+        if verify_proof(&env, &cfg.verifier, public_inputs, proof).is_err() {
+            panic_with_error!(&env, RecoveryError::VerificationFailed);
+        }
+
+        // 6. Success: release the pending's nullifier reservation (the
+        // enrollment secret stays usable -- cancel never burns it), delete
+        // the pending record, bump the cancel counter + cooldown timestamp,
+        // and emit.
+        release_reservation_if_owned(&env, &pending.nullifier, &account);
+        env.storage().persistent().remove(&pending_key);
+
+        let new_used = used + 1;
+        let cancels_key = RecoveryKey::Cancels(account.clone());
+        env.storage().persistent().set(&cancels_key, &new_used);
+        extend_persistent_max(&env, &cancels_key);
+        env.storage().persistent().set(&last_cancel_key, &now);
+        extend_persistent_max(&env, &last_cancel_key);
+
+        RecoveryCanceled {
+            account: &account,
+            cancels_used: &new_used,
+        }
+        .publish(&env);
+
+        new_used
+    }
+
+    /// The legitimate owner's escape hatch for a (possibly leaked)
+    /// enrollment secret (spec §2.3): instantly spends that secret's
+    /// nullifier without waiting out a self-recovery, so a later
+    /// `initiate_recovery` attempt with the same nullifier fails
+    /// `NullifierSpent` -- even one from an attacker who legitimately knows
+    /// the leaked secret. Requires `account`'s own auth.
+    ///
+    /// Guard: a nullifier currently `Reserved` by a DIFFERENT account's
+    /// pending must not be burnable by this account (that would let one
+    /// account grief another's in-flight recovery) -- rejected with
+    /// `NullifierReservedElsewhere`. A nullifier `Reserved` by THIS account
+    /// (its own pending), already `Spent`, or unset are all burnable/
+    /// idempotent.
+    pub fn burn_nullifier(env: Env, account: Address, nullifier: BytesN<32>) {
+        account.require_auth();
+
+        let key = RecoveryKey::Nullifier(nullifier.clone());
+        if let Some(NullifierState::Reserved(reserved_for)) =
+            env.storage().persistent().get::<_, NullifierState>(&key)
+        {
+            if reserved_for != account {
+                panic_with_error!(&env, RecoveryError::NullifierReservedElsewhere);
+            }
+        }
+
+        env.storage().persistent().set(&key, &NullifierState::Spent);
+        extend_persistent_max(&env, &key);
+
+        NullifierBurned {
+            account: &account,
+            nullifier: &nullifier,
+        }
+        .publish(&env);
     }
 }

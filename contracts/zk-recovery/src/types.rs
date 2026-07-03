@@ -76,6 +76,11 @@ pub enum RecoveryKey {
     // at the end so existing variants keep their XDR ordinals.
     Nonce(Address),
     RateWindow(Address),
+    // Added by M1 Task 6 (`controller.rs::cancel_recovery`) -- appended at
+    // the end so existing variants keep their XDR ordinals. Stores the
+    // ledger timestamp of an account's most recent successful cancel, for
+    // the 24h cooldown check (spec §2.4).
+    LastCancel(Address),
 }
 
 /// Contract error codes (spec §3.3 interface/checks, §3.1 completion
@@ -116,6 +121,10 @@ pub enum RecoveryError {
     NotInstalled = 18,
     AlreadyInstalled = 19,
     Unauthorized = 20,
+
+    // controller.rs `burn_nullifier` (spec §2.3): appended, does not
+    // renumber any existing variant.
+    NullifierReservedElsewhere = 22,
 }
 
 /// `insert`/`insert_for` (pool.rs, later task): a new leaf entered the tree.

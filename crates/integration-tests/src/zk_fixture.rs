@@ -118,6 +118,36 @@ const PUBLIC_INPUTS_BYTES_NONCE2: &[u8] =
 const AUTH_HASH_NONCE2_HEX: &str =
     "0x006e82d3800eb1e7971856bf624cf5d2b6604878ab6fdfd178f1849b74373ee2";
 
+/// `action` bound into `auth_hash` for a CANCEL proof -- `2` means "cancel
+/// recovery" per the `zk_recovery` circuit's protocol
+/// (`circuits/zk_recovery/src/main.nr`), spec §2.4.
+pub const ACTION_CANCEL: u64 = 2;
+
+/// The nonce a CANCEL proof for this fixture's account is bound to --
+/// `stored_nonce` is `1` after the base [`lifecycle_fixture`]'s
+/// `initiate_recovery` (nonce=1), so the next accepted nonce (for either a
+/// re-initiate or a cancel) is `2`.
+pub const CANCEL_NONCE: u64 = 2;
+
+/// A THIRD real proof for the exact same leaf/secret/root/nullifier as
+/// [`lifecycle_fixture`], but `action = 2` ("cancel recovery", spec §2.4)
+/// with `pk_prefix`/`pk_x`/`pk_y`/`timelock_secs` all ZEROED and
+/// `nonce = CANCEL_NONCE`. Generated the same way as the other lifecycle
+/// fixtures -- see `circuits/zk_recovery/scripts/gen_lifecycle_cancel_fixture.sh`
+/// and `circuits/zk_recovery/fixtures/lifecycle_cancel/prover_inputs.json`
+/// for provenance.
+///
+/// Exists to prove `contracts/zk-recovery/src/controller.rs::cancel_recovery`
+/// end-to-end against a REAL `action=2` proof (M1 Task 6): the legitimate
+/// owner's defense that stops a malicious recovery during the timelock. See
+/// `crates/integration-tests/tests/it/zk_recovery_lifecycle.rs::real_cancel_proof_clears_pending_and_releases_nullifier`.
+const PROOF_BYTES_CANCEL: &[u8] =
+    include_bytes!("../../../circuits/zk_recovery/fixtures/lifecycle_cancel/proof");
+const PUBLIC_INPUTS_BYTES_CANCEL: &[u8] =
+    include_bytes!("../../../circuits/zk_recovery/fixtures/lifecycle_cancel/public_inputs");
+const AUTH_HASH_CANCEL_HEX: &str =
+    "0x177b69399bdb43e62195ecc35572a7fa99462d5694df2349e892447731dd17f0";
+
 // Computed witness values for the pinned constants above. Regenerate with
 // `just gen-zk-lifecycle-fixture` and copy the emitted values from
 // `circuits/zk_recovery/fixtures/lifecycle/prover_inputs.json` here if the
@@ -279,5 +309,67 @@ pub fn lifecycle_fixture_nonce2(env: &Env) -> LifecycleFixture {
         auth_hash,
         proof: PROOF_BYTES_NONCE2.to_vec(),
         public_inputs: PUBLIC_INPUTS_BYTES_NONCE2.to_vec(),
+    }
+}
+
+/// Loads the CANCEL variant of the lifecycle fixture: the SAME
+/// leaf/secret/root/nullifier as [`lifecycle_fixture`], `action = 2`,
+/// `pk_prefix`/`pk_x`/`pk_y`/`timelock_secs` all zeroed (`new_pubkey` is
+/// therefore the all-zero 65-byte array), and `nonce = CANCEL_NONCE`. See
+/// [`CANCEL_NONCE`] for why this exists.
+///
+/// `timelock_secs` on the returned [`LifecycleFixture`] is `0` -- callers
+/// computing the cancel `auth_hash` via `hash::compute_auth_hash` must pass
+/// `0` for `timelock_secs` and a zeroed `BytesN<65>` for the pubkey, exactly
+/// matching this fixture's witness (spec §2.4).
+///
+/// # Panics
+///
+/// Panics under the same conditions as [`lifecycle_fixture`], applied to the
+/// `lifecycle_cancel` fixture files.
+#[must_use]
+pub fn lifecycle_fixture_cancel(_env: &Env) -> LifecycleFixture {
+    let new_pubkey = [0u8; 65];
+
+    let root = hex32(ROOT_HEX);
+    let nullifier = hex32(NULLIFIER_HEX);
+    let auth_hash = hex32(AUTH_HASH_CANCEL_HEX);
+
+    assert_eq!(
+        PUBLIC_INPUTS_BYTES_CANCEL.len(),
+        96,
+        "public_inputs (cancel) fixture must be 96 bytes"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_CANCEL[0..32],
+        &root[..],
+        "public_inputs (cancel) [0..32] must equal root -- root does not depend on action"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_CANCEL[32..64],
+        &nullifier[..],
+        "public_inputs (cancel) [32..64] must equal nullifier -- nullifier does not \
+         depend on action"
+    );
+    assert_eq!(
+        &PUBLIC_INPUTS_BYTES_CANCEL[64..96],
+        &auth_hash[..],
+        "public_inputs (cancel) [64..96] must equal auth_hash"
+    );
+
+    LifecycleFixture {
+        account: ACCOUNT,
+        controller: CONTROLLER,
+        network_passphrase: NETWORK_PASSPHRASE,
+        new_pubkey,
+        nonce: CANCEL_NONCE,
+        timelock_secs: 0,
+        secret_hex: SECRET_HEX,
+        leaf_stored: hex32(LEAF_STORED_HEX),
+        root,
+        nullifier,
+        auth_hash,
+        proof: PROOF_BYTES_CANCEL.to_vec(),
+        public_inputs: PUBLIC_INPUTS_BYTES_CANCEL.to_vec(),
     }
 }

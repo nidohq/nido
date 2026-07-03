@@ -22,7 +22,10 @@
 use nido_integration_tests::zk_fixture::{self, LifecycleFixture};
 use nido_zk_recovery::hash::leaf_inner;
 use nido_zk_recovery::pool::{ZkRecovery, ZkRecoveryClient};
-use nido_zk_recovery::types::{NullifierState, RecoveryError, RecoveryInitiated, RecoveryKey};
+use nido_zk_recovery::types::{
+    NullifierState, PendingRecovery, RecoveryCanceled, RecoveryError, RecoveryInitiated,
+    RecoveryKey,
+};
 use soroban_sdk::address_payload::AddressPayload;
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::{Address, Bytes, BytesN, Env, Error as SdkError, Event};
@@ -125,8 +128,8 @@ fn setup(env: &Env) -> (ZkRecoveryClient<'_>, Address, LifecycleFixture) {
     (client, account, fixture)
 }
 
-fn contract_error(
-    res: &Result<Result<u64, SdkError>, Result<SdkError, soroban_sdk::InvokeError>>,
+fn contract_error<T: core::fmt::Debug, E: core::fmt::Debug>(
+    res: &Result<Result<T, E>, Result<SdkError, soroban_sdk::InvokeError>>,
 ) -> RecoveryError {
     match res {
         Err(Ok(err)) => {
@@ -141,6 +144,10 @@ fn contract_error(
                 RecoveryError::TimelockMismatch,
                 RecoveryError::RateLimited,
                 RecoveryError::VerificationFailed,
+                RecoveryError::NoPending,
+                RecoveryError::CancelCapReached,
+                RecoveryError::CooldownActive,
+                RecoveryError::NullifierReservedElsewhere,
             ] {
                 if known as u32 == code {
                     return known;
@@ -511,5 +518,318 @@ fn stale_pending_can_be_superseded_by_a_fresh_nonce_proof() {
         Some(NullifierState::Reserved(account)),
         "nullifier must be reserved to the recovering account after the superseding \
          initiation"
+    );
+}
+
+// ---------------------------------------------------------------------
+// M1 Task 6: `cancel_recovery` + `burn_nullifier` (spec §2.3, §2.4).
+// ---------------------------------------------------------------------
+
+/// Reads a nullifier's current state directly from contract storage.
+fn nullifier_state(
+    env: &Env,
+    client: &ZkRecoveryClient<'_>,
+    nullifier: &BytesN<32>,
+) -> Option<NullifierState> {
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .get(&RecoveryKey::Nullifier(nullifier.clone()))
+    })
+}
+
+/// The keystone honesty check for M1 Task 6: a REAL `action=2` proof
+/// (`zk_fixture::lifecycle_fixture_cancel`) verifies through
+/// `cancel_recovery`'s cross-call to the M0 verifier, against a `cancel
+/// auth_hash` this contract recomputes itself (zeroed pubkey/timelock, spec
+/// §2.4) -- not one fed to it directly. Proves the pending is cleared, the
+/// initiate's nullifier RESERVATION is released (the enrollment secret
+/// stays usable -- cancel never burns it), `cancels_used` is incremented,
+/// and `RecoveryCanceled` is emitted.
+#[test]
+fn real_cancel_proof_clears_pending_and_releases_nullifier() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let (client, account, fixture) = setup(&env);
+
+    // `setup` already called `env.mock_all_auths()` (via `insert_fixture_leaf`),
+    // which persists for the rest of this env -- `account.require_auth()`
+    // inside `initiate_recovery`/`cancel_recovery` is satisfied by it.
+    let new_pubkey = BytesN::from_array(&env, &fixture.new_pubkey);
+    let root = BytesN::from_array(&env, &fixture.root);
+    let nullifier = BytesN::from_array(&env, &fixture.nullifier);
+    let proof = Bytes::from_slice(&env, &fixture.proof);
+
+    client.initiate_recovery(
+        &account,
+        &new_pubkey,
+        &fixture.nonce,
+        &fixture.timelock_secs,
+        &root,
+        &nullifier,
+        &proof,
+    );
+    assert!(client.get_pending(&account).is_some());
+    assert_eq!(
+        nullifier_state(&env, &client, &nullifier),
+        Some(NullifierState::Reserved(account.clone())),
+        "nullifier must be reserved after the initiate"
+    );
+
+    let cancel_fixture = zk_fixture::lifecycle_fixture_cancel(&env);
+    assert_eq!(
+        cancel_fixture.root, fixture.root,
+        "sanity: the cancel fixture must share the same root as the base fixture -- \
+         cancel does not touch the Merkle tree"
+    );
+    assert_eq!(
+        cancel_fixture.nullifier, fixture.nullifier,
+        "sanity: the cancel fixture must share the same nullifier as the base fixture -- \
+         cancel releases the SAME reservation the initiate made"
+    );
+    let cancel_root = BytesN::from_array(&env, &cancel_fixture.root);
+    let cancel_nullifier = BytesN::from_array(&env, &cancel_fixture.nullifier);
+    let cancel_proof = Bytes::from_slice(&env, &cancel_fixture.proof);
+
+    let cancels_used = client.cancel_recovery(
+        &account,
+        &cancel_fixture.nonce,
+        &cancel_root,
+        &cancel_nullifier,
+        &cancel_proof,
+    );
+    assert_eq!(cancels_used, 1);
+
+    // `events().all()` only returns events from the LAST invocation -- must
+    // be captured before any further client calls.
+    let expected_event = RecoveryCanceled {
+        account: &account,
+        cancels_used: &1,
+    };
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        [expected_event.to_xdr(&env, &client.address)],
+        "RecoveryCanceled must be emitted with account/cancels_used"
+    );
+
+    assert!(
+        client.get_pending(&account).is_none(),
+        "the pending record must be deleted after a successful cancel"
+    );
+    assert_eq!(
+        nullifier_state(&env, &client, &nullifier),
+        None,
+        "the initiate's nullifier reservation must be RELEASED (not spent) by a cancel -- \
+         the enrollment secret stays usable for a future initiate"
+    );
+    assert_eq!(client.cancels_used(&account), 1);
+}
+
+/// `cancel_recovery` requires `account`'s own auth (the WebAuthn passkey
+/// signer in production) -- exactly what an attacker who only knows a
+/// leaked enrollment secret cannot provide. Mirrors
+/// `pool.rs::insert_for_requires_account_auth`'s pattern: no auth mocked at
+/// all (not `mock_all_auths`), so `account.require_auth()` -- the very
+/// first thing `cancel_recovery` does -- must reject before anything else
+/// is even inspected.
+#[test]
+fn cancel_recovery_requires_account_auth() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let (client, account, _fixture) = deploy(&env); // no leaf, no pending, no auth mocked
+
+    let dummy_root = BytesN::from_array(&env, &[0u8; 32]);
+    let dummy_nullifier = BytesN::from_array(&env, &[0u8; 32]);
+    let dummy_proof = Bytes::from_slice(&env, &[]);
+
+    let res =
+        client.try_cancel_recovery(&account, &1u64, &dummy_root, &dummy_nullifier, &dummy_proof);
+    assert!(
+        res.is_err(),
+        "cancel_recovery without the account's auth must fail"
+    );
+}
+
+/// Cancel-cap guard, tested directly against the state machine (per the
+/// task brief's explicit allowance): the cap check (spec §2.4) runs BEFORE
+/// nonce/proof verification, so pre-seeding `Cancels(account) ==
+/// config.max_cancels` and a live `Pending` lets this test hit
+/// `CancelCapReached` without needing a real proof -- this test does NOT
+/// exercise proof verification, unlike
+/// `real_cancel_proof_clears_pending_and_releases_nullifier` above (which
+/// does, and is the required real-proof coverage).
+#[test]
+fn cancel_cap_reached_is_rejected_before_proof_verification() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let (client, account, fixture) = deploy(&env);
+
+    let now = env.ledger().timestamp();
+    let nullifier = BytesN::from_array(&env, &fixture.nullifier);
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &RecoveryKey::Pending(account.clone()),
+            &PendingRecovery {
+                new_pubkey: BytesN::from_array(&env, &[0u8; 65]),
+                nullifier: nullifier.clone(),
+                initiated_at: now,
+                executable_after: now,
+                expires_at: now + 1_000_000,
+            },
+        );
+        // MAX_CANCELS (const above) == 2 -- pre-seed the cap as already hit.
+        env.storage()
+            .persistent()
+            .set(&RecoveryKey::Cancels(account.clone()), &MAX_CANCELS);
+    });
+
+    env.mock_all_auths();
+    let dummy_root = BytesN::from_array(&env, &[0u8; 32]);
+    let dummy_proof = Bytes::from_slice(&env, &[]);
+    let res = client.try_cancel_recovery(&account, &1u64, &dummy_root, &nullifier, &dummy_proof);
+    assert_eq!(contract_error(&res), RecoveryError::CancelCapReached);
+}
+
+/// Cooldown guard, tested directly against the state machine (same
+/// rationale as the cap test above): the cooldown check (spec §2.4) runs
+/// BEFORE nonce/proof verification, so pre-seeding a live `Pending`, a
+/// cancel count under the cap, and a `LastCancel` timestamp less than 24h
+/// in the past lets this test hit `CooldownActive` without a real proof.
+#[test]
+fn cancel_cooldown_active_is_rejected_before_proof_verification() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let (client, account, fixture) = deploy(&env);
+
+    let now = env.ledger().timestamp();
+    let nullifier = BytesN::from_array(&env, &fixture.nullifier);
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &RecoveryKey::Pending(account.clone()),
+            &PendingRecovery {
+                new_pubkey: BytesN::from_array(&env, &[0u8; 65]),
+                nullifier: nullifier.clone(),
+                initiated_at: now,
+                executable_after: now,
+                expires_at: now + 1_000_000,
+            },
+        );
+        // Under the cap (MAX_CANCELS == 2).
+        env.storage()
+            .persistent()
+            .set(&RecoveryKey::Cancels(account.clone()), &1u32);
+        // Last cancel 1 hour ago -- well under the 24h (86_400s) cooldown.
+        env.storage().persistent().set(
+            &RecoveryKey::LastCancel(account.clone()),
+            &now.saturating_sub(3_600),
+        );
+    });
+
+    env.mock_all_auths();
+    let dummy_root = BytesN::from_array(&env, &[0u8; 32]);
+    let dummy_proof = Bytes::from_slice(&env, &[]);
+    let res = client.try_cancel_recovery(&account, &1u64, &dummy_root, &nullifier, &dummy_proof);
+    assert_eq!(contract_error(&res), RecoveryError::CooldownActive);
+}
+
+/// `burn_nullifier` happy path (spec §2.3): marks the nullifier `Spent`, and
+/// a later `initiate_recovery` attempt with that same nullifier is rejected
+/// `NullifierSpent` -- even though the root/proof it's paired with are
+/// otherwise entirely valid. This is the escape hatch: the legitimate owner
+/// who learns their enrollment secret leaked can instantly kill it without
+/// waiting out a self-recovery.
+#[test]
+fn burn_nullifier_marks_spent_and_blocks_a_later_initiate() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let (client, account, fixture) = setup(&env); // known root, mock_all_auths on
+
+    let nullifier = BytesN::from_array(&env, &fixture.nullifier);
+    assert_eq!(nullifier_state(&env, &client, &nullifier), None);
+
+    client.burn_nullifier(&account, &nullifier);
+    assert_eq!(
+        nullifier_state(&env, &client, &nullifier),
+        Some(NullifierState::Spent),
+        "burn_nullifier must mark the nullifier Spent"
+    );
+
+    let new_pubkey = BytesN::from_array(&env, &fixture.new_pubkey);
+    let root = BytesN::from_array(&env, &fixture.root);
+    let proof = Bytes::from_slice(&env, &fixture.proof);
+    let res = client.try_initiate_recovery(
+        &account,
+        &new_pubkey,
+        &fixture.nonce,
+        &fixture.timelock_secs,
+        &root,
+        &nullifier,
+        &proof,
+    );
+    assert_eq!(
+        contract_error(&res),
+        RecoveryError::NullifierSpent,
+        "a burned nullifier must block a later initiate_recovery, even with an \
+         otherwise-valid root/proof"
+    );
+}
+
+/// `burn_nullifier` requires `account`'s own auth. Mirrors
+/// `cancel_recovery_requires_account_auth`: no auth mocked at all.
+#[test]
+fn burn_nullifier_requires_account_auth() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let (client, account, fixture) = deploy(&env);
+
+    let nullifier = BytesN::from_array(&env, &fixture.nullifier);
+    let res = client.try_burn_nullifier(&account, &nullifier);
+    assert!(
+        res.is_err(),
+        "burn_nullifier without the account's auth must fail"
+    );
+}
+
+/// `burn_nullifier` must reject burning a nullifier currently `Reserved` by
+/// a DIFFERENT account's pending -- otherwise one account could grief
+/// another's in-flight recovery by burning its nullifier out from under it.
+#[test]
+fn burn_nullifier_rejects_nullifier_reserved_by_another_account() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let (client, account, fixture) = setup(&env);
+
+    let new_pubkey = BytesN::from_array(&env, &fixture.new_pubkey);
+    let root = BytesN::from_array(&env, &fixture.root);
+    let nullifier = BytesN::from_array(&env, &fixture.nullifier);
+    let proof = Bytes::from_slice(&env, &fixture.proof);
+
+    // `account` reserves the nullifier via a real initiate.
+    client.initiate_recovery(
+        &account,
+        &new_pubkey,
+        &fixture.nonce,
+        &fixture.timelock_secs,
+        &root,
+        &nullifier,
+        &proof,
+    );
+    assert_eq!(
+        nullifier_state(&env, &client, &nullifier),
+        Some(NullifierState::Reserved(account.clone()))
+    );
+
+    // A different account tries to burn it -- must be rejected.
+    let other = Address::generate(&env);
+    let res = client.try_burn_nullifier(&other, &nullifier);
+    assert_eq!(
+        contract_error(&res),
+        RecoveryError::NullifierReservedElsewhere
+    );
+
+    // The reservation is untouched by the rejected attempt.
+    assert_eq!(
+        nullifier_state(&env, &client, &nullifier),
+        Some(NullifierState::Reserved(account))
     );
 }
