@@ -76,6 +76,9 @@ pub enum RecoveryKey {
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RecoveryError {
+    // merkle.rs (spec §3.4 `insert_leaf` depth-24 capacity)
+    TreeFull = 21,
+
     // pool.rs (spec §2.2, §3.3 `insert`/`insert_for`)
     NonCanonicalCommitment = 1,
 

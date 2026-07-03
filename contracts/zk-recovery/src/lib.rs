@@ -13,4 +13,5 @@
 //! and wire a `#[contract]` struct here once those exist.
 
 pub mod hash;
+pub mod merkle;
 pub mod types;

@@ -1,0 +1,264 @@
+{
+  "generators": {
+    "address": 1,
+    "nonce": 0,
+    "mux_id": 0
+  },
+  "auth": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+  ],
+  "ledger": {
+    "protocol_version": 26,
+    "sequence_number": 0,
+    "timestamp": 0,
+    "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
+    "base_reserve": 0,
+    "min_persistent_entry_ttl": 4096,
+    "min_temp_entry_ttl": 16,
+    "max_entry_ttl": 6312000,
+    "ledger_entries": [
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Frontier"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "vec": [
+                  {
+                    "bytes": "06562e923dc6913b0f43509180de996b16eb9cf1628ca27372cbdce55e2d9d2c"
+                  },
+                  {
+                    "bytes": "1467b7193d4212b87ec0266f5e63c463f2b100759ae8dc721291de1ebf822298"
+                  },
+                  {
+                    "bytes": "2e6099a8db465a29698064dab933a4903dae5fd5a7edd68abedc74916e25eb2e"
+                  },
+                  {
+                    "bytes": "2bdd0e9837ee4151224c2822c7f6b1a5fc76297149b1dcf5afc5b9eda46d497a"
+                  },
+                  {
+                    "bytes": "2752e0b27a229e5444e110e2896f01e0829c5850cbfaff3eaf5e73f97408cfa2"
+                  },
+                  {
+                    "bytes": "0410db73ef1f374a535ff610b572976ef7164e2cd143ac503c9061c78a52f4ef"
+                  },
+                  {
+                    "bytes": "247e562e37cf9a5460e9f59ccd16a862ee79fb46f133d9f6c50dab314ebdf2b6"
+                  },
+                  {
+                    "bytes": "04dacfc4f455d0cd9f816577f5e5c5f38ed77b6498cc657e511cb5dbdd5431af"
+                  },
+                  {
+                    "bytes": "04daabe8fc308215cf488edb24e79d941b57d21cba09e07b7d90e9286e66662c"
+                  },
+                  {
+                    "bytes": "2eabc972792c74e58be3bfe75b0260c2831bf87d20fa3e6862ab91693c149f9a"
+                  },
+                  {
+                    "bytes": "304dcf13588b7d50caed0349bb72fede25783a38f063aeef6ff99c6b4823827b"
+                  },
+                  {
+                    "bytes": "062ad45e23ce21ba13a8af45570ef7b424a56d11dcb0db448adc444478696058"
+                  },
+                  {
+                    "bytes": "0f3893cc7ca8b3fdc7f09eba17bdf47a41c5ae0ef6bd8ce5cb389d1570b08a06"
+                  },
+                  {
+                    "bytes": "10974d80f41df903c873c52a90d6995c654dfa25226cb6951f4f9750f654285b"
+                  },
+                  {
+                    "bytes": "19055f3a3941a50693c988968a39acd24f7413f02385073a9da8ac324d9aecd9"
+                  },
+                  {
+                    "bytes": "1e342748592fe5fc4182f0a40cceb0a478ac420c8006ecb450fe3c3e9a0baa08"
+                  },
+                  {
+                    "bytes": "101dcca3b2b2630cccc83361fef184854b6aeb2df7adcdcfebab272430d2ae7d"
+                  },
+                  {
+                    "bytes": "10c9ef1709f8ae48653bc1280f0641a06e5a439f45b4054f5bb911f04e15eaeb"
+                  },
+                  {
+                    "bytes": "23eaa169dd83eea9b3949f28a1aa451fb37f6e7be3faa59f1d1ae515c41c337c"
+                  },
+                  {
+                    "bytes": "2daa811dfb7253a692d75d89c8b129f4cd7d9c7032909b1552d394affeb0ac61"
+                  },
+                  {
+                    "bytes": "09ad75d47f98816eae84896d106afec4f69d85c19ea7a165cd1219a6e499cfb7"
+                  },
+                  {
+                    "bytes": "17280ba8cbe3eea9fe7895a89f08bc35c426a98c73046797e607b27db86b4b93"
+                  },
+                  {
+                    "bytes": "1771ef3440921f257462be589e3a471a64a18de93551b69412644bc73fd3d574"
+                  },
+                  {
+                    "bytes": "1abb560c46ba2173cf4e9af9b620a58b9ae11fcf75da1fa64e7634a0ab76879b"
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "RootRing"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "vec": [
+                  {
+                    "bytes": "1bbb62f9b55a7e4753334afac6de97c458fe17e2577cb54cd6cf8eda685a8e86"
+                  },
+                  {
+                    "bytes": "25318ceeb7c5c15f687cc31e49ec06f3381071ad114b5f770a99f79a589d6be6"
+                  },
+                  {
+                    "bytes": "1358fc20b156e4a7ec66c45e246b1eeb7ada96ff452d62e3ee18899c44225444"
+                  },
+                  {
+                    "bytes": "274e4e55e74c5059861afdb5867cb2b43858c91c5e49380521152b29659a5ad7"
+                  },
+                  {
+                    "bytes": "0da7d425bc46234e167093d83be51c0d00976c136ae5c3afaab94dd9a56e0751"
+                  },
+                  {
+                    "bytes": "28df97856655ba16c2e29c0b215bc4eeeb1c62dbda55a6faf0d7f30d14596b97"
+                  },
+                  {
+                    "bytes": "12c8408893266f49e249e1829c6234cdba69611cf49866f2e23adb4a1896cb9c"
+                  },
+                  {
+                    "bytes": "0114dd036cc0c67bcff6b4d03ab8ff4449c20ae2b551ea41e51287ada1f99d47"
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": "ledger_key_contract_instance",
+              "durability": "persistent",
+              "val": {
+                "contract_instance": {
+                  "executable": {
+                    "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  "storage": [
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "NextIndex"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u32": 8
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "RingHead"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u32": 8
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_code": {
+              "ext": "v0",
+              "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "code": ""
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      }
+    ]
+  },
+  "events": []
+}
