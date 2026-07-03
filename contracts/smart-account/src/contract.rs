@@ -33,11 +33,16 @@ pub enum NidoSmartAccountError {
     /// holding a stolen passkey from evicting the recovery mechanism or the
     /// legitimate signer mid-recovery.
     RecoveryPendingBlocked = 1,
-    /// A direct `remove_context_rule(recovery_rule_id)` was attempted -- the
-    /// recovery rule can only be removed via
+    /// A direct `remove_context_rule(recovery_rule_id)`,
+    /// `add_policy(recovery_rule_id, ..)`, `remove_policy(recovery_rule_id,
+    /// ..)`, or `update_context_rule_valid_until(recovery_rule_id, ..)` was
+    /// attempted -- the recovery rule's existence AND its policy set and
+    /// validity window can only change via
     /// `initiate_recovery_rule_removal`/`execute_recovery_rule_removal`
     /// (the announce-then-execute path below). Applies unconditionally,
-    /// even with no pending, so a thief cannot simply delete the rule.
+    /// even with no pending, so a thief cannot delete the rule outright, nor
+    /// neuter it in place (expire it via `valid_until`, or poison/strip its
+    /// policies) to bypass the removal delay.
     RecoveryRuleProtected = 2,
     /// `execute_recovery_rule_removal` was called without a prior
     /// `initiate_recovery_rule_removal`.
@@ -388,6 +393,15 @@ impl SmartAccount for NidoSmartAccount {
         valid_until: Option<u32>,
     ) -> ContextRule {
         e.current_contract_address().require_auth();
+        // Same unconditional `RecoveryRuleProtected` check as
+        // `remove_context_rule` below: a thief with a live passkey must not
+        // be able to shrink the recovery rule's `valid_until` window (e.g.
+        // to the current ledger sequence, which OZ accepts and which
+        // expires the rule as of the very next ledger) to silently disarm
+        // recovery instead of removing it outright.
+        if NidoSmartAccount::recovery_rule_id(e) == Some(context_rule_id) {
+            panic_with_error!(e, NidoSmartAccountError::RecoveryRuleProtected);
+        }
         guard_no_pending(e);
         update_context_rule_valid_until(e, context_rule_id, valid_until)
     }
@@ -419,11 +433,31 @@ impl SmartAccount for NidoSmartAccount {
 
     fn add_policy(e: &Env, context_rule_id: u32, policy: Address, install_param: Val) -> u32 {
         e.current_contract_address().require_auth();
+        // Same unconditional `RecoveryRuleProtected` check as
+        // `remove_context_rule` below: OZ enforces ALL policies on a rule
+        // (AND-semantics), so attaching even one always-failing policy to
+        // the recovery rule is enough to make the completion
+        // `add_context_rule` cross-check against it fail forever -- a
+        // thief could otherwise neuter recovery without ever removing the
+        // rule, including while a recovery is already pending.
+        if NidoSmartAccount::recovery_rule_id(e) == Some(context_rule_id) {
+            panic_with_error!(e, NidoSmartAccountError::RecoveryRuleProtected);
+        }
+        guard_no_pending(e);
         add_policy(e, context_rule_id, &policy, install_param)
     }
 
     fn remove_policy(e: &Env, context_rule_id: u32, policy_id: u32) {
         e.current_contract_address().require_auth();
+        // Same unconditional `RecoveryRuleProtected` check as
+        // `remove_context_rule` below: stripping the recovery rule's
+        // controller policy (e.g. after adding a filler policy to dodge an
+        // "empty policy set" edge case) would leave the rule unenforced,
+        // so it must be blocked regardless of pending state, same as
+        // removing the rule itself.
+        if NidoSmartAccount::recovery_rule_id(e) == Some(context_rule_id) {
+            panic_with_error!(e, NidoSmartAccountError::RecoveryRuleProtected);
+        }
         guard_no_pending(e);
         remove_policy(e, context_rule_id, policy_id);
     }
@@ -767,6 +801,112 @@ mod test {
             client.try_remove_context_rule(&setup.recovery_rule_id),
             NidoSmartAccountError::RecoveryRuleProtected,
         );
+    }
+
+    /// Bypass A: `update_context_rule_valid_until(recovery_rule_id, ..)`
+    /// always panics `RecoveryRuleProtected`, regardless of pending state.
+    /// Without this check, a thief could set `valid_until` to the current
+    /// ledger sequence (OZ accepts `valid_until == sequence`) and expire the
+    /// recovery rule as of the very next ledger, killing recovery in one
+    /// call without ever removing the rule.
+    #[test]
+    fn update_valid_until_on_recovery_rule_is_protected_regardless_of_pending() {
+        let e = Env::default();
+        e.mock_all_auths();
+        let setup = deploy_with_stub(&e);
+        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
+        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
+
+        let now = e.ledger().sequence();
+
+        // Not pending.
+        assert_account_error(
+            client.try_update_context_rule_valid_until(&setup.recovery_rule_id, &Some(now)),
+            NidoSmartAccountError::RecoveryRuleProtected,
+        );
+
+        // Pending.
+        stub.set_pending(&setup.account_addr, &true);
+        assert_account_error(
+            client.try_update_context_rule_valid_until(&setup.recovery_rule_id, &Some(now)),
+            NidoSmartAccountError::RecoveryRuleProtected,
+        );
+    }
+
+    /// Bypass B: `add_policy(recovery_rule_id, ..)` always panics
+    /// `RecoveryRuleProtected`, regardless of pending state -- this is the
+    /// critical case, since OZ's AND-semantics over a rule's policies mean a
+    /// single always-failing policy attached to the recovery rule makes the
+    /// completion cross-check fail forever, and (unlike the other three
+    /// guarded ops) this previously worked even DURING a live pending
+    /// recovery, since `add_policy` had no guard of any kind.
+    #[test]
+    fn add_policy_on_recovery_rule_is_protected_regardless_of_pending() {
+        let e = Env::default();
+        e.mock_all_auths();
+        let setup = deploy_with_stub(&e);
+        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
+        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
+        let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(&e);
+
+        // Not pending.
+        assert_account_error(
+            client.try_add_policy(&setup.recovery_rule_id, &setup.controller, &install),
+            NidoSmartAccountError::RecoveryRuleProtected,
+        );
+
+        // Pending -- this is Bypass B: it worked while pending before the
+        // fix, since `add_policy` had no `guard_no_pending` call either.
+        stub.set_pending(&setup.account_addr, &true);
+        assert_account_error(
+            client.try_add_policy(&setup.recovery_rule_id, &setup.controller, &install),
+            NidoSmartAccountError::RecoveryRuleProtected,
+        );
+    }
+
+    /// Bypass C: `remove_policy(recovery_rule_id, ..)` always panics
+    /// `RecoveryRuleProtected`, regardless of pending state -- previously a
+    /// thief could add a filler policy (unguarded) then remove the original
+    /// controller policy, stripping enforcement from the rule entirely.
+    #[test]
+    fn remove_policy_on_recovery_rule_is_protected_regardless_of_pending() {
+        let e = Env::default();
+        e.mock_all_auths();
+        let setup = deploy_with_stub(&e);
+        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
+        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
+
+        // Not pending. Policy id 0 is the controller policy installed at
+        // construction (the recovery rule has exactly one policy).
+        assert_account_error(
+            client.try_remove_policy(&setup.recovery_rule_id, &0),
+            NidoSmartAccountError::RecoveryRuleProtected,
+        );
+
+        // Pending.
+        stub.set_pending(&setup.account_addr, &true);
+        assert_account_error(
+            client.try_remove_policy(&setup.recovery_rule_id, &0),
+            NidoSmartAccountError::RecoveryRuleProtected,
+        );
+    }
+
+    /// Guard doesn't over-block: the same three newly-guarded ops still
+    /// succeed against a NON-recovery rule (the Default rule) when not
+    /// pending -- proves the `RecoveryRuleProtected` check is scoped to the
+    /// recovery rule id, not a blanket lockdown of these ops.
+    #[test]
+    fn newly_guarded_ops_allowed_on_non_recovery_rule_when_not_pending() {
+        let e = Env::default();
+        e.mock_all_auths();
+        let setup = deploy_with_stub(&e);
+        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
+
+        client.update_context_rule_valid_until(&setup.default_rule_id, &Some(1_000_000));
+
+        let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(&e);
+        let policy_id = client.add_policy(&setup.default_rule_id, &setup.controller, &install);
+        client.remove_policy(&setup.default_rule_id, &policy_id);
     }
 
     /// Announce-then-execute: executing without announcing fails
