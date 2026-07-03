@@ -15,7 +15,15 @@ use soroban_sdk::{contracterror, contractevent, contracttype, Address, Bytes, By
 /// derivation (`main.nr:40-42`), so `initiate_recovery` must recompute
 /// `auth_hash` using the SAME passphrase bytes a proof's witness was
 /// generated against; the remaining fields are the timelock/rate-limit
-/// defaults (spec §3.3 "Defaults").
+/// defaults (spec §3.3 "Defaults"). `webauthn_verifier` is appended by M1
+/// Task 7 (`policy.rs`): the `WebAuthnVerifier` contract address that a
+/// completed recovery's new signer must be `Signer::External`-bound to --
+/// `PendingRecovery::new_pubkey` (spec §3.1) is only the raw P-256 public key
+/// bytes, not a full `Signer`, so `Policy::enforce`'s args-gate needs this to
+/// reconstruct the exact `Signer` it must match against the completing
+/// `add_context_rule` call's new-signers argument. Appended (not inserted)
+/// so existing `RecoveryConfig`/`__constructor` field/argument ordinals are
+/// preserved for earlier M1 tasks' callers.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecoveryConfig {
@@ -26,6 +34,20 @@ pub struct RecoveryConfig {
     pub max_cancels: u32,
     pub timelock_floor_secs: u64,
     pub network_passphrase: Bytes,
+    pub webauthn_verifier: Address,
+}
+
+/// Install parameters for the `ZkRecovery` completion `Policy` (spec §3.1,
+/// M1 Task 7). The policy's enforcement behavior is fully determined by the
+/// shared `RecoveryConfig` and the account's own `PendingRecovery` state, so
+/// this carries no real configuration today -- `version` exists only to
+/// mirror `multisig-policy`'s `AccountParams` shape (a non-trivial,
+/// `FromVal`-decodable install-params type) and to leave room for future
+/// versioning without changing the `Policy::install` signature.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ZkRecoveryInstallParams {
+    pub version: u32,
 }
 
 /// A live timelocked recovery in flight for one account (spec §3.3

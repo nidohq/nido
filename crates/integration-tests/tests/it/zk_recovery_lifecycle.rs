@@ -74,6 +74,10 @@ fn deploy(env: &Env) -> (ZkRecoveryClient<'_>, Address, LifecycleFixture) {
     let controller_addr = addr_from(env, &fixture.controller);
     let factory = Address::generate(env);
     let network_passphrase = Bytes::from_slice(env, fixture.network_passphrase.as_bytes());
+    // Unused by this file's proof-only (`initiate_recovery`/`cancel_recovery`/
+    // `burn_nullifier`) coverage -- only `policy.rs::enforce` (M1 Task 7,
+    // `zk_recovery_completion.rs`) reads `config.webauthn_verifier`.
+    let webauthn_verifier = Address::generate(env);
 
     let contract_id = env.register_at(
         &controller_addr,
@@ -86,6 +90,7 @@ fn deploy(env: &Env) -> (ZkRecoveryClient<'_>, Address, LifecycleFixture) {
             MAX_CANCELS,
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
+            webauthn_verifier,
         ),
     );
     let client = ZkRecoveryClient::new(env, &contract_id);

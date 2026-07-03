@@ -12,6 +12,14 @@
 //! (factory at genesis, or the account itself for later re-enrollment)
 //! signed off on the insert.
 
+// `#[contractimpl]`'s macro-generated `__constructor` invoke wrapper (used
+// by the `testutils` client) is emitted at the `#[contractimpl]` attribute's
+// own span, not `__constructor`'s -- so the per-fn `#[allow(clippy::
+// too_many_arguments)]` below doesn't reach it, and clippy warns at the
+// attribute site instead. Only surfaced by M1 Task 7's `webauthn_verifier`
+// field, appended to `RecoveryConfig`/`__constructor`.
+#![allow(clippy::too_many_arguments)]
+
 use crate::hash::wrap_leaf;
 use crate::merkle;
 use crate::types::{LeafInserted, RecoveryConfig, RecoveryError, RecoveryKey};
@@ -29,6 +37,15 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Bytes, Byte
 // `testutils`; a `pool::controller` submodule can.
 #[path = "controller.rs"]
 pub mod controller;
+
+// `policy.rs` (M1 Task 7) is declared as a submodule of `pool` for the same
+// reason `controller` is (see the doc comment above): the OZ `Policy` impl
+// below is a THIRD `#[contractimpl]` block on the same `ZkRecovery`
+// `#[contract]` struct, and `soroban_sdk::contractimpl`'s generated
+// `testutils`-feature client methods need to see `ZkRecoveryClient`'s
+// module-private fields.
+#[path = "policy.rs"]
+pub mod policy;
 
 /// The BN254 scalar field order `r` (spec §2.2): every real `inner` leaf is
 /// a Poseidon2 output, hence already `< r` by construction; `r` itself and
@@ -97,6 +114,7 @@ impl ZkRecovery {
         max_cancels: u32,
         timelock_floor_secs: u64,
         network_passphrase: Bytes,
+        webauthn_verifier: Address,
     ) {
         let cfg = RecoveryConfig {
             factory,
@@ -106,6 +124,7 @@ impl ZkRecovery {
             max_cancels,
             timelock_floor_secs,
             network_passphrase,
+            webauthn_verifier,
         };
         env.storage().instance().set(&RecoveryKey::Config, &cfg);
     }
@@ -166,6 +185,7 @@ mod tests {
     fn setup(env: &Env) -> (Address, RecoveryConfig) {
         let factory = Address::generate(env);
         let verifier = Address::generate(env);
+        let webauthn_verifier = Address::generate(env);
         let cfg = RecoveryConfig {
             factory: factory.clone(),
             verifier,
@@ -174,6 +194,7 @@ mod tests {
             max_cancels: 3,
             timelock_floor_secs: 24 * 3600,
             network_passphrase: Bytes::from_slice(env, b"Test SDF Network ; September 2015"),
+            webauthn_verifier,
         };
         let id = env.register(
             ZkRecovery,
@@ -185,6 +206,7 @@ mod tests {
                 cfg.max_cancels,
                 cfg.timelock_floor_secs,
                 cfg.network_passphrase.clone(),
+                cfg.webauthn_verifier.clone(),
             ),
         );
         (id, cfg)
