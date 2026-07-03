@@ -79,7 +79,7 @@ Scope: per enrollment credential (per leaf), not per initiation.
 | `initiate_recovery` | N revealed as public input; must not be Reserved/Spent; becomes `Reserved(account)` in the pending record |
 | `cancel_recovery` | pending cleared; reservation released — **a cancel never burns the enrollment** (anti-griefing) |
 | `complete_recovery` | N → `Spent` permanently (leaves are forever in the append-only tree; the nullifier is what kills a used credential) |
-| `burn_nullifier` | account-authed (passkey) escape hatch: instantly spend a leaked secret's N without waiting out a self-recovery; then re-enroll visibly |
+| `burn_nullifier` (revoke) | account-authed **and** an `action=3` ZK proof of secret-knowledge: instantly spend a leaked secret's N without waiting out a self-recovery; then re-enroll visibly. The proof requirement is essential — N is public after any initiate, so account-auth alone would let a third party grief a victim's released N (closed in M1) |
 
 Replay protection does **not** ride on N (recovery is not anonymous): the per-account monotonic `nonce` inside `auth_hash` plus one-pending-per-account prevent proof replay; controller rate limit (3 initiations / 90-day rolling window) bounds spam by a secret thief.
 
@@ -179,7 +179,8 @@ initiate_recovery(account: Address, new_pubkey: BytesN<65>, nonce: u64,
                   proof: Bytes) -> u64   // permissionless; returns executable_after
 cancel_recovery(account: Address, nonce: u64, root: BytesN<32>, nullifier: BytesN<32>, proof: Bytes)
                   // account.require_auth() (passkey) + fresh action=2 proof; cap 2/initiation; 24h cooldown
-burn_nullifier(account: Address, nullifier: BytesN<32>)      // account.require_auth()
+burn_nullifier(account: Address, nonce: u64, root: BytesN<32>, nullifier: BytesN<32>, proof: Bytes)
+                  // account.require_auth() + fresh action=3 (revoke) proof of secret-knowledge; also clears a matching in-flight pending
 get_pending(account: Address) -> Option<PendingRecovery>
 
 // OZ Policy (completion authority): enforce / install / uninstall
