@@ -10,7 +10,13 @@ doctest = false
 
 [dependencies]
 # Soroban
-soroban-sdk = { workspace = true, features = ["testutils"] }
+# "hazmat-address" is needed by the M1 zk_fixture address-pinning test
+# (crates/integration-tests/tests/it/zk_fixture.rs): it exposes
+# `Address::to_payload`/`AddressPayload::to_address`, the only public way to
+# build/inspect an `Address`'s raw 32-byte contract-id, which is how the test
+# proves `env.register_at` actually pins a contract at the exact id the ZK
+# recovery proof's `auth_hash` binds.
+soroban-sdk = { workspace = true, features = ["testutils", "hazmat-address"] }
 stellar-accounts = { workspace = true }
 
 # Crypto

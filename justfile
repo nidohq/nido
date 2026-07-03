@@ -41,6 +41,17 @@ gen-zk-fixtures:
     echo "[ok] Staged zk fixtures + wrote manifest:"
     cat crates/integration-tests/fixtures/zk/manifest.json
 
+# M1 Task 1: generate the pinned "lifecycle" fixture -- a REAL bb proof for
+# the fixed witness in crates/integration-tests/src/zk_fixture.rs
+# (account=[0x11;32], controller=[0x22;32], the Test SDF Network passphrase,
+# nonce=1, timelock_secs=1_209_600 secs, a deterministic P-256 pubkey,
+# single-leaf depth-24 tree). Reuses the same M0 circuit/VK, only the
+# witness differs. Writes circuits/zk_recovery/fixtures/lifecycle/
+# {prover_inputs.json,proof,public_inputs}. See
+# circuits/zk_recovery/scripts/gen_lifecycle_fixture.sh for the full flow.
+gen-zk-lifecycle-fixture:
+    bash circuits/zk_recovery/scripts/gen_lifecycle_fixture.sh
+
 # Task 4 GO/NO-GO gate: real-metering verify_proof CPU cost (<=250M gate, real 400M tx cap), measured
 # against the real depth-24 circuit's proof/vk/public_inputs fixtures via a
 # registered (not native) Wasm verifier contract. See
