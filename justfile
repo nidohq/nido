@@ -110,3 +110,35 @@ test-e2e-testnet: build-astro
     set -euo pipefail
     if [ -f tests/.env.testnet ]; then set -a; source tests/.env.testnet; set +a; fi
     npx playwright test --project=testnet-chromium --project=testnet-webkit
+
+# Deploy the relayer (incl. the Channels perf instrumentation) to fly.io and
+# verify the plugin loaded + responds. Run from a tree where infra/relayer has
+# the instrumented plugin (this branch), with flyctl authed. Does NOT run the
+# perf spec — that lives on the harness branch: after this, run `just perf-create`
+# there to light up the relayer.* bands, and `flyctl logs -a nido | grep
+# channels.phase` to see the status timeline. Rollback: `flyctl releases -a nido`.
+deploy-and-verify app="nido":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "▶ pre-flight: plugin unit tests"
+    npx vitest run --root infra/relayer/plugins/channels
+    echo "▶ deploy → {{app}} (single machine, remote build)"
+    flyctl deploy infra/relayer --remote-only --ha=false -a {{app}}
+    echo "▶ health"
+    for i in $(seq 1 20); do
+      if curl -fsS "https://{{app}}.fly.dev/api/v1/health" >/dev/null 2>&1; then echo "  ✓ health ok"; break; fi
+      [ "$i" -eq 20 ] && { echo "  ✗ health never came up — flyctl logs -a {{app}}" >&2; exit 1; }
+      sleep 3
+    done
+    echo "▶ /relay plugin probe (getTransaction on a bogus id — proves the plugin loaded)"
+    body="$(mktemp)"
+    code="$(curl -s -o "$body" -w '%{http_code}' -X POST "https://{{app}}.fly.dev/relay" \
+      -H 'content-type: application/json' \
+      -d '{"params":{"getTransaction":{"transactionId":"perf-probe-000"}}}' || echo 000)"
+    echo "  HTTP $code: $(cat "$body")"; rm -f "$body"
+    if [ "$code" = "000" ] || [ "${code:0:1}" = "5" ]; then
+      echo "  ✗ /relay probe failed (${code}) — plugin likely didn't load. flyctl logs -a {{app}}" >&2
+      exit 1
+    fi
+    echo "✓ deployed + plugin live. Next: \`just perf-create\` (harness branch) →"
+    echo "  the trace splits into relayer.* bands; \`flyctl logs -a {{app}} | grep channels.phase\`."
