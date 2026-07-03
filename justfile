@@ -59,6 +59,22 @@ gen-zk-lifecycle-fixture:
 bench-zk:
     cargo test -p nido-zk-bench --test budget -- --nocapture
 
+# Task 8 GO/NO-GO gate (FINAL M1 task): real-metering cost of the WHOLE
+# `initiate_recovery` transaction (<=350M gate, real 400M
+# tx_max_instructions cap) -- not just verify_proof (that's `bench-zk`
+# above). Registers the REAL compiled nido_zk_recovery.wasm + M0's
+# nido_zk_verifier.wasm at the pinned M1 lifecycle-fixture addresses and
+# measures a single real initiate_recovery call against the real fixture
+# proof. Builds the recovery contract wasm first (needed by the test's
+# `include_bytes!`, which is NOT built automatically by `cargo test`). See
+# crates/integration-tests/tests/it/initiate_cost.rs for the full
+# methodology, including why this lives here rather than in
+# crates/zk-bench.
+bench-zk-initiate:
+    SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 \
+        cargo build -p nido-zk-recovery --target wasm32v1-none --profile contract
+    cargo test -p nido-integration-tests --test it initiate_cost -- --nocapture
+
 # Build and optimize Soroban contracts.
 # `stellar-scaffold build` topologically sorts the contract crates (via the
 # `[package.metadata.stellar] contract = true` edges) so dependencies build
