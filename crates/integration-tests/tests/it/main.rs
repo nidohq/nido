@@ -1,5 +1,6 @@
 mod contract_verifier;
 mod default_rule_threshold;
+mod guard_cost;
 mod initiate_cost;
 mod multisig_recovery;
 mod name_registry;

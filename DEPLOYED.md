@@ -88,6 +88,100 @@ completion spike (`zk_completion_spike.rs`) and
 | Deployed circuit hash | _TBD_ | sha256 of the exact `zk_recovery.json` ACIR bytecode deployed with. |
 | Deployed VK hash | _TBD_ | sha256 of the exact `vk` bytes the deployed verifier was constructed with. |
 
+## ZK Recovery M2 (in-account guard + factory genesis-insert + migration — not yet deployed)
+
+M2 wires the M1 `nido-zk-recovery` controller into the smart-account and
+factory contracts: every account now installs the recovery rule + a genesis
+Merkle leaf at construction time (enrollment is invisible — the anonymity
+set is uniform whether or not an owner ever uses recovery), an in-account
+guard blocks signer/rule eviction while a recovery is pending, and existing
+`recovery_controller: None` accounts can opt in later via a visible
+migration call. **Not yet deployed to testnet** — same pre-deploy-budget
+posture as the M1 section above, plus placeholders below.
+
+### Guard cross-call cost (GO/NO-GO gate)
+
+The in-account guard (`contract.rs::guard_no_pending`) cross-calls the
+controller's `has_pending` view on every signer/rule-mutating op
+(`remove_signer`/`remove_context_rule`/`remove_policy`/
+`update_context_rule_valid_until`) before doing anything else — this is the
+"does calling into another contract to check a policy blow the budget"
+question the SDF's policy-cross-call target (≤10,000,000 CPU) is about.
+Measured with the same real-Wasm-metering methodology as the M1 numbers
+above (real compiled `.wasm` bytes registered at both the account and
+controller addresses, live budget raised to the real mainnet ceiling rather
+than reset unlimited, `env.cost_estimate().resources().instructions` read
+immediately after the one measured call) — see
+`crates/integration-tests/tests/it/guard_cost.rs`.
+
+| Measurement | CPU instructions | Gate | Test |
+|---|---|---|---|
+| `remove_signer`, guard fires (REAL live pending at a REAL Wasm-registered controller; cross-call + panic `RecoveryPendingBlocked`) | 1,173,794 | ≤10,000,000 | `just bench-zk-guard` (`crates/integration-tests/tests/it/guard_cost.rs::guard_fires_cost_with_real_pending`) |
+| `remove_signer`, no recovery configured (guard is a no-op — no cross-call at all) | 816,591 | — (baseline) | `just bench-zk-guard` (`crates/integration-tests/tests/it/guard_cost.rs::no_recovery_configured_baseline_cost`) |
+
+The guard's cross-call overhead in isolation (the delta between the two
+rows above, separating it from `remove_signer`'s own fixed cost) is
+**357,203 CPU** — both the guarded-fires number (1.17M) and the isolated
+cross-call delta (357K) sit almost two orders of magnitude under the 10M
+gate, with **~8.83M CPU of headroom**. The guard's cross-call is cheap
+because `has_pending` is a single small-storage-read view with no
+Poseidon2/pairing work, unlike `initiate_recovery`'s `verify_proof` (the
+159M-CPU-dominated cost in the M1 section above).
+
+### `create_account_v2` + genesis-insert shape
+
+`Factory::create_account_v2(salt: BytesN<32>, key: BytesN<65>, commitment: BytesN<32>) -> Address`
+deploys the account contract at the deterministic `get_c_address(salt)`
+address (unchanged from `create_account`) AND, atomically in the same
+transaction, cross-calls the resolved `zk-recovery` controller's
+`insert(account, commitment)` to bind `commitment` as the account's genesis
+Merkle leaf — if the insert fails for any reason the whole call (including
+the just-deployed account) reverts, so there is never an account without a
+leaf, nor a leaf without an account. The legacy `create_account(salt, key)`
+entry point is kept for existing callers and now routes through the exact
+same `deploy_and_insert` path, using a deterministic dummy commitment
+(`sha256("nido-zk-dummy" || salt) mod r`) instead of a real one — so every
+account this factory creates gets exactly one genesis leaf, real or dummy,
+indistinguishable on-chain (`contracts/factory/src/contract.rs`'s
+`create_account_and_create_account_v2_are_uniform_except_commitment` /
+`dummy_and_real_enrollment_are_indistinguishable_on_chain` tests assert
+this).
+
+Both entry points also install the recovery rule at construction
+(`NidoSmartAccount::__constructor`'s `recovery_controller: Some(..)` path):
+production factory deploys always resolve and pass the `zk-recovery`
+registry entry, so **every account this factory creates now installs the
+zero-signer `CallContract(self)` recovery rule + a genesis leaf, whether or
+not its owner ever uses recovery** — enrollment is invisible, keeping the
+anonymity set uniform across the whole pool.
+
+### `enroll_zk_recovery` migration path
+
+`NidoSmartAccount::enroll_zk_recovery(recovery_controller: Address)` lets an
+account that was deployed WITHOUT a recovery controller
+(`recovery_controller: None` at construction — e.g. non-factory or
+pre-M2 deploys) opt in afterwards, as a self-authorized, VISIBLE call
+(requires `e.current_contract_address().require_auth()`). Unlike the
+factory's invisible genesis path, this is a two-step flow the caller must
+complete separately: (1) `account.enroll_zk_recovery(controller)` installs
+the rule on the account (same `install_recovery_rule` helper the
+constructor's `Some(..)` path uses — identical rule shape), then (2)
+`pool.insert_for(account, commitment)` inserts the account's leaf into the
+controller's Merkle tree. Panics `RecoveryAlreadyEnrolled` if a rule is
+already installed (construction or a prior enroll call). This is a
+migration path for a NEW-wasm account that happened to skip recovery at
+construction — it does NOT retrofit a genuinely OLD-wasm account (deployed
+before `enroll_zk_recovery` existed in the bytecode); Soroban contract wasm
+is immutable once deployed. See
+`crates/integration-tests/tests/it/zk_recovery_migration.rs`.
+
+### Deploy addresses (placeholder — fill in at real deploy time)
+
+| Name | Address | Notes |
+|---|---|---|
+| Smart-account v2 wasm hash | _TBD_ | sha256 of the deployed `nido_smart_account.wasm` embedding the M2 guard/migration/constructor changes — the factory's `account_wasm_hash()` derives this at runtime from its own embedded copy, so this must match exactly. |
+| Factory (v2, `create_account_v2`) | _TBD_ | `contracts/factory` — resolves both `verifier` and `zk-recovery` from the registry at deploy time; embeds the smart-account v2 wasm hash above. |
+
 ## Pre-v0.7 contracts (do not use)
 
 These were deployed during earlier iterations and remain on chain but are

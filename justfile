@@ -75,6 +75,22 @@ bench-zk-initiate:
         cargo build -p nido-zk-recovery --target wasm32v1-none --profile contract
     cargo test -p nido-integration-tests --test it initiate_cost -- --nocapture
 
+# Task 8 GO/NO-GO gate (FINAL M2 task) Part A: real-metering cost of the
+# in-account guard's cross-call (M2 Task 4's `guard_no_pending` ->
+# `has_pending`), gated at <=10M CPU (the SDF policy-cross-call target,
+# distinct from `bench-zk-initiate`'s whole-transaction 350M gate). Measures
+# a single `remove_signer` call: (1) against a REAL, Wasm-registered
+# `nido-zk-recovery` controller with a genuine live pending (the guard
+# fires, cross-calls `has_pending`, panics `RecoveryPendingBlocked`), and
+# (2) as a baseline against an account with no recovery controller
+# configured at all (the guard is a no-op, no cross-call). Requires all
+# contract wasms (needs the recovery + verifier + smart-account wasms'
+# `include_bytes!`, which is NOT built automatically by `cargo test`). See
+# crates/integration-tests/tests/it/guard_cost.rs for the full methodology.
+bench-zk-guard:
+    just build-contracts
+    cargo test -p nido-integration-tests --test it guard_cost -- --nocapture
+
 # Build and optimize Soroban contracts.
 # `stellar-scaffold build` topologically sorts the contract crates (via the
 # `[package.metadata.stellar] contract = true` edges) so dependencies build
@@ -89,10 +105,36 @@ bench-zk-initiate:
 # Scaffold does NOT run wasm-opt, so we optimize in-place afterwards (the old
 # `stellar contract build --optimize` did this); deployed wasm must stay
 # optimized.
+#
+# Embed-freshness fix (M2 Task 8): `contracts/factory/build.rs` embeds
+# smart-account's wasm bytes into the factory binary at COMPILE time, which
+# happens during the `stellar-scaffold build` pass below -- i.e. BEFORE any
+# optimize step runs. Optimizing everything only at the very end (as this
+# recipe used to) leaves factory permanently embedding the PRE-optimize
+# smart-account bytes, while every other consumer (this repo's
+# `nido_integration_tests::SMART_ACCOUNT_WASM`, `stellar contract deploy` of
+# the standalone wasm, ...) reads the FINAL, POST-optimize file -- a real,
+# silent wasm-hash mismatch (`Wasm does not exist` when a test/deploy uploads
+# the post-optimize bytes but factory's `deploy_v2` looks up the hash of its
+# own stale pre-optimize embed; caught by
+# `zk_recovery_e2e::dummy_and_real_enrollment_are_indistinguishable_on_chain`,
+# which does exactly that). Fix: optimize smart-account FIRST, then force a
+# factory-only rebuild (the same `cargo rustc` invocation `stellar-scaffold`
+# itself uses for it) so its build.rs re-embeds the NOW-optimized bytes --
+# its `cargo:rerun-if-changed` on the wasm path makes this a normal,
+# correct incremental rebuild, not a full recompile. Everything else
+# (including factory's own wasm) is optimized last, as before.
 build-contracts:
     SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 stellar-scaffold build --profile contract
+    stellar contract optimize \
+        --wasm target/wasm32v1-none/contract/nido_smart_account.wasm \
+        --wasm-out target/wasm32v1-none/contract/nido_smart_account.wasm
+    CARGO_BUILD_RUSTFLAGS="--remap-path-prefix=$HOME/.cargo/registry/src=" \
+        SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 \
+        cargo rustc --manifest-path=contracts/factory/Cargo.toml \
+            --crate-type=cdylib --target=wasm32v1-none --profile=contract
     @for wasm in target/wasm32v1-none/contract/*.wasm; do \
-        case "$wasm" in *.optimized.wasm) continue;; esac; \
+        case "$wasm" in *.optimized.wasm|*nido_smart_account.wasm) continue;; esac; \
         echo "→ optimize $wasm"; \
         stellar contract optimize --wasm "$wasm" --wasm-out "$wasm"; \
     done
