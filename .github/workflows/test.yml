@@ -49,10 +49,11 @@ jobs:
         # `just build-contracts` (below) runs `stellar-scaffold build` then
         # `stellar contract optimize` -- the CLIs providing those binaries.
         run: |
-          # stellar-cli v27 pulls `libdbus-sys`, whose build.rs panics unless
-          # the system dbus dev headers + pkg-config are present on the runner.
+          # stellar-cli v27's hardware-wallet support pulls `libdbus-sys`
+          # (dbus-secret-service) and `hidapi` (Ledger), whose build.rs's panic
+          # unless the system dbus + udev dev headers + pkg-config are present.
           sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
+          sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
           cargo install --locked stellar-cli
           cargo install --locked stellar-scaffold-cli
 
