@@ -2,9 +2,12 @@
 default:
     @just --list
 
-# Run all workspace tests
+# Run all workspace tests. Exclude the vendored UltraHonk verifier crate: its
+# upstream tests read fixture files we don't vendor ("No such file or
+# directory" on a clean checkout); nido exercises the verifier through its own
+# integration tests (crates/integration-tests) instead.
 test:
-    cargo test --workspace
+    cargo test --workspace --exclude ultrahonk_soroban_verifier
 
 # Build all crates (native)
 build:

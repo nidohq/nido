@@ -78,8 +78,12 @@ jobs:
       # (bench-zk/bench-zk-initiate/bench-zk-guard) raise their own live
       # budget in-process (see their module docs) rather than depending on
       # any CI-specific configuration.
+      # Exclude the vendored UltraHonk verifier crate: its upstream tests read
+      # fixture files we don't vendor ("No such file or directory" on a clean
+      # checkout). nido exercises the verifier through its own integration
+      # tests (crates/integration-tests), which run here.
       - name: cargo test --workspace
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude ultrahonk_soroban_verifier
 
   unit:
     name: Unit (TestAuthenticator)
