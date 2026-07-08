@@ -1,26 +1,29 @@
-# Petition dapp — design
+# Adsum (petition dapp) — design
 
 **Date:** 2026-07-08
 **Status:** Approved — not yet implemented
 
 ## Goal
 
-A petition dapp seeded as a real product (not just an integration demo): users
-create petitions, sign them, and vouch for each other in an on-chain web of
-trust. Version 1 is deliberately non-zk; the long-term goal is zero-knowledge
+**Adsum** (Latin "I am present" — the classical roll-call answer; signing a
+petition as standing up to be counted) is a petition dapp seeded as a real
+product (not just an integration demo): users create petitions, sign them,
+and vouch for each other in an on-chain web of trust. Version 1 is deliberately non-zk; the long-term goal is zero-knowledge
 signing — a user proves "I signed with an identity that satisfies the
 petition's trust criteria" without revealing which identity — and this design
 keeps that migration path clean (see "ZK migration path").
 
 Two new Soroban contracts (`petitions`, `web-of-trust`) plus a new example
-dapp at `examples/petition-dapp/`, following the `status-message-dapp`
-scaffold precedent.
+dapp at `examples/adsum/`, following the `status-message-dapp` scaffold
+precedent. Contract names stay product-neutral (`petitions`, `web-of-trust`);
+the Adsum brand lives at the dapp layer.
 
 ## Decisions (from design review)
 
 | Decision | Choice |
 | --- | --- |
 | Purpose | Real petition product seed; example status secondary |
+| Name | Adsum — vetted: no crypto/dapp/token collision; `adsum.fyi` unregistered (candidate custom domain); `adsum.xyz` on aftermarket. Sound-alikes (Adshares, Adaxum) distinct. Non-crypto namesakes exist (London fintech, app agency) — brand distinctly |
 | Petition storage | Single registry contract (not contract-per-petition) |
 | Content | Full text on-chain, size-capped |
 | Lifecycle | Optional signature goal + optional deadline; no edit/close/un-sign |
@@ -29,7 +32,7 @@ scaffold precedent.
 | Error handling | `#[contracterror]` enums + `Result` returns (typed errors preferred over the existing string-panic idiom; pattern for these and future contracts) |
 | Storage idiom | `soroban-sdk-tools` (`#[contractstorage]`, `PersistentMap`, `InstanceItem`) |
 | Placement | Dual-copy precedent: canonical crates in `contracts/`, vendored copies in the example's own cargo workspace |
-| Deploy | Cloudflare Pages, `petition-dapp.pages.dev` first; custom domain later |
+| Deploy | Cloudflare Pages, `adsum.pages.dev` first; custom domain later |
 | ZK in v1 | None in code; migration path documented here |
 
 ## Contract: `contracts/petitions/` (`nido-petitions`)
@@ -148,14 +151,14 @@ pub fn extend_ttl(e: &Env, a: &Address);
 No eligibility computation lives on-chain in v1. The petitions contract has no
 dependency on this contract; they are coupled only in the dapp UI.
 
-## Example dapp: `examples/petition-dapp/`
+## Example dapp: `examples/adsum/`
 
 Clone of the `status-message-dapp` skeleton: React 19 + Vite 7 + strict TS
 (@theahaco/ts-config), stellar-scaffold project with its own self-contained
 cargo workspace, **vendored copies** of both contracts under
-`examples/petition-dapp/contracts/`, joined to the root npm workspace
-(`workspaces` gains `examples/petition-dapp` and
-`examples/petition-dapp/packages/*`). `environments.toml` defines
+`examples/adsum/contracts/`, joined to the root npm workspace
+(`workspaces` gains `examples/adsum` and
+`examples/adsum/packages/*`). `environments.toml` defines
 development (local, run-locally) / testing (testnet, build+deploy) / staging
 (testnet, pinned ids) / production (mainnet, commented). Generated staging
 clients for both contracts are committed so the Pages build needs no
@@ -201,10 +204,10 @@ session. No indexer, no events.
 
 ### Deploy
 
-New Cloudflare Pages project `petition-dapp`, GitHub Actions workflow
-path-filtered on `examples/petition-dapp/**` (mirrors `pages.yml` structure
+New Cloudflare Pages project `adsum`, GitHub Actions workflow
+path-filtered on `examples/adsum/**` (mirrors `pages.yml` structure
 but deploys with wrangler using the repo's existing CF secrets, like
-`deploy.yml`). Live at `petition-dapp.pages.dev`; custom domain attached in
+`deploy.yml`). Live at `adsum.pages.dev`; custom domain attached in
 the CF dashboard later — nido.fyi subdomains are NOT usable (wildcard serves
 per-account passkey origins).
 
@@ -242,7 +245,7 @@ per-account passkey origins).
 - **Dapp unit tests** (vitest, colocated): badge computation (pure), module
   order, env parsing, ledger/date conversion helpers; `lint` and `typecheck`
   scripts.
-- **E2E**: quarantined `tests/e2e/testnet/petition-dapp.testnet.spec.ts`
+- **E2E**: quarantined `tests/e2e/testnet/adsum.testnet.spec.ts`
   driving create → vouch → sign → badge assertions against real testnet;
   never gates PRs.
 - **Gates**: `just check` (fmt + clippy pedantic, tests included) and
