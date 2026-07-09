@@ -79,14 +79,44 @@ completion spike (`zk_completion_spike.rs`) and
   `public_inputs` sha256
   `6d5aa337af748dd36802e99b812b29ade948a010ac4a043afe706d56085b813b`.
 
-### Deploy addresses (placeholder — fill in at real deploy time)
+### Deploy addresses (TESTNET — deployed 2026-07-03, M4)
+
+Deployed with `ci-publisher-testnet` (`GAGOFCVJTDXEBSBQWGRWE55IH4OUVNGHM6Y75WUCK5KMDVBHAYSYRRL7`); both names registered in the unverified registry `CDBL7MNO…` (so `fetchRegistryAddress('zk-recovery'|'zk-verifier')` resolves at runtime — no frontend hardcode needed).
 
 | Name | Address | Notes |
 |---|---|---|
-| `zk-verifier` | _TBD_ | `contracts/zk-verifier` — the UltraHonk verifier, constructed with the deployed VK bytes. |
-| `zk-recovery` | _TBD_ | `contracts/zk-recovery` — the `ZkRecovery` pool/controller, constructed with `(factory, verifier, delay_secs, completion_window_secs, max_cancels, timelock_floor_secs, network_passphrase, webauthn_verifier)`. |
-| Deployed circuit hash | _TBD_ | sha256 of the exact `zk_recovery.json` ACIR bytecode deployed with. |
-| Deployed VK hash | _TBD_ | sha256 of the exact `vk` bytes the deployed verifier was constructed with. |
+| `zk-verifier` | `CAD36MGYPRX6HBSWSQ33SOI2DBRSQ4WZW3TL56PZZNRPHO4PMCH5QFEP` | `contracts/zk-verifier` — UltraHonk verifier, constructed with the deployed VK bytes (sha256 `ba39b4ac…`, matches the M0 fixture VK). Registered `zk-verifier`. |
+| `zk-recovery` | `CB2PYUHYSWFTZAX3ARYZ4ZP4VJNLYJQMP7T7JE5RRZMOPLPAHSGBZS37` | `contracts/zk-recovery` — pool/controller. Constructor: `factory=CBQKB6GY…`, `verifier=CAD36MGY…`, `delay_secs=60`, `completion_window_secs=604800`, `max_cancels=2`, `timelock_floor_secs=0`, `network_passphrase="Test SDF Network ; September 2015"`, `webauthn_verifier=CACVGSAH…`. Wasm hash `862a3ff9…`. Registered `zk-recovery`. Verified live via JS: `next_index()=0`, `current_root()=0x0e1a6b7d…` (empty-tree root). |
+| Deployed circuit hash | `bfb14bb25e356411245c7a1ae1a997b3ee8e5c5cdb8e1627aad87b68015a1ec4` | sha256 of `circuits/zk_recovery/target/zk_recovery.json` (ACIR the deployed VK/proofs correspond to). |
+| Deployed VK hash | `ba39b4ac4350a655792aa55acdf2a4855e099f48809db8569c88f2ed18ad3922` | sha256 of the `vk` bytes the verifier was constructed with. |
+
+**TESTNET-ONLY params:** `delay_secs=60` and `timelock_floor_secs=0` are e2e-tuned so a recovery lifecycle completes in seconds. **Mainnet uses the spec defaults** (delay 14d, floor 7d, window 30d). Redeploy with production params before mainnet.
+
+**Deploy tooling note:** `stellar-cli 26.0.0` fails with `Missing Entry Context` when deploying/invoking these scaffold-built contracts (both the multi-`Address` constructor AND plain reads like `current_root`). Deploy + reads were done via the JS SDK — see `scripts/deploy-zk-recovery.mjs`. The frontend already uses the JS SDK, so this only affects ad-hoc CLI use.
+
+**Factory note:** the live factory `CBQKB6GY…` is v1 (`create_account(salt, key)`, no `create_account_v2`/genesis-insert). So on testnet, recovery enrollment happens via the account-authed migration path (`insert_for` + `enroll_zk_recovery`), which is *visible* on-chain — genesis-invisible enrollment needs a factory v2 deploy (follow-up, [#26]).
+
+### Preview (factory-v2) — PR-preview only
+
+A second, factory-v2 + pool-v2 pair is deployed on testnet SOLELY for PR-preview
+frontend builds, so a preview can exercise `create_account_v2`'s genesis-insert
+(on-chain-invisible enrollment) ahead of a real M2 production cutover:
+
+| Name | Address | Notes |
+|---|---|---|
+| `factory-v2-preview` | `CA2NQS3V6XCNA4FZDPQ4JLSQ65CRWMHHLYQEZ5YQ7MYQX2G5USZ4GWBL` | Supports `create_account_v2(salt, key, commitment)` with atomic genesis-insert; wired via `set_recovery_pool` to the preview pool below. |
+| `pool-v2-preview` | `CDXT3DCXYFNZNKBST7VZMN5RJWH24HQXO3WLENQEP7YMPAEZJTQNMEKS` | The recovery pool bound to `factory-v2-preview`. |
+
+Setting `PUBLIC_ZK_PREVIEW=1` at build time makes the frontend's
+`fetchRegistryAddress('factory'|'zk-recovery')` (`packages/frontend/src/lib/policyChainFetch.ts`)
+resolve directly to this pair — bypassing the registry — and makes
+`new-account/index.astro`'s `deploy()` call `create_account_v2` in a single tx
+for all three enrollment choices (uniform tx shape), instead of the
+production `create_account` + separate post-create enrollment. **Production
+is completely untouched**: with `PUBLIC_ZK_PREVIEW` unset (the normal build),
+both files behave exactly as before, resolving `factory`/`zk-recovery` via the
+registry and using the unchanged `create_account` + migration-enroll path
+against the production `CBQKB6GY…` factory.
 
 ## ZK Recovery M2 (in-account guard + factory genesis-insert + migration — not yet deployed)
 

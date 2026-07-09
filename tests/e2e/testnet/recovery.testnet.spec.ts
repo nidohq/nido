@@ -126,9 +126,20 @@ async function findRuleForPubkey(
  *     canonical parentSignatureExpirationLedger, and emits the ?handoff= link).
  *  4) Friend: open the handoff link ON THE FRIEND'S subdomain (so loadCredential
  *     finds the friend's key), sign the nested auth entry with their OWN passkey
- *     (#fm-sign → #fm-blob).
- *  5) Originator: paste the blob, add it (#om-add-sig → 1/1), submit
- *     (#om-submit → #om-submit-status).
+ *     (#fm-sign). The signed blob is submitted to the relay automatically
+ *     (signRotationAsFriend → submitFriendSignatureToRelay) — there is no
+ *     paste-back step or #fm-blob textarea on the current relay-based page.
+ *  5) Originator: relay-poll collects the friend's signature automatically
+ *     (a 10s setInterval while #om-collect is visible) — #om-refresh forces
+ *     an immediate poll instead of waiting it out. Once #om-progress reads
+ *     1/1, submit (#om-submit → #om-submit-status).
+ *
+ * NOTE (id fix): this spec previously drove paste-back ids (#om-paste,
+ * #om-add-sig, #fm-blob) that predate the relay-based rewrite (Refractor
+ * handoff + cross-device friend-picker relay, #100) and no longer exist on
+ * the page — the friend's approval is now pushed to (and pulled from) the
+ * relay directly, never pasted by hand. Updated to the current #om-refresh /
+ * #om-progress polling flow below (minimal fix — no paste-back ids remain).
  *
  * ADDITIVE recovery (NOT a full rotation): this flow only ADDS the new passkey
  * to the account's Default rule (rule 0); the old/lost key is NOT revoked.
@@ -201,9 +212,10 @@ test.describe('@testnet social recovery (1-of-1)', () => {
     await expect(page.locator('#fm-account')).toContainText(orig.cAddress.slice(0, 8));
     await page.locator('#fm-sign').click();
 
-    // #fm-blob is a textarea revealed (and filled) only after a successful sign.
     // Race the success status against a "Failed: …" so a friend-side rejection
-    // surfaces verbatim instead of timing out blind.
+    // surfaces verbatim instead of timing out blind. On success the friend's
+    // blob is auto-submitted to the relay (see the comment below) — there is
+    // no blob to read out of the page.
     const friendOutcome = await Promise.race([
       page
         .locator('#fm-status')
@@ -226,18 +238,27 @@ test.describe('@testnet social recovery (1-of-1)', () => {
           `fm-status="${fmStatus}" orig=${orig.cAddress} friend=${friend.cAddress}.`,
       );
     }
-    const blob = (await page.locator('#fm-blob').inputValue()).trim();
-    expect(blob.length, 'friend blob is empty').toBeGreaterThan(0);
+    // The friend's blob was already auto-submitted to the relay from friend
+    // mode (signRotationAsFriend → submitFriendSignatureToRelay) — nothing to
+    // paste. Confirm #fm-done (or the sign step's own "signed" outcome above)
+    // and move on; the originator picks the signature up via relay polling.
 
-    // --- ORIGINATOR: collect + submit ---
+    // --- ORIGINATOR: collect (relay-polled) + submit ---
     await page.goto(`http://${orig.host}/security/recover/`, { waitUntil: 'domcontentloaded' });
     // Staging persists in the originator's localStorage, so #om-collect resumes.
     await expect(page.locator('#om-collect')).toBeVisible({ timeout: 30_000 });
-    await page.locator('#om-paste').fill(blob);
-    await page.locator('#om-add-sig').click();
-    await expect(page.locator('#om-progress')).toContainText(/1\s*(of|\/)\s*1/i, {
-      timeout: 15_000,
-    });
+    // #om-collect also relay-polls on its own (a 10s setInterval), but force
+    // an immediate poll via #om-refresh rather than waiting that out, with a
+    // couple of retries in case the relay PUT is still propagating.
+    await withRetry(
+      async () => {
+        await page.locator('#om-refresh').click();
+        await expect(page.locator('#om-progress')).toContainText(/1\s*(of|\/)\s*1/i, {
+          timeout: 8_000,
+        });
+      },
+      { tries: 5, baseMs: 2000 },
+    );
     await expect(page.locator('#om-submit')).toBeEnabled({ timeout: 15_000 });
     await page.locator('#om-submit').click();
 

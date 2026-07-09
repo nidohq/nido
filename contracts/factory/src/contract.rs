@@ -91,6 +91,13 @@ pub struct Config {
     account: InstanceItem<BytesN<32>>,
     passkey: InstanceItem<Address>,
     admin: InstanceItem<Address>,
+    /// Admin-settable override for the recovery-pool/controller resolution
+    /// (see `Contract::set_recovery_pool`/`Contract::resolve_recovery`).
+    /// `None` (the default, unset state) means "no override" -- production
+    /// factories never set this, so `resolve_recovery` falls through to
+    /// resolving `"zk-recovery"` from the registry exactly as before this
+    /// field existed.
+    recovery_pool: InstanceItem<Address>,
 }
 
 #[contract]
@@ -122,6 +129,28 @@ impl Contract {
     pub fn upgrade(e: &Env, new_wasm_hash: BytesN<32>) {
         Self::admin(e).require_auth();
         e.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    /// Set (or rotate) an admin-only override for the recovery-pool/
+    /// controller address, bypassing the registry's `"zk-recovery"`
+    /// resolution (see `resolve_recovery`). Intended for a preview/staging
+    /// factory instance that needs to point at an isolated preview pool
+    /// without touching the production registry mapping every other factory
+    /// instance shares. Requires the current admin's auth -- this is a
+    /// powerful knob: it changes which contract becomes every newly-created
+    /// account's recovery controller, and which contract receives the
+    /// genesis `insert` cross-call in `deploy_and_insert`.
+    pub fn set_recovery_pool(e: &Env, pool: Address) {
+        Self::admin(e).require_auth();
+        Config::set_recovery_pool(e, &pool);
+    }
+
+    /// The current recovery-pool override, or `None` if unset. `None` is the
+    /// default and production state: with no override, `resolve_recovery`
+    /// resolves `"zk-recovery"` from the registry exactly as before this
+    /// override existed.
+    pub fn recovery_pool(e: &Env) -> Option<Address> {
+        Config::get_recovery_pool(e)
     }
 
     /// Deploy an account contract and add its initial passkey signer. Legacy
@@ -198,6 +227,20 @@ impl Contract {
         addr
     }
 
+    /// Resolves the recovery-pool/controller address for newly-deployed
+    /// accounts: the admin-set override (`set_recovery_pool`) if one has
+    /// been set, otherwise the registry-resolved `"zk-recovery"` entry --
+    /// the default, unchanged production path. Since no factory has ever
+    /// called `set_recovery_pool` in production, `Config::get_recovery_pool`
+    /// is always `None` there, so this is behaviorally identical to the old
+    /// `Self::resolve(e, "zk-recovery")` call it replaces.
+    fn resolve_recovery(e: &Env) -> Address {
+        if let Some(pool) = Config::get_recovery_pool(e) {
+            return pool;
+        }
+        Self::resolve(e, "zk-recovery")
+    }
+
     /// Deploys the account contract at `get_c_address(salt)`, installing the
     /// resolved recovery controller as its recovery rule. Returns
     /// `(account_address, recovery_controller_address)` so callers can
@@ -211,8 +254,10 @@ impl Contract {
             soroban_sdk::Map::new(e);
         // Production deploys always install the M1 zk-recovery controller as
         // the account's recovery rule policy (uniform across the anonymity
-        // set) — resolved the same cached way as "verifier".
-        let recovery_controller = Self::resolve(e, "zk-recovery");
+        // set) — resolved via `resolve_recovery`, which defaults to the same
+        // cached registry lookup as "verifier" unless a preview instance has
+        // set an override via `set_recovery_pool`.
+        let recovery_controller = Self::resolve_recovery(e);
         let account = Self::deployer(e, salt).deploy_v2(
             Self::account_wasm_hash(e),
             (&signers, &policies, &Some(recovery_controller.clone())),
@@ -659,6 +704,48 @@ mod test {
         client.upgrade(&wasm_hash);
     }
 
+    /// `set_recovery_pool` requires the current admin's authorization, same
+    /// pattern as `set_admin`/`upgrade`. With auth cleared the call must
+    /// fail, and no override must be recorded.
+    #[test]
+    fn set_recovery_pool_requires_admin_auth() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let pool = Address::generate(&env);
+        let id = env.register(Contract, (admin,));
+        let client = ContractClient::new(&env, &id);
+
+        env.set_auths(&[]);
+        assert!(client.try_set_recovery_pool(&pool).is_err());
+        assert_eq!(
+            client.recovery_pool(),
+            None,
+            "a failed set_recovery_pool call must not record an override"
+        );
+    }
+
+    /// Before any call, `recovery_pool` is `None` (the default, unset
+    /// state). After `set_recovery_pool(P)`, `recovery_pool` returns
+    /// `Some(P)`.
+    #[test]
+    fn set_recovery_pool_then_recovery_pool_returns_override() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let pool = Address::generate(&env);
+        let id = env.register(Contract, (admin,));
+        let client = ContractClient::new(&env, &id);
+
+        assert_eq!(
+            client.recovery_pool(),
+            None,
+            "no override has been set yet"
+        );
+        client.set_recovery_pool(&pool);
+        assert_eq!(client.recovery_pool(), Some(pool));
+    }
+
     // ---------------------------------------------------------------------
     // M2 Task 5: factory genesis-insert tests. These deploy a REAL
     // `nido-zk-recovery` pool/controller (a dev-dependency, see
@@ -821,6 +908,78 @@ mod test {
              genesis leaf"
         );
         assert!(pool_client.is_known_root(&pool_client.current_root()));
+    }
+
+    /// Deploys a second REAL `nido-zk-recovery` pool, configured with
+    /// `factory_addr` as its authority (same as the registry-registered pool
+    /// `setup_factory_and_pool` sets up), but registered NOWHERE in the
+    /// registry -- reachable only via `set_recovery_pool`'s override. Used to
+    /// prove `resolve_recovery` prefers an admin-set override over the
+    /// registry-resolved `"zk-recovery"` entry.
+    fn deploy_unregistered_pool(env: &Env, factory_addr: &Address) -> Address {
+        let pool_proof_verifier = Address::generate(env);
+        let webauthn_verifier = Address::generate(env);
+        let network_passphrase = Bytes::from_slice(env, b"Test SDF Network ; September 2015");
+        env.register(
+            nido_zk_recovery::pool::ZkRecovery,
+            (
+                factory_addr.clone(),
+                pool_proof_verifier,
+                3u64 * 24 * 3600,
+                7u64 * 24 * 3600,
+                3u32,
+                24u64 * 3600,
+                network_passphrase,
+                webauthn_verifier,
+            ),
+        )
+    }
+
+    /// With an admin-set override in place, `create_account_v2` cross-calls
+    /// the OVERRIDE pool's genesis `insert` -- NOT the registry-resolved
+    /// `"zk-recovery"` pool `setup_factory_and_pool` registers. This is the
+    /// property the whole override exists for: a preview factory instance
+    /// can be pointed at an isolated preview pool without touching the
+    /// shared production registry mapping.
+    #[test]
+    fn create_account_v2_uses_recovery_pool_override_when_set() {
+        let env = Env::default();
+        let (factory_addr, registry_pool_addr) = setup_factory_and_pool(&env, false);
+        let client = ContractClient::new(&env, &factory_addr);
+
+        let override_pool_addr = deploy_unregistered_pool(&env, &factory_addr);
+
+        // Admin sets the override. `mock_all_auths` is used only for this
+        // call (auth details are covered by the dedicated
+        // `set_recovery_pool_requires_admin_auth` test above); the
+        // subsequent deploy+insert still succeeds via plain invoker-contract
+        // auth, exactly as in the other pool tests in this section.
+        env.mock_all_auths();
+        client.set_recovery_pool(&override_pool_addr);
+        assert_eq!(client.recovery_pool(), Some(override_pool_addr.clone()));
+
+        let salt = BytesN::from_array(&env, &[31; 32]);
+        let key = BytesN::from_array(&env, &[9; 65]);
+        let commitment = small_commitment(&env, 7);
+
+        client.create_account_v2(&salt, &key, &commitment);
+
+        let override_pool_client =
+            nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &override_pool_addr);
+        let registry_pool_client =
+            nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &registry_pool_addr);
+
+        assert_eq!(
+            override_pool_client.next_index(),
+            1,
+            "the override pool must receive the genesis insert"
+        );
+        assert_eq!(
+            registry_pool_client.next_index(),
+            0,
+            "the registry-resolved zk-recovery pool must NOT receive the insert once an \
+             override is set"
+        );
     }
 
     /// Legacy `create_account` routes through the exact same deploy+insert

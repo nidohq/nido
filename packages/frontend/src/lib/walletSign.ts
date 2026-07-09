@@ -44,7 +44,7 @@ import {
   type PasskeySignature,
 } from '@nidohq/passkey-sdk';
 import {
-  fetchVerifierAddress,
+  resolveSignerRule,
   fetchDefaultRuleAuthInfo,
   type DefaultRuleAuthInfo,
 } from './policyChainFetch.js';
@@ -116,17 +116,29 @@ export async function signTransactionXdr(args: {
   }
 
   const server = new rpc.Server(RPC_URL);
-  const verifierAddress = await fetchVerifierAddress(args.account);
+  // Resolve which rule this passkey signs under + that rule's verifier in one
+  // scan (see resolveSignerRule). A ZK-recovered account's passkey lives in a
+  // later rule, not rule 0 — signing rule 0 fails Error(Auth, InvalidAction),
+  // the same bug fixed in primaryPasskeySigner. Everything below (digest,
+  // preflight, AuthPayload) must reference this resolved rule, not 0.
+  const resolved = await resolveSignerRule(args.account, cred.publicKey);
+  if (!resolved) {
+    throw new Error(
+      'This passkey is not registered on any authorization rule of the account. ' +
+        'If you just recovered, wait for the completion transaction to confirm and retry.',
+    );
+  }
+  const verifierAddress = resolved.verifier;
 
-  // Preflight (issue #87): read rule 0 BEFORE the WebAuthn ceremony. A
-  // policy-less multi-signer rule is N-of-N under OZ semantics — one passkey
+  // Preflight (issue #87): read the resolved rule BEFORE the WebAuthn ceremony.
+  // A policy-less multi-signer rule is N-of-N under OZ semantics — one passkey
   // signature would sail through the ceremony only to fail the enforce
   // simulation with a raw `Error(Contract, #3002) UnvalidatedContext`. When
   // the rule needs multiple signatures, either collect them all (multi-
   // passkey ceremony below) or explain in human terms why signing can't work.
   let ruleInfo: DefaultRuleAuthInfo | null = null;
   try {
-    ruleInfo = await fetchDefaultRuleAuthInfo(args.account);
+    ruleInfo = await fetchDefaultRuleAuthInfo(args.account, resolved.ruleId);
   } catch {
     // Rule unreadable — fall back to the single-signature ceremony rather
     // than blocking signing on a transient read failure.
@@ -177,7 +189,7 @@ export async function signTransactionXdr(args: {
   // contract recomputes won't match this signature.
   const expirationOffset = relayerEnabled() ? RELAYER_EXPIRATION_OFFSET : undefined;
   const signaturePayload = buildAuthHash(authEntry, networkPassphrase, lastLedger, expirationOffset);
-  const contextRuleIds = [0];
+  const contextRuleIds = [resolved.ruleId];
   const challengeBytes = computeAuthDigest(signaturePayload, contextRuleIds);
 
   const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
@@ -444,13 +456,24 @@ export async function signMessageRaw(args: { account: string; message: string })
 /**
  * Sign a Soroban auth-entry preimage with the primary passkey. `authEntryXdr`
  * is the base64 XDR of a `HashIdPreimageSorobanAuthorization`; we SHA-256 it to
- * the signature payload, apply the OZ v0.7 auth digest (context rule `[0]`),
- * and produce the WebAuthn assertion envelope. The caller assembles the entry.
+ * the signature payload, apply the OZ v0.7 auth digest over the passkey's
+ * resolved signing rule, and produce the WebAuthn assertion envelope. The
+ * caller assembles the entry and MUST bind the same rule id into its
+ * AuthPayload's `context_rule_ids`, or the digest the contract recomputes won't
+ * match this signature.
  */
 export async function signAuthEntryXdr(args: { account: string; authEntryXdr: string }): Promise<string> {
   const { hash } = await import('@stellar/stellar-sdk');
+  const cred = loadCredential(args.account);
+  if (!cred) throw new Error('No passkey registered for this account.');
+  // Resolve the passkey's actual rule (a recovered account's key is not in
+  // rule 0) so the digest binds the correct context_rule_ids.
+  const resolved = await resolveSignerRule(args.account, cred.publicKey);
+  if (!resolved) {
+    throw new Error('This passkey is not registered on any authorization rule of the account.');
+  }
   const preimage = xdr.HashIdPreimage.fromXDR(args.authEntryXdr, 'base64');
   const signaturePayload = new Uint8Array(hash(preimage.toXDR()));
-  const digest = new Uint8Array(computeAuthDigest(signaturePayload, [0]));
+  const digest = new Uint8Array(computeAuthDigest(signaturePayload, [resolved.ruleId]));
   return passkeyAssertEnvelope(args.account, digest);
 }

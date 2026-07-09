@@ -21,6 +21,25 @@ const NETWORK_PASSPHRASE = Networks.TESTNET;
 // `fetch_contract_id("verifier")` resolves without a prefix.
 const REGISTRY_ADDRESS = 'CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S';
 
+// --- ZK preview mode (PR-preview builds only; testnet) ---------------------
+//
+// When `PUBLIC_ZK_PREVIEW` is set at build time, `fetchRegistryAddress`
+// resolves `factory` / `zk-recovery` to this hardcoded testnet PAIR instead of
+// going through the registry, so a PR-preview build can exercise
+// `create_account_v2`'s genesis-insert (on-chain invisibility) without
+// touching the production registry entries. Production (`PUBLIC_ZK_PREVIEW`
+// unset/falsy) is completely unaffected — this block is dead code in that
+// build. See DEPLOYED.md's "Preview (factory-v2)" section.
+const ZK_PREVIEW_ENABLED = Boolean(import.meta.env.PUBLIC_ZK_PREVIEW);
+/** TESTNET PREVIEW ONLY — factory-v2-preview, supports `create_account_v2`. */
+const ZK_PREVIEW_FACTORY_ADDRESS = 'CA2NQS3V6XCNA4FZDPQ4JLSQ65CRWMHHLYQEZ5YQ7MYQX2G5USZ4GWBL';
+/** TESTNET PREVIEW ONLY — pool-v2-preview, the recovery pool bound to the factory above. */
+const ZK_PREVIEW_ZK_RECOVERY_ADDRESS = 'CDXT3DCXYFNZNKBST7VZMN5RJWH24HQXO3WLENQEP7YMPAEZJTQNMEKS';
+const ZK_PREVIEW_ADDRESSES: Record<string, string> = {
+  factory: ZK_PREVIEW_FACTORY_ADDRESS,
+  'zk-recovery': ZK_PREVIEW_ZK_RECOVERY_ADDRESS,
+};
+
 /** Simulate-only invocation of a contract view method. Returns the result ScVal. */
 export async function simulateView(
   server: rpc.Server,
@@ -198,6 +217,9 @@ export async function fetchSpendingLimit(
  *  registry routing + hardcoded fallbacks), pinned to this frontend's testnet
  *  RPC / network / registry constants. */
 export async function fetchRegistryAddress(name: string): Promise<string> {
+  if (ZK_PREVIEW_ENABLED && name in ZK_PREVIEW_ADDRESSES) {
+    return ZK_PREVIEW_ADDRESSES[name];
+  }
   return sdkFetchRegistryAddress(name, {
     rpcUrl: RPC_URL,
     networkPassphrase: NETWORK_PASSPHRASE,
@@ -235,6 +257,20 @@ export async function findRuleForPubkey(
   account: string,
   pubkeyHex: string,
 ): Promise<number | null> {
+  const resolved = await resolveSignerRule(account, pubkeyHex);
+  return resolved ? resolved.ruleId : null;
+}
+
+/** The rule a passkey signs under, plus the verifier that rule's External
+ *  signer is registered against. Returns both from ONE gap-tolerant scan so a
+ *  caller needs neither a separate `get_context_rule(0)` (fetchVerifierAddress)
+ *  nor a second scan — and the verifier comes from the RESOLVED rule, not an
+ *  assumed rule 0 (which diverges for a recovered account whose new passkey
+ *  lives in a later rule). `null` when the pubkey is on no rule. */
+export async function resolveSignerRule(
+  account: string,
+  pubkeyHex: string,
+): Promise<{ ruleId: number; verifier: string } | null> {
   const server = new rpc.Server(RPC_URL);
   const countRv = await simulateView(server, new Contract(account), 'get_context_rules_count');
   const count = scValToNative(countRv) as number;
@@ -279,8 +315,9 @@ export async function findRuleForPubkey(
             candidateHex = ordered.map((b) => b.toString(16).padStart(2, '0')).join('');
           }
         }
-        if (candidateHex && candidateHex.toLowerCase() === lowerHex) {
-          return native.id ?? id;
+        if (candidateHex && candidateHex === lowerHex) {
+          const verifier = typeof s[1] === 'string' ? s[1] : String(s[1]);
+          return { ruleId: native.id ?? id, verifier };
         }
       }
     }
@@ -345,13 +382,16 @@ export interface DefaultRuleAuthInfo {
  *  N-of-N under OZ semantics, so the ceremony must collect N signatures (or
  *  bail out with a human-readable explanation) instead of letting the
  *  enforce-simulation fail with a raw #3002 HostError. */
-export async function fetchDefaultRuleAuthInfo(account: string): Promise<DefaultRuleAuthInfo> {
+export async function fetchDefaultRuleAuthInfo(
+  account: string,
+  ruleId = 0,
+): Promise<DefaultRuleAuthInfo> {
   const server = new rpc.Server(RPC_URL);
   const rv = await simulateView(
     server,
     new Contract(account),
     'get_context_rule',
-    nativeToScVal(0, { type: 'u32' }),
+    nativeToScVal(ruleId, { type: 'u32' }),
   );
   const rule = parseRule(scValToNative(rv) as RawContextRule);
 

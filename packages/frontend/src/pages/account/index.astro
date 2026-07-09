@@ -111,6 +111,19 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     <!-- ============================================================= -->
     <div id="home-mode" class="hidden screen-in home-mode">
       <div class="card-grid">
+      <!-- Recovery-backup prompt: enrollment is chain-invisible by design, so
+           this shows off a LOCAL advisory flag (recoveryBackupPrompt.ts) —
+           hidden once a backup is recorded, snoozed for a week on dismiss. -->
+      <div id="backup-banner" class="span-all hidden" role="region" aria-label="Account recovery">
+        <div class="alert warn" style="display:flex; align-items:center; gap:12px; margin:0 22px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:700; font-size:14px;">Set up account recovery</div>
+            <div class="mut" style="font-size:12.5px; line-height:1.4;">Add a backup so you can get back in if you lose this device.</div>
+          </div>
+          <a id="backup-banner-cta" class="btn acc sm" style="flex:0 0 auto;" href="/security/?setup=recovery">Set up</a>
+          <button id="backup-banner-dismiss" type="button" aria-label="Dismiss for now" style="flex:0 0 auto; background:none; border:none; cursor:pointer; font-size:20px; line-height:1; color:var(--mut); padding:0 2px;">&times;</button>
+        </div>
+      </div>
       <!-- desktop greeting (≥1024 only): the account topbar is hidden at desktop
            width, so this welcome line + network chip anchors the dashboard. -->
       <div class="home-greeting">
@@ -309,6 +322,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { localNidoSnapshot, syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
   import { createNido } from "../../lib/createNido";
   import { markUsed, readLastUsed } from "../../lib/lastUsed";
+  import { shouldShowBackupBanner, snoozeBackupPrompt } from "../../lib/recoveryBackupPrompt";
   import { toast } from "../../lib/toast";
   import { stashSignRequest, safeRouteUrl, type SignRequest } from "../../lib/signing/signRequest";
   import { EXPLORER_BASE } from "../../lib/network";
@@ -599,6 +613,23 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   function showHomeDashboard() {
     document.getElementById("home-mode")!.classList.remove("hidden");
     if (contractId) markUsed(contractId);
+    initBackupBanner();
+  }
+
+  // Show the "set up account recovery" banner unless this account already has a
+  // recorded backup or the prompt is snoozed. Dismiss snoozes for a week (it
+  // reappears until a backup is actually set up); "Set up" deep-links to the
+  // Security page's enrollment card.
+  function initBackupBanner() {
+    if (!contractId) return;
+    const banner = document.getElementById("backup-banner");
+    if (!banner) return;
+    if (!shouldShowBackupBanner(contractId)) return;
+    banner.classList.remove("hidden");
+    document.getElementById("backup-banner-dismiss")?.addEventListener("click", () => {
+      snoozeBackupPrompt(contractId!);
+      banner.classList.add("hidden");
+    });
   }
 
   function initHomeMode() {

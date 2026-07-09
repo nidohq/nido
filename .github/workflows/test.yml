@@ -4,6 +4,10 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Lets the `zk-circuit-repro` job (see its `if:` below) be run on-demand from
+  # the Actions tab. It is intentionally NOT a pull_request/push gate -- see
+  # that job's comment for why.
+  workflow_dispatch:
 
 jobs:
   contracts:
@@ -85,6 +89,25 @@ jobs:
       - name: cargo test --workspace
         run: cargo test --workspace --exclude ultrahonk_soroban_verifier
 
+      # Gate A (Task 7): the same cost-gate tests above already run as part of
+      # `cargo test --workspace` (see that step's comment), so these steps
+      # don't add new coverage -- they re-run each gate as its own NAMED step
+      # so a budget regression shows up as e.g. "Bench: verify_proof cost
+      # budget (bench-zk)" failing in the Checks tab, rather than being buried
+      # inside a single "cargo test --workspace" line that a reviewer has to
+      # dig through the log to attribute. All three run off the committed
+      # fixtures under crates/integration-tests/fixtures/zk/ (no bb/Noir/Docker
+      # needed) and reuse the wasm target + stellar-cli/stellar-scaffold
+      # already installed above in this job.
+      - name: "Bench: verify_proof cost budget (bench-zk, <=250M CPU)"
+        run: just bench-zk
+
+      - name: "Bench: initiate_recovery cost budget (bench-zk-initiate, <=350M CPU)"
+        run: just bench-zk-initiate
+
+      - name: "Bench: guard cross-call cost budget (bench-zk-guard, <=10M CPU)"
+        run: just bench-zk-guard
+
   unit:
     name: Unit (TestAuthenticator)
     runs-on: ubuntu-latest
@@ -127,3 +150,62 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  zk-circuit-repro:
+    name: ZK circuit artifact reproducibility (manual)
+    runs-on: ubuntu-latest
+    # Gate B (Task 7). workflow_dispatch-only, NOT a pull_request/push gate:
+    # `just gen-zk-fixtures` (-> circuits/zk_recovery/scripts/gen_artifacts.sh)
+    # hard-requires the EXACT pinned nargo 1.0.0-beta.18 + bb
+    # 3.0.0-nightly.20260102 toolchain, which isn't in the standard runner
+    # image and has to be fetched here via curl|bash from the noir-lang/noirup
+    # and AztecProtocol/aztec-packages (bbup) installers on every run --
+    # mirroring circuits/zk_recovery/scripts/Dockerfile's install commands.
+    # That's a real nargo compile + bb prove of the depth-24 circuit each
+    # time (slower than the fixture-based `bench-zk*` gates above) plus two
+    # third-party curl|bash fetches from hosts we don't control -- both a
+    # network-flakiness and a supply-chain surface too heavy/unreliable to put
+    # in the way of every PR. So this job is manual: run it from the Actions
+    # tab (or `gh workflow run test.yml`) after a deliberate circuit change,
+    # to confirm the committed crates/integration-tests/fixtures/zk/ artifacts
+    # (and their manifest.json) are still exactly reproducible from source. A
+    # non-zero exit here means either an undeclared circuit/toolchain drift or
+    # a genuinely non-deterministic bb output -- either way it needs a human
+    # to look at the diff, not an auto-fail merge queue.
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fast, prebuilt-binary install (no compile-from-source) -- same action
+      # the `contracts` job above uses.
+      - name: Install just
+        uses: taiki-e/install-action@just
+
+      # Pinned exactly as circuits/zk_recovery/scripts/Dockerfile installs
+      # them, and version-checked again by gen_artifacts.sh itself (it hard
+      # -fails if `nargo --version` doesn't contain 1.0.0-beta.18).
+      - name: Install nargo (pinned via noirup)
+        run: |
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          echo "$HOME/.nargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.nargo/bin/noirup" -v 1.0.0-beta.18
+
+      - name: Install bb (pinned via bbup)
+        run: |
+          curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/bbup/install | bash
+          echo "$HOME/.bb" >> "$GITHUB_PATH"
+          "$HOME/.bb/bbup" -nv 1.0.0-beta.18
+
+      # Regenerates circuits/zk_recovery/target/{vk,proof,public_inputs} from
+      # source, then re-stages them into
+      # crates/integration-tests/fixtures/zk/ and rewrites its manifest.json
+      # (see the `gen-zk-fixtures` recipe in justfile).
+      - name: just gen-zk-fixtures
+        run: just gen-zk-fixtures
+
+      # Fails the job if regenerating from source produced anything different
+      # from what's committed. Comparing the manifest (sha256 of each
+      # artifact) rather than the binary artifacts directly gives a readable
+      # diff instead of a binary-blob one.
+      - name: Fail on fixture drift
+        run: git diff --exit-code crates/integration-tests/fixtures/zk/manifest.json
