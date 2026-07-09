@@ -50,6 +50,15 @@ export async function prove(
   circuitName: string,
   inputs: NoirInputMap,
 ): Promise<ProveResult> {
+  // FAST-LANE TEST HOOK (Task 5, tests/e2e/ui/zk-recovery.spec.ts): a Playwright
+  // init script may install `window.__ZK_PROVER_STUB__` before any page script
+  // runs, so the (tens-of-seconds, WASM-heavy) real proving pipeline below is
+  // never exercised in the fast lane. Absent in production — `window` isn't
+  // even defined outside a browser, and no app code ever sets this global.
+  if (typeof window !== 'undefined') {
+    const stub = (window as unknown as { __ZK_PROVER_STUB__?: (circuitName: string, inputs: NoirInputMap) => Promise<ProveResult> }).__ZK_PROVER_STUB__;
+    if (stub) return stub(circuitName, inputs);
+  }
   if (typeof Worker !== 'undefined') {
     return proveWithWorker(circuitName, inputs);
   }

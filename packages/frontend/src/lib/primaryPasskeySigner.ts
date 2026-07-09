@@ -15,7 +15,7 @@ import {
   hex2buf,
   buf2hex,
 } from '@nidohq/passkey-sdk';
-import { fetchVerifierAddress } from './policyChainFetch.js';
+import { resolveSignerRule } from './policyChainFetch.js';
 import {
   relayerEnabled,
 } from './relayerClient';
@@ -87,8 +87,22 @@ export async function signAndSubmit(args: {
 
   const server = new rpc.Server(RPC_URL);
 
-  const finalVerifierAddress =
-    args.verifierAddress ?? (await fetchVerifierAddress(args.account));
+  // Resolve — in ONE gap-tolerant scan — which context rule THIS device's
+  // passkey lives under AND the verifier that rule's signer is registered
+  // against. A ZK-recovered account installs the new passkey as a brand-new
+  // Default rule (id != 0) while rule 0 keeps the OLD, now-unusable key; signing
+  // must target the resolved rule (else do_check_auth rejects with Error(Auth,
+  // InvalidAction)) and use that rule's verifier. Returns rule 0 for a fresh
+  // (non-recovered) account, so this generalizes both. See resolveSignerRule.
+  const resolved = await resolveSignerRule(args.account, cred.publicKey);
+  if (!resolved) {
+    throw new Error(
+      'This passkey is not registered on any authorization rule of the account. ' +
+        'If you just recovered, wait for the completion transaction to confirm and retry; ' +
+        "otherwise this browser's stored passkey may not match the account on-chain.",
+    );
+  }
+  const finalVerifierAddress = args.verifierAddress ?? resolved.verifier;
 
   // 1. Pick the simulation source account. This is the tx source/fee-payer,
   //    NOT the smart account itself.
@@ -150,7 +164,8 @@ export async function signAndSubmit(args: {
   const lastLedger = successSim.latestLedger;
   const expirationOffset = relayerEnabled() ? RELAYER_EXPIRATION_OFFSET : undefined;
   const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger, expirationOffset);
-  const contextRuleIds = [0];
+  // The signing rule was resolved up front (see resolveSignerRule above).
+  const contextRuleIds = [resolved.ruleId];
   const challengeBytes = computeAuthDigest(signaturePayload, contextRuleIds);
   const authHashHex = buf2hex(challengeBytes);
 

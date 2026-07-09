@@ -79,6 +79,10 @@ import Icon from '../../../components/Icon.astro';
           Make a new passkey, share the link with each friend, gather their okays,
           then finish.
         </p>
+        <p class="mut" style="font-size:12.5px;margin:0 0 14px;">
+          Prefer a seed phrase or a wallet instead of friends?
+          <a href="?zk=1" class="link">Recover with a seed phrase or wallet</a>.
+        </p>
 
         <div id="om-no-rule" hidden>
           <div class="card" style="padding:18px;margin-top:14px;">
@@ -166,6 +170,98 @@ import Icon from '../../../components/Icon.astro';
           </div>
         </div>
       </section>
+
+      <!-- ZK mode: recover with a seed phrase or an external wallet, no
+           friends required. Triggered by ?zk=1 (or the link from originator
+           mode above). Fixed ids below match the M4 plan's step machine —
+           Playwright hooks land in Task 5. -->
+      <section id="zk-mode" hidden>
+        <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 6px;">
+          Get back in using a seed phrase or the wallet you enrolled with —
+          no friends required.
+        </p>
+        <div class="alert warn" role="note" style="margin-top:14px;">
+          Once you start a recovery, don't clear this browser's site data
+          until it finishes — the new passkey's public key is only
+          remembered here (your secret itself is never stored anywhere).
+        </div>
+
+        <p id="zk-status" class="mut" style="font-size:12.5px;"></p>
+
+        <div id="zk-new-key" hidden>
+          <span class="section-label" style="display:block;margin:22px 0 10px;">Step 1 · New passkey</span>
+          <div class="card" style="padding:18px;">
+            <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 12px;">
+              Create a fresh passkey on this device. It becomes the way you
+              get in once this recovery completes.
+            </p>
+            <button id="zk-new-key-btn" class="btn acc" type="button">
+              <Icon name="key" size={18} /> Create new passkey
+            </button>
+            <p id="zk-new-key-status" class="mut" style="font-size:12.5px;margin-top:10px;"></p>
+          </div>
+        </div>
+
+        <div id="zk-secret" hidden>
+          <span class="section-label" style="display:block;margin:22px 0 10px;">Step 2 · Prove it's you</span>
+          <div class="card" style="padding:18px;">
+            <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 12px;">
+              Enter the 12 or 24-word recovery phrase you saved, or sign with
+              the wallet you enrolled with.
+            </p>
+            <textarea id="zk-mnemonic-input" class="input mono" rows="3"
+                      placeholder="word1 word2 word3 …" style="width:100%;"></textarea>
+            <div class="actions" style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
+              <button id="zk-mnemonic-btn" class="btn acc" type="button">Use this phrase</button>
+              <button id="zk-wallet-btn" class="btn soft" type="button">Sign with a wallet instead</button>
+            </div>
+            <p id="zk-secret-status" class="mut" style="font-size:12.5px;margin-top:10px;"></p>
+          </div>
+        </div>
+
+        <div id="zk-sync" hidden>
+          <span class="section-label" style="display:block;margin:22px 0 10px;">Step 3 · Checking the recovery pool</span>
+          <div class="card" style="padding:18px;">
+            <p id="zk-sync-status" class="mut" style="font-size:13px;line-height:1.55;margin:0;"></p>
+          </div>
+        </div>
+
+        <div id="zk-initiate" hidden>
+          <span class="section-label" style="display:block;margin:22px 0 10px;">Step 4 · Start recovery</span>
+          <div class="card" style="padding:18px;">
+            <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 12px;">
+              This proves you know the recovery secret without revealing it
+              on-chain. Proving happens on this device and can take from a
+              few seconds to a couple of minutes.
+            </p>
+            <button id="zk-initiate-btn" class="btn acc" type="button">Start recovery</button>
+            <div id="zk-prove" hidden style="margin-top:12px;align-items:center;gap:9px;">
+              <svg class="spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg>
+              <span id="zk-prove-status" class="mut" style="font-size:12.5px;"></span>
+            </div>
+            <p id="zk-initiate-status" class="mut" style="font-size:12.5px;margin-top:10px;"></p>
+          </div>
+        </div>
+
+        <div id="zk-countdown" hidden>
+          <span class="section-label" style="display:block;margin:22px 0 10px;">Step 5 · Timelock</span>
+          <div class="card" style="padding:18px;">
+            <p id="zk-countdown-text" class="mut" style="font-size:14px;font-weight:700;margin:0;"></p>
+            <p class="mut" style="font-size:12.5px;margin-top:10px;line-height:1.5;">
+              This waiting period protects you — it gives you time to notice
+              and cancel from Security settings if you didn't start this.
+            </p>
+          </div>
+        </div>
+
+        <div id="zk-complete" hidden>
+          <span class="section-label" style="display:block;margin:22px 0 10px;">Step 6 · Finish</span>
+          <div class="card" style="padding:18px;">
+            <button id="zk-complete-btn" class="btn acc" type="button">Complete recovery</button>
+            <p id="zk-complete-status" class="mut" style="font-size:12.5px;margin-top:10px;"></p>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -175,17 +271,30 @@ import Icon from '../../../components/Icon.astro';
 
 <script>
   import {
+    rpc,
+    Contract,
+    scValToNative,
+    StrKey,
+  } from '@stellar/stellar-sdk';
+  import {
     accountUrl,
     contractIdFromHostname,
     createSessionPasskey,
     decodeRotationHandoff,
     lookupName,
     buf2hex,
+    hex2buf,
+    deriveSecretM1,
+    wrapLeafInner,
+    wrapLeafStored,
+    fieldToBytes32,
     type RotationHandoff,
+    type Fr,
   } from '@nidohq/passkey-sdk';
   import {
     fetchVerifierAddress,
     findRemovableOldSigner,
+    simulateView,
     type RemovableSigner,
   } from '../../../lib/policyChainFetch.js';
   import {
@@ -202,10 +311,23 @@ import Icon from '../../../components/Icon.astro';
     recoveryHandoffLinkFromStaging,
     RELAY_BASE_URL,
   } from '../../../lib/recoveryActions.js';
+  import {
+    syncPoolAndLocate,
+    initiateZkRecovery,
+    completeZkRecovery,
+    getZkPending,
+    readStaged,
+    clearStaged,
+  } from '../../../lib/zkRecoveryActions.js';
   import { buildPickerRows } from '../../../lib/friendPicker.js';
   import { listFriendSignatures } from '../../../lib/relayClient.js';
   import { nameRegistryId, NAME_NETWORK } from '../../../lib/nidoSwitcher.js';
-  import { RPC_URL } from '../../../lib/network.js';
+  import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
+  import { initWalletKit, connect as connectWallet } from '../../../lib/walletConnect.js';
+  import { deriveM2SecretSafely } from '../../../lib/walletRecoverySign.js';
+  import { StellarWalletsKit } from '@creit.tech/stellar-wallets-kit';
+  import { validateMnemonic } from '@scure/bip39';
+  import { wordlist } from '@scure/bip39/wordlists/english.js';
 
   const account = contractIdFromHostname(window.location.hostname);
   const params = new URLSearchParams(window.location.search);
@@ -214,8 +336,11 @@ import Icon from '../../../components/Icon.astro';
   const friendMode = document.getElementById('friend-mode')!;
   const pickerMode = document.getElementById('picker-mode')!;
   const originatorMode = document.getElementById('originator-mode')!;
+  const zkMode = document.getElementById('zk-mode')!;
 
-  if (handoff) {
+  if (params.get('zk') === '1') {
+    void runZkMode();
+  } else if (handoff) {
     let parsed: RotationHandoff | null = null;
     try {
       parsed = decodeRotationHandoff(handoff);
@@ -668,6 +793,367 @@ import Icon from '../../../components/Icon.astro';
     localStorage.setItem(prefix + 'credentialId', credentialId);
     localStorage.setItem(prefix + 'publicKey', buf2hex(publicKey));
   }
+
+  // ---- ZK mode (?zk=1) ----------------------------------------------------
+  // Recover using a BIP-39 seed phrase or an external wallet signature,
+  // independent of trusted friends. Step machine (fixed ids, per the M4 plan):
+  //   #zk-new-key -> #zk-secret -> #zk-sync -> #zk-initiate (#zk-prove nested)
+  //   -> #zk-countdown -> #zk-complete, with #zk-status for top-level guard
+  //   errors. The mnemonic / wallet signature is only ever held in a local
+  //   variable long enough to derive the secret, then discarded — never
+  //   localStorage, never logged.
+  function formatDuration(totalSeconds: number): string {
+    const s = Math.max(0, totalSeconds);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    return [h, m, sec].map((n) => String(n).padStart(2, '0')).join(':');
+  }
+
+  async function runZkMode() {
+    zkMode.hidden = false;
+    const status = document.getElementById('zk-status')!;
+    if (!account) {
+      status.textContent = 'Open this page on the account subdomain you want to recover.';
+      return;
+    }
+    const acct = account; // narrowed, non-null for the rest of this closure
+
+    const newKeySection = document.getElementById('zk-new-key') as HTMLElement;
+    const newKeyBtn = document.getElementById('zk-new-key-btn') as HTMLButtonElement;
+    const newKeyStatus = document.getElementById('zk-new-key-status')!;
+    const secretSection = document.getElementById('zk-secret') as HTMLElement;
+    const secretStatus = document.getElementById('zk-secret-status')!;
+    const mnemonicInput = document.getElementById('zk-mnemonic-input') as HTMLTextAreaElement;
+    const mnemonicBtn = document.getElementById('zk-mnemonic-btn') as HTMLButtonElement;
+    const walletBtn = document.getElementById('zk-wallet-btn') as HTMLButtonElement;
+    const syncSection = document.getElementById('zk-sync') as HTMLElement;
+    const syncStatus = document.getElementById('zk-sync-status')!;
+    const initiateSection = document.getElementById('zk-initiate') as HTMLElement;
+    const initiateBtn = document.getElementById('zk-initiate-btn') as HTMLButtonElement;
+    const initiateStatus = document.getElementById('zk-initiate-status')!;
+    const proveProgress = document.getElementById('zk-prove') as HTMLElement;
+    const proveStatus = document.getElementById('zk-prove-status')!;
+    const countdownSection = document.getElementById('zk-countdown') as HTMLElement;
+    const countdownText = document.getElementById('zk-countdown-text')!;
+    const completeSection = document.getElementById('zk-complete') as HTMLElement;
+    const completeBtn = document.getElementById('zk-complete-btn') as HTMLButtonElement;
+    const completeStatus = document.getElementById('zk-complete-status')!;
+
+    let zkNewPubkey: Uint8Array | null = null;
+    let zkNewCredentialId: string | null = null;
+    let zkSecret: Fr | null = null;
+    let countdownTimer: number | undefined;
+    // Seconds past `executable_after` (client clock) before completion is
+    // offered / auto-retried — covers ledger-close lag vs wall-clock so the
+    // on-chain timelock check has definitely passed. See showCountdown.
+    const COMPLETE_BUFFER_SECS = 12;
+    // The current pending's timelock bounds, shared with the complete handler
+    // so it can distinguish a boundary-lag failure (retry) from an expired or
+    // otherwise-permanent one (surface at once). 0 = unknown/not-applicable.
+    let currentExecutableAfter = 0;
+    let currentExpiresAt = 0;
+
+    function showCountdown(executableAfter: number, expiresAt = 0) {
+      currentExecutableAfter = executableAfter;
+      currentExpiresAt = expiresAt;
+      countdownSection.hidden = false;
+      const tick = () => {
+        const now = Math.floor(Date.now() / 1000);
+        // The completion window (expires_at) closes recovery on-chain
+        // (RecoveryError::RecoveryExpired). Past it, completion can only fail —
+        // stop offering it and tell the user to restart, rather than letting
+        // them click into an opaque auth error.
+        if (currentExpiresAt && now >= currentExpiresAt) {
+          countdownText.textContent =
+            'This recovery request expired (its completion window closed). Start again from Step 1.';
+          completeSection.hidden = true;
+          if (countdownTimer !== undefined) clearInterval(countdownTimer);
+          return;
+        }
+        const remaining = executableAfter - now;
+        // Only reveal "complete" once the client clock is COMPLETE_BUFFER_SECS
+        // PAST executable_after. The on-chain enforce checks the ledger's
+        // close-time, which lags wall-clock (ledgers close every ~5-6s) — so a
+        // completion submitted the instant our countdown hits zero can still
+        // trip `TimelockNotElapsed`. The buffer keeps that boundary miss off
+        // the happy path; the completion handler still retries as a backstop.
+        if (remaining <= -COMPLETE_BUFFER_SECS) {
+          countdownText.textContent = 'Your recovery is ready to complete.';
+          completeSection.hidden = false;
+          if (countdownTimer !== undefined) clearInterval(countdownTimer);
+          return;
+        }
+        if (remaining <= 0) {
+          countdownText.textContent = 'Finalizing on the network — ready in a few seconds…';
+          return;
+        }
+        countdownText.textContent = `Executable in ${formatDuration(remaining)}.`;
+      };
+      tick();
+      countdownTimer = window.setInterval(tick, 1000);
+    }
+
+    // Retries `completeZkRecovery` when it fails on the timelock boundary
+    // (see the completion handler + showCountdown for why the ledger clock
+    // lags). Non-timelock failures (wrong key, expired, etc.) rethrow at once.
+    async function completeWithTimelockRetry(
+      args: Parameters<typeof completeZkRecovery>[0],
+    ): Promise<string> {
+      const MAX_ATTEMPTS = 4;
+      const RETRY_DELAY_MS = 8000;
+      // How far past executable_after a failure can still plausibly be
+      // ledger-close lag rather than a real problem. Every enforce panic
+      // (RecoveryExpired, ContextMismatch from a wrong new_pubkey, NoPending
+      // from an already-completed recovery) collapses to the same opaque
+      // "(Auth, InvalidAction)" as a timelock miss, so the error string ALONE
+      // can't classify it — gate on actually being in the boundary window and
+      // not past expiry, else these permanent failures would retry 4× behind a
+      // misleading "Almost there…" message instead of surfacing at once.
+      const RETRY_MAX_SKEW_SECS = 90;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await completeZkRecovery(args);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          const now = Math.floor(Date.now() / 1000);
+          const withinBoundary =
+            currentExecutableAfter > 0 &&
+            now >= currentExecutableAfter &&
+            now < currentExecutableAfter + RETRY_MAX_SKEW_SECS &&
+            (!currentExpiresAt || now < currentExpiresAt);
+          const looksLikeTimelock = /InvalidAction|TimelockNotElapsed|enforce simulation|#15/i.test(msg);
+          if (looksLikeTimelock && withinBoundary && attempt < MAX_ATTEMPTS) {
+            completeStatus.textContent =
+              'Almost there — the network needs a few more seconds to finalize the timelock. Retrying…';
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+            continue;
+          }
+          throw e;
+        }
+      }
+    }
+
+    // Resume: a chain-authoritative pending recovery (getZkPending) plus the
+    // advisory local staging record (readStaged) drive an in-progress resume
+    // on reload. If the chain says nothing is pending, drop any stale local
+    // staging and start the ceremony from step 1.
+    async function tryResume(): Promise<boolean> {
+      const staged = readStaged(acct);
+      let pending: Awaited<ReturnType<typeof getZkPending>> = null;
+      try {
+        pending = await getZkPending(acct);
+      } catch {
+        pending = null;
+      }
+      if (!pending) {
+        if (staged) clearStaged(acct);
+        return false;
+      }
+      newKeySection.hidden = true;
+      // Prefer the on-chain pending record's own `new_pubkey` (T4 review
+      // finding) over the local (advisory-only) staging record — it's
+      // authoritative and survives cleared site data / a different device
+      // than the one that started the recovery. Fall back to staging only
+      // if the chain read somehow came back without it.
+      if (pending.newPubkey65.length === 65) {
+        zkNewPubkey = pending.newPubkey65;
+      } else if (staged) {
+        zkNewPubkey = hex2buf(staged.newPubkey65Hex);
+      }
+      showCountdown(pending.executableAfter, pending.expiresAt);
+      if (!zkNewPubkey) {
+        countdownText.textContent +=
+          " This browser has no local record of the new key — if you cleared " +
+          "site data, you'll need the device that started this recovery to finish it.";
+      }
+      return true;
+    }
+
+    if (await tryResume()) return;
+
+    newKeySection.hidden = false;
+
+    newKeyBtn.addEventListener('click', async () => {
+      newKeyBtn.disabled = true;
+      newKeyStatus.textContent = 'Creating passkey…';
+      try {
+        const k = await createSessionPasskey({
+          rpId: window.location.hostname,
+          rpName: window.location.host,
+          userName: `zk-recovery-key:${acct}`,
+        });
+        zkNewPubkey = k.publicKey;
+        zkNewCredentialId = k.credentialId;
+        newKeyStatus.textContent =
+          'New passkey created (' + buf2hex(k.publicKey).slice(0, 12) + '…).';
+        secretSection.hidden = false;
+      } catch (e) {
+        newKeyStatus.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+        newKeyBtn.disabled = false;
+      }
+    });
+
+    async function afterSecret() {
+      secretSection.hidden = true;
+      syncSection.hidden = false;
+      syncStatus.textContent = 'Checking the recovery pool…';
+      try {
+        const accountId32 = StrKey.decodeContract(acct);
+        const storedLeaf = wrapLeafStored(accountId32, wrapLeafInner(zkSecret!));
+        const located = await syncPoolAndLocate(acct, fieldToBytes32(storedLeaf));
+        if (!located) {
+          syncStatus.textContent =
+            "We couldn't find this account's recovery enrollment in the pool. " +
+            "If this account never enrolled ZK recovery, this method can't be used here " +
+            '— try Trusted friends instead.';
+          return;
+        }
+        syncStatus.textContent = 'Found your enrollment. Ready to start recovery.';
+        initiateSection.hidden = false;
+      } catch (e) {
+        syncStatus.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    mnemonicBtn.addEventListener('click', async () => {
+      const words = mnemonicInput.value.trim().split(/\s+/).filter(Boolean);
+      if (words.length !== 12 && words.length !== 24) {
+        secretStatus.textContent = 'Enter your 12 or 24-word recovery phrase.';
+        return;
+      }
+      const mnemonic = words.join(' ');
+      if (!validateMnemonic(mnemonic, wordlist)) {
+        secretStatus.textContent = "That phrase doesn't look right — check the words and try again.";
+        return;
+      }
+      mnemonicBtn.disabled = true;
+      walletBtn.disabled = true;
+      secretStatus.textContent = 'Deriving your recovery secret…';
+      try {
+        zkSecret = await deriveSecretM1(mnemonic, '', acct, NETWORK_PASSPHRASE);
+        mnemonicInput.value = ''; // the phrase's only job was this derivation
+        secretStatus.textContent = '';
+        await afterSecret();
+      } catch (e) {
+        secretStatus.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+        mnemonicBtn.disabled = false;
+        walletBtn.disabled = false;
+      }
+    });
+
+    walletBtn.addEventListener('click', async () => {
+      mnemonicBtn.disabled = true;
+      walletBtn.disabled = true;
+      secretStatus.textContent = 'Connecting your wallet…';
+      try {
+        await initWalletKit({ networkPassphrase: NETWORK_PASSPHRASE });
+        const session = await connectWallet();
+        zkSecret = await deriveM2SecretSafely({
+          kit: StellarWalletsKit,
+          account: acct,
+          walletAddress: session.walletAddress,
+          networkPassphrase: NETWORK_PASSPHRASE,
+          onStatus: (s) => { secretStatus.textContent = s; },
+        });
+        secretStatus.textContent = '';
+        await afterSecret();
+      } catch (e) {
+        secretStatus.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+        mnemonicBtn.disabled = false;
+        walletBtn.disabled = false;
+      }
+    });
+
+    initiateBtn.addEventListener('click', async () => {
+      if (!zkSecret || !zkNewPubkey) return;
+      initiateBtn.disabled = true;
+      initiateStatus.textContent = '';
+      proveProgress.hidden = false;
+      proveStatus.textContent = 'Generating your recovery proof — this can take up to a minute…';
+      try {
+        const result = await initiateZkRecovery({
+          account: acct,
+          secret: zkSecret,
+          newPubkey65: zkNewPubkey,
+        });
+        proveProgress.hidden = true;
+        initiateStatus.textContent = 'Recovery started (tx ' + result.txHash.slice(0, 8) + '…).';
+        initiateSection.hidden = true;
+        showCountdown(result.executableAfter);
+      } catch (e) {
+        proveProgress.hidden = true;
+        initiateStatus.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+        initiateBtn.disabled = false;
+      }
+    });
+
+    completeBtn.addEventListener('click', async () => {
+      completeBtn.disabled = true;
+      completeStatus.textContent = 'Finishing recovery…';
+      // Belt-and-suspenders vs the countdown's own expiry check: if the window
+      // closed between render and click, don't submit a doomed completion.
+      if (currentExpiresAt && Math.floor(Date.now() / 1000) >= currentExpiresAt) {
+        completeStatus.textContent =
+          'This recovery request expired (its completion window closed). Start again from Step 1.';
+        return;
+      }
+      try {
+        // Prefer the on-chain pending record's own `new_pubkey` (T4 review
+        // finding) over this device's local (advisory-only) staging record —
+        // it's authoritative and works even after cleared site data, or from
+        // a different device than the one that started the recovery. Fall
+        // back to staging, then to this session's in-memory `zkNewPubkey`.
+        let newPubkey65: Uint8Array | null = null;
+        try {
+          const pending = await getZkPending(acct);
+          if (pending && pending.newPubkey65.length === 65) {
+            newPubkey65 = pending.newPubkey65;
+          }
+        } catch {
+          // best-effort -- fall through to the local staging/in-memory record
+        }
+        if (!newPubkey65) {
+          const staged = readStaged(acct);
+          newPubkey65 = staged ? hex2buf(staged.newPubkey65Hex) : zkNewPubkey;
+        }
+        if (!newPubkey65) {
+          throw new Error(
+            "Missing this device's staged recovery record. If you cleared site data since " +
+              "starting this recovery, it can't be completed automatically here.",
+          );
+        }
+        const server = new rpc.Server(RPC_URL);
+        const ruleRv = await simulateView(server, new Contract(acct), 'recovery_rule_id');
+        const ruleId = scValToNative(ruleRv) as number | null;
+        if (ruleId == null) throw new Error('This account has no ZK recovery rule installed.');
+        const webauthnVerifierId = await fetchVerifierAddress(acct);
+
+        // The completion is gated on-chain by the ledger clock, which lags
+        // wall-clock — a submission a hair early trips `TimelockNotElapsed`
+        // (#15), which the relayer surfaces as a generic "(Auth,
+        // InvalidAction)". The precise #15 is buried in diagnostic events we
+        // don't see here, so near the boundary treat an auth-validation
+        // failure as "not ready yet" and retry a few times before giving up.
+        const hash = await completeWithTimelockRetry({
+          account: acct,
+          recoveryRuleId: ruleId,
+          newPubkey65,
+          webauthnVerifierId,
+        });
+        completeStatus.textContent = 'Done — your new passkey is active (tx ' + hash.slice(0, 8) + '…).';
+        if (zkNewCredentialId && zkNewPubkey) {
+          saveRecoveredKey(acct, zkNewCredentialId, zkNewPubkey);
+        }
+        completeSection.hidden = true;
+        countdownSection.hidden = true;
+        setTimeout(() => { window.location.href = '/account/'; }, 1200);
+      } catch (e) {
+        completeStatus.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
+        completeBtn.disabled = false;
+      }
+    });
+  }
 </script>
 
 <style>
@@ -685,4 +1171,9 @@ import Icon from '../../../components/Icon.astro';
   }
   /* status / error markup the script may inject into om-stage uses .muted */
   :global(.muted) { color: var(--mut); font-size: 13px; }
+  /* The prove spinner is flex only while shown. Inline `display:flex` would
+     override the `hidden` attribute (inline style beats the UA
+     `[hidden]{display:none}` rule), leaving the spinner stuck visible before
+     "Start recovery" is pressed. */
+  #zk-prove:not([hidden]) { display: flex; }
 </style>

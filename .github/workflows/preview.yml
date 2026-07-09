@@ -49,6 +49,12 @@ jobs:
           PUBLIC_RELAYER_URL: https://nido.fly.dev
           PUBLIC_RELAYER_SIM_SOURCE: GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2
           PUBLIC_RECOVERY_RELAY_URL: https://relay.nido.fyi
+          # ZK-recovery preview: the `zk-recovery-m4` branch's preview uses the
+          # factory-v2 preview pair (create_account_v2 genesis-insert, so ZK
+          # enrollment actually works — the live v1 factory can't). Gated to
+          # this branch so every OTHER PR preview stays on the production
+          # factory. Remove once a real factory-v2 is the registered default.
+          PUBLIC_ZK_PREVIEW: ${{ github.head_ref == 'zk-recovery-m4' && '1' || '' }}
         run: npx astro build --root ./packages/frontend
 
       - name: Deploy to Cloudflare Pages
