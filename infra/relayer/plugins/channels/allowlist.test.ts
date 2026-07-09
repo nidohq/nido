@@ -14,9 +14,10 @@ function buildInvokeHostFunctionXdr(functionName: string): string {
 
 describe('allowlist', () => {
   const allowedXdr = buildInvokeHostFunctionXdr('initiate_recovery');
-  const disallowedXdr = buildInvokeHostFunctionXdr('transfer');
+  // A function the nido app never relays — the relayer must still reject it.
+  const disallowedXdr = buildInvokeHostFunctionXdr('upgrade');
 
-  it('ALLOWED_FUNCTIONS contains exactly the documented recovery/genesis functions', () => {
+  it('ALLOWED_FUNCTIONS is exactly the set of nido app-relayed functions', () => {
     expect([...ALLOWED_FUNCTIONS].sort()).toEqual(
       [
         'create_account',
@@ -25,9 +26,24 @@ describe('allowlist', () => {
         'initiate_recovery',
         'cancel_recovery',
         'burn_nullifier',
+        'enroll_zk_recovery',
         'add_context_rule',
+        'remove_context_rule',
+        'add_signer',
+        'remove_signer',
+        'execute',
+        'register',
       ].sort(),
     );
+  });
+
+  it('permits the normal wallet actions the app fee-sponsors (regression guard)', () => {
+    // These broke production when the allowlist was scoped to recovery-only:
+    // name registration, transfers (via the account `execute` wrapper), session-key
+    // revoke, and adding ZK recovery to an existing account.
+    for (const fn of ['register', 'execute', 'remove_context_rule', 'enroll_zk_recovery']) {
+      expect(isAllowed(buildInvokeHostFunctionXdr(fn))).toBe(true);
+    }
   });
 
   describe('invokedFunctionName', () => {
@@ -35,8 +51,8 @@ describe('allowlist', () => {
       expect(invokedFunctionName(allowedXdr)).toBe('initiate_recovery');
     });
 
-    it('returns the invoked function name for a transfer invoke', () => {
-      expect(invokedFunctionName(disallowedXdr)).toBe('transfer');
+    it('returns the invoked function name for a disallowed invoke', () => {
+      expect(invokedFunctionName(disallowedXdr)).toBe('upgrade');
     });
 
     it('returns null for garbage input', () => {
@@ -49,7 +65,7 @@ describe('allowlist', () => {
       expect(isAllowed(allowedXdr)).toBe(true);
     });
 
-    it('is false for transfer', () => {
+    it('is false for a function the app never relays', () => {
       expect(isAllowed(disallowedXdr)).toBe(false);
     });
   });
@@ -59,8 +75,8 @@ describe('allowlist', () => {
       expect(() => assertAllowedOrReject(allowedXdr)).not.toThrow();
     });
 
-    it('throws for transfer', () => {
-      expect(() => assertAllowedOrReject(disallowedXdr)).toThrow(/not in the recovery\/genesis allowlist/);
+    it('throws for a function the app never relays', () => {
+      expect(() => assertAllowedOrReject(disallowedXdr)).toThrow(/not in the nido relayer allowlist/);
     });
   });
 });
