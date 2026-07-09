@@ -2,8 +2,12 @@
  * allowlist.ts
  *
  * Host-function allowlist: the security boundary between "anyone can ask the relayer
- * channels path to submit a Soroban invoke" and "only these specific recovery/genesis
- * contract calls ride the channel". The relayer receives a Soroban invoke as a base64
+ * channels path to submit ANY Soroban invoke" and "only the contract calls the nido
+ * app legitimately relays" (its account/registry/recovery operations). This is the
+ * app's single relayer (PUBLIC_RELAYER_URL) — it fee-sponsors normal wallet actions
+ * (name registration, transfers, session keys, social recovery) AND the ZK
+ * recovery/genesis path, so the list must cover BOTH. The relayer receives a Soroban
+ * invoke as a base64
  * `func` (InvokeHostFunction XDR) + `auth`, per
  * `packages/passkey-sdk/src/relayer.ts::submitSorobanTransaction`, which POSTs
  * `{ params: { func, auth, skipWait } }`.
@@ -17,24 +21,39 @@ import { xdr } from '@stellar/stellar-sdk';
 import { pluginError } from '@openzeppelin/relayer-sdk';
 
 /**
- * Contract functions the relayer channels path is allowed to submit.
+ * Contract functions the relayer channels path is allowed to submit — the full set the
+ * nido app relays, grouped below. Auth is always enforced on-chain (the passkey on the
+ * signed auth entry); this list only bounds WHICH functions the relayer will
+ * fee-sponsor, so it can't be turned into an open drain.
  *
- * `add_context_rule` is included ONLY for the zero-signer recovery-completion shape:
- * completing a recovery adds a signer via a context rule while the account (by design,
- * mid-recovery) has no active signer able to authorize normally, so this call has to be
- * relayer-submittable too. This is a deliberately broad allow at the function-name
- * level — it is the contract's job to enforce that `add_context_rule` only succeeds in
- * that zero-signer completion state (via its own auth checks), not this list's. If the
- * contract's authorization for `add_context_rule` ever loosens, revisit this entry.
+ * `execute` is the smart account's own wrapper (`execute(target, fn, args)`) — it backs
+ * every token transfer and is intentionally broad: the account's `require_auth` inside
+ * `execute` is the real gate, not this list. Likewise `add_context_rule` covers session
+ * keys, social-recovery install, name-passkey, AND the zero-signer recovery-completion
+ * shape (mid-recovery the account has no normally-authorizing signer, so completion must
+ * be relayer-submittable); the contract enforces that each only succeeds in its valid
+ * state.
+ *
+ * If you add a new user action that the app submits through the relayer, add its
+ * top-level invoked function here or the relayer will 403 it (this exact regression).
  */
 export const ALLOWED_FUNCTIONS: ReadonlySet<string> = new Set([
+  // Genesis (factory) + ZK recovery ceremony
   'create_account',
   'create_account_v2',
   'insert_for',
   'initiate_recovery',
   'cancel_recovery',
   'burn_nullifier',
+  'enroll_zk_recovery',
+  // Account operations (session keys, social recovery, transfers, name-passkey)
   'add_context_rule',
+  'remove_context_rule',
+  'add_signer',
+  'remove_signer',
+  'execute',
+  // Name registry
+  'register',
 ]);
 
 /**
@@ -83,7 +102,7 @@ export function assertAllowedOrReject(funcXdrBase64: string): void {
   throw pluginError(
     name === null
       ? 'Relayer channels plugin: submitted host function is not an allowed contract invocation'
-      : `Relayer channels plugin: function "${name}" is not in the recovery/genesis allowlist`,
+      : `Relayer channels plugin: function "${name}" is not in the nido relayer allowlist`,
     {
       code: 'FUNCTION_NOT_ALLOWED',
       status: 403,
