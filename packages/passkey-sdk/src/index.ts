@@ -99,3 +99,5 @@ export * from './sessionKey.js';
 export * from './syntheticAssertion.js';
 
 export * from './friendSigning.js';
+
+export * from './zkRecovery/index.js';

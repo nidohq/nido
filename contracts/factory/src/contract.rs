@@ -964,6 +964,71 @@ mod test {
         );
     }
 
+    /// Task 11 (M2 residual): literal-pinning half of the cross-crate
+    /// drift guard. `DUMMY_FIELD_ORDER_BE` cannot be compared directly
+    /// against `nido_zk_recovery::pool`'s `FIELD_ORDER_BE` (private to that
+    /// module, unreachable even via the real dev-dependency this crate
+    /// already has) -- so this pins it against the SAME literal bytes that
+    /// `nido_zk_recovery::pool::tests::field_order_and_merkle_depth_match_canonical`
+    /// pins its own copy against. If either copy's bytes drift, whichever
+    /// test still embeds the old literal is the one that keeps passing, but
+    /// the other one -- guarding the crate whose constant actually moved --
+    /// fails. See `dummy_field_order_matches_pool_behavior` below for a
+    /// second, behavioral check that doesn't rely on keeping two literals
+    /// in sync by hand.
+    #[test]
+    fn dummy_field_order_matches_canonical() {
+        // Same 32 bytes as `nido_zk_recovery::pool`'s
+        // `CANONICAL_FIELD_ORDER_BE` -- keep both literals identical.
+        const CANONICAL_FIELD_ORDER_BE: [u8; 32] = [
+            0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81,
+            0x58, 0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93,
+            0xf0, 0x00, 0x00, 0x01,
+        ];
+        assert_eq!(
+            Contract::DUMMY_FIELD_ORDER_BE,
+            CANONICAL_FIELD_ORDER_BE,
+            "factory's DUMMY_FIELD_ORDER_BE drifted from the canonical BN254 scalar order r"
+        );
+    }
+
+    /// Task 11 (M2 residual): behavioral half of the cross-crate drift
+    /// guard -- stronger than the literal comparison above because it
+    /// doesn't just re-check a hand-copied constant, it exercises the REAL
+    /// `nido-zk-recovery` pool's `require_canonical` check (this crate's
+    /// existing dev-dependency, see `setup_factory_and_pool`) against
+    /// boundary values derived from `Contract::DUMMY_FIELD_ORDER_BE`. If the
+    /// factory's copy of `r` has drifted from the pool's real `r`, one of
+    /// the two assertions below flips: either `r - 1` (factory's) is no
+    /// longer canonical per the real pool, or `r` (factory's) has become
+    /// canonical per the real pool (i.e. `< real_r`).
+    #[test]
+    fn dummy_field_order_matches_pool_behavior() {
+        let env = Env::default();
+        let (_factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        env.mock_all_auths();
+        let pool_client = nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &pool_addr);
+        let account = Address::generate(&env);
+
+        let r = Contract::DUMMY_FIELD_ORDER_BE;
+        let mut r_minus_1 = r;
+        r_minus_1[31] = r_minus_1[31].wrapping_sub(1);
+
+        let r_bytes = BytesN::from_array(&env, &r);
+        let r_minus_1_bytes = BytesN::from_array(&env, &r_minus_1);
+
+        assert!(
+            pool_client.try_insert_for(&account, &r_minus_1_bytes).is_ok(),
+            "factory's DUMMY_FIELD_ORDER_BE - 1 must be canonical (< r) per the REAL pool's \
+             FIELD_ORDER_BE -- if this fails, the two crates' field orders have drifted apart"
+        );
+        assert!(
+            pool_client.try_insert_for(&account, &r_bytes).is_err(),
+            "factory's DUMMY_FIELD_ORDER_BE itself must be rejected (== r, non-canonical) by \
+             the REAL pool -- if this fails, the two crates' field orders have drifted apart"
+        );
+    }
+
     /// Atomicity: if the pool is configured with a DIFFERENT factory than
     /// the one actually calling it, the genesis `insert`'s
     /// `config.factory.require_auth()` fails (no invoker-auth match, no

@@ -21,7 +21,11 @@
   "dependencies": {
     "@nidohq/multisig-policy": "^0.1.0",
     "@nidohq/smart-account": "^0.1.0",
-    "@noble/curves": "^2.2.0"
+    "@nidohq/zk-recovery": "^0.1.0",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "@scure/bip39": "^2.2.0",
+    "@zkpassport/poseidon2": "^0.6.2"
   },
   "publishConfig": {
     "access": "public"

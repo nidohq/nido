@@ -408,4 +408,38 @@ mod tests {
             "insert_for authorized by the account must succeed"
         );
     }
+
+    /// Task 11 (M2 residual): cross-crate constant drift guard, the half of
+    /// it that can only live here -- `FIELD_ORDER_BE` is private to this
+    /// module, so this is the ONLY place a compiled test can compare it
+    /// directly. `CANONICAL_FIELD_ORDER_BE` below is the single literal
+    /// source of truth; `contracts/factory/src/contract.rs`'s
+    /// `DUMMY_FIELD_ORDER_BE` is guarded separately (it cannot see this
+    /// private const either) both against the identical literal AND,
+    /// behaviorally, against this real pool's `require_canonical` --  see
+    /// `factory::contract::test::dummy_field_order_matches_canonical` and
+    /// `dummy_field_order_matches_pool_behavior`.
+    ///
+    /// Also pins `merkle::DEPTH == 24` (spec §3.4's depth-24 pool).
+    #[test]
+    fn field_order_and_merkle_depth_match_canonical() {
+        // BN254 scalar field order r =
+        // 21888242871839275222246405745257275088548364400416034343698204186575808495617,
+        // big-endian. Must byte-match `contracts/zk-recovery/src/pool.rs`'s
+        // `FIELD_ORDER_BE` doc comment and the plan's Global Constraints.
+        const CANONICAL_FIELD_ORDER_BE: [u8; 32] = [
+            0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81,
+            0x58, 0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93,
+            0xf0, 0x00, 0x00, 0x01,
+        ];
+        assert_eq!(
+            FIELD_ORDER_BE, CANONICAL_FIELD_ORDER_BE,
+            "pool.rs FIELD_ORDER_BE drifted from the canonical BN254 scalar order r"
+        );
+        assert_eq!(
+            merkle::DEPTH,
+            24,
+            "merkle::DEPTH drifted from the spec's depth-24 incremental pool"
+        );
+    }
 }
