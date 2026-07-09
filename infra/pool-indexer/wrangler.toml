@@ -1,0 +1,35 @@
+name = "pool-indexer"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+# @stellar/stellar-sdk (used by the real Soroban-RPC events client) pulls in
+# Node built-ins (Buffer, etc.) -- enable the Workers Node shim, same as
+# infra/nido-resolver.
+compatibility_flags = ["nodejs_compat"]
+
+routes = [
+  { pattern = "pool-indexer.nido.fyi/*", zone_name = "nido.fyi" }
+]
+
+# Soroban RPC `getEvents` retention is ~7 days (168h). This cadence (every 15
+# minutes) is a wide safety margin under that window: even a multi-hour
+# indexer outage or a few missed invocations cannot lose leaves before the
+# next successful scan catches up, since the persisted cursor (KV
+# `meta/rpcCursor`) always resumes from the last-processed ledger rather than
+# "now". If this cadence is ever widened, it MUST stay well under 7 days.
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[kv_namespaces]]
+binding = "POOL_LEAVES"
+id = "REPLACE_WITH_REAL_KV_NAMESPACE_ID"
+
+[vars]
+# The zk-recovery pool contract's `LeafInserted` events are scanned from
+# here. Fill in the real deployed contract id + RPC endpoint before `wrangler
+# deploy`.
+POOL_CONTRACT_ID = "REPLACE_WITH_POOL_CONTRACT_ID"
+RPC_URL = "https://soroban-testnet.stellar.org"
+# Ledger to cold-start scanning from when no cursor is persisted yet (first
+# deploy, or a cold start after an outage longer than the retention window).
+# Should be set to at or before the pool contract's deployment ledger.
+POOL_START_LEDGER = "1"

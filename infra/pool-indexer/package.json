@@ -1,0 +1,19 @@
+{
+  "name": "pool-indexer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^15.1.0",
+    "@zkpassport/poseidon2": "^0.6.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260616.1",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.8",
+    "wrangler": "^4.86.0"
+  }
+}
