@@ -172,7 +172,8 @@ Rust/scaffold/RPC.
 - **Petition detail** — full body, progress bar (`sig_count` vs `goal`),
   deadline countdown, sign button (disabled when signed/expired), paginated
   signer list (`get_signers`) with trust badges.
-- **Trust** — connected account's vouches given/received, vouch-for-address
+- **Trust** — connected account's vouches given/received, "My QR" vouch code
+  (see "QR vouching"), vouch-for-address
   form (accepts G/C address or nido name via existing resolver lib), revoke
   buttons.
 - **Debug** — `@theahaco/contract-explorer` over both generated clients
@@ -201,6 +202,30 @@ For each visible signer: one `vouches_received` simulation read → badge
 
 Reads are simulation-only, batched per visible page of signers, cached per
 session. No indexer, no events.
+
+### QR vouching
+
+In-person vouching without typing addresses. No contract change — `vouch`
+already takes an arbitrary target.
+
+- **"My QR"** on the Trust page renders a QR (client-side, `qrcode` npm
+  package) encoding `https://<dapp origin>/vouch?for=<address>` for the
+  connected account.
+- **`/vouch?for=<addr>` route**: validates the param as a G/C strkey, shows a
+  confirmation card, and submits `vouch(viewer, addr)` on confirm. Handles
+  the not-connected case by preserving the param through the wallet-connect
+  flow (localStorage pattern, as status-message-dapp does for pending
+  delegation), plus already-vouched and self-vouch states.
+- **Anti-spoof rule**: the URL carries the address only — never a display
+  name. The confirmation card resolves the name from the on-chain name
+  registry (existing resolver lib) and displays resolved name + address, so
+  a QR cannot claim an identity it doesn't have; an unrecognized address
+  simply looks unrecognized.
+- **Helpers**: pure `buildVouchUrl` / `parseVouchParam` functions with
+  colocated vitest tests.
+- **Deferred**: in-app camera scanner (`BarcodeDetector` is unsupported in
+  Safari; the phone camera scanning a URL QR covers v1). Petition-share QR
+  uses the same mechanics if wanted later.
 
 ### Deploy
 
@@ -243,8 +268,11 @@ per-account passkey origins).
   `set_auths`) — the bug-#3 lesson from `tests/README.md`. Snapshots
   committed.
 - **Dapp unit tests** (vitest, colocated): badge computation (pure), module
-  order, env parsing, ledger/date conversion helpers; `lint` and `typecheck`
-  scripts.
+  order, env parsing, ledger/date conversion helpers, `buildVouchUrl` /
+  `parseVouchParam` (valid strkeys, junk, missing param); `lint` and
+  `typecheck` scripts.
+- **Fast-lane e2e** (`@fast`, no chain): `/vouch?for=<addr>` renders the
+  confirmation card from the URL param.
 - **E2E**: quarantined `tests/e2e/testnet/adsum.testnet.spec.ts`
   driving create → vouch → sign → badge assertions against real testnet;
   never gates PRs.
@@ -283,5 +311,7 @@ is out of scope for this document.
 - Session-key / gasless relayer signing in the dapp.
 - Petition editing, closing, or signature withdrawal.
 - Vouch weights, expiry, or metadata.
+- In-app QR camera scanner (phone camera + URL QR covers v1) and
+  petition-share QR.
 - Events/indexer; all reads are RPC simulation.
 - Custom domain and mainnet deployment.
