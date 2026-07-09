@@ -7,6 +7,8 @@ use stellar_accounts::policies::simple_threshold::SimpleThresholdAccountParams;
 use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
 
+pub mod zk_fixture;
+
 pub const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_smart_account.wasm");
 
@@ -18,6 +20,16 @@ pub const MULTISIG_POLICY_WASM: &[u8] =
 
 pub const SPENDING_LIMIT_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_spending_limit_policy.wasm");
+
+/// M2 Task 5's factory contract wasm — embeds the same smart-account wasm
+/// bytes as [`SMART_ACCOUNT_WASM`] internally (see
+/// `contracts/factory/src/contract.rs`'s `smart_account` module doc
+/// comment), so uploading [`SMART_ACCOUNT_WASM`] via
+/// `env.deployer().upload_contract_wasm` before calling the factory's
+/// `create_account`/`create_account_v2` satisfies its `deploy_v2` wasm-hash
+/// lookup.
+pub const FACTORY_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
 
 #[allow(dead_code)]
 #[soroban_sdk::contractclient(name = "SmartAccountClient")]
@@ -50,6 +62,16 @@ trait SmartAccountInterface {
         policy: soroban_sdk::Address,
         install_param: soroban_sdk::Val,
     ) -> u32;
+    fn remove_policy(env: soroban_sdk::Env, context_rule_id: u32, policy_id: u32);
+    // M2 Task 4: the in-account recovery guard's views/entry points
+    // (`contracts/smart-account/src/contract.rs`).
+    fn recovery_rule_id(env: soroban_sdk::Env) -> Option<u32>;
+    fn recovery_controller(env: soroban_sdk::Env) -> Option<soroban_sdk::Address>;
+    fn initiate_recovery_rule_removal(env: soroban_sdk::Env);
+    fn execute_recovery_rule_removal(env: soroban_sdk::Env);
+    // M2 Task 6: the migration path for a NEW-wasm account deployed with
+    // `recovery_controller: None` (`contract.rs::enroll_zk_recovery`).
+    fn enroll_zk_recovery(env: soroban_sdk::Env, recovery_controller: soroban_sdk::Address);
 }
 
 /// Create a deterministic P-256 signing key from a `u64` seed.
@@ -132,8 +154,31 @@ pub fn build_contract_assertion(
 /// Deploy the `WebAuthn` verifier and smart account contracts, initialising the
 /// account with a single passkey signer. Returns the client, account address,
 /// verifier address, and signing key.
+///
+/// Constructs the account with `recovery_controller: None` — the account gets
+/// ONLY the Default rule (unchanged behavior for the many callers of this
+/// helper that have nothing to do with zk-recovery). Tests that need the
+/// recovery rule installed at construction should use
+/// [`deploy_smart_account_with_recovery`] instead.
 pub fn deploy_smart_account(
     env: &soroban_sdk::Env,
+) -> (
+    SmartAccountClient<'_>,
+    soroban_sdk::Address,
+    soroban_sdk::Address,
+    SigningKey,
+) {
+    deploy_smart_account_with_recovery(env, None)
+}
+
+/// Like [`deploy_smart_account`], but passes `recovery_controller` through to
+/// the constructor's 3rd argument. `Some(controller)` installs the
+/// zero-signer `CallContract(self)` recovery rule with `controller` as its
+/// policy (triggering the controller's `Policy::install`); `None` behaves
+/// exactly like [`deploy_smart_account`].
+pub fn deploy_smart_account_with_recovery(
+    env: &soroban_sdk::Env,
+    recovery_controller: Option<soroban_sdk::Address>,
 ) -> (
     SmartAccountClient<'_>,
     soroban_sdk::Address,
@@ -156,7 +201,10 @@ pub fn deploy_smart_account(
         soroban_sdk::Map::new(env);
 
     // Deploy the smart account with the passkey signer
-    let account_addr = env.register(SMART_ACCOUNT_WASM, (&signers, &policies));
+    let account_addr = env.register(
+        SMART_ACCOUNT_WASM,
+        (&signers, &policies, &recovery_controller),
+    );
 
     let client = SmartAccountClient::new(env, &account_addr);
     (client, account_addr, verifier_addr, signing_key)

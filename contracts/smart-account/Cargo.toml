@@ -18,6 +18,18 @@ contract = true
 [dependencies]
 soroban-sdk = { workspace = true }
 stellar-accounts = { workspace = true }
+# NOTE: deliberately NOT depending on `nido-zk-recovery` here, even though
+# there's no Cargo *dependency* cycle (confirmed via `grep smart-account
+# contracts/zk-recovery/Cargo.toml`). `nido-zk-recovery` is itself a
+# `#[contract]` crate: pulling it in as a normal dependency links its
+# `#[no_mangle]`-exported entry points (`__constructor`, `install`, `enforce`,
+# …) into this crate's cdylib too, which collides at wasm link time with this
+# crate's OWN identically-named exports ("symbol multiply defined!" —
+# confirmed by trying it: `just build-contracts` fails linking
+# `nido_smart_account.wasm` with a duplicate `__constructor`). So the
+# install-param `Val` shape is reconstructed inline below instead (see
+# `ZkRecoveryInstallParams` in `contract.rs`, mirroring
+# `contracts/zk-recovery/src/types.rs`).
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

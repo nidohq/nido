@@ -1,0 +1,7 @@
+[package]
+name = "zk_recovery"
+type = "bin"
+compiler_version = ">=1.0.0"
+[dependencies]
+# v0.2.0 tag — Poseidon2 must match soroban-poseidon rev b4bf706
+poseidon = { tag = "v0.2.0", git = "https://github.com/noir-lang/poseidon" }

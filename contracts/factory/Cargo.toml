@@ -23,3 +23,12 @@ nido-smart-account = { path = "../smart-account" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+# M2 Task 5's genesis-insert tests deploy the REAL `nido-zk-recovery` pool
+# contract (not a stub) so they can assert against its actual `wrap_leaf`
+# output, `next_index`, and `current_root` -- a plain rlib dev-dependency,
+# not a production one (this crate is not a `#[contract]`/cdylib test
+# binary in the same sense the factory wasm is, so no wasm-export
+# collision; see `zk_recovery` module's doc comment in `src/contract.rs`
+# for why production code still uses a local `#[contractclient]` stub
+# instead of this crate).
+nido-zk-recovery = { path = "../zk-recovery" }

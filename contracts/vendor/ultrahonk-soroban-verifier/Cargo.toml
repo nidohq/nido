@@ -1,0 +1,40 @@
+[package]
+name = "ultrahonk_soroban_verifier"
+version = "0.1.0"
+edition = "2021"
+
+license = "MIT"
+description = "Rust verifier for UltraHonk proofs"
+repository = "https://github.com/yugocabrio/rs-soroban-ultrahonk"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+
+ark-ff = { version = "0.5", default-features = false }
+ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
+ark-ec = { version = "0.5", default-features = false, optional = true }
+
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+
+lazy_static = { version = "1.4", optional = true }
+once_cell = { version = "1.19", default-features = false, features = [
+    "alloc",
+    "race",
+] }
+# Retargeted from upstream git rev 3b031847eb043856cc5bcad45bd5a6512370cd16
+# onto nido's workspace soroban-sdk = "26.0.1" (see task-1-brief.md).
+# (No explicit `default-features`: the workspace dependency itself does not
+# set it, and cargo warns/will hard-error if a member overrides it locally.)
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+default = ["alloc"]
+std = ["ark-ff/std", "ark-bn254/std", "ark-ec", "ark-ec/std", "hex/std", "lazy_static", "once_cell/std"]
+trace = []
+
+alloc = ["hex/alloc", "once_cell/alloc"]

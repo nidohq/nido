@@ -6,6 +6,85 @@ on:
     branches: [main]
 
 jobs:
+  contracts:
+    name: Contracts (cargo test --workspace)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No rust-toolchain.toml pin in this repo -- `stable` matches local dev.
+      # `wasm32v1-none` is the target `just build-contracts`/`cargo build
+      # --target wasm32v1-none` compiles the contract wasms for.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: contracts
+
+      # Fast, prebuilt-binary install (no compile-from-source).
+      - name: Install just
+        uses: taiki-e/install-action@just
+
+      # `stellar-cli` (binary `stellar`) and `stellar-scaffold-cli` (binary
+      # `stellar-scaffold`) aren't available as prebuilt actions, so build
+      # them from crates.io. Cached separately from the cargo
+      # registry/target cache above (keyed only on tool name, not
+      # Cargo.lock) so a workspace dependency bump doesn't force
+      # re-installing these.
+      - name: Cache Stellar CLI + stellar-scaffold binaries
+        id: stellar-tools-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/stellar
+            ~/.cargo/bin/stellar-scaffold
+          key: ${{ runner.os }}-stellar-cli-tools-v1
+
+      - name: Install Stellar CLI + stellar-scaffold
+        if: steps.stellar-tools-cache.outputs.cache-hit != 'true'
+        # `just build-contracts` (below) runs `stellar-scaffold build` then
+        # `stellar contract optimize` -- the CLIs providing those binaries.
+        run: |
+          # stellar-cli v27's hardware-wallet support pulls `libdbus-sys`
+          # (dbus-secret-service) and `hidapi` (Ledger), whose build.rs's panic
+          # unless the system dbus + udev dev headers + pkg-config are present.
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
+          cargo install --locked stellar-cli
+          cargo install --locked stellar-scaffold-cli
+
+      # Topologically builds every contract wasm (smart-account before the
+      # factory, whose build.rs embeds the current smart-account wasm), then
+      # optimizes them -- see the recipe's comments in `justfile` for why
+      # smart-account is optimized and factory is rebuilt BEFORE the final
+      # optimize pass (a stale pre-optimize embed otherwise silently desyncs
+      # the factory's internally-computed wasm hash from the final,
+      # post-optimize wasm every other consumer reads).
+      - name: Build contract wasms
+        run: just build-contracts
+
+      - name: Check vendored UltraHonk verifier hasn't drifted
+        run: just check-vendor-drift
+
+      # Runs the whole Rust workspace, including the M0/M1/M2 real-proof ZK
+      # integration tests (crates/integration-tests, crates/zk-bench,
+      # contracts/*) -- the committed bb proof/vk/public-inputs fixtures
+      # under crates/integration-tests/fixtures/zk/ mean no bb/Docker/Noir
+      # toolchain is needed here; the cost-gate tests
+      # (bench-zk/bench-zk-initiate/bench-zk-guard) raise their own live
+      # budget in-process (see their module docs) rather than depending on
+      # any CI-specific configuration.
+      # Exclude the vendored UltraHonk verifier crate: its upstream tests read
+      # fixture files we don't vendor ("No such file or directory" on a clean
+      # checkout). nido exercises the verifier through its own integration
+      # tests (crates/integration-tests), which run here.
+      - name: cargo test --workspace
+        run: cargo test --workspace --exclude ultrahonk_soroban_verifier
+
   unit:
     name: Unit (TestAuthenticator)
     runs-on: ubuntu-latest

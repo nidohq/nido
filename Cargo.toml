@@ -1,9 +1,17 @@
 [workspace]
 resolver = "2"
-members = ["crates/integration-tests", "contracts/*"]
+members = [
+    "crates/integration-tests",
+    "crates/zk-bench",
+    "contracts/*",
+    # Nested under contracts/vendor/, so not matched by the "contracts/*" glob.
+    "contracts/vendor/ultrahonk-soroban-verifier",
+]
 # examples/* are self-contained stellar-scaffold projects with their own
 # workspace + toolchain; keep them out of this workspace's resolution.
-exclude = ["examples"]
+# contracts/vendor itself has no Cargo.toml (only its nested crate does), so it
+# must be excluded from the "contracts/*" glob or that glob fails to resolve.
+exclude = ["examples", "contracts/vendor"]
 
 [workspace.package]
 version = "0.1.0"

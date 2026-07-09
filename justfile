@@ -2,13 +2,97 @@
 default:
     @just --list
 
-# Run all workspace tests
+# Run all workspace tests. Exclude the vendored UltraHonk verifier crate: its
+# upstream tests read fixture files we don't vendor ("No such file or
+# directory" on a clean checkout); nido exercises the verifier through its own
+# integration tests (crates/integration-tests) instead.
 test:
-    cargo test --workspace
+    cargo test --workspace --exclude ultrahonk_soroban_verifier
 
 # Build all crates (native)
 build:
     cargo build --workspace
+
+# Compile the zk_recovery Noir circuit and generate its VK/proof/public-inputs
+# artifacts + manifest under circuits/zk_recovery/{target,public/circuits}.
+# See circuits/zk_recovery/scripts/gen_artifacts.sh for details (falls back
+# to docker for the bb steps if the local bb can't run -- e.g. glibc < 2.38).
+build-circuits:
+    bash circuits/zk_recovery/scripts/gen_artifacts.sh
+
+# Rerun the zk_recovery circuit build and re-stage its vk/proof/public_inputs
+# artifacts as test fixtures under crates/integration-tests/fixtures/zk/ (used
+# by crates/zk-bench's real-metering budget gate and any other zk-verifier
+# integration tests). Records the staged fixtures' sha256 into
+# crates/integration-tests/fixtures/zk/manifest.json, alongside a pointer at
+# the circuit build's own manifest (circuits/zk_recovery/public/circuits/manifest.json)
+# for cross-checking provenance.
+gen-zk-fixtures:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just build-circuits
+    mkdir -p crates/integration-tests/fixtures/zk
+    cp circuits/zk_recovery/target/vk crates/integration-tests/fixtures/zk/vk
+    cp circuits/zk_recovery/target/proof crates/integration-tests/fixtures/zk/proof
+    cp circuits/zk_recovery/target/public_inputs crates/integration-tests/fixtures/zk/public_inputs
+    vk_sha=$(sha256sum crates/integration-tests/fixtures/zk/vk | cut -d' ' -f1)
+    proof_sha=$(sha256sum crates/integration-tests/fixtures/zk/proof | cut -d' ' -f1)
+    pub_sha=$(sha256sum crates/integration-tests/fixtures/zk/public_inputs | cut -d' ' -f1)
+    built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    printf '{\n  "vkSha256": "%s",\n  "proofSha256": "%s",\n  "publicInputsSha256": "%s",\n  "sourceCircuitManifest": "circuits/zk_recovery/public/circuits/manifest.json",\n  "builtAt": "%s"\n}\n' \
+        "$vk_sha" "$proof_sha" "$pub_sha" "$built_at" > crates/integration-tests/fixtures/zk/manifest.json
+    echo "[ok] Staged zk fixtures + wrote manifest:"
+    cat crates/integration-tests/fixtures/zk/manifest.json
+
+# M1 Task 1: generate the pinned "lifecycle" fixture -- a REAL bb proof for
+# the fixed witness in crates/integration-tests/src/zk_fixture.rs
+# (account=[0x11;32], controller=[0x22;32], the Test SDF Network passphrase,
+# nonce=1, timelock_secs=1_209_600 secs, a deterministic P-256 pubkey,
+# single-leaf depth-24 tree). Reuses the same M0 circuit/VK, only the
+# witness differs. Writes circuits/zk_recovery/fixtures/lifecycle/
+# {prover_inputs.json,proof,public_inputs}. See
+# circuits/zk_recovery/scripts/gen_lifecycle_fixture.sh for the full flow.
+gen-zk-lifecycle-fixture:
+    bash circuits/zk_recovery/scripts/gen_lifecycle_fixture.sh
+
+# Task 4 GO/NO-GO gate: real-metering verify_proof CPU cost (<=250M gate, real 400M tx cap), measured
+# against the real depth-24 circuit's proof/vk/public_inputs fixtures via a
+# registered (not native) Wasm verifier contract. See
+# crates/zk-bench/tests/budget.rs for the full metering methodology.
+bench-zk:
+    cargo test -p nido-zk-bench --test budget -- --nocapture
+
+# Task 8 GO/NO-GO gate (FINAL M1 task): real-metering cost of the WHOLE
+# `initiate_recovery` transaction (<=350M gate, real 400M
+# tx_max_instructions cap) -- not just verify_proof (that's `bench-zk`
+# above). Registers the REAL compiled nido_zk_recovery.wasm + M0's
+# nido_zk_verifier.wasm at the pinned M1 lifecycle-fixture addresses and
+# measures a single real initiate_recovery call against the real fixture
+# proof. Builds the recovery contract wasm first (needed by the test's
+# `include_bytes!`, which is NOT built automatically by `cargo test`). See
+# crates/integration-tests/tests/it/initiate_cost.rs for the full
+# methodology, including why this lives here rather than in
+# crates/zk-bench.
+bench-zk-initiate:
+    SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 \
+        cargo build -p nido-zk-recovery --target wasm32v1-none --profile contract
+    cargo test -p nido-integration-tests --test it initiate_cost -- --nocapture
+
+# Task 8 GO/NO-GO gate (FINAL M2 task) Part A: real-metering cost of the
+# in-account guard's cross-call (M2 Task 4's `guard_no_pending` ->
+# `has_pending`), gated at <=10M CPU (the SDF policy-cross-call target,
+# distinct from `bench-zk-initiate`'s whole-transaction 350M gate). Measures
+# a single `remove_signer` call: (1) against a REAL, Wasm-registered
+# `nido-zk-recovery` controller with a genuine live pending (the guard
+# fires, cross-calls `has_pending`, panics `RecoveryPendingBlocked`), and
+# (2) as a baseline against an account with no recovery controller
+# configured at all (the guard is a no-op, no cross-call). Requires all
+# contract wasms (needs the recovery + verifier + smart-account wasms'
+# `include_bytes!`, which is NOT built automatically by `cargo test`). See
+# crates/integration-tests/tests/it/guard_cost.rs for the full methodology.
+bench-zk-guard:
+    just build-contracts
+    cargo test -p nido-integration-tests --test it guard_cost -- --nocapture
 
 # Build and optimize Soroban contracts.
 # `stellar-scaffold build` topologically sorts the contract crates (via the
@@ -24,10 +108,36 @@ build:
 # Scaffold does NOT run wasm-opt, so we optimize in-place afterwards (the old
 # `stellar contract build --optimize` did this); deployed wasm must stay
 # optimized.
+#
+# Embed-freshness fix (M2 Task 8): `contracts/factory/build.rs` embeds
+# smart-account's wasm bytes into the factory binary at COMPILE time, which
+# happens during the `stellar-scaffold build` pass below -- i.e. BEFORE any
+# optimize step runs. Optimizing everything only at the very end (as this
+# recipe used to) leaves factory permanently embedding the PRE-optimize
+# smart-account bytes, while every other consumer (this repo's
+# `nido_integration_tests::SMART_ACCOUNT_WASM`, `stellar contract deploy` of
+# the standalone wasm, ...) reads the FINAL, POST-optimize file -- a real,
+# silent wasm-hash mismatch (`Wasm does not exist` when a test/deploy uploads
+# the post-optimize bytes but factory's `deploy_v2` looks up the hash of its
+# own stale pre-optimize embed; caught by
+# `zk_recovery_e2e::dummy_and_real_enrollment_are_indistinguishable_on_chain`,
+# which does exactly that). Fix: optimize smart-account FIRST, then force a
+# factory-only rebuild (the same `cargo rustc` invocation `stellar-scaffold`
+# itself uses for it) so its build.rs re-embeds the NOW-optimized bytes --
+# its `cargo:rerun-if-changed` on the wasm path makes this a normal,
+# correct incremental rebuild, not a full recompile. Everything else
+# (including factory's own wasm) is optimized last, as before.
 build-contracts:
     SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 stellar-scaffold build --profile contract
+    stellar contract optimize \
+        --wasm target/wasm32v1-none/contract/nido_smart_account.wasm \
+        --wasm-out target/wasm32v1-none/contract/nido_smart_account.wasm
+    CARGO_BUILD_RUSTFLAGS="--remap-path-prefix=$HOME/.cargo/registry/src=" \
+        SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 \
+        cargo rustc --manifest-path=contracts/factory/Cargo.toml \
+            --crate-type=cdylib --target=wasm32v1-none --profile=contract
     @for wasm in target/wasm32v1-none/contract/*.wasm; do \
-        case "$wasm" in *.optimized.wasm) continue;; esac; \
+        case "$wasm" in *.optimized.wasm|*nido_smart_account.wasm) continue;; esac; \
         echo "→ optimize $wasm"; \
         stellar contract optimize --wasm "$wasm" --wasm-out "$wasm"; \
     done
@@ -39,6 +149,14 @@ build-ts:
 check:
     cargo fmt --all -- --check
     cargo clippy  --all --tests -- -Dclippy::pedantic
+
+# Verify the vendored (unaudited, third-party) UltraHonk Soroban verifier
+# crate under contracts/vendor/ultrahonk-soroban-verifier/src/ hasn't been
+# hand-edited, by comparing its sha256 manifest against the committed
+# CHECKSUMS.sha256. See scripts/check-vendor-drift.sh for details and how
+# to regenerate the baseline after a deliberate, reviewed vendor bump.
+check-vendor-drift:
+    bash scripts/check-vendor-drift.sh
 
 # Format all code
 fmt:
