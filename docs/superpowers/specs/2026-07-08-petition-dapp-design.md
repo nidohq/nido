@@ -127,11 +127,11 @@ pub enum TrustError {
     AlreadyVouched = 2,
     VouchNotFound = 3,
     PreVouchExists = 4,
-    PreVouchNotFound = 5,   // also: exhausted (deleted at cap) or never created
+    PreVouchNotFound = 5,   // also: exhausted (deleted at cap), never created,
+                            // or revoke by non-creator (no creator leak)
     PreVouchExpired = 6,
-    BadClaimSignature = 7,
-    InvalidMaxClaims = 8,   // max_claims == 0
-    ExpiryInPast = 9,       // pre_vouch: expires <= current ledger
+    InvalidMaxClaims = 7,   // max_claims == 0
+    ExpiryInPast = 8,       // pre_vouch: expires <= current ledger
 }
 
 #[contracttype]
@@ -190,7 +190,10 @@ pub fn claim_vouch(
     e: &Env, key: &BytesN<32>, to: &Address, sig: &BytesN<64>,
 ) -> Result<(), TrustError>;
 // Entry exists and not expired. Verifies `sig` with `key` (ed25519) over the
-// domain-separated payload (current contract address, "claim_vouch", to).
+// domain-separated payload (current contract address, "adsum:claim_vouch",
+// to). NOTE: env.crypto().ed25519_verify is a trapping host function — an
+// invalid signature aborts with a host error rather than a typed
+// TrustError (same behavior as the webauthn-verifier's secp256r1 check).
 // Then the normal vouch checks (entry.from != to, edge not already present —
 // which also dedupes repeat claims by the same account) and creates the
 // entry.from -> to edge. claims += 1; the entry is deleted at max_claims.
