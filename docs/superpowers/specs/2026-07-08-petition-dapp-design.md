@@ -32,6 +32,7 @@ the Adsum brand lives at the dapp layer.
 | Pre-vouch invites | Secret-based: ephemeral ed25519 keypair (front-run-safe, unlike hash preimages), QR carries secret, claim binds signature to claimant address. Multi-use with cap + optional expiry |
 | Error handling | `#[contracterror]` enums + `Result` returns (typed errors preferred over the existing string-panic idiom; pattern for these and future contracts) |
 | Storage idiom | `soroban-sdk-tools` (`#[contractstorage]`, `PersistentMap`, `InstanceItem`) |
+| Events | Yes — `#[contractevent]` structs on both contracts (zk-recovery set the precedent); enables a `getEvents` indexer later |
 | Placement | Dual-copy precedent: canonical crates in `contracts/`, vendored copies in the example's own cargo workspace |
 | Deploy | Cloudflare Pages, `adsum.pages.dev` first; custom domain later |
 | ZK in v1 | None in code; migration path documented here |
@@ -109,6 +110,10 @@ pub fn extend_ttl(e: &Env, id: u32) -> Result<(), PetitionError>;
 ```
 
 Views return `Option`/plain values; only fallible mutations return `Result`.
+
+Events (`#[contractevent]` structs with `data_format = "map"`, published via
+`.publish(env)` — the `zk-recovery` `types.rs` precedent): `PetitionCreated
+{ id, creator }`, `PetitionSigned { id, signer }`.
 
 ## Contract: `contracts/web-of-trust/` (`nido-web-of-trust`)
 
@@ -204,6 +209,9 @@ Invite secrets never touch the chain; the dapp keeps them (with their pubkeys)
 in localStorage so the creator can re-display QR codes and read claim counts
 via `get_pre_vouch` — no on-chain creator index needed.
 
+Events: `Vouched { from, to }`, `VouchRevoked { from, to }`,
+`PreVouchCreated { key, from }`, `VouchClaimed { key, from, to }`.
+
 No eligibility computation lives on-chain in v1. The petitions contract has no
 dependency on this contract; they are coupled only in the dapp UI.
 
@@ -242,10 +250,19 @@ first (`moduleOrder` helper, unit-tested), `WalletProvider`/`useWallet`
 pattern reused. **v1 signs everything through the standard kit
 `signTransaction` path** — bindings `AssembledTransaction.signAndSend` with
 the kit callback — for classic wallets and Nido (popup) alike, including
-handling `AlreadySubmittedError` (Nido relayer may have already submitted)
-and `ACCOUNT_SWITCH_REQUESTED`. The in-page session-passkey + relayer gasless
-flow from status-message-dapp is explicitly deferred; it is the largest
-complexity chunk in that example and not needed to seed the product.
+handling `ACCOUNT_SWITCH_REQUESTED` and the `submitted: true` sentinel guard
+(`AlreadySubmittedError` pattern from `StatusMessage.tsx`): a Nido wallet in
+relayer mode submits wallet-side and returns the hash, so Nido users are
+already gasless on this path and `signAndSend` must not re-broadcast.
+
+Deferred as one unit: **in-page session-passkey signing with relayer
+submission** (`signSessionCallInPage` core + `extractFuncAndAuth` →
+`submitSorobanTransaction` → `waitForConfirmation` from `@nidohq/passkey-sdk`,
+`expirationOffset` ≈ 120 ledgers since signed auth entries leave the page).
+There is no sanctioned fee-payer/friendbot intermediate — that pattern was
+deleted from status-message-dapp as a bug (#129). The relayer client is
+already exported and `nidoSign.ts` is a clean copy reference, so deferral is
+a UX/scope call, not a plumbing one.
 
 ### Trust badges (client-side)
 
@@ -257,7 +274,9 @@ For each visible signer: one `vouches_received` simulation read → badge
   intersected with viewer's `given` (viewer's list fetched once and cached).
 
 Reads are simulation-only, batched per visible page of signers, cached per
-session. No indexer, no events.
+session. No indexer in v1; the contracts emit events so a `getEvents`-based
+indexer (the `infra/pool-indexer` Cloudflare Worker precedent — mind the
+7-day event retention) can be added when listing outgrows simulation reads.
 
 ### QR vouching
 
@@ -314,8 +333,11 @@ per-account passkey origins).
 - `justfile`: add both names to `bindings-all` loop when/if
   `packages/contract-bindings/` clients are wanted (deferred; example uses
   scaffold-generated clients).
-- Testnet deploy of canonical contracts recorded in `DEPLOYED.md`; example's
-  staging `environments.toml` pinned to those ids.
+- Testnet deploy of canonical contracts recorded in `DEPLOYED.md` and names
+  registered in the unverified registry. Deploy via a JS-SDK script following
+  `scripts/deploy-zk-recovery.mjs` — stellar-cli 26.0.0 fails with "Missing
+  Entry Context" on scaffold-built contracts (documented in `DEPLOYED.md`).
+  Example's staging `environments.toml` pinned to those ids.
 - CI: new Pages-deploy workflow; existing `test.yml` unaffected (vitest
   auto-discovers nothing new at root; example has its own `test`/`lint`/
   `typecheck` scripts run in the new workflow before deploy).
@@ -346,41 +368,84 @@ per-account passkey origins).
   order, env parsing, ledger/date conversion helpers, `buildVouchUrl` /
   `parseVouchParam` (valid strkeys, junk, missing param); `lint` and
   `typecheck` scripts.
-- **Fast-lane e2e** (`@fast`, no chain): `/vouch?for=<addr>` renders the
-  confirmation card from the URL param.
-- **E2E**: quarantined `tests/e2e/testnet/adsum.testnet.spec.ts`
-  driving create → vouch → sign → badge assertions against real testnet;
-  never gates PRs.
+- **Fast-lane e2e** (`@fast`-tagged titles, gates PRs): `/vouch?for=<addr>`
+  renders the confirmation card from the URL param; petition list / sign /
+  vouch flows against a chain double following the `tests/support/
+  zkChainMock.ts` pattern — Playwright route interception of the RPC host
+  answering real stellar-sdk-encoded XDR, dispatched by (contract id,
+  function). Extend that helper rather than inventing a new mock.
+- **E2E testnet**: quarantined `tests/e2e/testnet/adsum.testnet.spec.ts`
+  (`@testnet`-tagged) driving create → vouch → sign → badge assertions
+  against real testnet; never gates PRs (manual `test-testnet.yml` /
+  `just test-e2e-testnet`).
 - **Gates**: `just check` (fmt + clippy pedantic, tests included) and
   `just test` green.
 
 ## ZK migration path (documentation only — no v1 code)
 
-The v1 interfaces were chosen so zk arrives additively:
+The repo now ships a production ZK stack (ZK account recovery, M0–M4):
+**Noir** circuits proven with **UltraHonk** (Barretenberg) over **BN254**,
+verified on-chain by the vendored `contracts/vendor/ultrahonk-soroban-verifier`
+library using Soroban's native `bn254` host functions and a keccak
+Fiat-Shamir transcript (`--verifier_target evm-no-zk`). The petition zk
+milestone reuses that stack wholesale — not Groth16/BLS12-381, which an
+earlier draft of this section assumed.
 
-1. **Trust-graph commitment.** `web-of-trust` later maintains a commitment to
-   the edge set (e.g. an incrementally-updated Merkle root recomputed on
-   `vouch`/`revoke`), exposed as `trust_root() -> BytesN<32>`. Plaintext
-   edges remain during transition.
-2. **Private signing.** `petitions` gains a new function:
-   `sign_private(id, proof: Bytes, nullifier: BytesN<32>)`. The proof is a
-   Groth16 proof verified on-chain via the Protocol 23 BLS12-381 host
-   functions, asserting: "I control an identity that satisfies petition
-   `id`'s trust criteria within the graph committed at root R". The
-   `nullifier = PRF(sk, petition_id)` is stored in a per-petition nullifier
-   set to block double-signing without cross-petition linkability. Public
-   `sign` and private `sign_private` coexist; `sig_count` counts both.
-3. **Criteria.** Per-petition eligibility criteria (trusted root accounts +
-   max path depth — deliberately deferred from v1) enter the `Petition`
-   struct when enforcement lands, and become public inputs to the circuit.
-4. **Private vouching (later still).** Replace plaintext edges with vouch
-   commitments so the graph itself is private; the prover then needs
-   witnesses supplied off-chain by cooperating vouchers. Pre-vouch invites
-   are a conceptual stepping stone here: a vouch as a bearer credential
-   (secret in hand) rather than a public edge.
+What already exists and carries over:
 
-Wallet-side proving (circuit toolchain, proving keys, witness distribution)
-is out of scope for this document.
+- **Verifier**: `contracts/zk-verifier` is circuit-agnostic wasm; one deployed
+  instance per verification key. Petition zk-signing = `bb write_vk` for the
+  petition circuit, deploy a new instance with that VK, register it (e.g.
+  `adsum-verifier`) in the registry. No new verifier code.
+- **Circuit shape**: `circuits/zk_recovery` is already the Semaphore pattern —
+  Poseidon2 Merkle membership + nullifier + one `auth_hash` public input,
+  fixed 3-public-input layout (`root || nullifier || auth_hash`, 96 bytes).
+  The petition circuit keeps that shape; the existing verifier contract,
+  blob layout, and prover plumbing then work unchanged.
+- **Contract patterns** (from `contracts/zk-recovery`): cross-call the
+  verifier via `try_invoke_contract("verify_proof", …)` mapping failure to
+  one error; recompute `auth_hash` on-chain from the call's own arguments
+  (binding contract address, network passphrase, petition id, nonce) — this
+  is what makes submission permissionless and relayable; Poseidon2 host
+  hashing via the pinned `soroban-poseidon` rev with fresh `DOM_*` domain
+  constants; the depth-24 incremental Merkle frontier + 128-slot historic
+  root ring (`merkle.rs`) is exactly the commitment pool a trust-graph
+  membership proof needs; BN254 canonicality guard (reject values ≥ scalar
+  order, never reduce); `NullifierState::Spent` persistent-key idiom.
+- **Prover**: `packages/frontend/src/lib/zk/prover.ts` + worker (dynamic
+  `@noir-lang/noir_js` + `@aztec/bb.js`, no COOP/COEP requirement,
+  `__ZK_PROVER_STUB__` hook for fast-lane e2e). Proving takes tens of
+  seconds — UX must plan for it. Circuit artifacts served from the dapp's
+  `public/circuits/` with sha256-pinned `manifest.json`.
+- **CI/cost discipline**: committed real bb fixtures so tests never need
+  nargo/bb; hard budget gates (`verify_proof` ≤ 250M CPU, whole
+  proof-carrying tx ≤ 350M vs the 400M cap — `crates/zk-bench` pattern);
+  Poseidon2 parity vectors across Noir / Rust / TS implementations.
+
+The migration itself:
+
+1. **Trust-graph commitment.** `web-of-trust` gains a Poseidon2 Merkle pool
+   of identity commitments (frontier + root ring per `merkle.rs`), exposed
+   as `trust_root()`/`is_known_root()`. Plaintext edges remain during
+   transition.
+2. **Private signing.** `petitions` gains
+   `sign_private(id, proof: Bytes, nullifier: BytesN<32>, …)`: verifier
+   cross-call proves "I control an identity satisfying petition `id`'s
+   criteria in the graph at a known root"; per-petition external nullifier
+   `Poseidon2(DOM_ADSUM_NULL, petition_id, secret)` blocks double-signing
+   without cross-petition linkability. Public `sign` and `sign_private`
+   coexist; `sig_count` counts both.
+3. **Criteria.** Per-petition eligibility criteria (trusted roots + max path
+   depth — deferred from v1) enter the `Petition` struct and become public
+   inputs.
+4. **Private vouching (later still).** Vouch commitments instead of plaintext
+   edges; witnesses supplied off-chain by cooperating vouchers. Pre-vouch
+   invites are a conceptual stepping stone: a vouch as a bearer credential
+   rather than a public edge.
+
+Because the primitives are live today, v1 needs no zk code to stay
+compatible — the later milestone adds a Noir circuit, a verifier instance,
+and new contract functions, with no storage-format migration.
 
 ## Out of scope for v1
 
@@ -390,5 +455,6 @@ is out of scope for this document.
 - Vouch weights, expiry, or metadata.
 - In-app QR camera scanner (phone camera + URL QR covers v1) and
   petition-share QR.
-- Events/indexer; all reads are RPC simulation.
+- Indexer; all v1 reads are RPC simulation (events are emitted but nothing
+  consumes them yet).
 - Custom domain and mainnet deployment.
