@@ -29,6 +29,7 @@ the Adsum brand lives at the dapp layer.
 | Lifecycle | Optional signature goal + optional deadline; no edit/close/un-sign |
 | Trust model v1 | No on-chain eligibility enforcement; open signing; trust shown as client-computed badges |
 | Vouch semantics | Directed, revocable edges; no weights, no expiry |
+| Pre-vouch invites | Secret-based: ephemeral ed25519 keypair (front-run-safe, unlike hash preimages), QR carries secret, claim binds signature to claimant address. Multi-use with cap + optional expiry |
 | Error handling | `#[contracterror]` enums + `Result` returns (typed errors preferred over the existing string-panic idiom; pattern for these and future contracts) |
 | Storage idiom | `soroban-sdk-tools` (`#[contractstorage]`, `PersistentMap`, `InstanceItem`) |
 | Placement | Dual-copy precedent: canonical crates in `contracts/`, vendored copies in the example's own cargo workspace |
@@ -120,12 +121,27 @@ pub enum TrustError {
     SelfVouch = 1,
     AlreadyVouched = 2,
     VouchNotFound = 3,
+    PreVouchExists = 4,
+    PreVouchNotFound = 5,   // also: exhausted (deleted at cap) or never created
+    PreVouchExpired = 6,
+    BadClaimSignature = 7,
+    InvalidMaxClaims = 8,   // max_claims == 0
+    ExpiryInPast = 9,       // pre_vouch: expires <= current ledger
+}
+
+#[contracttype]
+pub struct PreVouch {
+    pub from: Address,
+    pub expires: Option<u32>, // ledger sequence
+    pub max_claims: u32,      // >= 1
+    pub claims: u32,          // claimed so far
 }
 
 #[contractstorage]
 struct Graph {
-    given:    PersistentMap<Address, Vec<Address>>, // whom `a` vouches for
-    received: PersistentMap<Address, Vec<Address>>, // who vouches for `a`
+    given:       PersistentMap<Address, Vec<Address>>, // whom `a` vouches for
+    received:    PersistentMap<Address, Vec<Address>>, // who vouches for `a`
+    pre_vouches: PersistentMap<BytesN<32>, PreVouch>,  // key = ed25519 pubkey
 }
 ```
 
@@ -147,6 +163,46 @@ pub fn has_vouched(e: &Env, from: &Address, to: &Address) -> bool;
 pub fn extend_ttl(e: &Env, a: &Address);
 // Extends both of `a`'s entries if present; infallible no-op otherwise.
 ```
+
+### Pre-vouch invites
+
+A user creates an invite secret; whoever redeems it gets vouched by the
+creator — including brand-new accounts that didn't exist when the invite was
+made. The secret is an **ephemeral ed25519 keypair**, not a hash preimage: a
+preimage scheme is front-runnable (the claim transaction reveals the secret,
+which an observer could redirect to their own address), whereas here the
+claim carries a signature over the claimant's address, so an observed claim
+is useless to anyone else.
+
+```rust
+pub fn pre_vouch(
+    e: &Env, from: &Address, key: &BytesN<32>,
+    expires: &Option<u32>, max_claims: u32,
+) -> Result<(), TrustError>;
+// from.require_auth(); key unused; max_claims >= 1; expires in future if set.
+
+pub fn claim_vouch(
+    e: &Env, key: &BytesN<32>, to: &Address, sig: &BytesN<64>,
+) -> Result<(), TrustError>;
+// Entry exists and not expired. Verifies `sig` with `key` (ed25519) over the
+// domain-separated payload (current contract address, "claim_vouch", to).
+// Then the normal vouch checks (entry.from != to, edge not already present —
+// which also dedupes repeat claims by the same account) and creates the
+// entry.from -> to edge. claims += 1; the entry is deleted at max_claims.
+// Deliberately NO require_auth on `to`: the signature IS the authorization,
+// so any party (dapp, relayer) can submit the claim — a zero-balance new
+// account can be vouched without signing its first transaction.
+
+pub fn revoke_pre_vouch(e: &Env, from: &Address, key: &BytesN<32>)
+    -> Result<(), TrustError>;
+// from.require_auth(); entry must exist and entry.from == from.
+
+pub fn get_pre_vouch(e: &Env, key: &BytesN<32>) -> Option<PreVouch>;
+```
+
+Invite secrets never touch the chain; the dapp keeps them (with their pubkeys)
+in localStorage so the creator can re-display QR codes and read claim counts
+via `get_pre_vouch` — no on-chain creator index needed.
 
 No eligibility computation lives on-chain in v1. The petitions contract has no
 dependency on this contract; they are coupled only in the dapp UI.
@@ -223,6 +279,19 @@ already takes an arbitrary target.
   simply looks unrecognized.
 - **Helpers**: pure `buildVouchUrl` / `parseVouchParam` functions with
   colocated vitest tests.
+- **Pre-vouch invites**: Trust page "Create invite" form (uses, default 1;
+  expiry, default ~30 days ≈ 518,400 ledgers) generates a keypair client-side,
+  submits `pre_vouch(me, pk, expires, max_claims)`, then shows a QR of
+  `/claim?k=<secret key>`. Invites (secret + pk + label) persist in
+  localStorage; the Trust page lists them with live `x/y claimed` from
+  `get_pre_vouch`, re-showable QR, and revoke buttons. The `/claim` route
+  derives the pubkey, loads the invite, and shows "<resolved name> has
+  pre-vouched you" (same anti-spoof rule: names resolved on-chain, never from
+  the URL). Not connected → onboarding CTA (Nido account creation via the
+  wallet selector), secret held in localStorage across the roundtrip, then
+  the claim signature is built (stellar-sdk `Keypair`) and submitted.
+  UI copy warns: the QR *is* the vouch — anyone scanning it can claim one of
+  its uses; revocable until exhausted.
 - **Deferred**: in-app camera scanner (`BarcodeDetector` is unsupported in
   Safari; the phone camera scanning a URL QR covers v1). Petition-share QR
   uses the same mechanics if wanted later.
@@ -260,7 +329,13 @@ per-account passkey origins).
   boundaries: title/body at cap and over, empty strings, deadline at current
   ledger, sign at deadline boundary, double-sign, self-vouch, duplicate
   vouch, revoke-nonexistent, pagination edges (start past end, limit 0,
-  partial last page), `has_*` on empty state.
+  partial last page), `has_*` on empty state. Pre-vouch: claim happy path,
+  bad signature, wrong-key signature, signature bound to a different address,
+  expired, exhausted (cap reached deletes entry), repeat claim by same
+  account (`AlreadyVouched`), creator claims own invite (`SelfVouch`),
+  revoke by non-creator, `max_claims == 0`. Test signatures need an ed25519
+  signer (`ed25519-dalek` dev-dependency, alongside the existing p256 pattern
+  in integration tests).
 - **Integration tests**: `crates/integration-tests/tests/it/petitions.rs`
   and `web_of_trust.rs`, wasm-level (`include_bytes!` + `#[contractclient]`
   traits). At least one real-auth-path test signs a petition through a
@@ -300,7 +375,9 @@ The v1 interfaces were chosen so zk arrives additively:
    struct when enforcement lands, and become public inputs to the circuit.
 4. **Private vouching (later still).** Replace plaintext edges with vouch
    commitments so the graph itself is private; the prover then needs
-   witnesses supplied off-chain by cooperating vouchers.
+   witnesses supplied off-chain by cooperating vouchers. Pre-vouch invites
+   are a conceptual stepping stone here: a vouch as a bearer credential
+   (secret in hand) rather than a public edge.
 
 Wallet-side proving (circuit toolchain, proving keys, witness distribution)
 is out of scope for this document.
