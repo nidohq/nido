@@ -13,7 +13,10 @@ import { signAndSendWithSentinel } from "./sentinel"
  * If the sentinel is working, `broadcast` must never be reached.
  */
 function fakeTx() {
-	const broadcast = vi.fn(() => ({
+	// Typed to accept what `signAndSend` actually passes it below (the
+	// resolved `signTransaction` result) — the fake previously took 0
+	// arguments, which drifted from its call site.
+	const broadcast = vi.fn((_signed: Awaited<ReturnType<SignTransaction>>) => ({
 		sendTransactionResponse: { hash: "network-hash" },
 	}))
 	const tx = {

@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "format": "prettier . --write",
     "test": "vitest run",
-    "typecheck": "tsc"
+    "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.2.0",

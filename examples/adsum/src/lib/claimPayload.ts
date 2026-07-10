@@ -45,7 +45,7 @@ export function signClaim(
 	const payload = buildClaimPayload(contractId, to)
 	return {
 		key: new Uint8Array(keypair.rawPublicKey()),
-		sig: new Uint8Array(keypair.sign(payload)),
+		sig: new Uint8Array(keypair.sign(Buffer.from(payload))),
 	}
 }
 

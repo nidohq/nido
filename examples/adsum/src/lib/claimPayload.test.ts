@@ -54,7 +54,9 @@ describe("signClaim", () => {
 		const tampered = Buffer.from(
 			buildClaimPayload(FIXTURE_CONTRACT, FIXTURE_CLAIMANT),
 		)
-		tampered[0] ^= 0xff
+		// Non-null: buildClaimPayload always emits two address ScVal XDRs plus
+		// the domain separator, so index 0 is always defined (noUncheckedIndexedAccess).
+		tampered[0]! ^= 0xff
 		expect(keypair.verify(tampered, Buffer.from(sig))).toBe(false)
 	})
 })
