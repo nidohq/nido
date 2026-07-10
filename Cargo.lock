@@ -1063,6 +1063,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nido-petitions"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "soroban-sdk-tools",
+]
+
+[[package]]
 name = "nido-smart-account"
 version = "0.1.0"
 dependencies = [
