@@ -6,7 +6,7 @@
 //! `target/wasm32v1-none/contract/nido_smart_account.wasm`.
 //!
 //! This script copies that wasm to a stable staging location —
-//!   <workspace-target>/stellar/<STELLAR_NETWORK or "local">/smart_account_0_1_0.wasm
+//!   `<workspace-target>/stellar/<STELLAR_NETWORK or "local">/smart_account_0_1_0.wasm`
 //! (the path `stellar_build::get_target_dir` would resolve) — and exports
 //! `STELLAR_ACCOUNT_WASM` pointing at it, so the embed path lives in exactly
 //! one place. `src/contract.rs` then `include_bytes!`es that path and derives

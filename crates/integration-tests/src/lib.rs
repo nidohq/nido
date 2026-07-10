@@ -80,6 +80,10 @@ trait SmartAccountInterface {
 /// guarantees that seeds 1, 2, 3, 4, … always yield the same key so tests
 /// are reproducible. Never reuse seed 1 for friend keys — `deploy_smart_account`
 /// internally uses a random key for the primary passkey signer.
+///
+/// # Panics
+/// Panics if the derived scalar bytes fail to produce a valid `SigningKey`.
+#[must_use]
 pub fn test_key(seed: u64) -> SigningKey {
     let mut hasher = Sha256::new();
     hasher.update(b"nido-test-key:");
@@ -160,6 +164,7 @@ pub fn build_contract_assertion(
 /// helper that have nothing to do with zk-recovery). Tests that need the
 /// recovery rule installed at construction should use
 /// [`deploy_smart_account_with_recovery`] instead.
+#[must_use]
 pub fn deploy_smart_account(
     env: &soroban_sdk::Env,
 ) -> (
@@ -176,11 +181,12 @@ pub fn deploy_smart_account(
 /// zero-signer `CallContract(self)` recovery rule with `controller` as its
 /// policy (triggering the controller's `Policy::install`); `None` behaves
 /// exactly like [`deploy_smart_account`].
-pub fn deploy_smart_account_with_recovery(
-    env: &soroban_sdk::Env,
-    recovery_controller: Option<soroban_sdk::Address>,
+#[must_use]
+pub fn deploy_smart_account_with_recovery<'a>(
+    env: &'a soroban_sdk::Env,
+    recovery_controller: Option<&soroban_sdk::Address>,
 ) -> (
-    SmartAccountClient<'_>,
+    SmartAccountClient<'a>,
     soroban_sdk::Address,
     soroban_sdk::Address,
     SigningKey,
@@ -203,7 +209,7 @@ pub fn deploy_smart_account_with_recovery(
     // Deploy the smart account with the passkey signer
     let account_addr = env.register(
         SMART_ACCOUNT_WASM,
-        (&signers, &policies, &recovery_controller),
+        (&signers, &policies, recovery_controller.cloned()),
     );
 
     let client = SmartAccountClient::new(env, &account_addr);
@@ -211,12 +217,14 @@ pub fn deploy_smart_account_with_recovery(
 }
 
 /// Deploy the multisig policy contract and return its address.
+#[must_use]
 pub fn deploy_multisig_policy(env: &soroban_sdk::Env) -> soroban_sdk::Address {
     env.register(MULTISIG_POLICY_WASM, ())
 }
 
 /// Build the `policies` map for `add_context_rule` containing a single
 /// multisig-policy install with the given threshold.
+#[must_use]
 pub fn multisig_install_map(
     env: &soroban_sdk::Env,
     multisig_policy_addr: &soroban_sdk::Address,
@@ -231,6 +239,7 @@ pub fn multisig_install_map(
 }
 
 /// Deploy the spending-limit policy contract and return its address.
+#[must_use]
 pub fn deploy_spending_limit_policy(env: &soroban_sdk::Env) -> soroban_sdk::Address {
     env.register(SPENDING_LIMIT_POLICY_WASM, ())
 }
@@ -238,6 +247,7 @@ pub fn deploy_spending_limit_policy(env: &soroban_sdk::Env) -> soroban_sdk::Addr
 /// Build the `policies` map for `add_context_rule` containing a single
 /// spending-limit-policy install with the given limit (stroops) and rolling
 /// window (ledgers).
+#[must_use]
 pub fn spending_limit_install_map(
     env: &soroban_sdk::Env,
     policy_addr: &soroban_sdk::Address,
@@ -264,6 +274,7 @@ pub fn spending_limit_install_map(
 /// Binds the signed message to the rule the caller selected (preventing
 /// rule-substitution replay). Use the returned 32 bytes as the
 /// `signature_payload` arg to `build_contract_assertion`.
+#[must_use]
 pub fn compute_auth_digest(
     env: &soroban_sdk::Env,
     signature_payload: &soroban_sdk::crypto::Hash<32>,

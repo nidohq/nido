@@ -1,5 +1,5 @@
 //! The `#[contract]` entry point for `contracts/zk-recovery`: constructor +
-//! the two account-bound insert paths (spec §3.3 "insert"/"insert_for").
+//! the two account-bound insert paths (spec §3.3 `insert`/`insert_for`).
 //!
 //! This is where a client-supplied `commitment` (the circuit's `inner` leaf,
 //! `main.nr:36`) becomes bound to an on-chain `Address` via `hash::wrap_leaf`
@@ -105,6 +105,8 @@ impl ZkRecovery {
     /// Stores the immutable `RecoveryConfig` (spec §3.3 "Defaults"). Must
     /// run once, at deploy time, before any other entry point.
     #[allow(clippy::too_many_arguments)]
+    // `env` is conventionally by-value for `#[contractimpl]` entry points.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(
         env: Env,
         factory: Address,
@@ -135,6 +137,11 @@ impl ZkRecovery {
     /// arbitrary account binding, because it is the entity that just
     /// created `account` and therefore knows the binding is legitimate
     /// (spec's Task-4 genesis note). Returns the new leaf's index.
+    #[must_use]
+    // `env`/`account`/`commitment` are conventionally by-value for
+    // `#[contractimpl]` entry points in this codebase; changing them would
+    // touch the contract's exported ABI.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn insert(env: Env, account: Address, commitment: BytesN<32>) -> u32 {
         config(&env).factory.require_auth();
         insert_bound(&env, &account, &commitment)
@@ -143,6 +150,10 @@ impl ZkRecovery {
     /// MIGRATION/re-enroll insert: `account` authorizes its own visible
     /// insert (e.g. adding a fresh recovery secret after rotating away from
     /// a leaked one). Returns the new leaf's index.
+    #[must_use]
+    // See `insert`'s `#[allow]` comment above -- same contract-entry-point
+    // convention.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn insert_for(env: Env, account: Address, commitment: BytesN<32>) -> u32 {
         account.require_auth();
         insert_bound(&env, &account, &commitment)
@@ -150,17 +161,27 @@ impl ZkRecovery {
 
     /// The current Merkle root over all inserted leaves (thin wrapper over
     /// `merkle::current_root`, exposed for off-chain clients/later tasks).
+    #[must_use]
+    // `env` is conventionally by-value for `#[contractimpl]` entry points.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn current_root(env: Env) -> BytesN<32> {
         merkle::current_root(&env)
     }
 
     /// Whether `root` is still retained in the historic-root ring (or is the
     /// empty-tree root).
+    #[must_use]
+    // `env`/`root` are conventionally by-value for `#[contractimpl]` entry
+    // points.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn is_known_root(env: Env, root: BytesN<32>) -> bool {
         merkle::is_known_root(&env, &root)
     }
 
     /// The number of leaves inserted so far.
+    #[must_use]
+    // `env` is conventionally by-value for `#[contractimpl]` entry points.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn next_index(env: Env) -> u32 {
         merkle::next_index(&env)
     }
@@ -263,7 +284,7 @@ mod tests {
         // `merkle::insert_leaf` and check the roots agree.
         let ref_id = env.register(RefContract, ());
         let ref_root = env.as_contract(&ref_id, || {
-            merkle::insert_leaf(&env, &expected_leaf);
+            let _ = merkle::insert_leaf(&env, &expected_leaf);
             merkle::current_root(&env)
         });
         assert_eq!(
@@ -312,6 +333,9 @@ mod tests {
     /// the factory's auth mocked it succeeds.
     #[test]
     fn insert_requires_factory_auth() {
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        use soroban_sdk::IntoVal;
+
         let env = Env::default();
         let (id, cfg) = setup(&env);
         let account = Address::generate(&env);
@@ -327,8 +351,6 @@ mod tests {
 
         // Only the account (not the factory) authorizes -- still must fail,
         // proving `insert` checks the factory specifically.
-        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
-        use soroban_sdk::IntoVal;
         let res = client
             .mock_auths(&[MockAuth {
                 address: &account,
@@ -357,6 +379,9 @@ mod tests {
     /// auth it panics; with it mocked it succeeds.
     #[test]
     fn insert_for_requires_account_auth() {
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        use soroban_sdk::IntoVal;
+
         let env = Env::default();
         let (id, _cfg) = setup(&env);
         let account = Address::generate(&env);
@@ -373,8 +398,6 @@ mod tests {
 
         // Only an unrelated address authorizes (not the account) -- still must
         // fail, proving `insert_for` checks the account specifically.
-        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
-        use soroban_sdk::IntoVal;
         let res = client
             .mock_auths(&[MockAuth {
                 address: &other,

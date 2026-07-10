@@ -59,10 +59,10 @@ mod zk_verifier_contract {
 /// inserts the fixture leaf. Does NOT call `initiate_recovery` -- callers
 /// needing a pending call that themselves.
 ///
-/// Deliberately uses a plain `Signer::Delegated` (not a real WebAuthn
+/// Deliberately uses a plain `Signer::Delegated` (not a real `WebAuthn`
 /// passkey) for the account's Default rule -- this test's whole point is
 /// proving the guard's cross-call reaches the real controller, not
-/// re-proving `real_proof_completion_rotates_key_via_enforce`'s WebAuthn
+/// re-proving `real_proof_completion_rotates_key_via_enforce`'s `WebAuthn`
 /// dispatch (`zk_recovery_completion.rs`), so the removal target's
 /// signature scheme is irrelevant. The `remove_signer` call under test is
 /// authorized via `env.mock_all_auths()`.

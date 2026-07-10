@@ -1,7 +1,7 @@
 //! Cross-language Poseidon2 hash parity: the Soroban on-chain host hash must
 //! agree with the Noir-circuit hash at every arity the ZK recovery protocol
 //! uses (2, 4, 15). This is the keystone of the ZK recovery feature: if the
-//! host and circuit disagree, every downstream leaf/nullifier/auth_hash is
+//! host and circuit disagree, every downstream `leaf/nullifier/auth_hash` is
 //! unprovable.
 //!
 //! The vectors in `tests/vectors/zk-recovery/vectors.json` are authoritative

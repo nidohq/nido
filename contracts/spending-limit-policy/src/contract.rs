@@ -1,4 +1,4 @@
-//! Spending-limit policy contract — thin wrapper around OpenZeppelin's
+//! Spending-limit policy contract — thin wrapper around `OpenZeppelin`'s
 //! `spending_limit` library. Stateless per-deployment; per-`(account,
 //! rule_id)` limit + rolling spending window live in this contract's
 //! persistent storage as managed by the library. Meters SAC `transfer`
@@ -21,6 +21,8 @@ impl SpendingLimitPolicy {
     /// not installed. (The OZ lib's `get_spending_limit_data` panics when
     /// uninstalled; read its storage key directly instead. Archived entries
     /// fail at simulation and need restore.)
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn get_spending_limit(
         e: &Env,
         context_rule_id: u32,
@@ -33,6 +35,7 @@ impl SpendingLimitPolicy {
     /// the OZ lib (`smart_account.require_auth()`). Changing the limit this
     /// way preserves the rolling spending window, unlike uninstall/re-install
     /// which resets it.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn set_spending_limit(
         e: &Env,
         spending_limit: i128,
@@ -81,7 +84,7 @@ impl Policy for SpendingLimitPolicy {
 /// (`SpendingLimitStorageKey::AccountContext(account, rule_id)` →
 /// `SpendingLimitData`) and project it down to the install params. Both
 /// types are `pub` at the pinned rev, so no parallel bookkeeping is needed.
-/// Re-verify storage class/key construction in spending_limit.rs when
+/// Re-verify storage class/key construction in `spending_limit.rs` when
 /// bumping the stellar-accounts rev (the one drift mode the compiler can't
 /// catch).
 fn spending_limit_params_for(
@@ -114,7 +117,7 @@ mod test {
         let account = Address::generate(&env);
         let rule_id = 7u32;
         let params = SpendingLimitAccountParams {
-            spending_limit: 5_0000000,
+            spending_limit: 50_000_000,
             period_ledgers: 17280,
         };
 

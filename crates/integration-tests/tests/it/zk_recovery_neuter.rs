@@ -2,7 +2,7 @@
 //! `Policy::install`/`Policy::uninstall` (spec §3.1).
 //!
 //! Before the fix, both entry points gated ONLY on
-//! `smart_account.require_auth()`. A thief holding a stolen WebAuthn passkey
+//! `smart_account.require_auth()`. A thief holding a stolen `WebAuthn` passkey
 //! satisfies that (the account's Default rule matches any context), so they
 //! could call the controller's `install`/`uninstall` DIRECTLY (top-level, or
 //! via the account's `execute`) -- bypassing the M2 in-account guard
@@ -137,7 +137,7 @@ fn self_call_entry(
     env: &Env,
     account_addr: &Address,
     fn_name: &str,
-    args: SVec<Val>,
+    args: &SVec<Val>,
     context_rule_ids: SVec<u32>,
 ) -> SorobanAuthorizationEntry {
     let args_scval: VecM<ScVal> = args
@@ -166,7 +166,7 @@ fn self_call_entry(
     SorobanAuthorizationEntry {
         credentials: SorobanCredentials::Address(SorobanAddressCredentials {
             address: ScAddress::from(account_addr),
-            nonce: 0xC0FFEE,
+            nonce: 0x00C0_FFEE,
             signature_expiration_ledger: 999_999,
             signature,
         }),
@@ -185,7 +185,7 @@ struct Deployed<'a> {
 
 /// Deploys the real controller (pinned at `CONTROLLER`) + a real smart account
 /// (pinned at `ACCOUNT`) via the constructor's `Some(controller)` genesis path,
-/// with a real WebAuthn passkey signer on the Default rule and the fixture leaf
+/// with a real `WebAuthn` passkey signer on the Default rule and the fixture leaf
 /// inserted -- i.e. a fully-enrolled account ready for a real-proof recovery.
 /// `mock_all_auths` is left ON for setup; completion tests switch to
 /// `set_auths` for the completing call.
@@ -298,7 +298,7 @@ fn complete(env: &Env, d: &Deployed<'_>) -> bool {
         env,
         &d.account_addr,
         "add_context_rule",
-        args,
+        &args,
         soroban_sdk::vec![env, d.rule_id],
     );
     env.set_auths(&[entry]);

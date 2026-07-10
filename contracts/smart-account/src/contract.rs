@@ -240,6 +240,7 @@ impl NidoSmartAccount {
     /// The `u32` id of the zero-signer recovery `ContextRule` installed at
     /// construction, or `None` if the account was constructed with
     /// `recovery_controller: None`.
+    #[must_use]
     pub fn recovery_rule_id(e: &Env) -> Option<u32> {
         e.storage().instance().get(&RECOVERY_RULE_ID)
     }
@@ -247,6 +248,7 @@ impl NidoSmartAccount {
     /// The recovery controller `Address` installed as the recovery rule's
     /// policy at construction, or `None` if the account was constructed with
     /// `recovery_controller: None`.
+    #[must_use]
     pub fn recovery_controller(e: &Env) -> Option<Address> {
         e.storage().instance().get(&RECOVERY_CONTROLLER)
     }
@@ -258,7 +260,7 @@ impl NidoSmartAccount {
     /// `remove_context_rule(recovery_rule_id)` always panics
     /// `RecoveryRuleProtected` (see the `SmartAccount` impl below).
     ///
-    /// Requires this account's own auth (the WebAuthn passkey signer in
+    /// Requires this account's own auth (the `WebAuthn` passkey signer in
     /// production). A thief holding a stolen passkey COULD call this, but
     /// the 7-day delay is the defense: it gives the legitimate owner (or
     /// anything monitoring the account) a real window to notice and react,
@@ -391,6 +393,7 @@ impl NidoSmartAccount {
     /// reachable at all. Do not read this method as a general legacy-account
     /// migration story -- it only covers the "deployed with the new code,
     /// but skipped recovery at construction time" case.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn enroll_zk_recovery(e: &Env, recovery_controller: Address) {
         e.current_contract_address().require_auth();
         if NidoSmartAccount::recovery_rule_id(e).is_some() {
@@ -418,6 +421,7 @@ impl NidoSmartAccount {
     /// * `friends` - The signers authorised by the recovery rule.
     /// * `multisig_policy` - Address of the deployed multisig policy contract.
     /// * `threshold` - Number of `friends` signatures required (M).
+    #[must_use]
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_multisig_recovery(
         e: &Env,
@@ -572,6 +576,18 @@ impl ExecutionEntryPoint for NidoSmartAccount {
 
 #[cfg(test)]
 mod test {
+    // `StubRecoveryPolicy`'s `Policy` impl below (used only to test-double
+    // the real `nido-zk-recovery` controller) has several trait-required
+    // params prefixed `_` because the method bodies never read them. Clippy
+    // still flags them as "used underscore-prefixed binding" -- the
+    // `#[contractimpl]` macro's generated invoke-wrapper code binds each
+    // non-`Env` param to a same-named local before forwarding it to the
+    // real method, which counts as a "use" even though our source never
+    // reads it, and that generated code sits outside the scope any
+    // function- or impl-level `#[allow]` here can reach. Scoped to this
+    // test module only.
+    #![allow(clippy::used_underscore_binding)]
+
     use super::*;
     use soroban_sdk::testutils::{Address as _, Ledger as _};
     use stellar_accounts::policies::Policy;
@@ -585,6 +601,8 @@ mod test {
     #[contract]
     struct StubRecoveryPolicy;
 
+    // See the module-level `#[allow(clippy::used_underscore_binding)]`
+    // above for why the underscore-prefixed params below are flagged.
     #[contractimpl]
     impl Policy for StubRecoveryPolicy {
         type AccountParams = ZkRecoveryInstallParams;
@@ -623,12 +641,14 @@ mod test {
     /// `Client`.
     #[contractimpl]
     impl StubRecoveryPolicy {
+        #[allow(clippy::needless_pass_by_value)]
         pub fn set_pending(e: Env, account: Address, pending: bool) {
             e.storage()
                 .instance()
                 .set(&(symbol_short!("PEND"), account), &pending);
         }
 
+        #[allow(clippy::needless_pass_by_value)]
         pub fn has_pending(e: Env, account: Address) -> bool {
             e.storage()
                 .instance()
@@ -1183,6 +1203,8 @@ mod test {
     /// `insert_for_requires_account_auth` `MockAuth` pattern.
     #[test]
     fn enroll_zk_recovery_requires_account_auth() {
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+
         let e = Env::default();
 
         let controller = e.register(StubRecoveryPolicy, ());
@@ -1202,7 +1224,6 @@ mod test {
 
         // Only an unrelated address authorizes (not the account) -- still
         // must fail.
-        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
         let other = Address::generate(&e);
         let res = client
             .mock_auths(&[MockAuth {

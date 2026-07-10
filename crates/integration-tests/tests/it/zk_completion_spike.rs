@@ -44,6 +44,15 @@
 //! — so an empty-signers `AuthPayload` reaches `enforce` as long as the
 //! referenced rule's context type matches.
 
+// The `#[contractimpl]` macro's generated invoke-wrapper binds each method
+// param to a same-named local before forwarding to the impl below, which
+// counts as a "use" of every `_`-prefixed param outside any scope a
+// function-level `#[allow]` can reach. Every lint in this module (all 18)
+// is this same macro-generated false positive on the two stub policies'
+// unused `Policy` trait params below, so the allow is module-scoped rather
+// than repeated per method.
+#![allow(clippy::used_underscore_binding)]
+
 use nido_integration_tests::{compute_auth_digest, deploy_smart_account, SmartAccountClient};
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::{

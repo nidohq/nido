@@ -76,7 +76,7 @@ impl Policy for ZkRecovery {
     /// # Stolen-passkey hardening (spec §3.1, the direct-call neuter fix)
     ///
     /// `smart_account.require_auth()` alone is NOT a sufficient gate: a thief
-    /// holding a stolen WebAuthn passkey satisfies the account's Default rule,
+    /// holding a stolen `WebAuthn` passkey satisfies the account's Default rule,
     /// so they can call this `install` ENTRY POINT DIRECTLY (top-level, or via
     /// the account's `execute`) -- bypassing the M2 in-account guard and the
     /// 7-day removal delay. Without further checks, a direct
@@ -105,7 +105,7 @@ impl Policy for ZkRecovery {
     /// `uninstall` doc for the full reentrancy-constraint reasoning.
     fn install(
         e: &Env,
-        _install_params: Self::AccountParams,
+        install_params: Self::AccountParams,
         context_rule: ContextRule,
         smart_account: Address,
     ) {
@@ -130,6 +130,7 @@ impl Policy for ZkRecovery {
 
         e.storage().persistent().set(&key, &context_rule.id);
         extend_persistent_max(e, &key);
+        let _ = install_params;
     }
 
     /// The M1 hard requirement: permits ONLY the exact intended
@@ -164,10 +165,11 @@ impl Policy for ZkRecovery {
     fn enforce(
         e: &Env,
         context: Context,
-        _authenticated_signers: Vec<Signer>,
+        authenticated_signers: Vec<Signer>,
         context_rule: ContextRule,
         smart_account: Address,
     ) {
+        let _ = &authenticated_signers;
         smart_account.require_auth();
 
         let installed_id: u32 = e
@@ -256,7 +258,7 @@ impl Policy for ZkRecovery {
     ///
     /// The pre-fix `uninstall` cleared `RecoveryKey::Installed(account)` on any
     /// call gated solely by `smart_account.require_auth()`. A thief holding a
-    /// stolen WebAuthn passkey satisfies that, so a direct
+    /// stolen `WebAuthn` passkey satisfies that, so a direct
     /// `uninstall(any_rule, account)` (top-level, or via the account's
     /// `execute`) cleared `Installed` while the account's recovery rule stayed
     /// intact on-chain -- every future completion `enforce` then panics
@@ -297,7 +299,8 @@ impl Policy for ZkRecovery {
     /// fresh account (the privacy-preserving norm); this cannot be relaxed
     /// without a reentrancy-safe way to clear `Installed`, which does not exist
     /// here.
-    fn uninstall(e: &Env, _context_rule: ContextRule, smart_account: Address) {
+    fn uninstall(e: &Env, context_rule: ContextRule, smart_account: Address) {
+        let _ = context_rule;
         smart_account.require_auth();
         panic_with_error!(e, RecoveryError::Unauthorized);
     }

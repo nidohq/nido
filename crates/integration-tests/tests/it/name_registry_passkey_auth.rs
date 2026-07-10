@@ -6,7 +6,7 @@
 //! authorization path for `register`.
 //!
 //! This test builds a genuine `SorobanAuthorizationEntry` carrying a synthetic
-//! WebAuthn passkey assertion, computes the host's `signature_payload` from the
+//! `WebAuthn` passkey assertion, computes the host's `signature_payload` from the
 //! real `HashIdPreimage`, and drives `register` through the host via
 //! `env.set_auths` (enforcing mode). The host derives the invocation `Context`,
 //! computes the payload, and dispatches the account's `__check_auth` — the same

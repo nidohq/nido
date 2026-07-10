@@ -13,7 +13,7 @@ impl Verifier for WebAuthnVerifier {
     type KeyData = Bytes;
     type SigData = Bytes;
 
-    /// Verify a WebAuthn signature against a message and public key.
+    /// Verify a `WebAuthn` signature against a message and public key.
     ///
     /// # Arguments
     ///
@@ -45,7 +45,7 @@ impl Verifier for WebAuthnVerifier {
         webauthn::verify(e, &signature_payload, &pub_key, &sig_struct)
     }
 
-    /// Canonical identity for a WebAuthn key — the 65-byte SEC1 pubkey,
+    /// Canonical identity for a `WebAuthn` key — the 65-byte SEC1 pubkey,
     /// stripped of any trailing credential-ID metadata that varies per
     /// browser session but doesn't change the underlying key. Required by
     /// OZ v0.7+ for the smart account to detect duplicate signer registrations.

@@ -1,4 +1,4 @@
-//! Smoke test proving the vendored UltraHonk verifier still verifies real
+//! Smoke test proving the vendored `UltraHonk` verifier still verifies real
 //! proofs after being retargeted onto soroban-sdk 26.0.1.
 //!
 //! Fixtures (`vk`, `proof`, `public_inputs`) are the compiled `simple_circuit`
@@ -41,7 +41,8 @@ fn verify_simple_circuit_proof_succeeds() {
 }
 
 #[test]
-#[should_panic]
+// Error #3 is `Error::VerificationFailed` in `contracts/zk-verifier/src/lib.rs`.
+#[should_panic(expected = "Error(Contract, #3)")]
 fn verify_with_tampered_public_inputs_fails() {
     let vk_bytes_raw: &[u8] = include_bytes!("fixtures/vk");
     let proof_bin: &[u8] = include_bytes!("fixtures/proof");

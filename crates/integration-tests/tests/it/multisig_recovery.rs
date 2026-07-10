@@ -23,7 +23,7 @@ fn external_signer(env: &Env, verifier: &Address, key: &SigningKey) -> Signer {
     Signer::External(verifier.clone(), Bytes::from_slice(env, &pubkey))
 }
 
-/// Build a (signer, sig_data) pair signing the given pre-computed auth digest.
+/// Build a (signer, `sig_data`) pair signing the given pre-computed auth digest.
 /// Use `compute_auth_digest(env, hash, &context_rule_ids)` to get the digest.
 fn signature_for(
     env: &Env,

@@ -18,7 +18,7 @@
 //! point -> `__check_auth` -> `do_check_auth` -> a real cross-contract call
 //! into `ZkRecovery::enforce` -- against a REAL fixture proof's pending
 //! recovery. This mirrors `name_registry_passkey_auth.rs`'s "no
-//! mock_all_auths" pattern, extended to the self-authorizing
+//! `mock_all_auths`" pattern, extended to the self-authorizing
 //! `add_context_rule` call shape `zk_completion_spike.rs` proved feasible.
 //!
 //! The three security-negative tests below instead call `do_check_auth`
@@ -26,7 +26,7 @@
 //! `default_rule_threshold.rs`'s established pattern in this repo) with a
 //! REAL, correctly-shaped `Context` carrying the exact `add_context_rule`
 //! argument layout `enforce` decodes -- changing exactly ONE variable from
-//! the passing baseline (fn_name, the new-signer set, or the ledger time) so
+//! the passing baseline (`fn_name`, the new-signer set, or the ledger time) so
 //! a rejection can only be attributed to the gate under test, not some
 //! unrelated failure.
 
@@ -90,7 +90,7 @@ struct CompletionSetup<'a> {
     fixture: zk_fixture::LifecycleFixture,
 }
 
-/// Deploys the WebAuthn verifier + smart account (pinned at
+/// Deploys the `WebAuthn` verifier + smart account (pinned at
 /// `zk_fixture::ACCOUNT`), the M0 zk-verifier + `ZkRecovery` controller
 /// (pinned at `zk_fixture::CONTROLLER`, `config.webauthn_verifier` set to the
 /// SAME verifier the account's signers use), installs the zero-signer
@@ -275,7 +275,7 @@ fn self_call_entry(
     env: &Env,
     account_addr: &Address,
     fn_name: &str,
-    args: SVec<Val>,
+    args: &SVec<Val>,
     context_rule_ids: SVec<u32>,
 ) -> SorobanAuthorizationEntry {
     let args_scval: VecM<ScVal> = args
@@ -304,7 +304,7 @@ fn self_call_entry(
     SorobanAuthorizationEntry {
         credentials: SorobanCredentials::Address(SorobanAddressCredentials {
             address: ScAddress::from(account_addr),
-            nonce: 0xC0FFEE,
+            nonce: 0x00C0_FFEE,
             signature_expiration_ledger: 999_999,
             signature,
         }),
@@ -317,7 +317,7 @@ fn self_call_entry(
 /// call is driven through the REAL host authorization dispatch (no
 /// `mock_all_auths` on this call) -- `__check_auth` -> `do_check_auth` -> a
 /// genuine cross-contract call into `ZkRecovery::enforce`, which must permit
-/// EXACTLY this call (fn_name `add_context_rule`, new-signers ==
+/// EXACTLY this call (`fn_name` `add_context_rule`, new-signers ==
 /// `[Signer::External(webauthn_verifier, fixture.new_pubkey)]`) and consume
 /// the pending.
 #[test]
@@ -342,7 +342,7 @@ fn real_proof_completion_rotates_key_via_enforce() {
         &env,
         &setup.account_addr,
         "add_context_rule",
-        args,
+        &args,
         soroban_sdk::vec![&env, setup.rule_id],
     );
 
@@ -391,7 +391,7 @@ fn real_proof_completion_rotates_key_via_enforce() {
     );
 }
 
-/// **The fn_name gate.** Same rule id, same elapsed timelock as the passing
+/// **The `fn_name` gate.** Same rule id, same elapsed timelock as the passing
 /// baseline above, and -- critically -- an OTHERWISE-FULLY-VALID
 /// `add_context_rule`-shaped context: 5 args, `args[3]` is the EXACT expected
 /// new-signer set (`[Signer::External(webauthn_verifier, pending.new_pubkey)]`
@@ -399,12 +399,12 @@ fn real_proof_completion_rotates_key_via_enforce() {
 /// ONLY thing that differs from the passing baseline is the completing
 /// call's `fn_name` (`remove_signer` instead of `add_context_rule`). Because
 /// every other check the gate performs (arg count, new-signer set, policies)
-/// would ALSO pass here, the only REACHABLE rejection is the fn_name check
+/// would ALSO pass here, the only REACHABLE rejection is the `fn_name` check
 /// (`policy.rs:163`) -- so this isolates that check specifically, rather
 /// than being satisfiable by the arg-count check alone (a 2-arg
 /// `remove_signer`-shaped context, as before, would ALSO trip
 /// `args.len() != 5` with the same `ContextMismatch` code, so it wouldn't
-/// prove the fn_name check does anything).
+/// prove the `fn_name` check does anything).
 ///
 /// This still goes through the direct-`do_check_auth` path (not the
 /// `try_add_context_rule` real-host path the other two negatives below use)
@@ -464,7 +464,7 @@ fn wrong_fn_name_is_rejected_by_enforce() {
 }
 
 /// **The args gate.** Same rule id, same elapsed timelock, same
-/// `add_context_rule` fn_name as the passing baseline -- the ONLY thing that
+/// `add_context_rule` `fn_name` as the passing baseline -- the ONLY thing that
 /// differs is the new-signer set: a DIFFERENT (attacker-chosen) key instead
 /// of `pending.new_pubkey`. `enforce` must reject with `ContextMismatch`,
 /// proving it does not just check `fn_name` but the ACTUAL proposed new
@@ -533,7 +533,7 @@ fn wrong_new_signer_is_rejected_by_enforce() {
     assert!(setup.zk.get_pending(&setup.account_addr).is_some());
 }
 
-/// **The timelock.** Correct rule id, correct `add_context_rule` fn_name,
+/// **The timelock.** Correct rule id, correct `add_context_rule` `fn_name`,
 /// correct new-signer set -- the ONLY thing that differs from the passing
 /// baseline is timing: this attempts completion immediately after
 /// `initiate_recovery`, before `executable_after`. `enforce` must reject

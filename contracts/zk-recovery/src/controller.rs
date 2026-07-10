@@ -144,7 +144,7 @@ fn check_rate_limit(env: &Env, account: &Address, now: u64) {
     extend_persistent_max(env, &key);
 }
 
-/// `root(32) || nullifier(32) || auth_hash(32)`, the UltraHonk verifier's
+/// `root(32) || nullifier(32) || auth_hash(32)`, the `UltraHonk` verifier's
 /// expected `public_inputs` encoding for this circuit.
 fn assemble_public_inputs(
     env: &Env,
@@ -167,8 +167,8 @@ fn assemble_public_inputs(
 fn verify_proof(
     env: &Env,
     verifier: &Address,
-    public_inputs: Bytes,
-    proof: Bytes,
+    public_inputs: &Bytes,
+    proof: &Bytes,
 ) -> Result<(), ()> {
     let mut args: SorobanVec<Val> = SorobanVec::new(env);
     args.push_back(public_inputs.into_val(env));
@@ -184,6 +184,11 @@ impl ZkRecovery {
     /// checks). Permissionless -- no `require_auth`. Returns
     /// `executable_after`.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    // `env`/`account`/`new_pubkey`/`root` are conventionally by-value for
+    // `#[contractimpl]` entry points in this codebase; changing them would
+    // touch the contract's exported ABI.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn initiate_recovery(
         env: Env,
         account: Address,
@@ -251,10 +256,10 @@ impl ZkRecovery {
 
         // 5. `timelock_secs` must meet the floor and match the configured
         // delay exactly.
-        if (timelock_secs as u64) < cfg.timelock_floor_secs {
+        if u64::from(timelock_secs) < cfg.timelock_floor_secs {
             panic_with_error!(&env, RecoveryError::TimelockTooShort);
         }
-        if (timelock_secs as u64) != cfg.delay_secs {
+        if u64::from(timelock_secs) != cfg.delay_secs {
             panic_with_error!(&env, RecoveryError::TimelockMismatch);
         }
 
@@ -275,7 +280,7 @@ impl ZkRecovery {
             timelock_secs,
         );
         let public_inputs = assemble_public_inputs(&env, &root, &nullifier, &expected_auth_hash);
-        if verify_proof(&env, &cfg.verifier, public_inputs, proof).is_err() {
+        if verify_proof(&env, &cfg.verifier, &public_inputs, &proof).is_err() {
             panic_with_error!(&env, RecoveryError::VerificationFailed);
         }
 
@@ -315,6 +320,9 @@ impl ZkRecovery {
     /// View: the live-or-stale pending recovery record for `account`, if
     /// any. Callers wanting strictly-live semantics should compare
     /// `expires_at` against the current ledger timestamp themselves.
+    #[must_use]
+    // `env` is conventionally by-value for `#[contractimpl]` entry points.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn get_pending(env: Env, account: Address) -> Option<PendingRecovery> {
         env.storage()
             .persistent()
@@ -333,6 +341,9 @@ impl ZkRecovery {
     /// and this returns `false` for it, exactly as if there were no pending
     /// at all -- callers wanting the stale-or-live record itself should use
     /// `get_pending` and compare `expires_at` themselves.
+    #[must_use]
+    // `env` is conventionally by-value for `#[contractimpl]` entry points.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn has_pending(env: Env, account: Address) -> bool {
         let now = env.ledger().timestamp();
         env.storage()
@@ -342,19 +353,27 @@ impl ZkRecovery {
     }
 
     /// View: the next nonce `initiate_recovery` will accept for `account`.
+    #[must_use]
+    // `env`/`account` are conventionally by-value for `#[contractimpl]`
+    // entry points.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn next_nonce(env: Env, account: Address) -> u64 {
         stored_nonce(&env, &account) + 1
     }
 
     /// View: how many cancels `account` has used against its `max_cancels`
     /// cap (spec §2.4).
+    #[must_use]
+    // `env`/`account` are conventionally by-value for `#[contractimpl]`
+    // entry points.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn cancels_used(env: Env, account: Address) -> u32 {
         cancels_used(&env, &account)
     }
 
     /// The legitimate owner's defense against a malicious/stale recovery in
     /// flight (spec §2.4, §3.3): stops the pending recovery during its
-    /// timelock. Requires `account`'s own auth (the WebAuthn passkey signer
+    /// timelock. Requires `account`'s own auth (the `WebAuthn` passkey signer
     /// in production) -- exactly what an attacker who only knows a leaked
     /// enrollment secret CANNOT provide, since a cancel does not consume
     /// that secret's nullifier (it stays usable, only the pending record and
@@ -367,6 +386,11 @@ impl ZkRecovery {
     /// stored value (bumped on success), (6) a REAL `action=2` proof -- with
     /// the pubkey/timelock fields ZEROED per spec §2.4 -- must verify
     /// against this call's own recomputed `auth_hash` and a known root.
+    #[must_use]
+    // `env`/`account`/`root`/`nullifier`/`proof` are conventionally by-value
+    // for `#[contractimpl]` entry points in this codebase; changing them
+    // would touch the contract's exported ABI.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn cancel_recovery(
         env: Env,
         account: Address,
@@ -433,7 +457,7 @@ impl ZkRecovery {
             0,
         );
         let public_inputs = assemble_public_inputs(&env, &root, &nullifier, &expected_auth_hash);
-        if verify_proof(&env, &cfg.verifier, public_inputs, proof).is_err() {
+        if verify_proof(&env, &cfg.verifier, &public_inputs, &proof).is_err() {
             panic_with_error!(&env, RecoveryError::VerificationFailed);
         }
 
@@ -513,6 +537,10 @@ impl ZkRecovery {
     /// reserving exactly this nullifier -- revoking aborts an in-flight
     /// recovery for that credential too, since there is nothing left to
     /// complete once its enrollment secret is dead.
+    // `env`/`account`/`root`/`nullifier`/`proof` are conventionally by-value
+    // for `#[contractimpl]` entry points in this codebase; changing them
+    // would touch the contract's exported ABI.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn burn_nullifier(
         env: Env,
         account: Address,
@@ -568,7 +596,7 @@ impl ZkRecovery {
             0,
         );
         let public_inputs = assemble_public_inputs(&env, &root, &nullifier, &expected_auth_hash);
-        if verify_proof(&env, &cfg.verifier, public_inputs, proof).is_err() {
+        if verify_proof(&env, &cfg.verifier, &public_inputs, &proof).is_err() {
             panic_with_error!(&env, RecoveryError::VerificationFailed);
         }
 

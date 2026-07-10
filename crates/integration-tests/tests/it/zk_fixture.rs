@@ -15,7 +15,7 @@
 //!    resolved `Address` to the exact contract-id bytes the fixture's
 //!    `auth_hash` binds (`zk_fixture::ACCOUNT`/`CONTROLLER`).
 //! 3. `fixture_proof_verifies` -- proves the committed fixture proof is a
-//!    REAL, valid UltraHonk proof under the M0 verifier wasm + vk.
+//!    REAL, valid `UltraHonk` proof under the M0 verifier wasm + vk.
 
 use nido_integration_tests::{test_key, zk_fixture};
 use sha2::{Digest, Sha256};
@@ -23,6 +23,7 @@ use soroban_poseidon::{poseidon2_hash, Field as PoseidonField};
 use soroban_sdk::address_payload::AddressPayload;
 use soroban_sdk::crypto::BnScalar;
 use soroban_sdk::{Address, Bytes, BytesN, Env, Vec as SVec, U256};
+use std::fmt::Write as _;
 
 const DEPTH: usize = 24;
 
@@ -44,7 +45,7 @@ fn hex32(s: &str) -> [u8; 32] {
 fn hex_bytes(b: &[u8]) -> String {
     let mut s = String::with_capacity(b.len() * 2);
     for x in b {
-        s.push_str(&format!("{x:02x}"));
+        let _ = write!(s, "{x:02x}");
     }
     s
 }
@@ -56,7 +57,7 @@ fn to_hex(bytes: &[u8; 32]) -> String {
 /// Same construction as `zk_vectors.rs::p2` (the Rust test that proves the
 /// Soroban host's `poseidon2_hash::<4, BnScalar>` reproduces Noir's
 /// `Poseidon2::hash` output at every arity the circuit uses). Reusing it
-/// here means the fixture's root/nullifier/auth_hash are guaranteed to
+/// here means the fixture's `root/nullifier/auth_hash` are guaranteed to
 /// match what `nargo`/`bb` compute for the same witness.
 fn p2(env: &Env, inputs: &[[u8; 32]]) -> [u8; 32] {
     let modulus = <BnScalar as PoseidonField>::modulus(env);
@@ -110,6 +111,13 @@ fn lifecycle_secret() -> [u8; 32] {
 #[test]
 #[ignore = "generator invoked by `just gen-zk-lifecycle-fixture` \
             (circuits/zk_recovery/scripts/gen_lifecycle_fixture.sh), not part of the normal suite"]
+// Long, linear witness-printing generator; splitting it would obscure the
+// 1:1 correspondence with the Prover.toml fields it emits.
+#[allow(clippy::too_many_lines)]
+// `pk_x_hi`/`pk_x_lo` vs `pk_y_hi`/`pk_y_lo` mirror the circuit's own
+// naming convention (see `split16`'s doc comment) and are clearer named
+// this way than disambiguated.
+#[allow(clippy::similar_names)]
 fn print_lifecycle_prover_toml() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
@@ -254,6 +262,13 @@ fn print_lifecycle_prover_toml() {
 #[test]
 #[ignore = "generator invoked by `just gen-zk-lifecycle-cancel-fixture` \
             (circuits/zk_recovery/scripts/gen_lifecycle_cancel_fixture.sh), not part of the normal suite"]
+// Long, linear witness-printing generator; splitting it would obscure the
+// 1:1 correspondence with the Prover.toml fields it emits.
+#[allow(clippy::too_many_lines)]
+// `pk_x_hi`/`pk_x_lo` vs `pk_y_hi`/`pk_y_lo` mirror the circuit's own
+// naming convention (see `split16`'s doc comment) and are clearer named
+// this way than disambiguated.
+#[allow(clippy::similar_names)]
 fn print_lifecycle_cancel_prover_toml() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
@@ -385,6 +400,13 @@ fn print_lifecycle_cancel_prover_toml() {
 #[test]
 #[ignore = "generator invoked by `circuits/zk_recovery/scripts/gen_lifecycle_revoke_fixture.sh`, \
             not part of the normal suite"]
+// Long, linear witness-printing generator; splitting it would obscure the
+// 1:1 correspondence with the Prover.toml fields it emits.
+#[allow(clippy::too_many_lines)]
+// `pk_x_hi`/`pk_x_lo` vs `pk_y_hi`/`pk_y_lo` mirror the circuit's own
+// naming convention (see `split16`'s doc comment) and are clearer named
+// this way than disambiguated.
+#[allow(clippy::similar_names)]
 fn print_lifecycle_revoke_prover_toml() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
@@ -503,7 +525,7 @@ fn print_lifecycle_revoke_prover_toml() {
     println!("###PROVER_JSON_END###");
 }
 
-/// Deploy a throwaway contract (the M0 stateless WebAuthn verifier wasm --
+/// Deploy a throwaway contract (the M0 stateless `WebAuthn` verifier wasm --
 /// zero constructor args, no state) at a chosen contract-id via
 /// `env.register_at`, then round-trip the resolved `Address` back to its
 /// raw contract-id bytes via `AddressPayload::from_address`. This proves
