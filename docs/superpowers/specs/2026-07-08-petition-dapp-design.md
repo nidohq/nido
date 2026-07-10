@@ -1,7 +1,7 @@
 # Adsum (petition dapp) — design
 
 **Date:** 2026-07-08
-**Status:** Approved — not yet implemented
+**Status:** Approved — contracts implemented (petition-dapp branch); dapp pending
 
 ## Goal
 
@@ -49,8 +49,8 @@ House style: `#![no_std]`, `src/lib.rs` + `src/contract.rs`, workspace deps
 #[contracttype]
 pub struct Petition {
     pub creator: Address,
-    pub title: String,         // 1..=100 chars
-    pub body: String,          // 1..=2000 chars
+    pub title: String,         // 1..=100 bytes (UTF-8)
+    pub body: String,          // 1..=2000 bytes (UTF-8)
     pub goal: Option<u32>,     // signature target; display only, never enforced
     pub deadline: Option<u32>, // ledger sequence; sign() rejects at/after
     pub sig_count: u32,
@@ -81,6 +81,12 @@ struct Registry {
 index, gives unbounded signer enumeration via paginated reads. A single
 `Vec<Address>` per petition would hit the ledger-entry size ceiling at a few
 thousand signers; the indexed map does not.
+
+Caps are byte counts, not character counts: Soroban's `String::len()` counts
+UTF-8 bytes, so a title/body full of multi-byte characters hits the cap well
+before 100/2000 codepoints. Client-side validation must count UTF-8 bytes
+(e.g. `new TextEncoder().encode(title).length`), not `.length`/codepoints, to
+match what the contract will accept.
 
 ### Functions
 
@@ -178,6 +184,17 @@ preimage scheme is front-runnable (the claim transaction reveals the secret,
 which an observer could redirect to their own address), whereas here the
 claim carries a signature over the claimant's address, so an observed claim
 is useless to anyone else.
+
+Two residual key-registration quirks, neither a privilege escalation: an
+observer watching the mempool can front-run `pre_vouch` to register the same
+pubkey first (squatting the key), in which case the victim's own transaction
+simply fails loudly with `PreVouchExists`; and once an invite is exhausted
+(deleted at `max_claims`) or revoked, its pubkey is free for anyone holding
+the corresponding secret to register a new, unrelated `pre_vouch` under —
+since vouching is unilateral (the registrant becomes the `from`) and claim
+UIs resolve the invite's creator on-chain rather than trusting the key
+itself, neither case lets an attacker impersonate or claim credit for
+someone else's vouch.
 
 ```rust
 pub fn pre_vouch(
@@ -439,8 +456,12 @@ The migration itself:
    without cross-petition linkability. Public `sign` and `sign_private`
    coexist; `sig_count` counts both.
 3. **Criteria.** Per-petition eligibility criteria (trusted roots + max path
-   depth — deferred from v1) enter the `Petition` struct and become public
-   inputs.
+   depth — deferred from v1) will live in a parallel
+   `criteria: PersistentMap<u32, Criteria>` map added alongside the existing
+   `Registry` storage, keyed by petition id, and become public inputs to
+   `sign_private`. Existing petition entries are left untouched — adding
+   fields to the `Petition` struct itself would change its stored XDR shape,
+   contradicting this section's no-storage-migration claim.
 4. **Private vouching (later still).** Vouch commitments instead of plaintext
    edges; witnesses supplied off-chain by cooperating vouchers. Pre-vouch
    invites are a conceptual stepping stone: a vouch as a bearer credential

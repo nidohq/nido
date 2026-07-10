@@ -3,6 +3,7 @@ use soroban_sdk::{
 };
 use soroban_sdk_tools::{contractstorage, InstanceItem, PersistentMap};
 
+// Caps are UTF-8 BYTE counts (soroban String::len is bytes) — client validation must match.
 pub const TITLE_MAX: u32 = 100;
 pub const BODY_MAX: u32 = 2000;
 const TTL_LEDGERS: u32 = 518_400; // ~30 days of ledgers
