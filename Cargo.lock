@@ -1096,6 +1096,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nido-web-of-trust"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "soroban-sdk",
+ "soroban-sdk-tools",
+]
+
+[[package]]
 name = "nido-webauthn-verifier"
 version = "0.1.0"
 dependencies = [
