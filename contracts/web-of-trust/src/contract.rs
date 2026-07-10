@@ -1,5 +1,7 @@
+use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, Address, BytesN, Env, Vec,
+    contract, contracterror, contractevent, contractimpl, contracttype, Address, Bytes, BytesN,
+    Env, Vec,
 };
 use soroban_sdk_tools::{contractstorage, PersistentMap};
 
@@ -88,6 +90,18 @@ fn add_edge(e: &Env, from: &Address, to: &Address) -> Result<(), TrustError> {
 
     Vouched { from, to }.publish(e);
     Ok(())
+}
+
+impl Contract {
+    /// Builds the domain-separated claim payload signed by the invite secret:
+    /// `contract.to_xdr || "adsum:claim_vouch" || to.to_xdr`. The dapp
+    /// reproduces these bytes in TypeScript; keep them stable.
+    pub fn claim_payload_for(e: &Env, contract: &Address, to: &Address) -> Bytes {
+        let mut payload = contract.clone().to_xdr(e);
+        payload.append(&Bytes::from_slice(e, CLAIM_DOMAIN));
+        payload.append(&to.clone().to_xdr(e));
+        payload
+    }
 }
 
 #[contractimpl]
@@ -190,6 +204,45 @@ impl Contract {
 
     pub fn get_pre_vouch(e: &Env, key: &BytesN<32>) -> Option<PreVouch> {
         Graph::new(e).pre_vouches.get(key)
+    }
+
+    pub fn claim_vouch(
+        e: &Env,
+        key: &BytesN<32>,
+        to: &Address,
+        sig: &BytesN<64>,
+    ) -> Result<(), TrustError> {
+        let graph = Graph::new(e);
+        let mut pv = graph
+            .pre_vouches
+            .get(key)
+            .ok_or(TrustError::PreVouchNotFound)?;
+        if let Some(x) = pv.expires {
+            if e.ledger().sequence() >= x {
+                return Err(TrustError::PreVouchExpired);
+            }
+        }
+        // The signature is the authorization: it binds this claim to `to`,
+        // so an observed claim tx cannot be replayed for another address.
+        // ed25519_verify TRAPS on an invalid signature (host error).
+        let payload = Self::claim_payload_for(e, &e.current_contract_address(), to);
+        e.crypto().ed25519_verify(key, &payload, sig);
+
+        add_edge(e, &pv.from.clone(), to)?;
+
+        pv.claims += 1;
+        if pv.claims >= pv.max_claims {
+            graph.pre_vouches.remove(key);
+        } else {
+            graph.pre_vouches.set(key, &pv);
+        }
+        VouchClaimed {
+            key,
+            from: &pv.from,
+            to,
+        }
+        .publish(e);
+        Ok(())
     }
 }
 
@@ -358,5 +411,165 @@ mod test {
             client.try_revoke_pre_vouch(&a, &key),
             Err(Ok(TrustError::PreVouchNotFound))
         );
+    }
+
+    // -- claim_vouch tests --
+
+    fn dalek_key(seed: u8) -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&[seed; 32])
+    }
+
+    /// Creates a pre-vouch for `from` under `signing_key`'s pubkey and returns
+    /// (key, valid signature over `to`).
+    fn make_invite(
+        env: &Env,
+        client: &ContractClient<'static>,
+        from: &Address,
+        to: &Address,
+        signing_key: &ed25519_dalek::SigningKey,
+        expires: Option<u32>,
+        max_claims: u32,
+    ) -> (BytesN<32>, BytesN<64>) {
+        use ed25519_dalek::Signer as _;
+        let key = BytesN::from_array(env, &signing_key.verifying_key().to_bytes());
+        client.pre_vouch(from, &key, &expires, &max_claims);
+        let payload = Contract::claim_payload_for(env, &client.address, to);
+        let mut buf = [0u8; 1024];
+        let len = payload.len() as usize;
+        payload.copy_into_slice(&mut buf[..len]);
+        let sig = signing_key.sign(&buf[..len]);
+        (key, BytesN::from_array(env, &sig.to_bytes()))
+    }
+
+    #[test]
+    fn claim_happy_path() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let sk = dalek_key(7);
+        let (key, sig) = make_invite(&env, &client, &alice, &bob, &sk, None, 2);
+
+        client.claim_vouch(&key, &bob, &sig);
+
+        assert!(client.has_vouched(&alice, &bob));
+        assert_eq!(client.get_pre_vouch(&key).unwrap().claims, 1);
+    }
+
+    #[test]
+    fn claim_deletes_entry_at_cap() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let sk = dalek_key(7);
+        let (key, sig) = make_invite(&env, &client, &alice, &bob, &sk, None, 1);
+
+        client.claim_vouch(&key, &bob, &sig);
+
+        assert_eq!(client.get_pre_vouch(&key), None);
+        // further claims fail as NotFound (exhausted)
+        let carol = Address::generate(&env);
+        let (_k2, sig2) = {
+            use ed25519_dalek::Signer as _;
+            let payload = Contract::claim_payload_for(&env, &client.address, &carol);
+            let mut buf = [0u8; 1024];
+            let len = payload.len() as usize;
+            payload.copy_into_slice(&mut buf[..len]);
+            let sig = sk.sign(&buf[..len]);
+            (key.clone(), BytesN::from_array(&env, &sig.to_bytes()))
+        };
+        assert_eq!(
+            client.try_claim_vouch(&key, &carol, &sig2),
+            Err(Ok(TrustError::PreVouchNotFound))
+        );
+    }
+
+    #[test]
+    fn claim_repeat_by_same_account_rejected() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let sk = dalek_key(7);
+        let (key, sig) = make_invite(&env, &client, &alice, &bob, &sk, None, 5);
+
+        client.claim_vouch(&key, &bob, &sig);
+        assert_eq!(
+            client.try_claim_vouch(&key, &bob, &sig),
+            Err(Ok(TrustError::AlreadyVouched))
+        );
+        // counter not consumed by the failed claim
+        assert_eq!(client.get_pre_vouch(&key).unwrap().claims, 1);
+    }
+
+    #[test]
+    fn claim_by_creator_rejected() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let sk = dalek_key(7);
+        let (key, sig) = make_invite(&env, &client, &alice, &alice, &sk, None, 1);
+        assert_eq!(
+            client.try_claim_vouch(&key, &alice, &sig),
+            Err(Ok(TrustError::SelfVouch))
+        );
+    }
+
+    #[test]
+    fn claim_expired_rejected() {
+        let (env, client) = setup();
+        env.ledger().with_mut(|l| l.sequence_number = 1000);
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let sk = dalek_key(7);
+        let (key, sig) = make_invite(&env, &client, &alice, &bob, &sk, Some(1500), 1);
+
+        env.ledger().with_mut(|l| l.sequence_number = 1500);
+        assert_eq!(
+            client.try_claim_vouch(&key, &bob, &sig),
+            Err(Ok(TrustError::PreVouchExpired))
+        );
+    }
+
+    #[test]
+    #[should_panic] // host trap from ed25519_verify, not a typed error
+    #[allow(clippy::should_panic_without_expect)]
+    fn claim_with_wrong_signature_traps() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let carol = Address::generate(&env);
+        let sk = dalek_key(7);
+        // signature binds to bob; submitting for carol must trap
+        let (key, sig_for_bob) = make_invite(&env, &client, &alice, &bob, &sk, None, 1);
+        client.claim_vouch(&key, &carol, &sig_for_bob);
+    }
+
+    #[test]
+    #[should_panic] // signature from a different secret key
+    #[allow(clippy::should_panic_without_expect)]
+    fn claim_with_wrong_key_traps() {
+        use ed25519_dalek::Signer as _;
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let sk = dalek_key(7);
+        let (key, _sig) = make_invite(&env, &client, &alice, &bob, &sk, None, 1);
+        let other = dalek_key(9);
+        let payload = Contract::claim_payload_for(&env, &client.address, &bob);
+        let mut buf = [0u8; 1024];
+        let len = payload.len() as usize;
+        payload.copy_into_slice(&mut buf[..len]);
+        let bad = other.sign(&buf[..len]);
+        client.claim_vouch(&key, &bob, &BytesN::from_array(&env, &bad.to_bytes()));
+    }
+
+    #[test]
+    fn claim_emits_vouched_and_claimed_events() {
+        let (env, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let sk = dalek_key(7);
+        let (key, sig) = make_invite(&env, &client, &alice, &bob, &sk, None, 1);
+        client.claim_vouch(&key, &bob, &sig);
+        // add_edge publishes Vouched, claim_vouch publishes VouchClaimed
+        assert_eq!(env.events().all().events().len(), 2);
     }
 }
