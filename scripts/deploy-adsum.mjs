@@ -90,8 +90,13 @@ const NETWORKS = {
   testnet: { rpc: 'https://soroban-testnet.stellar.org', passphrase: Networks.TESTNET },
   futurenet: { rpc: 'https://rpc-futurenet.stellar.org', passphrase: Networks.FUTURENET },
 };
-const networkName = arg('network', process.env.NETWORK || 'testnet');
-const net = NETWORKS[networkName] || NETWORKS.testnet;
+const rawNetwork = arg('network', process.env.NETWORK);
+if (rawNetwork && !(rawNetwork in NETWORKS)) {
+  console.error(`Unknown --network "${rawNetwork}". Valid options: ${Object.keys(NETWORKS).join(', ')}`);
+  process.exit(1);
+}
+const networkName = rawNetwork || 'testnet';
+const net = NETWORKS[networkName];
 const RPC = arg('rpc', net.rpc);
 const passphrase = arg('passphrase', net.passphrase);
 

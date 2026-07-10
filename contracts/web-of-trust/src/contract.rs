@@ -249,6 +249,7 @@ impl Contract {
 #[cfg(test)]
 mod test {
     use super::*;
+    use soroban_sdk::testutils::storage::Persistent as _;
     use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
     use soroban_sdk::Env;
 
@@ -337,6 +338,60 @@ mod test {
             client.try_revoke(&a, &b),
             Err(Ok(TrustError::VouchNotFound))
         );
+    }
+
+    #[test]
+    fn extend_ttl_extends_both_entries() {
+        let (env, client) = setup();
+        let a = Address::generate(&env);
+        let b = Address::generate(&env);
+        let c = Address::generate(&env);
+
+        // No-op on an address with no entries at all -- must not panic.
+        client.extend_ttl(&a);
+
+        // a vouches for b (creates given[a] and received[b]); c vouches for a
+        // (creates given[c] and received[a]) so that a has both a given[a]
+        // and a received[a] entry to extend.
+        client.vouch(&a, &b);
+        client.vouch(&c, &a);
+
+        // Both entries already extended to TTL_LEDGERS (518_400) from ledger
+        // 0 by add_edge itself.
+        let given_key = env.as_contract(&client.address, || {
+            Graph::new(&env).given.get_storage_key(&a)
+        });
+        let received_key = env.as_contract(&client.address, || {
+            Graph::new(&env).received.get_storage_key(&a)
+        });
+        let given_ttl = || {
+            env.as_contract(&client.address, || {
+                env.storage().persistent().get_ttl(&given_key)
+            })
+        };
+        let received_ttl = || {
+            env.as_contract(&client.address, || {
+                env.storage().persistent().get_ttl(&received_key)
+            })
+        };
+        assert_eq!(given_ttl(), TTL_LEDGERS);
+        assert_eq!(received_ttl(), TTL_LEDGERS);
+
+        // Advance to before the original TTL expires, then call extend_ttl.
+        env.ledger().with_mut(|l| l.sequence_number = 500_000);
+        client.extend_ttl(&a);
+
+        // A real extension resets the TTL to TTL_LEDGERS measured from *now*
+        // (live_until becomes 500_000 + 518_400 = 1_018_400). A stub that
+        // skips the underlying `extend_ttl` calls would leave both entries'
+        // live_until at the original 518_400, i.e. a remaining TTL of only
+        // 18_400 -- this assertion catches that.
+        assert_eq!(given_ttl(), TTL_LEDGERS);
+        assert_eq!(received_ttl(), TTL_LEDGERS);
+
+        // Still a no-op (no panic) for an address with entries in neither map.
+        let d = Address::generate(&env);
+        client.extend_ttl(&d);
     }
 
     #[test]
