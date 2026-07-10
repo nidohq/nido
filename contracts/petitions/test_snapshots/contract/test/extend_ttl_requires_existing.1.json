@@ -6,6 +6,7 @@
   },
   "auth": [
     [],
+    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
@@ -34,11 +35,14 @@
       ]
     ],
     [],
+    [],
+    [],
+    [],
     []
   ],
   "ledger": {
     "protocol_version": 26,
-    "sequence_number": 0,
+    "sequence_number": 600000,
     "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
@@ -124,7 +128,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 518400
+        "live_until": 1018400
       },
       {
         "entry": {
@@ -156,7 +160,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 4095
+        "live_until": 604095
       },
       {
         "entry": {

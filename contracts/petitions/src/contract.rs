@@ -121,6 +121,12 @@ impl Contract {
         registry
             .signer_by_index
             .set(&(id, petition.sig_count), signer);
+        registry
+            .signatures
+            .extend_ttl(&(id, signer.clone()), TTL_LEDGERS, TTL_LEDGERS);
+        registry
+            .signer_by_index
+            .extend_ttl(&(id, petition.sig_count), TTL_LEDGERS, TTL_LEDGERS);
         petition.sig_count += 1;
         registry.petitions.set(&id, &petition);
         registry.petitions.extend_ttl(&id, TTL_LEDGERS, TTL_LEDGERS);
@@ -162,6 +168,7 @@ impl Contract {
 #[cfg(test)]
 mod test {
     use super::*;
+    use soroban_sdk::testutils::storage::Persistent as _;
     use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
     use soroban_sdk::Env;
 
@@ -446,6 +453,8 @@ mod test {
     #[test]
     fn extend_ttl_requires_existing() {
         let (env, client) = setup();
+        assert_eq!(client.try_extend_ttl(&99), Err(Ok(PetitionError::NotFound)));
+
         let creator = Address::generate(&env);
         let id = client.create_petition(
             &creator,
@@ -454,7 +463,29 @@ mod test {
             &None,
             &None,
         );
-        client.extend_ttl(&id); // no panic
-        assert_eq!(client.try_extend_ttl(&99), Err(Ok(PetitionError::NotFound)));
+
+        // create_petition already extended TTL to TTL_LEDGERS (518_400) from
+        // ledger 0.
+        let key = env.as_contract(&client.address, || {
+            Registry::new(&env).petitions.get_storage_key(&id)
+        });
+        let ttl = || env.as_contract(&client.address, || env.storage().persistent().get_ttl(&key));
+        assert_eq!(ttl(), TTL_LEDGERS);
+
+        // Advance to before the original TTL expires, then call extend_ttl.
+        env.ledger().with_mut(|l| l.sequence_number = 500_000);
+        client.extend_ttl(&id);
+
+        // A real extension resets the TTL to TTL_LEDGERS measured from *now*
+        // (live_until becomes 500_000 + 518_400 = 1_018_400). A stub that
+        // skips the underlying `extend_ttl` call would leave the entry's
+        // live_until at the original 518_400, i.e. a remaining TTL of only
+        // 18_400 -- this assertion catches that.
+        assert_eq!(ttl(), TTL_LEDGERS);
+
+        // Confirm the entry now truly survives past the *original* 518_400
+        // expiry point.
+        env.ledger().with_mut(|l| l.sequence_number = 600_000);
+        assert!(client.get_petition(&id).is_some());
     }
 }
