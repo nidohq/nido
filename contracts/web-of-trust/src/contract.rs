@@ -294,14 +294,12 @@ mod test {
 
         assert_eq!(client.get_pre_vouch(&key), None);
         client.pre_vouch(&a, &key, &None, &3);
+        assert_eq!(env.events().all().events().len(), 1);
         let pv = client.get_pre_vouch(&key).unwrap();
         assert_eq!(pv.from, a);
         assert_eq!(pv.expires, None);
         assert_eq!(pv.max_claims, 3);
         assert_eq!(pv.claims, 0);
-        // Event assertion temporarily skipped: PreVouchCreated event with BytesN<32> topic
-        // not being captured in test framework (soroban-sdk 26.0.1 limitation)
-        // assert_eq!(env.events().all().events().len(), 1);
     }
 
     #[test]
