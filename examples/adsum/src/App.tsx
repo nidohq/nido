@@ -1,8 +1,10 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 import { PageShell } from "./components/PageShell"
+import { Claim } from "./pages/Claim"
 import { Home } from "./pages/Home"
 import { Petition } from "./pages/Petition"
 import { Trust } from "./pages/Trust"
+import { Vouch } from "./pages/Vouch"
 
 function App() {
 	return (
@@ -12,6 +14,8 @@ function App() {
 					<Route path="/" element={<Home />} />
 					<Route path="/petition/:id" element={<Petition />} />
 					<Route path="/trust" element={<Trust />} />
+					<Route path="/vouch" element={<Vouch />} />
+					<Route path="/claim" element={<Claim />} />
 				</Routes>
 			</PageShell>
 		</BrowserRouter>

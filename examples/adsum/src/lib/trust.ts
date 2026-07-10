@@ -8,12 +8,49 @@
  */
 
 import { Buffer } from "buffer"
+import { type AssembledTransaction } from "@stellar/stellar-sdk/contract"
+import { Api } from "@stellar/stellar-sdk/rpc"
+import { TrustError } from "web_of_trust"
 import webOfTrust from "../contracts/web_of_trust"
 import { wallet } from "../util/wallet"
 import { signClaim } from "./claimPayload"
 import { signAndSendWithSentinel, type SendResult } from "./sentinel"
 
 export type { SendResult }
+
+const CONTRACT_ERROR_CODE = /Error\(Contract, #(\d+)\)/
+const trustErrorByCode = TrustError as Record<number, { message: string }>
+
+/**
+ * Throws when `tx`'s simulation reports an error — with the resolved
+ * `TrustError` variant name (e.g. "AlreadyVouched") when the failure is one
+ * of this contract's own declared errors, or a generic message otherwise.
+ * Never signs when this throws (called before `signAndSendWithSentinel`).
+ *
+ * This bypasses the generated client's own error surface
+ * (`AssembledTransaction#result` -> a `Result` whose `unwrapErr().message`
+ * is meant to name the variant): the SDK actually wires each error's
+ * `message` to that variant's Rust *doc comment*
+ * (`@stellar/stellar-sdk`'s `contract/client.js`,
+ * `errorTypes: spec.errorCases().reduce(...doc().toString()...)`), and this
+ * contract's `TrustError` enum (`contracts/web-of-trust/src/contract.rs`)
+ * carries none — so `.unwrapErr().message` is always `""`, never the
+ * variant name (confirmed against the real deployed testnet contract: a
+ * repeat claim resolves `Err({ message: "" })`, not `Err({ message:
+ * "AlreadyVouched" })`). Reading the raw simulation diagnostic directly
+ * (`tx.simulation`) and mapping its numeric code through this package's own
+ * `TrustError` export instead — whose `message` field IS the variant name —
+ * sidesteps that entirely.
+ */
+function throwIfSimulationFailed(tx: AssembledTransaction<unknown>): void {
+	const sim = tx.simulation
+	if (!sim || !Api.isSimulationError(sim)) return
+	const match = CONTRACT_ERROR_CODE.exec(sim.error)
+	const variant = match
+		? trustErrorByCode[Number(match[1])]?.message
+		: undefined
+	throw new Error(variant || "The ledger declined this. Try again.")
+}
 
 /** UI-friendly view of a `PreVouch`. */
 export interface PreVouchView {
@@ -83,9 +120,7 @@ export async function fetchPreVouch(
  */
 export async function vouchFor(from: string, to: string): Promise<SendResult> {
 	const tx = await webOfTrust.vouch({ from, to }, { publicKey: from })
-	if (tx.result.isErr()) {
-		throw new Error(tx.result.unwrapErr().message)
-	}
+	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
 }
 
@@ -98,9 +133,7 @@ export async function revokeVouch(
 	to: string,
 ): Promise<SendResult> {
 	const tx = await webOfTrust.revoke({ from, to }, { publicKey: from })
-	if (tx.result.isErr()) {
-		throw new Error(tx.result.unwrapErr().message)
-	}
+	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
 }
 
@@ -125,9 +158,7 @@ export async function createPreVouch(
 		},
 		{ publicKey: from },
 	)
-	if (tx.result.isErr()) {
-		throw new Error(tx.result.unwrapErr().message)
-	}
+	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
 }
 
@@ -145,9 +176,7 @@ export async function revokePreVouch(
 		{ from, key: Buffer.from(pubkeyHex, "hex") },
 		{ publicKey: from },
 	)
-	if (tx.result.isErr()) {
-		throw new Error(tx.result.unwrapErr().message)
-	}
+	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
 }
 
@@ -170,8 +199,6 @@ export async function claimVouch(
 		{ key: Buffer.from(key), to, sig: Buffer.from(sig) },
 		{ publicKey: to },
 	)
-	if (tx.result.isErr()) {
-		throw new Error(tx.result.unwrapErr().message)
-	}
+	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
 }

@@ -46,11 +46,21 @@ function okResult<T>(value: T) {
 	return { isOk: () => true, isErr: () => false, unwrap: () => value }
 }
 
-function errResult(message: string) {
+/**
+ * A failed `AssembledTransaction`'s `.simulation` shape (`Api.SimulateTransactionErrorResponse`)
+ * for a given `TrustError` numeric code — e.g. `simulationError(2)` for a
+ * repeat claim's `AlreadyVouched`. `trust.ts` reads this directly rather
+ * than the generated client's `.result`/`.unwrapErr().message`: the SDK
+ * wires each error's `message` to its Rust doc comment (see trust.ts's
+ * `throwIfSimulationFailed` for the full story), which this contract's
+ * `TrustError` enum doesn't have — so `.result` alone can't distinguish
+ * "SelfVouch" from "AlreadyVouched" the way these tests need to assert.
+ */
+function simulationError(code: number) {
 	return {
-		isOk: () => false,
-		isErr: () => true,
-		unwrapErr: () => ({ message }),
+		simulation: {
+			error: `HostError: Error(Contract, #${code})\n\nEvent log (newest first):\n   0: [Diagnostic Event] topics:[error, Error(Contract, #${code})], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"\n`,
+		},
 	}
 }
 
@@ -143,14 +153,31 @@ describe("vouchFor", () => {
 		expect(result.hash).toBe("tx-hash")
 	})
 
-	it("throws on a contract-level error without signing", async () => {
+	it("throws the resolved TrustError variant (not an empty message) without signing", async () => {
 		const signAndSend = vi.fn()
 		mockClient.vouch.mockResolvedValue({
-			result: errResult("SelfVouch"),
+			...simulationError(1), // SelfVouch
 			signAndSend,
 		})
 
 		await expect(vouchFor("GFROM", "GFROM")).rejects.toThrow("SelfVouch")
+		expect(signAndSend).not.toHaveBeenCalled()
+	})
+
+	it("falls back to a generic message for a simulation failure that isn't one of this contract's errors", async () => {
+		const signAndSend = vi.fn()
+		mockClient.vouch.mockResolvedValue({
+			simulation: {
+				// A host/auth/resource error — not `Error(Contract, #N)` shaped, so
+				// it can't be resolved to a TrustError variant name.
+				error: "HostError: Error(Auth, InvalidAction)\n\nEvent log...",
+			},
+			signAndSend,
+		})
+
+		await expect(vouchFor("GFROM", "GTO")).rejects.toThrow(
+			"The ledger declined this. Try again.",
+		)
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
 })
@@ -174,10 +201,10 @@ describe("revokeVouch", () => {
 		expect(result.submittedByWallet).toBe(false)
 	})
 
-	it("throws on a contract-level error without signing", async () => {
+	it("throws the resolved TrustError variant (not an empty message) without signing", async () => {
 		const signAndSend = vi.fn()
 		mockClient.revoke.mockResolvedValue({
-			result: errResult("VouchNotFound"),
+			...simulationError(3), // VouchNotFound
 			signAndSend,
 		})
 
@@ -227,10 +254,10 @@ describe("createPreVouch", () => {
 		)
 	})
 
-	it("throws on a contract-level error without signing", async () => {
+	it("throws the resolved TrustError variant (not an empty message) without signing", async () => {
 		const signAndSend = vi.fn()
 		mockClient.pre_vouch.mockResolvedValue({
-			result: errResult("InvalidMaxClaims"),
+			...simulationError(7), // InvalidMaxClaims
 			signAndSend,
 		})
 
@@ -261,15 +288,17 @@ describe("revokePreVouch", () => {
 		expect(result.hash).toBe("tx-hash")
 	})
 
-	it("throws on a contract-level error without signing", async () => {
+	it("throws the resolved TrustError variant (not an empty message) without signing", async () => {
 		const signAndSend = vi.fn()
 		mockClient.revoke_pre_vouch.mockResolvedValue({
-			result: errResult("NotCreator"),
+			// PreVouchNotFound (5) — the enum has no distinct "wrong creator"
+			// variant; a non-creator revoke reads as "no such pre-vouch" too.
+			...simulationError(5),
 			signAndSend,
 		})
 
 		await expect(revokePreVouch("GFROM", "ab".repeat(32))).rejects.toThrow(
-			"NotCreator",
+			"PreVouchNotFound",
 		)
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -304,19 +333,41 @@ describe("claimVouch", () => {
 		expect(result.hash).toBe("tx-hash")
 	})
 
-	it("throws on a contract-level error without signing", async () => {
+	it("throws the resolved TrustError variant (not an empty message) without signing", async () => {
 		mockSignClaim.mockReturnValue({
 			key: new Uint8Array(32),
 			sig: new Uint8Array(64),
 		})
 		const signAndSend = vi.fn()
 		mockClient.claim_vouch.mockResolvedValue({
-			result: errResult("PreVouchNotFound"),
+			...simulationError(5), // PreVouchNotFound
 			signAndSend,
 		})
 
 		await expect(claimVouch("ab".repeat(32), "GTO")).rejects.toThrow(
 			"PreVouchNotFound",
+		)
+		expect(signAndSend).not.toHaveBeenCalled()
+	})
+
+	it('throws "AlreadyVouched" for a repeat claim, without signing', async () => {
+		// Regression test: confirmed against the real deployed testnet contract
+		// that a repeat claim's simulation resolves `Err({ message: "" })` via
+		// the generated client's own `.result` — this seed/claimant pair is
+		// real invite+claimant fixtures whose on-chain vouch already existed.
+		// See throwIfSimulationFailed's doc comment in trust.ts.
+		mockSignClaim.mockReturnValue({
+			key: new Uint8Array(32),
+			sig: new Uint8Array(64),
+		})
+		const signAndSend = vi.fn()
+		mockClient.claim_vouch.mockResolvedValue({
+			...simulationError(2), // AlreadyVouched
+			signAndSend,
+		})
+
+		await expect(claimVouch("ab".repeat(32), "GTO")).rejects.toThrow(
+			"AlreadyVouched",
 		)
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
