@@ -123,6 +123,16 @@ describe("Vouch", () => {
 		expect(screen.getByText(TARGET)).toBeInTheDocument()
 	})
 
+	it("re-validates corrupted pending vouch and renders error state", async () => {
+		localStorage.setItem(PENDING_KEY, "not-an-address")
+		renderAt("/vouch")
+
+		expect(
+			screen.getByText(/didn.t carry a usable address/i),
+		).toBeInTheDocument()
+		expect(mockLookupNidoName).not.toHaveBeenCalled()
+	})
+
 	it("clears the pending value on explicit dismissal", async () => {
 		mockLookupNidoName.mockResolvedValue("alice")
 		renderAt(`/vouch?for=${TARGET}`)

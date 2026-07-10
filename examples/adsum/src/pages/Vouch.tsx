@@ -20,7 +20,10 @@ const PENDING_KEY = "adsum:pendingVouch"
  */
 function resolveTarget(search: string): string | null {
 	if (!new URLSearchParams(search).has("for")) {
-		return localStorage.getItem(PENDING_KEY)
+		const pending = localStorage.getItem(PENDING_KEY)
+		return pending
+			? parseVouchParam(`?${new URLSearchParams({ for: pending }).toString()}`)
+			: null
 	}
 	return parseVouchParam(search)
 }
