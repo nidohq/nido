@@ -184,6 +184,11 @@ dev: build-ts
 publish-policy-builder-v1 alias network="testnet":
     ./scripts/deploy-policy-builder-v1.sh {{alias}} {{network}}
 
+# Deploy adsum contracts (petitions + web-of-trust) and register names.
+# Usage: DEPLOY_SECRET=S... just publish-adsum
+publish-adsum:
+    node scripts/deploy-adsum.mjs
+
 # Regenerate one binding from a fresh .wasm and apply post-gen fixes.
 # Usage: just bindings smart-account
 # Run after `just build-contracts`. See scripts/fix-bindings.sh for what
