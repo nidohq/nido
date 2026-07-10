@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom"
 import { Broadside } from "./components/Broadside"
 import { PageShell } from "./components/PageShell"
 import { Home } from "./pages/Home"
+import { Petition } from "./pages/Petition"
 
 function Trust() {
 	return (
@@ -18,6 +19,7 @@ function App() {
 			<PageShell>
 				<Routes>
 					<Route path="/" element={<Home />} />
+					<Route path="/petition/:id" element={<Petition />} />
 					<Route path="/trust" element={<Trust />} />
 				</Routes>
 			</PageShell>

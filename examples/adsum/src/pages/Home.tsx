@@ -1,10 +1,8 @@
-import { Server } from "@stellar/stellar-sdk/rpc"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Broadside } from "../components/Broadside"
 import { CreatePetition } from "../components/CreatePetition"
 import { InkProgress } from "../components/InkProgress"
-import { rpcUrl, stellarNetwork } from "../contracts/util"
 import { useNotification } from "../hooks/useNotification"
 import { formatLedgerCountdown } from "../lib/ledgerTime"
 import {
@@ -12,6 +10,7 @@ import {
 	fetchPetitions,
 	type PetitionView,
 } from "../lib/petitions"
+import { getLatestLedgerSeq } from "../lib/rpc"
 import styles from "./Home.module.css"
 
 const EXCERPT_MAX = 220
@@ -32,9 +31,9 @@ const shortAddress = (address: string) =>
  * Home: the petition wall. A poster wall of `Broadside` cards (newest first)
  * beside the submission slot (`CreatePetition`), sticky on wide screens so
  * posting never demands a scroll. The current ledger is read once here (via
- * the RPC server directly — no generated-client call for this) and threaded
- * down for both the deadline countdown on each card and the date -> ledger
- * estimate in the form.
+ * the shared RPC helper in lib/rpc — no generated-client call for this) and
+ * threaded down for both the deadline countdown on each card and the
+ * date -> ledger estimate in the form.
  */
 export function Home() {
 	const navigate = useNavigate()
@@ -49,11 +48,9 @@ export function Home() {
 	// (ledger-time helpers only need an approximate "now").
 	useEffect(() => {
 		let cancelled = false
-		const server = new Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
-		server
-			.getLatestLedger()
-			.then((latest) => {
-				if (!cancelled) setCurrentLedger(latest.sequence)
+		getLatestLedgerSeq()
+			.then((sequence) => {
+				if (!cancelled) setCurrentLedger(sequence)
 			})
 			.catch((err: unknown) => {
 				console.error("Failed to read the latest ledger", err)
