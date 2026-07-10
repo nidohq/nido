@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.E2E_PORT || 4399);
 const baseURL = `http://localhost:${PORT}`;
+const ADSUM_PORT = Number(process.env.E2E_ADSUM_PORT || 4401);
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -11,12 +12,22 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   outputDir: 'test-results',
   use: { baseURL, trace: 'on-first-retry' },
-  webServer: {
-    command: `node tests/support/server.mjs`,
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    env: { E2E_PORT: String(PORT) },
-  },
+  webServer: [
+    {
+      command: `node tests/support/server.mjs`,
+      url: baseURL,
+      reuseExistingServer: !process.env.CI,
+      env: { E2E_PORT: String(PORT) },
+    },
+    // Adsum example dApp (tests/e2e/ui/adsum.spec.ts), served standalone so
+    // it can be navigated directly against a chain-mocked RPC.
+    {
+      command: `node tests/support/adsum-server.mjs`,
+      url: `http://localhost:${ADSUM_PORT}`,
+      reuseExistingServer: !process.env.CI,
+      env: { E2E_ADSUM_PORT: String(ADSUM_PORT) },
+    },
+  ],
   projects: [
     // Fast shim lane (@fast) — only tests/e2e/ui, excluding CDP specs.
     {
