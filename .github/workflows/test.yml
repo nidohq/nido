@@ -139,6 +139,22 @@ jobs:
         run: npx tsc -p ./packages/passkey-sdk/tsconfig.json
       - name: Build frontend
         run: npx astro build --root ./packages/frontend
+      # examples/adsum/dist is gitignored and never built as part of the repo
+      # checkout -- tests/e2e/ui/adsum.spec.ts (and playwright.config.ts's
+      # conditional adsum webServer entry) skip themselves gracefully when
+      # it's missing, but building it here gets that fast-lane coverage in
+      # CI too. Needs an explicit TESTNET env: examples/adsum's committed
+      # contract clients (src/contracts/{petitions,web_of_trust}.ts) build a
+      # `Client` at module scope, and its default env (LOCAL) points at an
+      # http:// RPC url that the stellar SDK's `allowHttp` guard rejects.
+      - name: Build adsum example (staging clients, testnet env)
+        run: npm run build
+        working-directory: examples/adsum
+        env:
+          PUBLIC_STELLAR_NETWORK: TESTNET
+          PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+          PUBLIC_STELLAR_RPC_URL: https://soroban-testnet.stellar.org
+          PUBLIC_STELLAR_HORIZON_URL: https://horizon-testnet.stellar.org
       - name: Fast UI e2e tier (shim — chromium/firefox/webkit)
         run: npx playwright test --grep @fast
       - name: Chromium CDP virtual-authenticator fidelity lane

@@ -5,13 +5,16 @@
  */
 
 import { Server } from "@stellar/stellar-sdk/rpc"
-import { rpcUrl, stellarNetwork } from "../contracts/util"
+import { rpcUrl } from "../contracts/util"
 
 let server: Server | undefined
 
 /** The network's latest ledger sequence, via a lazily-built shared server. */
 export async function getLatestLedgerSeq(): Promise<number> {
-	server ??= new Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
+	// Derived from the URL scheme (not the network name) so this stays
+	// correct even if a network is ever pointed at a non-default rpcUrl --
+	// see src/contracts/{petitions,web_of_trust}.ts for the same derivation.
+	server ??= new Server(rpcUrl, { allowHttp: rpcUrl.startsWith("http://") })
 	const latest = await server.getLatestLedger()
 	return latest.sequence
 }

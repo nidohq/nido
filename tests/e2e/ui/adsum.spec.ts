@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { Keypair } from '@stellar/stellar-sdk';
 import { adsumChainMock, type AdsumScenario } from '../../support/adsumChainMock';
 
@@ -10,6 +12,16 @@ import { adsumChainMock, type AdsumScenario } from '../../support/adsumChainMock
 // Task 9.
 const PORT = Number(process.env.E2E_ADSUM_PORT || 4401);
 const ADSUM = `http://localhost:${PORT}`;
+
+// Same existence check playwright.config.ts uses to decide whether to start
+// the adsum-server.mjs webServer entry at all: skip gracefully (rather than
+// fail against a 404'ing server, or a webServer startup timeout) when
+// examples/adsum/dist hasn't been built. Resolved from process.cwd()
+// (Playwright's cwd, the repo root) rather than import.meta.url -- Playwright
+// transpiles specs to CommonJS, so import.meta isn't available (see
+// account-ui.spec.ts's DIST_DIR comment for the same constraint).
+const adsumDistPath = join(process.cwd(), 'examples/adsum/dist');
+test.skip(!existsSync(adsumDistPath), 'examples/adsum/dist not built');
 
 /** A deterministic G-address, distinct per `fill` byte — no real key material,
  *  just a valid, checksummed ed25519 public key for seed data. */
