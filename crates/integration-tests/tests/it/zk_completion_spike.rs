@@ -50,7 +50,9 @@ use soroban_sdk::{
     contract, contractimpl, vec, Address, Bytes, Env, IntoVal, Map, String, Symbol, Val, Vec,
 };
 use stellar_accounts::policies::Policy;
-use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRule, ContextRuleType, Signer};
+use stellar_accounts::smart_account::{
+    do_check_auth, AuthPayload, ContextRule, ContextRuleType, Signer,
+};
 
 /// Stub always-permit policy. Mirrors `contracts/multisig-policy/src/contract.rs`
 /// structurally (`enforce`/`install`/`uninstall`), but `enforce` only
@@ -177,12 +179,7 @@ fn zero_signer_policy_completion() {
 
     env.mock_all_auths();
     env.as_contract(&account_addr, || {
-        let res = do_check_auth(
-            &env,
-            &hash,
-            &empty_signer_payload,
-            &vec![&env, context],
-        );
+        let res = do_check_auth(&env, &hash, &empty_signer_payload, &vec![&env, context]);
         assert!(
             res.is_ok(),
             "zero-signer policy rule must authorize via enforce: {res:?}"

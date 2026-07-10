@@ -737,11 +737,7 @@ mod test {
         let id = env.register(Contract, (admin,));
         let client = ContractClient::new(&env, &id);
 
-        assert_eq!(
-            client.recovery_pool(),
-            None,
-            "no override has been set yet"
-        );
+        assert_eq!(client.recovery_pool(), None, "no override has been set yet");
         client.set_recovery_pool(&pool);
         assert_eq!(client.recovery_pool(), Some(pool));
     }
@@ -1177,7 +1173,9 @@ mod test {
         let r_minus_1_bytes = BytesN::from_array(&env, &r_minus_1);
 
         assert!(
-            pool_client.try_insert_for(&account, &r_minus_1_bytes).is_ok(),
+            pool_client
+                .try_insert_for(&account, &r_minus_1_bytes)
+                .is_ok(),
             "factory's DUMMY_FIELD_ORDER_BE - 1 must be canonical (< r) per the REAL pool's \
              FIELD_ORDER_BE -- if this fails, the two crates' field orders have drifted apart"
         );

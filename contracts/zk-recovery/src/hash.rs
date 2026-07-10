@@ -208,9 +208,12 @@ mod tests {
     // `new_pubkey` field.
     const NEW_PUBKEY_HEX: &str = "0x042bb2f07c58a9bacf9e794ba2b1589292716ca4b05a6d97b97eb293a160898b00f9fa128ee95baeceff2a25348632424406106595b3dd673db63bb3eef0815186";
     const SECRET_HEX: &str = "0x00000000000000000000000000000000d80e5c7596cf3ed7868f8bc89b6cf93c";
-    const LEAF_STORED_HEX: &str = "0x27cfe62058beb8e80b7c27b5b43225643b3b062f300c3bd28f41ddd20de50880";
-    const NULLIFIER_HEX: &str = "0x1b2c4afb313af3435729561fee62d1b065c4b3aad8e8fc6ca5447936a2f8edce";
-    const AUTH_HASH_HEX: &str = "0x111ae1edc6e6854540153d3098793786fe1f37bd208992a95b9d9038d9c37baf";
+    const LEAF_STORED_HEX: &str =
+        "0x27cfe62058beb8e80b7c27b5b43225643b3b062f300c3bd28f41ddd20de50880";
+    const NULLIFIER_HEX: &str =
+        "0x1b2c4afb313af3435729561fee62d1b065c4b3aad8e8fc6ca5447936a2f8edce";
+    const AUTH_HASH_HEX: &str =
+        "0x111ae1edc6e6854540153d3098793786fe1f37bd208992a95b9d9038d9c37baf";
 
     fn hex_bytes<const N: usize>(hex: &str) -> [u8; N] {
         let s = hex.strip_prefix("0x").unwrap_or(hex);

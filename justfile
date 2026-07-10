@@ -145,10 +145,24 @@ build-contracts:
 build-ts:
     npx tsc -p ./packages/passkey-sdk/tsconfig.json
 
+# Packages to run `cargo fmt` over -- every workspace member EXCEPT the
+# vendored `ultrahonk_soroban_verifier` crate (contracts/vendor/...). That
+# crate is a verbatim, checksum-guarded copy of unaudited third-party code
+# (see check-vendor-drift below): reformatting its src/ tree would edit
+# "vendored" bytes and permanently trip `just check-vendor-drift` on a clean
+# checkout. `cargo fmt --all` has no `--exclude`/`ignore`-list support on
+# stable (rustfmt's `ignore` config key is nightly-only), so the only stable
+# way to exclude one workspace member is to name every OTHER member
+# explicitly here instead of passing `--all`.
+# NOTE: keep this list in sync with `[workspace.members]` in the root
+# Cargo.toml whenever a crate is added/removed -- a crate missing from this
+# list silently stops being fmt-checked.
+fmt-pkgs := "-p nido-integration-tests -p nido-zk-bench -p nido-smart-account -p nido-zk-recovery -p nido-factory -p nido-multisig-policy -p nido-name-registry -p nido-spending-limit-policy -p nido-status-message -p nido-webauthn-verifier -p nido-zk-verifier"
+
 # Check formatting and clippy
 check:
-    cargo fmt --all -- --check
-    cargo clippy  --all --tests -- -Dclippy::pedantic
+    cargo fmt {{fmt-pkgs}} -- --check
+    cargo clippy --all --tests -- -Dclippy::pedantic
 
 # Verify the vendored (unaudited, third-party) UltraHonk Soroban verifier
 # crate under contracts/vendor/ultrahonk-soroban-verifier/src/ hasn't been
@@ -158,9 +172,10 @@ check:
 check-vendor-drift:
     bash scripts/check-vendor-drift.sh
 
-# Format all code
+# Format all code (see fmt-pkgs above for why the vendored verifier crate is
+# excluded).
 fmt:
-    cargo fmt --all
+    cargo fmt {{fmt-pkgs}}
 
 # Clean build artifacts
 clean:

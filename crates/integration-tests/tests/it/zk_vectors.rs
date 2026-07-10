@@ -10,7 +10,7 @@
 //! below reproduces them -- Noir is the source of truth, not this test.
 
 use soroban_poseidon::{poseidon2_hash, Field};
-use soroban_sdk::{crypto::BnScalar, Bytes, Env, U256, Vec as SVec};
+use soroban_sdk::{crypto::BnScalar, Bytes, Env, Vec as SVec, U256};
 
 fn p2(env: &Env, inputs: &[[u8; 32]]) -> [u8; 32] {
     let modulus = <BnScalar as Field>::modulus(env);
