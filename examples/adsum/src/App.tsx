@@ -1,17 +1,8 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
-import { Broadside } from "./components/Broadside"
 import { PageShell } from "./components/PageShell"
 import { Home } from "./pages/Home"
 import { Petition } from "./pages/Petition"
-
-function Trust() {
-	return (
-		<Broadside
-			title="The web of trust"
-			body="The constellation of vouches — given and received — is drawn here in a later task."
-		/>
-	)
-}
+import { Trust } from "./pages/Trust"
 
 function App() {
 	return (

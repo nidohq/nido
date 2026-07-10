@@ -132,6 +132,26 @@ export async function createPreVouch(
 }
 
 /**
+ * Revoke the pre-vouch `from` created under `pubkeyHex`, deleting whatever
+ * unclaimed uses remain, and sign/send it. Throws (without signing) if the
+ * contract-level simulation reports an error (e.g. the pre-vouch doesn't
+ * exist, or `from` isn't its creator).
+ */
+export async function revokePreVouch(
+	from: string,
+	pubkeyHex: string,
+): Promise<SendResult> {
+	const tx = await webOfTrust.revoke_pre_vouch(
+		{ from, key: Buffer.from(pubkeyHex, "hex") },
+		{ publicKey: from },
+	)
+	if (tx.result.isErr()) {
+		throw new Error(tx.result.unwrapErr().message)
+	}
+	return signAndSendWithSentinel(tx, wallet.signTransaction)
+}
+
+/**
  * Redeem the pre-vouch created under invite secret `seedHex`, claiming it
  * for `to`. Builds the ed25519 signature over the claim payload itself
  * (`signClaim`) — the claimant's wallet (`to`) is the transaction source,

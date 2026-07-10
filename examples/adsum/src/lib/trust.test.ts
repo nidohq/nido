@@ -9,6 +9,7 @@ const mockClient = vi.hoisted(() => ({
 	vouch: vi.fn(),
 	revoke: vi.fn(),
 	pre_vouch: vi.fn(),
+	revoke_pre_vouch: vi.fn(),
 	claim_vouch: vi.fn(),
 	options: { contractId: "CCONTRACTFIXTURE" },
 }))
@@ -27,6 +28,7 @@ const {
 	vouchFor,
 	revokeVouch,
 	createPreVouch,
+	revokePreVouch,
 	claimVouch,
 } = await import("./trust")
 
@@ -235,6 +237,40 @@ describe("createPreVouch", () => {
 		await expect(
 			createPreVouch("GFROM", "ab".repeat(32), null, 0),
 		).rejects.toThrow("InvalidMaxClaims")
+		expect(signAndSend).not.toHaveBeenCalled()
+	})
+})
+
+describe("revokePreVouch", () => {
+	it("keys the revocation by the invite's pubkey and signs/sends on success", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.revoke_pre_vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		const result = await revokePreVouch("GFROM", "ab".repeat(32))
+
+		expect(mockClient.revoke_pre_vouch).toHaveBeenCalledWith(
+			{ from: "GFROM", key: Buffer.from("ab".repeat(32), "hex") },
+			{ publicKey: "GFROM" },
+		)
+		expect(result.submittedByWallet).toBe(false)
+		expect(result.hash).toBe("tx-hash")
+	})
+
+	it("throws on a contract-level error without signing", async () => {
+		const signAndSend = vi.fn()
+		mockClient.revoke_pre_vouch.mockResolvedValue({
+			result: errResult("NotCreator"),
+			signAndSend,
+		})
+
+		await expect(revokePreVouch("GFROM", "ab".repeat(32))).rejects.toThrow(
+			"NotCreator",
+		)
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
 })
