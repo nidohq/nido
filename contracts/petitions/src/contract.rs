@@ -164,6 +164,32 @@ impl Contract {
         registry.petitions.extend_ttl(&id, TTL_LEDGERS, TTL_LEDGERS);
         Ok(())
     }
+
+    /// Callable by anyone (same keep-alive idiom as `extend_ttl`). Extends
+    /// the `signer_by_index` and `signatures` entries for signer indices
+    /// `[start, min(start + limit, sig_count))`. Paginated because a
+    /// petition's signer set is unbounded.
+    pub fn extend_signatures_ttl(
+        e: &Env,
+        id: u32,
+        start: u32,
+        limit: u32,
+    ) -> Result<(), PetitionError> {
+        let registry = Registry::new(e);
+        let petition = registry.petitions.get(&id).ok_or(PetitionError::NotFound)?;
+        let end = start.saturating_add(limit).min(petition.sig_count);
+        for i in start..end {
+            if let Some(signer) = registry.signer_by_index.get(&(id, i)) {
+                registry
+                    .signer_by_index
+                    .extend_ttl(&(id, i), TTL_LEDGERS, TTL_LEDGERS);
+                registry
+                    .signatures
+                    .extend_ttl(&(id, signer), TTL_LEDGERS, TTL_LEDGERS);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -488,5 +514,81 @@ mod test {
         // expiry point.
         env.ledger().with_mut(|l| l.sequence_number = 600_000);
         assert!(client.get_petition(&id).is_some());
+    }
+
+    #[test]
+    fn extend_signatures_ttl_extends_entries() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &None,
+        );
+        let mut signers = soroban_sdk::Vec::new(&env);
+        for _ in 0..3 {
+            let s = Address::generate(&env);
+            client.sign(&id, &s);
+            signers.push_back(s);
+        }
+        let target = signers.get(1).unwrap();
+
+        // sign() already extended both entries' TTL to TTL_LEDGERS (518_400)
+        // from ledger 0.
+        let index_key = env.as_contract(&client.address, || {
+            Registry::new(&env)
+                .signer_by_index
+                .get_storage_key(&(id, 1))
+        });
+        let sig_key = env.as_contract(&client.address, || {
+            Registry::new(&env)
+                .signatures
+                .get_storage_key(&(id, target.clone()))
+        });
+        let ttl =
+            |key: &_| env.as_contract(&client.address, || env.storage().persistent().get_ttl(key));
+        assert_eq!(ttl(&index_key), TTL_LEDGERS);
+        assert_eq!(ttl(&sig_key), TTL_LEDGERS);
+
+        // Advance to before the original TTL expires, then call
+        // extend_signatures_ttl.
+        env.ledger().with_mut(|l| l.sequence_number = 400_000);
+        client.extend_signatures_ttl(&id, &0, &10);
+
+        // A real extension resets the TTL to TTL_LEDGERS measured from *now*
+        // (live_until becomes 400_000 + 518_400 = 918_400). A stub that
+        // skips the underlying `extend_ttl` calls would leave the entries'
+        // live_until at the original 518_400, i.e. a remaining TTL of only
+        // 118_400 -- this assertion catches that.
+        assert_eq!(ttl(&index_key), TTL_LEDGERS);
+        assert_eq!(ttl(&sig_key), TTL_LEDGERS);
+    }
+
+    #[test]
+    fn extend_signatures_ttl_pagination_and_errors() {
+        let (env, client) = setup();
+        assert_eq!(
+            client.try_extend_signatures_ttl(&99, &0, &10),
+            Err(Ok(PetitionError::NotFound))
+        );
+
+        let creator = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &None,
+        );
+        for _ in 0..3 {
+            client.sign(&id, &Address::generate(&env));
+        }
+
+        // limit 0: no-op, still Ok.
+        assert!(client.try_extend_signatures_ttl(&id, &0, &0).is_ok());
+        // start past end: no-op, still Ok.
+        assert!(client.try_extend_signatures_ttl(&id, &5, &10).is_ok());
     }
 }

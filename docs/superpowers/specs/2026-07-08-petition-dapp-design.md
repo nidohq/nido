@@ -113,6 +113,10 @@ pub fn get_signers(e: &Env, id: u32, start: u32, limit: u32) -> Vec<Address>;
 pub fn extend_ttl(e: &Env, id: u32) -> Result<(), PetitionError>;
 // Callable by anyone (name-registry idiom); extends the petition entry
 // ~30 days (518_400 ledgers threshold/extend_to).
+
+pub fn extend_signatures_ttl(e: &Env, id: u32, start: u32, limit: u32) -> Result<(), PetitionError>;
+// Callable by anyone; extends signer_by_index/signatures entries over
+// [start, min(start+limit, sig_count)) — paginated, signer set is unbounded.
 ```
 
 Views return `Option`/plain values; only fallible mutations return `Result`.
