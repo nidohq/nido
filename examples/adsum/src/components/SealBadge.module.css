@@ -1,0 +1,40 @@
+/**
+ * A vouch chop: a small circular ink mark, canted like it was pressed by
+ * hand. neutral = thin ink ring; you = solid vermilion (your own stamp);
+ * kin = double bronze ring (a friend of a friend's mark).
+ */
+
+.seal {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.5rem;
+	height: 1.5rem;
+	padding: 0 0.3rem;
+	border-radius: var(--radius-round);
+	font-family: var(--font-ui);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+	transform: rotate(-6deg);
+	user-select: none;
+}
+
+.neutral {
+	color: var(--ink-soft);
+	border: 1.5px solid var(--rule);
+}
+
+.you {
+	color: var(--paper-high);
+	background: var(--seal);
+	border: 1.5px solid var(--seal-strong);
+}
+
+.kin {
+	color: var(--kin);
+	border: 1.5px solid currentColor;
+	outline: 1px solid currentColor;
+	outline-offset: 1.5px;
+}

@@ -1,0 +1,102 @@
+/**
+ * Adsum design tokens — civic print culture.
+ *
+ * The whole surface is paper and ink. Light is warm laid paper carrying
+ * iron-gall ink; dark is the same document inverted — a deep ink page with
+ * paper-toned type — never a grey theme. `light-dark()` keeps both editions
+ * in one declaration, and the `data-theme` attribute on <html> overrides the
+ * system preference by pinning `color-scheme`.
+ */
+
+:root {
+	color-scheme: light dark;
+}
+:root[data-theme="light"] {
+	color-scheme: light;
+}
+:root[data-theme="dark"] {
+	color-scheme: dark;
+}
+
+:root {
+	/* ---- Paper (surfaces) ---------------------------------------------- */
+	/* The page. */
+	--paper: light-dark(#f2ebdc, #16120c);
+	/* A fresh sheet laid on the page: broadsides, cards. */
+	--paper-high: light-dark(#faf5e9, #211b12);
+	/* Recessed washes: wells, code, table stripes. */
+	--paper-low: light-dark(#e9e0cb, #100d08);
+
+	/* ---- Ink (content) -------------------------------------------------- */
+	/* Iron-gall black: a warm near-black, never pure #000. */
+	--ink: light-dark(#211c13, #ede4cf);
+	/* Secondary text — thinned ink. */
+	--ink-soft: light-dark(#5c5240, #b3a789);
+	/* Tertiary/meta — a dry brush. */
+	--ink-faint: light-dark(#8d8067, #7c7159);
+
+	/* ---- Rules & hairlines ---------------------------------------------- */
+	--rule: color-mix(in srgb, var(--ink) 28%, transparent);
+	--rule-faint: color-mix(in srgb, var(--ink) 14%, transparent);
+
+	/* ---- Seal (the one accent: vermilion stamp ink) --------------------- */
+	--seal: light-dark(#a93419, #e06a3f);
+	--seal-strong: light-dark(#872a14, #ef8557);
+	--seal-wash: color-mix(in srgb, var(--seal) 12%, transparent);
+
+	/* ---- Kin (second-degree trust: bronze ink) --------------------------- */
+	--kin: light-dark(#7c5e12, #cba546);
+
+	/* ---- Type ------------------------------------------------------------ */
+	--font-display: "Fraunces", "Iowan Old Style", georgia, serif;
+	--font-ui: "Hanken Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+
+	/* UI scale (minor third-ish), display sizes jump harder. */
+	--text-xs: 0.75rem;
+	--text-sm: 0.875rem;
+	--text-base: 1rem;
+	--text-md: 1.125rem;
+	--text-lg: 1.375rem;
+	--text-xl: 1.75rem;
+	--text-2xl: 2.25rem;
+	--text-display: clamp(2.5rem, 1.6rem + 4vw, 4rem);
+
+	/* Letterspaced caps for chrome labels (nav, buttons, badges). */
+	--tracking-caps: 0.14em;
+	--tracking-wordmark: 0.06em;
+
+	--leading-tight: 1.15;
+	--leading-body: 1.6;
+	--leading-document: 1.7;
+
+	/* ---- Space (4px base) ------------------------------------------------ */
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2rem;
+	--space-7: 3rem;
+	--space-8: 4rem;
+
+	/* ---- Edges ------------------------------------------------------------ */
+	/* Print is square; the stamp alone is allowed a soft die-cut corner. */
+	--radius-none: 0;
+	--radius-stamp: 0.625rem;
+	--radius-round: 999px;
+
+	/* Paper lift: a sheet resting on the page, not a floating material card. */
+	--shadow-sheet:
+		0 1px 0 color-mix(in srgb, var(--ink) 10%, transparent),
+		0 10px 28px -18px color-mix(in srgb, var(--ink) 45%, transparent);
+
+	/* ---- Motion ------------------------------------------------------------ */
+	/* The press: quick strike, soft settle. */
+	--ease-press: cubic-bezier(0.2, 0.9, 0.25, 1.2);
+	--ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+	--time-quick: 140ms;
+	--time-settle: 420ms;
+
+	/* Focus ring: sealing wax. */
+	--focus-ring: 2px solid var(--seal);
+}

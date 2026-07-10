@@ -1,0 +1,118 @@
+/**
+ * Adsum global styles — the page every broadside is laid on.
+ * Tokens live in tokens.css; components bring their own CSS modules.
+ */
+
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+* {
+	margin: 0;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	min-height: 100dvh;
+	background-color: var(--paper);
+	color: var(--ink);
+	font-family: var(--font-ui);
+	font-size: var(--text-base);
+	line-height: var(--leading-body);
+	font-optical-sizing: auto;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+/* A whisper of laid-paper grain over everything. Fixed, inert, and cheap:
+   one tiled feTurbulence SVG; both editions share it. */
+body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.45 0 0 0 0 0.35 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23g)'/%3E%3C/svg%3E");
+	background-size: 240px 240px;
+	opacity: 0.07;
+	mix-blend-mode: multiply;
+}
+:root[data-theme="dark"] body::before {
+	mix-blend-mode: screen;
+	opacity: 0.05;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) body::before {
+		mix-blend-mode: screen;
+		opacity: 0.05;
+	}
+}
+
+#root {
+	position: relative;
+	z-index: 2;
+	min-height: 100dvh;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	font-family: var(--font-display);
+	font-optical-sizing: auto;
+	font-weight: 600;
+	line-height: var(--leading-tight);
+	text-wrap: balance;
+	overflow-wrap: break-word;
+}
+
+p {
+	overflow-wrap: break-word;
+}
+
+a {
+	color: inherit;
+	text-decoration-color: var(--rule);
+	text-underline-offset: 0.2em;
+	transition: text-decoration-color var(--time-quick) ease;
+}
+
+a:hover {
+	text-decoration-color: var(--seal);
+}
+
+button {
+	font: inherit;
+	color: inherit;
+}
+
+::selection {
+	background: var(--seal);
+	color: var(--paper-high);
+}
+
+:focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: 2px;
+}
+
+/* Print culture respects stillness: when the reader asks for reduced motion,
+   every impression is instant. Individual animations are also gated at their
+   declaration sites; this is the backstop. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
