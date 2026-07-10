@@ -104,6 +104,36 @@ impl Contract {
     pub fn petition_count(e: &Env) -> u32 {
         Registry::new(e).count.get().unwrap_or(0)
     }
+
+    pub fn sign(e: &Env, id: u32, signer: &Address) -> Result<(), PetitionError> {
+        signer.require_auth();
+        let registry = Registry::new(e);
+        let mut petition = registry.petitions.get(&id).ok_or(PetitionError::NotFound)?;
+        if let Some(d) = petition.deadline {
+            if e.ledger().sequence() >= d {
+                return Err(PetitionError::Expired);
+            }
+        }
+        if registry.signatures.get(&(id, signer.clone())).is_some() {
+            return Err(PetitionError::AlreadySigned);
+        }
+        registry.signatures.set(&(id, signer.clone()), &());
+        registry
+            .signer_by_index
+            .set(&(id, petition.sig_count), signer);
+        petition.sig_count += 1;
+        registry.petitions.set(&id, &petition);
+        registry.petitions.extend_ttl(&id, TTL_LEDGERS, TTL_LEDGERS);
+        PetitionSigned { id: &id, signer }.publish(e);
+        Ok(())
+    }
+
+    pub fn has_signed(e: &Env, id: u32, addr: &Address) -> bool {
+        Registry::new(e)
+            .signatures
+            .get(&(id, addr.clone()))
+            .is_some()
+    }
 }
 
 #[cfg(test)]
@@ -247,5 +277,115 @@ mod test {
     fn get_missing_returns_none() {
         let (_env, client) = setup();
         assert_eq!(client.get_petition(&42), None);
+    }
+
+    #[test]
+    fn sign_happy_path() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let signer = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &None,
+        );
+
+        assert!(!client.has_signed(&id, &signer));
+        client.sign(&id, &signer);
+        assert!(client.has_signed(&id, &signer));
+        assert_eq!(client.get_petition(&id).unwrap().sig_count, 1);
+    }
+
+    #[test]
+    fn sign_emits_event() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let signer = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &None,
+        );
+        client.sign(&id, &signer);
+        assert_eq!(env.events().all().events().len(), 1);
+    }
+
+    #[test]
+    fn sign_unknown_petition() {
+        let (env, client) = setup();
+        let signer = Address::generate(&env);
+        assert_eq!(
+            client.try_sign(&99, &signer),
+            Err(Ok(PetitionError::NotFound))
+        );
+    }
+
+    #[test]
+    fn double_sign_rejected() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let signer = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &None,
+        );
+        client.sign(&id, &signer);
+        assert_eq!(
+            client.try_sign(&id, &signer),
+            Err(Ok(PetitionError::AlreadySigned))
+        );
+        assert_eq!(client.get_petition(&id).unwrap().sig_count, 1);
+    }
+
+    #[test]
+    fn sign_at_and_after_deadline_rejected() {
+        let (env, client) = setup();
+        env.ledger().with_mut(|l| l.sequence_number = 1000);
+        let creator = Address::generate(&env);
+        let signer = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &Some(1010),
+        );
+
+        // strictly before deadline: OK
+        env.ledger().with_mut(|l| l.sequence_number = 1009);
+        client.sign(&id, &signer);
+
+        // at deadline: rejected
+        let late = Address::generate(&env);
+        env.ledger().with_mut(|l| l.sequence_number = 1010);
+        assert_eq!(client.try_sign(&id, &late), Err(Ok(PetitionError::Expired)));
+
+        // after deadline: rejected
+        env.ledger().with_mut(|l| l.sequence_number = 2000);
+        assert_eq!(client.try_sign(&id, &late), Err(Ok(PetitionError::Expired)));
+    }
+
+    #[test]
+    fn distinct_signers_counted() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &None,
+        );
+        for _ in 0..3 {
+            client.sign(&id, &Address::generate(&env));
+        }
+        assert_eq!(client.get_petition(&id).unwrap().sig_count, 3);
     }
 }
