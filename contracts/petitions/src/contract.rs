@@ -1,5 +1,5 @@
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, Address, Env, String,
+    contract, contracterror, contractevent, contractimpl, contracttype, Address, Env, String, Vec,
 };
 use soroban_sdk_tools::{contractstorage, InstanceItem, PersistentMap};
 
@@ -133,6 +133,29 @@ impl Contract {
             .signatures
             .get(&(id, addr.clone()))
             .is_some()
+    }
+
+    pub fn get_signers(e: &Env, id: u32, start: u32, limit: u32) -> Vec<Address> {
+        let registry = Registry::new(e);
+        let mut out = Vec::new(e);
+        if let Some(p) = registry.petitions.get(&id) {
+            let end = start.saturating_add(limit).min(p.sig_count);
+            for i in start..end {
+                if let Some(a) = registry.signer_by_index.get(&(id, i)) {
+                    out.push_back(a);
+                }
+            }
+        }
+        out
+    }
+
+    pub fn extend_ttl(e: &Env, id: u32) -> Result<(), PetitionError> {
+        let registry = Registry::new(e);
+        if registry.petitions.get(&id).is_none() {
+            return Err(PetitionError::NotFound);
+        }
+        registry.petitions.extend_ttl(&id, TTL_LEDGERS, TTL_LEDGERS);
+        Ok(())
     }
 }
 
@@ -387,5 +410,51 @@ mod test {
             client.sign(&id, &Address::generate(&env));
         }
         assert_eq!(client.get_petition(&id).unwrap().sig_count, 3);
+    }
+
+    #[test]
+    fn signer_pagination() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &None,
+        );
+        let mut signers = soroban_sdk::Vec::new(&env);
+        for _ in 0..5 {
+            let s = Address::generate(&env);
+            client.sign(&id, &s);
+            signers.push_back(s);
+        }
+
+        // full page, insertion order
+        assert_eq!(client.get_signers(&id, &0, &10), signers);
+        // partial pages
+        assert_eq!(client.get_signers(&id, &0, &2).len(), 2);
+        assert_eq!(client.get_signers(&id, &4, &2).len(), 1);
+        assert_eq!(client.get_signers(&id, &0, &2).get(0), signers.get(0));
+        assert_eq!(client.get_signers(&id, &2, &2).get(0), signers.get(2));
+        // start past end / zero limit / unknown petition
+        assert_eq!(client.get_signers(&id, &5, &2).len(), 0);
+        assert_eq!(client.get_signers(&id, &0, &0).len(), 0);
+        assert_eq!(client.get_signers(&99, &0, &10).len(), 0);
+    }
+
+    #[test]
+    fn extend_ttl_requires_existing() {
+        let (env, client) = setup();
+        let creator = Address::generate(&env);
+        let id = client.create_petition(
+            &creator,
+            &String::from_str(&env, "t"),
+            &String::from_str(&env, "b"),
+            &None,
+            &None,
+        );
+        client.extend_ttl(&id); // no panic
+        assert_eq!(client.try_extend_ttl(&99), Err(Ok(PetitionError::NotFound)));
     }
 }
