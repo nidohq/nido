@@ -7,11 +7,47 @@
  * unwrapping.
  */
 
+import { type AssembledTransaction } from "@stellar/stellar-sdk/contract"
+import { Api } from "@stellar/stellar-sdk/rpc"
+import { PetitionError } from "petitions"
 import petitions from "../contracts/petitions"
 import { wallet } from "../util/wallet"
 import { signAndSendWithSentinel, type SendResult } from "./sentinel"
 
 export type { SendResult }
+
+const CONTRACT_ERROR_CODE = /Error\(Contract, #(\d+)\)/
+const petitionErrorByCode = PetitionError as Record<number, { message: string }>
+
+/**
+ * Throws when `tx`'s simulation reports an error — with the resolved
+ * `PetitionError` variant name (e.g. "AlreadySigned") when the failure is one
+ * of this contract's own declared errors, or a generic message otherwise.
+ * Never signs when this throws (called before `signAndSendWithSentinel`).
+ *
+ * This bypasses the generated client's own error surface
+ * (`AssembledTransaction#result` -> a `Result` whose `unwrapErr().message`
+ * is meant to name the variant): the SDK actually wires each error's
+ * `message` to that variant's Rust *doc comment*
+ * (`@stellar/stellar-sdk`'s `contract/client.js`,
+ * `errorTypes: spec.errorCases().reduce(...doc().toString()...)`), and this
+ * contract's `PetitionError` enum (`contracts/petitions/src/contract.rs`)
+ * carries none — so `.unwrapErr().message` is always `""`, never the variant
+ * name (see trust.ts's `throwIfSimulationFailed`, fixed for the identical
+ * issue against the same generated-client behavior). Reading the raw
+ * simulation diagnostic directly (`tx.simulation`) and mapping its numeric
+ * code through this package's own `PetitionError` export instead — whose
+ * `message` field IS the variant name — sidesteps that entirely.
+ */
+function throwIfSimulationFailed(tx: AssembledTransaction<unknown>): void {
+	const sim = tx.simulation
+	if (!sim || !Api.isSimulationError(sim)) return
+	const match = CONTRACT_ERROR_CODE.exec(sim.error)
+	const variant = match
+		? petitionErrorByCode[Number(match[1])]?.message
+		: undefined
+	throw new Error(variant || "The ledger declined this. Try again.")
+}
 
 /** UI-friendly view of a `Petition`, keyed by its on-chain id. */
 export interface PetitionView {
@@ -140,9 +176,7 @@ export async function createPetition(
 		},
 		{ publicKey: address },
 	)
-	if (tx.result.isErr()) {
-		throw new Error(tx.result.unwrapErr().message)
-	}
+	throwIfSimulationFailed(tx)
 	const sendResult = await signAndSendWithSentinel(tx, wallet.signTransaction)
 	return { id: tx.result.unwrap(), ...sendResult }
 }
@@ -160,8 +194,6 @@ export async function signPetition(
 		{ id, signer: address },
 		{ publicKey: address },
 	)
-	if (tx.result.isErr()) {
-		throw new Error(tx.result.unwrapErr().message)
-	}
+	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
 }

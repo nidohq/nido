@@ -39,11 +39,22 @@ function okResult<T>(value: T) {
 	return { isOk: () => true, isErr: () => false, unwrap: () => value }
 }
 
-function errResult(message: string) {
+/**
+ * A failed `AssembledTransaction`'s `.simulation` shape (`Api.SimulateTransactionErrorResponse`)
+ * for a given `PetitionError` numeric code — e.g. `simulationError(6)` for a
+ * repeat signature's `AlreadySigned`. `petitions.ts` reads this directly
+ * rather than the generated client's `.result`/`.unwrapErr().message`: the
+ * SDK wires each error's `message` to its Rust doc comment (see
+ * petitions.ts's `throwIfSimulationFailed` for the full story), which this
+ * contract's `PetitionError` enum doesn't have — so `.result` alone can't
+ * distinguish "TitleInvalid" from "AlreadySigned" the way these tests need
+ * to assert.
+ */
+function simulationError(code: number) {
 	return {
-		isOk: () => false,
-		isErr: () => true,
-		unwrapErr: () => ({ message }),
+		simulation: {
+			error: `HostError: Error(Contract, #${code})\n\nEvent log (newest first):\n   0: [Diagnostic Event] topics:[error, Error(Contract, #${code})], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"\n`,
+		},
 	}
 }
 
@@ -172,16 +183,33 @@ describe("createPetition", () => {
 		expect(result.hash).toBe("tx-hash")
 	})
 
-	it("throws on a contract-level error without signing", async () => {
+	it("throws the resolved PetitionError variant (not an empty message) without signing", async () => {
 		const signAndSend = vi.fn()
 		mockClient.create_petition.mockResolvedValue({
-			result: errResult("TitleInvalid"),
+			...simulationError(2), // TitleInvalid
 			signAndSend,
 		})
 
 		await expect(
 			createPetition({ title: "", body: "Body" }, "GADDR"),
 		).rejects.toThrow("TitleInvalid")
+		expect(signAndSend).not.toHaveBeenCalled()
+	})
+
+	it("falls back to a generic message for a simulation failure that isn't one of this contract's errors", async () => {
+		const signAndSend = vi.fn()
+		mockClient.create_petition.mockResolvedValue({
+			simulation: {
+				// A host/auth/resource error — not `Error(Contract, #N)` shaped, so
+				// it can't be resolved to a PetitionError variant name.
+				error: "HostError: Error(Auth, InvalidAction)\n\nEvent log...",
+			},
+			signAndSend,
+		})
+
+		await expect(
+			createPetition({ title: "Title", body: "Body" }, "GADDR"),
+		).rejects.toThrow("The ledger declined this. Try again.")
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
 })
@@ -206,10 +234,10 @@ describe("signPetition", () => {
 		expect(result.hash).toBe("tx-hash")
 	})
 
-	it("throws on a contract-level error without signing", async () => {
+	it("throws the resolved PetitionError variant (not an empty message) without signing", async () => {
 		const signAndSend = vi.fn()
 		mockClient.sign.mockResolvedValue({
-			result: errResult("AlreadySigned"),
+			...simulationError(6), // AlreadySigned
 			signAndSend,
 		})
 
