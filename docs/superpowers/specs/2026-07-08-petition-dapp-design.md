@@ -241,16 +241,44 @@ dependency on this contract; they are coupled only in the dapp UI.
 
 ## Example dapp: `examples/adsum/`
 
-Clone of the `status-message-dapp` skeleton: React 19 + Vite 7 + strict TS
-(@theahaco/ts-config), stellar-scaffold project with its own self-contained
-cargo workspace, **vendored copies** of both contracts under
+**Plumbing** from the `status-message-dapp` skeleton: React 19 + Vite 7 +
+strict TS (@theahaco/ts-config), stellar-scaffold project with its own
+self-contained cargo workspace, **vendored copies** of both contracts under
 `examples/adsum/contracts/`, joined to the root npm workspace
 (`workspaces` gains `examples/adsum` and
 `examples/adsum/packages/*`). `environments.toml` defines
 development (local, run-locally) / testing (testnet, build+deploy) / staging
-(testnet, pinned ids) / production (mainnet, commented). Generated staging
-clients for both contracts are committed so the Pages build needs no
-Rust/scaffold/RPC.
+(testnet, pinned to the deployed ids in `DEPLOYED.md`) / production (mainnet,
+commented). Generated staging clients for both contracts are committed so the
+Pages build needs no Rust/scaffold/RPC.
+
+**Design, however, is NOT the scaffold template** (decision 2026-07-10:
+design freedom granted; make it engaging). Direction — **civic print
+culture**, "a living broadside":
+
+- **Petitions are printed proclamations.** The detail page reads as a
+  typographic document: Fraunces display serif (Nido's brand serif — family
+  kinship without wearing the wallet's skin) for petition text, Hanken
+  Grotesk for UI chrome. Paper/ink palette; dark mode is the ink/paper
+  inversion of light mode, not a grey theme.
+- **Signing is the ADSUM stamp.** The sign action is a stamp press — "ADSUM —
+  I am present" impressed onto the document with a brief ink-settle
+  animation; the signer's resolved name joins the signature wall beneath the
+  text. Signature wall entries carry small ink-mark badges for vouch counts.
+- **Invites are letters of introduction** (the historic vouching
+  instrument). A pre-vouch invite renders as a sealed letter — wax-seal
+  motif, QR inside; `/claim` opens as "a letter vouching for you from
+  <resolved name>". Uses/expiry read as the letter's terms.
+- **The trust page is a constellation:** the connected account's 1-hop ego
+  graph (given/received edges) drawn client-side (SVG; no graph library
+  unless genuinely needed), alongside the vouch form and invite drawer.
+- **Home is a poster wall:** petition broadsides as cards, progress rendered
+  as a filling ink line, deadlines humanized from ledger sequence.
+- `@stellar/design-system` is dropped; custom CSS (modules + tokens).
+  Wallet-kit's modal stays (functional necessity). Accessibility and
+  responsiveness are requirements, not afterthoughts: the print aesthetic
+  must degrade gracefully to small screens, and all interactions work
+  without the animations.
 
 ### Pages
 
