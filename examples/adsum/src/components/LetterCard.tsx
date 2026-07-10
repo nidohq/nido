@@ -55,12 +55,17 @@ export const LetterCard = ({
 	const [readFailed, setReadFailed] = useState(false)
 	const [revoking, setRevoking] = useState(false)
 	const [error, setError] = useState<string | null>(null)
+	/** Bumped by the Retry action to re-run the terms fetch below. */
+	const [retryCount, setRetryCount] = useState(0)
 
 	useEffect(() => {
 		let cancelled = false
 		fetchPreVouch(invite.pubkeyHex)
 			.then((pv) => {
-				if (!cancelled) setPreVouch(pv)
+				if (!cancelled) {
+					setPreVouch(pv)
+					setReadFailed(false)
+				}
 			})
 			.catch((err: unknown) => {
 				console.error("Failed to read the letter's pre-vouch", err)
@@ -69,7 +74,13 @@ export const LetterCard = ({
 		return () => {
 			cancelled = true
 		}
-	}, [invite.pubkeyHex])
+	}, [invite.pubkeyHex, retryCount])
+
+	/** Re-runs the terms fetch after a transient read failure. */
+	function retry() {
+		setReadFailed(false)
+		setRetryCount((n) => n + 1)
+	}
 
 	const spent = preVouch === null && !readFailed
 
@@ -141,14 +152,25 @@ export const LetterCard = ({
 							Discard
 						</button>
 					) : (
-						<button
-							type="button"
-							className={styles.revoke}
-							onClick={() => void revoke()}
-							disabled={revoking || preVouch === undefined}
-						>
-							{revoking ? "Revoking…" : "Revoke letter"}
-						</button>
+						<>
+							{readFailed && (
+								<button
+									type="button"
+									className={styles.retry}
+									onClick={retry}
+								>
+									Retry
+								</button>
+							)}
+							<button
+								type="button"
+								className={styles.revoke}
+								onClick={() => void revoke()}
+								disabled={revoking || (preVouch === undefined && !readFailed)}
+							>
+								{revoking ? "Revoking…" : "Revoke letter"}
+							</button>
+						</>
 					)}
 				</div>
 			</div>
