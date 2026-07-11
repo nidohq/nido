@@ -325,14 +325,13 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { shouldShowBackupBanner, snoozeBackupPrompt } from "../../lib/recoveryBackupPrompt";
   import { toast } from "../../lib/toast";
   import { stashSignRequest, safeRouteUrl, type SignRequest } from "../../lib/signing/signRequest";
-  import { EXPLORER_BASE } from "../../lib/network";
+  import { EXPLORER_BASE, RPC_URL } from "../../lib/network";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { formatXlm } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
 
-  const RPC_URL = "https://soroban-testnet.stellar.org";
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
   // round-trip was broken (bug #3); re-enabled now that the finalize flow signs

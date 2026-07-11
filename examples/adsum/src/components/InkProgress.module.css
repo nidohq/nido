@@ -1,0 +1,98 @@
+/**
+ * A line of ink filling toward the goal. The track is a pale wash; the
+ * fill is drawn ink with a pooled bead at the nib. When the goal is met
+ * the line turns to seal-vermilion. The open-ended variant is a tally:
+ * a display-type count sitting on a rule that fades off the page.
+ */
+
+.wrap {
+	display: grid;
+	gap: var(--space-2);
+}
+
+.line {
+	position: relative;
+	height: 0.375rem;
+	background: var(--rule-faint);
+	overflow: visible;
+}
+
+.fill {
+	position: relative;
+	height: 100%;
+	min-width: 0.375rem;
+	background: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--ink) 78%, transparent),
+		var(--ink)
+	);
+	transition: width 600ms var(--ease-settle);
+}
+
+/* The bead of ink pooling at the pen's position. */
+.fill::after {
+	content: "";
+	position: absolute;
+	right: -0.28rem;
+	top: 50%;
+	width: 0.65rem;
+	height: 0.65rem;
+	border-radius: var(--radius-round);
+	background: inherit;
+	transform: translateY(-50%);
+}
+
+.wrap[data-sealed] .fill {
+	background: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--seal) 78%, transparent),
+		var(--seal)
+	);
+}
+
+.legend {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-2);
+}
+
+.count {
+	font-family: var(--font-display);
+	font-size: var(--text-lg);
+	font-weight: 650;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+
+.wrap[data-sealed] .count {
+	color: var(--seal);
+}
+
+.word {
+	font-size: var(--text-xs);
+	font-weight: 600;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-soft);
+}
+
+/* ---- open-ended tally --------------------------------------------------- */
+
+.tally {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-2);
+}
+
+.tally .count {
+	font-size: var(--text-xl);
+}
+
+.trail {
+	flex: 1;
+	align-self: center;
+	height: 2px;
+	min-width: var(--space-6);
+	background: linear-gradient(90deg, var(--ink), transparent 85%);
+	opacity: 0.55;
+}

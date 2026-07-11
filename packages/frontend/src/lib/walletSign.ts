@@ -49,9 +49,8 @@ import {
   type DefaultRuleAuthInfo,
 } from './policyChainFetch.js';
 import { relayerEnabled } from './relayerClient';
-import { RELAYER_EXPIRATION_OFFSET } from './network';
+import { RELAYER_EXPIRATION_OFFSET, RPC_URL } from './network';
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
 
 /** How many rule-0 signatures a ceremony must collect, given the rule's
  *  on-chain state. Policy-less multi-signer rules are N-of-N under OZ

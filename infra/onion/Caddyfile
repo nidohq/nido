@@ -1,0 +1,88 @@
+# Vhost routing for the nido onion service. Tor delivers the full hostname
+# (including the subdomain label left of the onion address) in the Host
+# header; everything below keys off it. {$ONION_ADDR} is the bare onion
+# hostname, e.g. "nido…xyz.onion".
+#
+# Serves plain HTTP on :8080 always. When ONION_TLS_CERT/ONION_TLS_KEY point
+# at a cert (the HARICA mixed-SAN cert in prod, or a local-CA wildcard leaf
+# for local testing), the :8443 site is enabled too — WebAuthn on onion
+# origins requires https in every proven browser path.
+
+{
+	auto_https off
+	admin off
+}
+
+# Shared routing logic, imported by both the HTTP and HTTPS site blocks.
+(routes) {
+	# --- API backhauls (EOTK pattern): same fixed egress IP for every -----
+	# --- Tor user, so Cloudflare-fronted upstreams never see exit IPs -----
+	@relay host relay.{$ONION_ADDR}
+	handle @relay {
+		reverse_proxy https://relay.nido.fyi {
+			header_up Host relay.nido.fyi
+		}
+	}
+
+	@indexer host pool-indexer.{$ONION_ADDR}
+	handle @indexer {
+		reverse_proxy https://pool-indexer.nido.fyi {
+			header_up Host pool-indexer.nido.fyi
+		}
+	}
+
+	# Soroban RPC backhaul. The frontend's PUBLIC_RPC_URL points here for the
+	# onion build so the browser talks only to this onion service (no
+	# cross-origin RPC over a Tor exit). soroban-testnet reflects the request
+	# Origin in Access-Control-Allow-Origin, which Cloudflare then caches and
+	# serves to onion origins as `null` → CORS failure. RPC needs no
+	# credentials, so we strip the upstream ACAO and return `*` ourselves.
+	# (No Horizon vhost: the codebase uses Soroban RPC + friendbot only.)
+	@rpc host rpc.{$ONION_ADDR}
+	handle @rpc {
+		@options method OPTIONS
+		handle @options {
+			header Access-Control-Allow-Origin "*"
+			header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+			# `*` (valid because ACAO is `*`, no credentials) covers the
+			# Stellar SDK's X-Client-Name / X-Client-Version and Content-Type.
+			header Access-Control-Allow-Headers "*"
+			header Access-Control-Max-Age "600"
+			respond 204
+		}
+		handle {
+			# Replace (not add) so any upstream ACAO — soroban-testnet reflects
+			# the Origin, which Cloudflare caches as `null` — is overwritten
+			# with `*` on the actual response, not just the preflight.
+			reverse_proxy {$RPC_UPSTREAM} {
+				header_up Host {$RPC_UPSTREAM_HOST}
+				header_down Access-Control-Allow-Origin "*"
+			}
+		}
+	}
+
+	# Relayer. Default is the public Fly hostname; switch RELAYER_UPSTREAM to
+	# the 6PN internal address (http://nido.internal:<port>) once wired so the
+	# hop never leaves Fly's private network.
+	@relayer host relayer.{$ONION_ADDR}
+	handle @relayer {
+		reverse_proxy {$RELAYER_UPSTREAM} {
+			header_up Host {$RELAYER_UPSTREAM_HOST}
+		}
+	}
+
+	# --- Static frontend: apex + every account subdomain ------------------
+	handle {
+		root * /srv/dist
+		try_files {path} {path}/index.html
+		file_server
+	}
+}
+
+http://:8080 {
+	import routes
+}
+
+# The https://:8443 site is appended by entrypoint.sh at boot ONLY when a cert
+# is mounted (ONION_TLS_CERT points at a readable file) — Caddy's `tls`
+# directive errors on empty arguments, so it can't live here unconditionally.

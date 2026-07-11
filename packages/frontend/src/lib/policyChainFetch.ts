@@ -13,7 +13,7 @@ import type { ChainRule, ChainSigner, PolicyState } from '@nidohq/passkey-sdk';
 import { fetchRegistryAddress as sdkFetchRegistryAddress } from '@nidohq/passkey-sdk';
 import { Client as SpendingLimitPolicyClient } from '@nidohq/spending-limit-policy';
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+import { RPC_URL } from './network';
 const NETWORK_PASSPHRASE = Networks.TESTNET;
 // Unverified registry on testnet — the one that holds bare-name → contract-id
 // mappings. The verified registry (CAMLHK…) doesn't dispatch prefixed names

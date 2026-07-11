@@ -1,0 +1,133 @@
+/**
+ * The constellation: an engraved star-atlas plate. Hairline orbits, the
+ * viewer as a vermilion pole star, vouches as engraved rays — solid
+ * outbound, finely-dashed inbound, and the mutual bond as a doubled rule in
+ * sealing wax. Everything is stroke-work; the plate never reads as a "chart
+ * widget", only as print.
+ */
+
+.chart {
+	display: block;
+	width: 100%;
+	height: auto;
+	max-width: 40rem;
+	margin: 0 auto;
+}
+
+/* ---- orbits ---------------------------------------------------------------- */
+
+.orbit {
+	stroke: var(--rule);
+	stroke-width: 1;
+	stroke-dasharray: 1 5;
+	stroke-linecap: round;
+}
+
+.orbitFaint {
+	stroke: var(--rule-faint);
+	stroke-width: 1;
+	stroke-dasharray: 1 7;
+	stroke-linecap: round;
+}
+
+/* ---- rays (edges) ----------------------------------------------------------- */
+
+.edge {
+	pointer-events: none;
+}
+
+.rayGiven {
+	stroke: var(--ink-soft);
+	stroke-width: 1.5;
+}
+
+.rayReceived {
+	stroke: var(--ink-soft);
+	stroke-width: 1.5;
+	stroke-dasharray: 5 4;
+}
+
+.rayMutual {
+	stroke: var(--seal);
+	stroke-width: 1.5;
+}
+
+.headInk {
+	fill: var(--ink-soft);
+}
+
+.headSeal {
+	fill: var(--seal);
+}
+
+/* ---- stars ------------------------------------------------------------------- */
+
+.star {
+	fill: var(--paper-high);
+	stroke: var(--ink);
+	stroke-width: 2;
+}
+
+.star[data-kind="mutual"] {
+	fill: var(--seal);
+	stroke: var(--seal-strong);
+}
+
+.star[data-kind="received"] {
+	stroke: var(--ink-soft);
+}
+
+.pole {
+	fill: var(--seal);
+	stroke: var(--seal-strong);
+	stroke-width: 1;
+	stroke-linejoin: round;
+}
+
+.labelName {
+	font-family: var(--font-display);
+	font-style: italic;
+	font-weight: 500;
+	font-size: 15px;
+	fill: var(--ink);
+}
+
+.labelAddr {
+	font-family: var(--font-ui);
+	font-size: 13px;
+	letter-spacing: 0.06em;
+	fill: var(--ink-soft);
+}
+
+/* ---- empty state ---------------------------------------------------------------- */
+
+.empty {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-2);
+	padding: var(--space-7) var(--space-5);
+	text-align: center;
+}
+
+.emptyChart {
+	width: 11rem;
+	height: auto;
+	margin-bottom: var(--space-3);
+}
+
+.emptyKicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+.emptyBody {
+	max-width: 26rem;
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+	line-height: var(--leading-document);
+}

@@ -1,0 +1,319 @@
+/**
+ * Claim: the QR from a letter of introduction, followed home. The whole
+ * page is the letter — LetterCard's fold-and-wax motif at full scale — and
+ * arriving here reads as opening it: the sheet settles down from a slight
+ * fold with the wax seal catching light as it lands, then the message
+ * beneath speaks in the first person the way an actual letter would. Every
+ * beat has a reduced-motion floor: without it, the letter simply appears
+ * already open.
+ */
+
+.page {
+	display: grid;
+	justify-items: center;
+	padding-block: var(--space-4);
+}
+
+.letter {
+	position: relative;
+	width: 100%;
+	max-width: 28rem;
+	background: var(--paper-high);
+	border: 1.5px solid var(--ink);
+	box-shadow: var(--shadow-sheet);
+	transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.letter {
+		animation: unfold var(--time-settle) var(--ease-settle) both;
+	}
+}
+
+@keyframes unfold {
+	from {
+		opacity: 0;
+		transform: rotateX(-8deg) translateY(-8px) scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+/* ---- the flap -------------------------------------------------------------- */
+
+.flap {
+	position: relative;
+	height: 4.5rem;
+	background: var(--paper-low);
+	border-bottom: 1px solid var(--rule);
+}
+
+.flap::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: color-mix(in srgb, var(--ink) 7%, transparent);
+	clip-path: polygon(0 0, 100% 0, 50% 94%);
+}
+
+.wax {
+	position: absolute;
+	left: 50%;
+	bottom: 0;
+	z-index: 1;
+	display: grid;
+	place-items: center;
+	width: 4.5rem;
+	height: 4.5rem;
+	translate: -50% 50%;
+	rotate: -6deg;
+	background: radial-gradient(
+		circle at 35% 30%,
+		var(--seal-strong),
+		var(--seal) 55%,
+		color-mix(in srgb, var(--seal) 65%, #000) 100%
+	);
+	border-radius: 47% 53% 44% 56% / 53% 46% 54% 47%;
+	box-shadow:
+		inset 0 2px 4px color-mix(in srgb, #fff 30%, transparent),
+		inset 0 -4px 6px color-mix(in srgb, #000 32%, transparent),
+		0 3px 10px color-mix(in srgb, var(--ink) 38%, transparent);
+	color: var(--paper-high);
+	font-size: 1.5rem;
+	line-height: 1;
+	user-select: none;
+}
+
+.wax::before {
+	content: "";
+	position: absolute;
+	inset: 6px;
+	border: 1px solid color-mix(in srgb, #fff 40%, transparent);
+	border-radius: inherit;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.wax {
+		animation: press var(--time-settle) var(--ease-press) both;
+		animation-delay: 80ms;
+	}
+}
+
+@keyframes press {
+	0% {
+		opacity: 0;
+		scale: 0.4;
+	}
+	100% {
+		opacity: 1;
+		scale: 1;
+	}
+}
+
+/* ---- inside ----------------------------------------------------------------- */
+
+.inside {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	padding: var(--space-7) var(--space-6) var(--space-6);
+	text-align: center;
+}
+
+.kicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--seal);
+}
+
+.mutedKicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+.heading {
+	font-family: var(--font-display);
+	font-style: italic;
+	font-weight: 500;
+	font-size: var(--text-xl);
+	max-width: 26ch;
+	overflow-wrap: anywhere;
+}
+
+.from {
+	font-size: var(--text-sm);
+	letter-spacing: 0.03em;
+	color: var(--ink-soft);
+	overflow-wrap: anywhere;
+}
+
+.terms {
+	font-size: var(--text-sm);
+	font-variant-numeric: tabular-nums;
+	color: var(--ink-faint);
+}
+
+.body {
+	max-width: 30rem;
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+	line-height: var(--leading-document);
+}
+
+.actionBlock {
+	position: relative;
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	width: 100%;
+	padding-top: var(--space-4);
+	margin-top: var(--space-2);
+	border-top: 1px solid var(--rule-faint);
+}
+
+/* The seal-wash breath: when the claim lands, the same ink-meets-paper cue
+   as the petition stamp and the vouch card. */
+@media (prefers-reduced-motion: no-preference) {
+	.letter[data-open] .actionBlock:has(.affirm)::before {
+		content: "";
+		position: absolute;
+		inset: -10% -30%;
+		z-index: -1;
+		border-radius: var(--radius-round);
+		background: radial-gradient(circle, var(--seal-wash) 0%, transparent 68%);
+		animation: pressBloom 900ms var(--ease-settle) both;
+		pointer-events: none;
+	}
+}
+
+@keyframes pressBloom {
+	0% {
+		opacity: 0;
+		transform: scale(0.35);
+	}
+	35% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+		transform: scale(1.6);
+	}
+}
+
+.reason {
+	font-size: var(--text-sm);
+	color: var(--ink-soft);
+	max-width: 34ch;
+}
+
+.affirm {
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--seal);
+	max-width: 30ch;
+}
+
+.cta {
+	padding: var(--space-2) var(--space-6);
+	border: 1.5px solid var(--ink);
+	background: transparent;
+	color: var(--ink);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	text-decoration: none;
+	cursor: pointer;
+	transition:
+		background var(--time-quick) ease,
+		border-color var(--time-quick) ease,
+		color var(--time-quick) ease;
+}
+
+.cta:hover:not(:disabled) {
+	background: var(--seal);
+	border-color: var(--seal-strong);
+	color: var(--paper-high);
+}
+
+.cta:disabled {
+	border-color: var(--rule);
+	color: var(--ink-faint);
+	cursor: not-allowed;
+}
+
+.error {
+	font-size: var(--text-sm);
+	color: var(--seal-strong);
+	font-weight: 600;
+}
+
+/* ---- missing param ------------------------------------------------------- */
+
+.missing {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	max-width: 34rem;
+	margin-inline: auto;
+	padding: var(--space-8) var(--space-5);
+	background: var(--paper-low);
+	border: 1.5px dashed var(--rule);
+	text-align: center;
+}
+
+.missingKicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+.missingBody {
+	max-width: 30rem;
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+	line-height: var(--leading-document);
+}
+
+.missingLink {
+	margin-top: var(--space-2);
+	padding: var(--space-2) var(--space-5);
+	border: 1.5px solid var(--ink);
+	color: var(--ink);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	text-decoration: none;
+	transition:
+		background var(--time-quick) ease,
+		color var(--time-quick) ease,
+		border-color var(--time-quick) ease;
+}
+
+.missingLink:hover {
+	background: var(--seal);
+	border-color: var(--seal-strong);
+	color: var(--paper-high);
+	text-decoration: none;
+}
+
+@media (max-width: 480px) {
+	.inside {
+		padding: var(--space-5) var(--space-4) var(--space-4);
+	}
+}

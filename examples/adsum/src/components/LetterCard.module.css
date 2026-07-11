@@ -1,0 +1,165 @@
+/**
+ * A letter of introduction: a folded letter with its flap still creased and
+ * a wax seal pressed at the fold. The flap is a recessed band with a soft
+ * V of shadow (the fold); the seal is a blob of sealing wax carrying the
+ * house asterism, straddling the fold line. Inside: the claim QR, the
+ * letter's terms, and its revocation.
+ */
+
+.letter {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	background: var(--paper-high);
+	border: 1.5px solid var(--ink);
+	box-shadow: var(--shadow-sheet);
+}
+
+.letter[data-spent] {
+	border-style: dashed;
+	box-shadow: none;
+}
+
+.letter[data-spent] .flap {
+	opacity: 0.6;
+}
+
+/* ---- the flap -------------------------------------------------------------- */
+
+.flap {
+	position: relative;
+	height: 3.25rem;
+	background: var(--paper-low);
+	border-bottom: 1px solid var(--rule);
+}
+
+/* The fold: a V of thinned ink dropping from the flap's top edge. */
+.flap::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: color-mix(in srgb, var(--ink) 7%, transparent);
+	clip-path: polygon(0 0, 100% 0, 50% 96%);
+}
+
+.wax {
+	position: absolute;
+	left: 50%;
+	bottom: 0;
+	z-index: 1;
+	display: grid;
+	place-items: center;
+	width: 3.25rem;
+	height: 3.25rem;
+	translate: -50% 50%;
+	rotate: -7deg;
+	background: radial-gradient(
+		circle at 35% 30%,
+		var(--seal-strong),
+		var(--seal) 55%,
+		color-mix(in srgb, var(--seal) 65%, #000) 100%
+	);
+	border-radius: 47% 53% 44% 56% / 53% 46% 54% 47%;
+	box-shadow:
+		inset 0 2px 3px color-mix(in srgb, #fff 30%, transparent),
+		inset 0 -3px 5px color-mix(in srgb, #000 32%, transparent),
+		0 2px 8px color-mix(in srgb, var(--ink) 35%, transparent);
+	color: var(--paper-high);
+	font-size: 1.05rem;
+	line-height: 1;
+	user-select: none;
+}
+
+/* The seal matrix's impressed ring. */
+.wax::before {
+	content: "";
+	position: absolute;
+	inset: 5px;
+	border: 1px solid color-mix(in srgb, #fff 40%, transparent);
+	border-radius: inherit;
+}
+
+/* ---- inside ----------------------------------------------------------------- */
+
+.inside {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	padding: var(--space-6) var(--space-5) var(--space-5);
+	text-align: center;
+}
+
+.kicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+.title {
+	font-family: var(--font-display);
+	font-style: italic;
+	font-weight: 500;
+	font-size: var(--text-lg);
+	overflow-wrap: anywhere;
+}
+
+.terms {
+	font-size: var(--text-sm);
+	font-variant-numeric: tabular-nums;
+	color: var(--ink-soft);
+}
+
+.spentNote {
+	padding: var(--space-5) var(--space-4);
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+}
+
+.error {
+	font-size: var(--text-sm);
+	color: var(--seal);
+}
+
+/* ---- actions ----------------------------------------------------------------- */
+
+.actions {
+	display: flex;
+	justify-content: center;
+	gap: var(--space-2);
+	padding-top: var(--space-2);
+}
+
+.revoke,
+.discard,
+.retry {
+	padding: var(--space-1) var(--space-3);
+	border: 1px solid var(--rule);
+	background: transparent;
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-soft);
+	cursor: pointer;
+	transition:
+		color var(--time-quick) ease,
+		border-color var(--time-quick) ease,
+		background var(--time-quick) ease;
+}
+
+.revoke:hover:not(:disabled),
+.discard:hover,
+.retry:hover {
+	border-color: var(--seal);
+	color: var(--seal);
+	background: var(--seal-wash);
+}
+
+.revoke:disabled {
+	cursor: wait;
+	opacity: 0.6;
+}

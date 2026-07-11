@@ -1,0 +1,79 @@
+/**
+ * A broadside: one printed sheet resting on the page. The classic double
+ * frame — a firm outer rule with an inner hairline — square corners, and
+ * a shadow that reads as paper thickness, not elevation.
+ */
+
+.sheet {
+	position: relative;
+	display: grid;
+	gap: var(--space-4);
+	padding: var(--space-5) var(--space-5) var(--space-5);
+	background: var(--paper-high);
+	border: 1.5px solid var(--ink);
+	border-radius: var(--radius-none);
+	box-shadow: var(--shadow-sheet);
+	color: var(--ink);
+}
+
+/* Inner hairline of the double frame. */
+.sheet::before {
+	content: "";
+	position: absolute;
+	inset: 5px;
+	border: 1px solid var(--rule);
+	pointer-events: none;
+}
+
+.heading {
+	display: grid;
+	gap: var(--space-3);
+	padding-bottom: var(--space-3);
+	border-bottom: 1px solid var(--rule);
+}
+
+.title {
+	font-family: var(--font-display);
+	font-size: var(--text-xl);
+	font-weight: 600;
+	line-height: var(--leading-tight);
+}
+
+.body {
+	font-family: var(--font-display);
+	font-size: var(--text-md);
+	font-weight: 400;
+	line-height: var(--leading-document);
+	color: var(--ink);
+	white-space: pre-line;
+}
+
+/* ---- pressable sheets ---------------------------------------------------- */
+
+.pressable {
+	cursor: pointer;
+	transition:
+		transform var(--time-quick) var(--ease-press),
+		box-shadow var(--time-quick) var(--ease-press),
+		border-color var(--time-quick) ease;
+}
+
+.pressable:hover {
+	transform: translateY(-2px);
+	border-color: var(--seal);
+}
+
+.pressable:hover .title {
+	color: var(--seal);
+}
+
+.pressable:active {
+	transform: translateY(0);
+	box-shadow: none;
+}
+
+@media (max-width: 480px) {
+	.sheet {
+		padding: var(--space-4);
+	}
+}

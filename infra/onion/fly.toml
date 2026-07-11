@@ -1,0 +1,22 @@
+# nido onion service. Deliberately NO [[services]] and no public IPs:
+# onion services only make outbound connections to the Tor network, so the
+# machine is unreachable from the internet — and Fly autostop never triggers
+# (it only acts on proxy-managed services).
+app = "nido-onion"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Bare onion hostname, set after the key ceremony mints the address.
+  ONION_ADDR = "REPLACE-ME.onion"
+  RPC_UPSTREAM = "https://soroban-testnet.stellar.org"
+  RPC_UPSTREAM_HOST = "soroban-testnet.stellar.org"
+  # Switch to the 6PN internal address once wired (http://nido.internal:PORT)
+  RELAYER_UPSTREAM = "https://nido.fly.dev"
+  RELAYER_UPSTREAM_HOST = "nido.fly.dev"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
