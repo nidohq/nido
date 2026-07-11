@@ -26,8 +26,9 @@ function previewRoot(sub) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
+    const requestPath = url.pathname + url.search;
     const parts = url.hostname.split(".");
     const sub = parts[0];
 
@@ -50,6 +51,22 @@ export default {
       }
     }
 
-    return fetch(url.toString(), { headers: request.headers });
+    const upstream = await fetch(url.toString(), { headers: request.headers });
+
+    // Advertise the onion mirror per-subdomain (Tor Browser shows a manual
+    // ".onion available" button; auto-redirect was removed upstream for
+    // fingerprinting reasons). No-op until the ONION_ADDR var is set — the
+    // production onion address doesn't exist until the key ceremony
+    // (infra/onion/README.md). Previews have no onion counterpart.
+    const onionAddr = env?.ONION_ADDR;
+    if (!onionAddr || preview.pr || previewRoot(sub)) return upstream;
+
+    const response = new Response(upstream.body, upstream);
+    const scheme = env.ONION_SCHEME || "http";
+    response.headers.set(
+      "Onion-Location",
+      `${scheme}://${sub}.${onionAddr}${requestPath}`
+    );
+    return response;
   },
 };
