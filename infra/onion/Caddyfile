@@ -31,15 +31,31 @@
 		}
 	}
 
-	# Soroban RPC backhaul. Dead until the frontend's hardcoded testnet
-	# RPC_URL is made env-driven and pointed here (phase 2) — the app calls
-	# soroban-testnet.stellar.org directly today. RPC_UPSTREAM e.g.
-	# https://soroban-testnet.stellar.org. (No Horizon vhost: the codebase
-	# uses Soroban RPC + friendbot only, never Horizon.)
+	# Soroban RPC backhaul. The frontend's PUBLIC_RPC_URL points here for the
+	# onion build so the browser talks only to this onion service (no
+	# cross-origin RPC over a Tor exit). soroban-testnet reflects the request
+	# Origin in Access-Control-Allow-Origin, which Cloudflare then caches and
+	# serves to onion origins as `null` → CORS failure. RPC needs no
+	# credentials, so we strip the upstream ACAO and return `*` ourselves.
+	# (No Horizon vhost: the codebase uses Soroban RPC + friendbot only.)
 	@rpc host rpc.{$ONION_ADDR}
 	handle @rpc {
-		reverse_proxy {$RPC_UPSTREAM} {
-			header_up Host {$RPC_UPSTREAM_HOST}
+		@options method OPTIONS
+		handle @options {
+			header Access-Control-Allow-Origin "*"
+			header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+			header Access-Control-Allow-Headers "Content-Type"
+			header Access-Control-Max-Age "600"
+			respond 204
+		}
+		handle {
+			# Replace (not add) so any upstream ACAO — soroban-testnet reflects
+			# the Origin, which Cloudflare caches as `null` — is overwritten
+			# with `*` on the actual response, not just the preflight.
+			reverse_proxy {$RPC_UPSTREAM} {
+				header_up Host {$RPC_UPSTREAM_HOST}
+				header_down Access-Control-Allow-Origin "*"
+			}
 		}
 	}
 

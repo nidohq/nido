@@ -19,10 +19,9 @@ import { resolveSignerRule } from './policyChainFetch.js';
 import {
   relayerEnabled,
 } from './relayerClient';
-import { RELAYER_SIM_SOURCE, RELAYER_EXPIRATION_OFFSET } from './network';
+import { RELAYER_SIM_SOURCE, RELAYER_EXPIRATION_OFFSET, RPC_URL } from './network';
 import { relayerSubmitAndConfirm, classicSubmitAndPoll } from './signing/submit';
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
 const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 
 // RELAYER_EXPIRATION_OFFSET (relayer-mode auth-entry validity window) now lives

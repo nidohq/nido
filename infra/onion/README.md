@@ -63,19 +63,22 @@ cd infra/onion && ./local-test.sh      # mint key, build frontend, run container
 
 What works over Tor and what to expect:
 
-- **Account creation + signing**: work. Passkey RP ID = the onion hostname;
-  Soroban RPC (`soroban-testnet.stellar.org`) and testnet funding
-  (`friendbot.stellar.org`) are hardcoded clearnet hosts fetched **directly**
-  through Tor exits — functional, occasionally slow/flaky (exit reputation,
-  not the onion setup). The relay / recovery-relay / pool-indexer calls are
-  build-pointed at the onion backhaul vhosts instead.
+- **Account creation + signing**: work. Passkey RP ID = the onion hostname.
+  Soroban RPC and the relay / recovery-relay / pool-indexer calls are
+  build-pointed at the onion backhaul vhosts (`PUBLIC_RPC_URL`,
+  `PUBLIC_RELAYER_URL`, etc.), so the browser only ever talks to this onion
+  service — Caddy backhauls to the clearnet upstreams server-side. This is
+  required, not just nicer: a direct cross-origin RPC call over a Tor exit
+  gets a Cloudflare-cached `Access-Control-Allow-Origin: null` and fails CORS
+  (the RPC vhost strips that and returns `*`).
 - **Known rough edges** (cosmetic for testing, tracked for phase 2):
+  - Testnet funding (`friendbot.stellar.org`) is still a direct clearnet fetch
+    over a Tor exit — occasionally slow/flaky; add a friendbot vhost if it
+    bites during new-account testing.
   - Google Fonts load from `fonts.googleapis.com` directly (no CSP) — a leak +
     latency; self-host later.
   - `astro.config.mjs` bakes `site: https://nido.fyi`, so `og:image` /
     canonical tags point at clearnet from the onion pages (non-fatal).
-  - `rpc.<addr>.onion` backhaul vhost exists but is unused until the frontend's
-    hardcoded testnet `RPC_URL` is made env-driven (phase 2).
   - Per-account subdomains work (`<contractid>.<addr>.onion`), but
     `KNOWN_SUFFIXES` name-stripping doesn't recognize `.onion` — display only.
 

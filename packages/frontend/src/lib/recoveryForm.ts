@@ -7,7 +7,7 @@ import {
 } from '@nidohq/passkey-sdk';
 import { installRecovery } from './recoveryActions.js';
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+import { RPC_URL } from './network';
 const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 
 function emptyFriend(): Friend {

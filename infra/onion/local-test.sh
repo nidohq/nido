@@ -61,7 +61,8 @@ if [ ! -d "$LOCAL/dist" ] || [ "${1:-}" = "--rebuild" ] || [ "${1:-}" = "" ]; th
 	echo "==> building frontend for https://$ADDR"
 	( cd "$ROOT" && npm run build:packages >/dev/null 2>&1 || true )
 	( cd "$ROOT/packages/frontend" \
-		&& PUBLIC_RELAYER_URL="https://relayer.$ADDR" \
+		&& PUBLIC_RPC_URL="https://rpc.$ADDR" \
+		   PUBLIC_RELAYER_URL="https://relayer.$ADDR" \
 		   PUBLIC_RELAYER_SIM_SOURCE="GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2" \
 		   PUBLIC_RECOVERY_RELAY_URL="https://relay.$ADDR" \
 		   PUBLIC_POOL_INDEXER_URL="https://pool-indexer.$ADDR" \
