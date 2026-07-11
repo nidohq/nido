@@ -6,7 +6,7 @@
 //! authorization path for `register`.
 //!
 //! This test builds a genuine `SorobanAuthorizationEntry` carrying a synthetic
-//! WebAuthn passkey assertion, computes the host's `signature_payload` from the
+//! `WebAuthn` passkey assertion, computes the host's `signature_payload` from the
 //! real `HashIdPreimage`, and drives `register` through the host via
 //! `env.set_auths` (enforcing mode). The host derives the invocation `Context`,
 //! computes the payload, and dispatches the account's `__check_auth` — the same
@@ -18,12 +18,12 @@
 //! frontend finalize step; see `tests/e2e/testnet/account-lifecycle.testnet.spec.ts`.)
 
 use nido_integration_tests::{build_contract_assertion, compute_auth_digest, deploy_smart_account};
+use soroban_sdk::xdr::ToXdr as _;
 use soroban_sdk::xdr::{
-    Hash, HashIdPreimage, HashIdPreimageSorobanAuthorization, InvokeContractArgs, Limits, ScAddress,
-    ScSymbol, ScVal, SorobanAddressCredentials, SorobanAuthorizationEntry,
+    Hash, HashIdPreimage, HashIdPreimageSorobanAuthorization, InvokeContractArgs, Limits,
+    ScAddress, ScSymbol, ScVal, SorobanAddressCredentials, SorobanAuthorizationEntry,
     SorobanAuthorizedFunction, SorobanAuthorizedInvocation, SorobanCredentials, VecM, WriteXdr,
 };
-use soroban_sdk::xdr::ToXdr as _;
 use soroban_sdk::{Bytes, Env, IntoVal, Map, String, TryFromVal, Val};
 use stellar_accounts::smart_account::{AuthPayload, Signer};
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;

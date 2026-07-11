@@ -23,12 +23,25 @@ impl UltraHonkVerifierContract {
     }
 
     /// Initialize the on-chain VK once at deploy time.
+    ///
+    /// # Errors
+    ///
+    /// Currently always succeeds; the `Result` return type is reserved for
+    /// future validation of `vk_bytes`.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(env: Env, vk_bytes: Bytes) -> Result<(), Error> {
         env.storage().instance().set(&Self::key_vk(), &vk_bytes);
         Ok(())
     }
 
-    /// Verify an UltraHonk proof using the stored VK.
+    /// Verify an `UltraHonk` proof using the stored VK.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::VkNotSet` if no VK has been stored, `Error::VkParseError`
+    /// if the stored VK bytes fail to parse, or `Error::VerificationFailed` if
+    /// the proof does not verify against `public_inputs`.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn verify_proof(env: Env, public_inputs: Bytes, proof_bytes: Bytes) -> Result<(), Error> {
         let vk_bytes: Bytes = env
             .storage()

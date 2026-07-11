@@ -6,7 +6,7 @@
 //! `initiate_recovery` runs `verify_proof` PLUS: the pending/nullifier
 //! existence checks, `is_known_root` root-ring scan, nonce check+bump,
 //! timelock checks, rate-limit prune/push, the `compute_auth_hash`
-//! Poseidon2 recompute (P2_15 + splits + sha256), the nullifier reservation
+//! Poseidon2 recompute (`P2_15` + splits + sha256), the nullifier reservation
 //! write, the pending-record write, and the `RecoveryInitiated` event
 //! emit. M0 explicitly deferred measuring that whole flow to M1 (see
 //! `budget.rs`'s module docs: "Full `initiate_recovery` measurement

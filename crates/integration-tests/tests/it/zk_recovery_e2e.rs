@@ -122,7 +122,7 @@ fn self_call_entry(
     env: &Env,
     account_addr: &Address,
     fn_name: &str,
-    args: SVec<Val>,
+    args: &SVec<Val>,
     context_rule_ids: SVec<u32>,
 ) -> SorobanAuthorizationEntry {
     let args_scval: VecM<ScVal> = args
@@ -151,7 +151,7 @@ fn self_call_entry(
     SorobanAuthorizationEntry {
         credentials: SorobanCredentials::Address(SorobanAddressCredentials {
             address: ScAddress::from(account_addr),
-            nonce: 0xC0FFEE,
+            nonce: 0x00C0_FFEE,
             signature_expiration_ledger: 999_999,
             signature,
         }),
@@ -169,6 +169,10 @@ fn self_call_entry(
 /// `ZkRecovery::enforce`, no `mock_all_auths` on the completing call) --
 /// rotating the signer -- and finally proves the guard releases afterwards.
 #[test]
+// One continuous end-to-end chain (deploy -> initiate -> guard -> timelock
+// -> completion -> post-recovery release); splitting it would break the
+// "no shortcuts" property the doc comment above asserts.
+#[allow(clippy::too_many_lines)]
 fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
@@ -326,7 +330,7 @@ fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
         &env,
         &account_addr,
         "add_context_rule",
-        args,
+        &args,
         soroban_sdk::vec![&env, rule_id],
     );
 
@@ -423,6 +427,10 @@ mod named_registry {
 
     #[contractimpl]
     impl NamedRegistry {
+        // The `#[contractimpl]` macro's generated invoke-wrapper requires
+        // owned params for XDR decoding; the body only needs to borrow them,
+        // which trips `needless_pass_by_value` outside the macro's control.
+        #[allow(clippy::needless_pass_by_value)]
         pub fn __constructor(env: &Env, verifier: Address, zk_recovery: Address) {
             env.storage()
                 .instance()
@@ -432,6 +440,8 @@ mod named_registry {
                 .set(&Symbol::new(env, "zk_recovery"), &zk_recovery);
         }
 
+        // Same macro-generated-wrapper cause as `__constructor` above.
+        #[allow(clippy::needless_pass_by_value)]
         pub fn fetch_contract_id(env: &Env, name: String) -> Address {
             if name == String::from_str(env, "verifier") {
                 env.storage()
@@ -449,7 +459,7 @@ mod named_registry {
 }
 
 /// Deploys a real factory + real `ZkRecovery` pool/controller (registered
-/// under `"zk-recovery"`) and the real WebAuthn verifier (registered under
+/// under `"zk-recovery"`) and the real `WebAuthn` verifier (registered under
 /// `"verifier"`), with the pool's `factory` config set to the deployed
 /// factory's own address -- exactly `contracts/factory`'s own
 /// `setup_factory_and_pool` dev-test helper, reproduced here since that
@@ -499,7 +509,7 @@ fn setup_factory_and_pool(env: &Env) -> (Address, Address) {
 /// (the factory's own deterministic dummy commitment), and asserts that
 /// nothing observable on-chain distinguishes them: both have a recovery
 /// rule installed, same shape (zero signers, one policy pointing at the
-/// same controller, same name/valid_until), and the pool gained exactly one
+/// same controller, same `name/valid_until`), and the pool gained exactly one
 /// genesis leaf per account. The one real difference -- whether the
 /// account's owner actually knows a secret behind their leaf -- never
 /// touches the chain; it lives entirely off-chain in whichever party

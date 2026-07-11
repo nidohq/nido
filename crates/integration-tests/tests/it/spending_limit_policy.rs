@@ -20,7 +20,7 @@ use stellar_accounts::smart_account::{
 };
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 
-const XLM: i128 = 1_0000000; // stroops
+const XLM: i128 = 10_000_000; // stroops
 
 #[allow(dead_code)]
 #[soroban_sdk::contractclient(name = "SpendingLimitPolicyClient")]
@@ -42,7 +42,7 @@ fn session_signer(env: &Env, verifier: &Address) -> (SigningKey, Signer) {
     )
 }
 
-/// Sign the auth digest (sha256(payload || context_rule_ids.to_xdr())) with the
+/// Sign the auth digest (sha256(payload || `context_rule_ids.to_xdr()`)) with the
 /// session key. All tests use rule id 1 (default=0, session-key=1).
 fn one_sig(
     env: &Env,

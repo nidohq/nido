@@ -27,7 +27,7 @@
 //! post-invocation check (surfaced via `cost_estimate().enforce_resource_limits`),
 //! not the live budget that gates execution as it runs.
 //!
-//! Measured verify_proof cost (~159M CPU insns, see task-4-report.md) is
+//! Measured `verify_proof` cost (~159M CPU insns, see task-4-report.md) is
 //! above the 100M SDK-testutils default, so under `Env::default()` as-is
 //! the call aborts mid-verification (inside a `bn254_g1_add` host call)
 //! before completing — we can't read a real number at all, let alone
@@ -41,13 +41,13 @@
 //! can be measured and then checked against our project gate below. The real
 //! per-transaction ceiling is `tx_max_instructions = 400,000,000` (live
 //! testnet/mainnet config, protocol 27); the 250M gate below leaves headroom
-//! under it for the rest of the initiate_recovery transaction.
+//! under it for the rest of the `initiate_recovery` transaction.
 //!
-//! If verify_proof's real cost were ever to exceed 600M, that would be an
+//! If `verify_proof`'s real cost were ever to exceed 600M, that would be an
 //! even harder failure (can't run in one invocation on mainnet at all,
 //! full stop) — this codepath would then need `reset_limits` raised
 //! further purely to get a diagnostic number for the report, and the
-//! assertion below would still fail loudly against MAX_VERIFY_CPU.
+//! assertion below would still fail loudly against `MAX_VERIFY_CPU`.
 
 use soroban_sdk::{Bytes, Env};
 
@@ -62,7 +62,7 @@ mod v {
     );
 }
 
-/// GO/NO-GO gate: verify_proof must fit in this many CPU instructions.
+/// GO/NO-GO gate: `verify_proof` must fit in this many CPU instructions.
 /// Real per-transaction CPU limit on Stellar Mainnet (protocol 27):
 /// `tx_max_instructions = 400_000_000`. `verify_proof` runs inside the
 /// `initiate_recovery` transaction alongside auth checks, root-ring check

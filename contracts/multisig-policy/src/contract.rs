@@ -1,4 +1,4 @@
-//! Multisig policy contract — thin wrapper around OpenZeppelin's
+//! Multisig policy contract — thin wrapper around `OpenZeppelin`'s
 //! `simple_threshold` library. Stateless per-deployment; per-`(account,
 //! rule_id)` threshold lives in the contract's persistent storage as managed
 //! by the library.
@@ -16,6 +16,8 @@ pub struct MultisigPolicy;
 impl MultisigPolicy {
     /// Read the installed M-of-N threshold for a given account + rule.
     /// Returns 0 if not installed.
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn get_threshold(e: &Env, context_rule_id: u32, smart_account: Address) -> u32 {
         simple_threshold::get_threshold(e, context_rule_id, &smart_account)
     }

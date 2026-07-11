@@ -44,13 +44,24 @@
 //! — so an empty-signers `AuthPayload` reaches `enforce` as long as the
 //! referenced rule's context type matches.
 
+// The `#[contractimpl]` macro's generated invoke-wrapper binds each method
+// param to a same-named local before forwarding to the impl below, which
+// counts as a "use" of every `_`-prefixed param outside any scope a
+// function-level `#[allow]` can reach. Every lint in this module (all 18)
+// is this same macro-generated false positive on the two stub policies'
+// unused `Policy` trait params below, so the allow is module-scoped rather
+// than repeated per method.
+#![allow(clippy::used_underscore_binding)]
+
 use nido_integration_tests::{compute_auth_digest, deploy_smart_account, SmartAccountClient};
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::{
     contract, contractimpl, vec, Address, Bytes, Env, IntoVal, Map, String, Symbol, Val, Vec,
 };
 use stellar_accounts::policies::Policy;
-use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRule, ContextRuleType, Signer};
+use stellar_accounts::smart_account::{
+    do_check_auth, AuthPayload, ContextRule, ContextRuleType, Signer,
+};
 
 /// Stub always-permit policy. Mirrors `contracts/multisig-policy/src/contract.rs`
 /// structurally (`enforce`/`install`/`uninstall`), but `enforce` only
@@ -177,12 +188,7 @@ fn zero_signer_policy_completion() {
 
     env.mock_all_auths();
     env.as_contract(&account_addr, || {
-        let res = do_check_auth(
-            &env,
-            &hash,
-            &empty_signer_payload,
-            &vec![&env, context],
-        );
+        let res = do_check_auth(&env, &hash, &empty_signer_payload, &vec![&env, context]);
         assert!(
             res.is_ok(),
             "zero-signer policy rule must authorize via enforce: {res:?}"

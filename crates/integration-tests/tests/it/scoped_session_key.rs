@@ -22,7 +22,7 @@ fn session_signer(env: &Env, verifier: &Address) -> (SigningKey, Signer) {
     )
 }
 
-/// Sign the auth digest (sha256(payload || context_rule_ids.to_xdr())) with the
+/// Sign the auth digest (sha256(payload || `context_rule_ids.to_xdr()`)) with the
 /// session key. All four tests use rule id 1 (default=0, session-key=1).
 fn one_sig(
     env: &Env,

@@ -14,7 +14,7 @@
 //! honesty check for M1 Task 5: it proves the REAL fixture proof verifies
 //! through `initiate_recovery`'s cross-call to the M0 verifier contract,
 //! using an `auth_hash` this contract recomputes itself from the call's own
-//! arguments -- not one fed to it directly. The current_root ==
+//! arguments -- not one fed to it directly. The `current_root` ==
 //! fixture.root assertion inside `setup_with_leaf` cross-checks that this
 //! contract's on-chain Merkle frontier agrees with the Noir circuit's own
 //! root computation for the identical leaf.
@@ -369,7 +369,7 @@ fn timelock_below_floor_is_rejected() {
 
 /// Tampering with `new_pubkey` (any single byte) changes the recomputed
 /// `auth_hash`, which no longer matches the proof's `auth_hash` public
-/// input -- the real UltraHonk verifier cross-call must then reject,
+/// input -- the real `UltraHonk` verifier cross-call must then reject,
 /// surfacing as `VerificationFailed`. This proves `initiate_recovery`
 /// genuinely binds the proof to ITS OWN recomputed arguments rather than
 /// trusting the caller.
@@ -630,7 +630,7 @@ fn real_cancel_proof_clears_pending_and_releases_nullifier() {
     assert_eq!(client.cancels_used(&account), 1);
 }
 
-/// `cancel_recovery` requires `account`'s own auth (the WebAuthn passkey
+/// `cancel_recovery` requires `account`'s own auth (the `WebAuthn` passkey
 /// signer in production) -- exactly what an attacker who only knows a
 /// leaked enrollment secret cannot provide. Mirrors
 /// `pool.rs::insert_for_requires_account_auth`'s pattern: no auth mocked at

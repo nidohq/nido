@@ -26,6 +26,7 @@ const DOM_NULL_HEX: &str = "0x138891cc07f52d2ec29e835298ae2120acd9573ec4a83c5738
 const DOM_AUTH_HEX: &str = "0x2886eb8be3a3ff75b86ac004fdbe5c17fd2de6ab4fd416d38683a2e0e91d9906";
 
 /// Parses a `0x`-prefixed, 64-hex-digit constant into a `U256` domain tag.
+#[must_use]
 pub fn dom(env: &Env, hex: &str) -> U256 {
     u256_from_bytes32(env, &hex32(hex))
 }
@@ -34,6 +35,7 @@ pub fn dom(env: &Env, hex: &str) -> U256 {
 /// `Poseidon2::hash` at every arity the protocol uses (2, 4, 15). Each input
 /// is reduced mod the BN254 scalar field before hashing, mirroring the
 /// circuit (which operates on `Field` elements that are already `< r`).
+#[must_use]
 pub fn p2(env: &Env, inputs: &[U256]) -> BytesN<32> {
     let modulus = <BnScalar as PoseidonField>::modulus(env);
     let mut v: SorobanVec<U256> = SorobanVec::new(env);
@@ -55,6 +57,13 @@ pub fn p2(env: &Env, inputs: &[U256]) -> BytesN<32> {
 /// (`crates/integration-tests/tests/it/zk_fixture.rs::fixture_addresses_pin`):
 /// `AddressPayload::from_address` decodes via `Address::to_xdr`, whose
 /// `ScAddress::Contract` payload's trailing 32 bytes are the contract id.
+///
+/// # Panics
+///
+/// Panics if `addr` is not a contract address (e.g. a Stellar account
+/// `G...` address), since only contract ids have the 32-byte payload this
+/// splits.
+#[must_use]
 pub fn split_addr(env: &Env, addr: &Address) -> (U256, U256) {
     let id = match AddressPayload::from_address(addr) {
         Some(AddressPayload::ContractIdHash(hash)) => hash.to_array(),
@@ -109,6 +118,7 @@ fn hex32(hex: &str) -> [u8; 32] {
 /// production (spec §2.2) -- the contract never calls this on-chain; it is
 /// exposed so tests (and off-chain tooling) can derive `inner` from a secret
 /// using the exact construction the circuit uses.
+#[must_use]
 pub fn leaf_inner(env: &Env, secret: &BytesN<32>) -> BytesN<32> {
     let dom_leaf = dom(env, DOM_LEAF_HEX);
     let secret_u256 = u256_from_bytes32(env, &secret.to_array());
@@ -119,6 +129,7 @@ pub fn leaf_inner(env: &Env, secret: &BytesN<32>) -> BytesN<32> {
 /// computed BY THE POOL at insert time (spec §2.2). This on-chain wrap is
 /// what makes leaf/account binding enforceable by insert authorization
 /// rather than trusted from client input.
+#[must_use]
 pub fn wrap_leaf(env: &Env, acct: &Address, inner: &BytesN<32>) -> BytesN<32> {
     let (acct_hi, acct_lo) = split_addr(env, acct);
     let dom_bind = dom(env, DOM_BIND_HEX);
@@ -131,6 +142,7 @@ pub fn wrap_leaf(env: &Env, acct: &Address, inner: &BytesN<32>) -> BytesN<32> {
 /// public `nullifier` input rather than recomputing it (the secret never
 /// appears on-chain). Exposed here so tests can derive the expected
 /// nullifier for a witness the same way the circuit does.
+#[must_use]
 pub fn compute_nullifier(env: &Env, account: &Address, secret: &BytesN<32>) -> BytesN<32> {
     let (acct_hi, acct_lo) = split_addr(env, account);
     let dom_null = dom(env, DOM_NULL_HEX);
@@ -145,6 +157,10 @@ pub fn compute_nullifier(env: &Env, account: &Address, secret: &BytesN<32>) -> B
 /// in here, so a prover cannot swap any of them without invalidating the
 /// proof's `auth_hash` public input.
 #[allow(clippy::too_many_arguments)]
+// `pk_x_hi`/`pk_x_lo` vs `pk_y_hi`/`pk_y_lo` are legitimately distinct
+// (x/y coordinate splits) but trip clippy's similarity heuristic.
+#[allow(clippy::similar_names)]
+#[must_use]
 pub fn compute_auth_hash(
     env: &Env,
     action: u32,
@@ -156,14 +172,14 @@ pub fn compute_auth_hash(
     timelock_secs: u32,
 ) -> BytesN<32> {
     let dom_auth = dom(env, DOM_AUTH_HEX);
-    let action_f = u256_from_u64(env, action as u64);
+    let action_f = u256_from_u64(env, u64::from(action));
     let (acct_hi, acct_lo) = split_addr(env, account);
     let npass_hash = env.crypto().sha256(network_passphrase).to_bytes();
     let (npass_hi, npass_lo) = split16(env, &npass_hash.to_array());
     let (ctrl_hi, ctrl_lo) = split_addr(env, controller);
 
     let pk_bytes = pubkey.to_array();
-    let pk_prefix = u256_from_u64(env, pk_bytes[0] as u64);
+    let pk_prefix = u256_from_u64(env, u64::from(pk_bytes[0]));
     let mut pk_x = [0u8; 32];
     pk_x.copy_from_slice(&pk_bytes[1..33]);
     let mut pk_y = [0u8; 32];
@@ -172,7 +188,7 @@ pub fn compute_auth_hash(
     let (pk_y_hi, pk_y_lo) = split16(env, &pk_y);
 
     let nonce_f = u256_from_u64(env, nonce);
-    let timelock_f = u256_from_u64(env, timelock_secs as u64);
+    let timelock_f = u256_from_u64(env, u64::from(timelock_secs));
 
     p2(
         env,
@@ -208,9 +224,12 @@ mod tests {
     // `new_pubkey` field.
     const NEW_PUBKEY_HEX: &str = "0x042bb2f07c58a9bacf9e794ba2b1589292716ca4b05a6d97b97eb293a160898b00f9fa128ee95baeceff2a25348632424406106595b3dd673db63bb3eef0815186";
     const SECRET_HEX: &str = "0x00000000000000000000000000000000d80e5c7596cf3ed7868f8bc89b6cf93c";
-    const LEAF_STORED_HEX: &str = "0x27cfe62058beb8e80b7c27b5b43225643b3b062f300c3bd28f41ddd20de50880";
-    const NULLIFIER_HEX: &str = "0x1b2c4afb313af3435729561fee62d1b065c4b3aad8e8fc6ca5447936a2f8edce";
-    const AUTH_HASH_HEX: &str = "0x111ae1edc6e6854540153d3098793786fe1f37bd208992a95b9d9038d9c37baf";
+    const LEAF_STORED_HEX: &str =
+        "0x27cfe62058beb8e80b7c27b5b43225643b3b062f300c3bd28f41ddd20de50880";
+    const NULLIFIER_HEX: &str =
+        "0x1b2c4afb313af3435729561fee62d1b065c4b3aad8e8fc6ca5447936a2f8edce";
+    const AUTH_HASH_HEX: &str =
+        "0x111ae1edc6e6854540153d3098793786fe1f37bd208992a95b9d9038d9c37baf";
 
     fn hex_bytes<const N: usize>(hex: &str) -> [u8; N] {
         let s = hex.strip_prefix("0x").unwrap_or(hex);

@@ -105,6 +105,11 @@ pub struct Contract;
 
 #[contractimpl]
 impl Contract {
+    // `admin: Address` is not consumed by-ref in the body, but this is a
+    // `#[contractimpl]` entry point: the SDK's XDR-based ABI takes owned
+    // `Address` by value, so the signature cannot change (precedent:
+    // contracts/smart-account/src/contract.rs).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(e: &Env, admin: Address) {
         Config::new(e).admin.set(&admin);
     }
@@ -119,6 +124,8 @@ impl Contract {
     }
 
     /// Rotate the admin. Requires the current admin's auth.
+    // `#[contractimpl]` entry point; SDK ABI requires owned `Address`.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn set_admin(e: &Env, new_admin: Address) {
         Self::admin(e).require_auth();
         Config::new(e).admin.set(&new_admin);
@@ -140,6 +147,8 @@ impl Contract {
     /// powerful knob: it changes which contract becomes every newly-created
     /// account's recovery controller, and which contract receives the
     /// genesis `insert` cross-call in `deploy_and_insert`.
+    // `#[contractimpl]` entry point; SDK ABI requires owned `Address`.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn set_recovery_pool(e: &Env, pool: Address) {
         Self::admin(e).require_auth();
         Config::set_recovery_pool(e, &pool);
@@ -163,9 +172,11 @@ impl Contract {
     /// owner actually enrolled in ZK recovery -- so an observer of the pool
     /// (or of the factory's transaction shapes) cannot distinguish an
     /// enrolled account from a non-enrolled one.
+    // `#[contractimpl]` entry point; SDK ABI requires owned `BytesN<65>`.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn create_account(e: &Env, salt: &BytesN<32>, key: BytesN<65>) -> Address {
         let dummy = Self::dummy_commitment(e, salt);
-        Self::deploy_and_insert(e, salt, key.to_bytes(), dummy)
+        Self::deploy_and_insert(e, salt, key.to_bytes(), &dummy)
     }
 
     /// Deploy an account contract, add its initial passkey signer, AND
@@ -177,13 +188,16 @@ impl Contract {
     /// address, which is always `get_c_address(salt)` -- the deterministic
     /// address depends only on the deployer (this factory) and `salt`, never
     /// on the constructor args or the genesis insert added here.
+    // `#[contractimpl]` entry point; SDK ABI requires owned `BytesN<65>`/
+    // `BytesN<32>`.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn create_account_v2(
         e: &Env,
         salt: &BytesN<32>,
         key: BytesN<65>,
         commitment: BytesN<32>,
     ) -> Address {
-        Self::deploy_and_insert(e, salt, key.to_bytes(), commitment)
+        Self::deploy_and_insert(e, salt, key.to_bytes(), &commitment)
     }
 
     pub fn get_c_address(e: &Env, salt: &BytesN<32>) -> Address {
@@ -280,10 +294,10 @@ impl Contract {
         e: &Env,
         salt: &BytesN<32>,
         key: Bytes,
-        commitment: BytesN<32>,
+        commitment: &BytesN<32>,
     ) -> Address {
         let (account, controller) = Self::deploy_account_contract(e, salt, key);
-        zk_recovery::ZkRecoveryClient::new(e, &controller).insert(&account, &commitment);
+        zk_recovery::ZkRecoveryClient::new(e, &controller).insert(&account, commitment);
         account
     }
 
@@ -349,6 +363,18 @@ impl Contract {
 
 #[cfg(test)]
 mod test {
+    // Several trait-required params below (e.g. `StubController`'s `Policy`
+    // impl, `MockRegistry`/`NamedRegistry`'s stub entry points) are prefixed
+    // `_` because the method bodies never read them. Clippy still flags them
+    // as "used underscore-prefixed binding" -- the `#[contractimpl]` macro's
+    // generated invoke-wrapper code binds each non-`Env` param to a
+    // same-named local before forwarding it to the real method, which counts
+    // as a "use" even though our source never reads it, and that generated
+    // code sits outside the scope any function- or impl-level `#[allow]`
+    // here can reach. Scoped to this test module only (precedent:
+    // contracts/smart-account/src/contract.rs).
+    #![allow(clippy::used_underscore_binding)]
+
     use super::*;
     use soroban_sdk::auth::Context;
     use soroban_sdk::testutils::{Address as _, Events as _};
@@ -364,6 +390,8 @@ mod test {
 
     #[contractimpl]
     impl MockRegistry {
+        // `#[contractimpl]` entry point; SDK ABI requires owned `Address`.
+        #[allow(clippy::needless_pass_by_value)]
         pub fn __constructor(env: &Env, fixed: Address) {
             env.storage()
                 .instance()
@@ -441,6 +469,8 @@ mod test {
         /// Good enough for a single-signer registration (this test's Default
         /// rule has exactly one signer, so `validate_no_canonical_duplicates`
         /// never compares two canonical outputs against each other).
+        // `#[contractimpl]` entry point; SDK ABI requires owned `Vec<Val>`.
+        #[allow(clippy::needless_pass_by_value)]
         pub fn batch_canonicalize_key(
             e: &Env,
             key_data: soroban_sdk::Vec<soroban_sdk::Val>,
@@ -737,11 +767,7 @@ mod test {
         let id = env.register(Contract, (admin,));
         let client = ContractClient::new(&env, &id);
 
-        assert_eq!(
-            client.recovery_pool(),
-            None,
-            "no override has been set yet"
-        );
+        assert_eq!(client.recovery_pool(), None, "no override has been set yet");
         client.set_recovery_pool(&pool);
         assert_eq!(client.recovery_pool(), Some(pool));
     }
@@ -763,6 +789,8 @@ mod test {
 
     #[contractimpl]
     impl NamedRegistry {
+        // `#[contractimpl]` entry point; SDK ABI requires owned `Address`.
+        #[allow(clippy::needless_pass_by_value)]
         pub fn __constructor(env: &Env, verifier: Address, zk_recovery: Address) {
             env.storage()
                 .instance()
@@ -772,6 +800,8 @@ mod test {
                 .set(&Symbol::new(env, "zk_recovery"), &zk_recovery);
         }
 
+        // `#[contractimpl]` entry point; SDK ABI requires owned `String`.
+        #[allow(clippy::needless_pass_by_value)]
         pub fn fetch_contract_id(env: &Env, name: String) -> Address {
             if name == String::from_str(env, "verifier") {
                 env.storage()
@@ -1177,7 +1207,9 @@ mod test {
         let r_minus_1_bytes = BytesN::from_array(&env, &r_minus_1);
 
         assert!(
-            pool_client.try_insert_for(&account, &r_minus_1_bytes).is_ok(),
+            pool_client
+                .try_insert_for(&account, &r_minus_1_bytes)
+                .is_ok(),
             "factory's DUMMY_FIELD_ORDER_BE - 1 must be canonical (< r) per the REAL pool's \
              FIELD_ORDER_BE -- if this fails, the two crates' field orders have drifted apart"
         );

@@ -2,7 +2,7 @@
 //! `Policy::install`/`Policy::uninstall` (spec §3.1).
 //!
 //! Before the fix, both entry points gated ONLY on
-//! `smart_account.require_auth()`. A thief holding a stolen WebAuthn passkey
+//! `smart_account.require_auth()`. A thief holding a stolen `WebAuthn` passkey
 //! satisfies that (the account's Default rule matches any context), so they
 //! could call the controller's `install`/`uninstall` DIRECTLY (top-level, or
 //! via the account's `execute`) -- bypassing the M2 in-account guard
@@ -46,9 +46,7 @@ use soroban_sdk::xdr::{
 use soroban_sdk::{
     Address, Bytes, BytesN, Env, IntoVal, InvokeError, Map, String, TryFromVal, Val, Vec as SVec,
 };
-use stellar_accounts::smart_account::{
-    AuthPayload, ContextRule, ContextRuleType, Signer,
-};
+use stellar_accounts::smart_account::{AuthPayload, ContextRule, ContextRuleType, Signer};
 
 mod zk_verifier_contract {
     soroban_sdk::contractimport!(
@@ -99,7 +97,12 @@ fn installed_id(env: &Env, controller: &Address, account: &Address) -> Option<u3
 /// `install`/`uninstall`. Shape mimics the real recovery rule (zero signers,
 /// `CallContract(self)`, this controller in `policies`) but its `id` is a
 /// bogus value the account never assigned.
-fn fabricated_rule(env: &Env, account: &Address, controller: &Address, bogus_id: u32) -> ContextRule {
+fn fabricated_rule(
+    env: &Env,
+    account: &Address,
+    controller: &Address,
+    bogus_id: u32,
+) -> ContextRule {
     ContextRule {
         id: bogus_id,
         context_type: ContextRuleType::CallContract(account.clone()),
@@ -134,7 +137,7 @@ fn self_call_entry(
     env: &Env,
     account_addr: &Address,
     fn_name: &str,
-    args: SVec<Val>,
+    args: &SVec<Val>,
     context_rule_ids: SVec<u32>,
 ) -> SorobanAuthorizationEntry {
     let args_scval: VecM<ScVal> = args
@@ -163,7 +166,7 @@ fn self_call_entry(
     SorobanAuthorizationEntry {
         credentials: SorobanCredentials::Address(SorobanAddressCredentials {
             address: ScAddress::from(account_addr),
-            nonce: 0xC0FFEE,
+            nonce: 0x00C0_FFEE,
             signature_expiration_ledger: 999_999,
             signature,
         }),
@@ -182,7 +185,7 @@ struct Deployed<'a> {
 
 /// Deploys the real controller (pinned at `CONTROLLER`) + a real smart account
 /// (pinned at `ACCOUNT`) via the constructor's `Some(controller)` genesis path,
-/// with a real WebAuthn passkey signer on the Default rule and the fixture leaf
+/// with a real `WebAuthn` passkey signer on the Default rule and the fixture leaf
 /// inserted -- i.e. a fully-enrolled account ready for a real-proof recovery.
 /// `mock_all_auths` is left ON for setup; completion tests switch to
 /// `set_auths` for the completing call.
@@ -283,12 +286,19 @@ fn complete(env: &Env, d: &Deployed<'_>) -> bool {
     let new_signers = soroban_sdk::vec![env, new_signer];
     let empty_policies: Map<Address, Val> = Map::new(env);
 
-    let args = add_context_rule_args(env, &context_type, &name, None, &new_signers, &empty_policies);
+    let args = add_context_rule_args(
+        env,
+        &context_type,
+        &name,
+        None,
+        &new_signers,
+        &empty_policies,
+    );
     let entry = self_call_entry(
         env,
         &d.account_addr,
         "add_context_rule",
-        args,
+        &args,
         soroban_sdk::vec![env, d.rule_id],
     );
     env.set_auths(&[entry]);
@@ -313,7 +323,11 @@ fn attacker_uninstall_refused_no_pending_recovery_still_works() {
     let d = deploy(&env);
 
     let before = installed_id(&env, &d.controller_addr, &d.account_addr);
-    assert_eq!(before, Some(d.rule_id), "sanity: installed under the recovery rule id");
+    assert_eq!(
+        before,
+        Some(d.rule_id),
+        "sanity: installed under the recovery rule id"
+    );
 
     // Attacker (account auth satisfied via mock_all_auths, standing in for a
     // stolen passkey) calls the controller's uninstall directly.
@@ -376,7 +390,10 @@ fn attacker_install_and_uninstall_refused_while_pending() {
     let d = deploy(&env);
 
     let executable_after = initiate(&env, &d);
-    assert!(d.zk.has_pending(&d.account_addr), "sanity: live pending exists");
+    assert!(
+        d.zk.has_pending(&d.account_addr),
+        "sanity: live pending exists"
+    );
 
     let params = ZkRecoveryInstallParams { version: 1 };
     let fake = fabricated_rule(&env, &d.account_addr, &d.controller_addr, 7);
@@ -396,10 +413,16 @@ fn attacker_install_and_uninstall_refused_while_pending() {
         Some(d.rule_id),
         "Installed intact after both refused calls"
     );
-    assert!(d.zk.has_pending(&d.account_addr), "pending survives the refused calls");
+    assert!(
+        d.zk.has_pending(&d.account_addr),
+        "pending survives the refused calls"
+    );
 
     env.ledger().with_mut(|li| li.timestamp = executable_after);
-    assert!(complete(&env, &d), "recovery completes after refused attacker calls");
+    assert!(
+        complete(&env, &d),
+        "recovery completes after refused attacker calls"
+    );
 }
 
 /// **Legitimate teardown still works with the REAL controller.** The M2
@@ -415,10 +438,15 @@ fn legit_execute_recovery_rule_removal_still_tears_down() {
     env.cost_estimate().budget().reset_unlimited();
     let d = deploy(&env);
 
-    assert_eq!(d.account.recovery_rule_id(), Some(d.rule_id), "sanity: rule installed");
+    assert_eq!(
+        d.account.recovery_rule_id(),
+        Some(d.rule_id),
+        "sanity: rule installed"
+    );
 
     d.account.initiate_recovery_rule_removal();
-    env.ledger().with_mut(|li| li.timestamp += REMOVAL_DELAY_SECS + 1);
+    env.ledger()
+        .with_mut(|li| li.timestamp += REMOVAL_DELAY_SECS + 1);
     d.account.execute_recovery_rule_removal();
 
     assert_eq!(
@@ -434,7 +462,10 @@ fn legit_execute_recovery_rule_removal_still_tears_down() {
     );
     // The rule really is gone from account storage.
     let res = d.account.try_get_context_rule(&d.rule_id);
-    assert!(res.is_err(), "the recovery ContextRule must no longer exist on the account");
+    assert!(
+        res.is_err(),
+        "the recovery ContextRule must no longer exist on the account"
+    );
 }
 
 /// **Documented reentrancy limitation (fresh-account install).** A genuine

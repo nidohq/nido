@@ -89,6 +89,7 @@ fn load_ring(env: &Env) -> SorobanVec<BytesN<32>> {
 
 /// The number of leaves inserted so far (also the index the next
 /// `insert_leaf` will use).
+#[must_use]
 pub fn next_index(env: &Env) -> u32 {
     env.storage()
         .instance()
@@ -105,6 +106,7 @@ fn ring_head(env: &Env) -> u32 {
 
 /// The most recently computed root, or the depth-24 empty-tree root if no
 /// leaf has ever been inserted.
+#[must_use]
 pub fn current_root(env: &Env) -> BytesN<32> {
     let head = ring_head(env);
     if head == 0 {
@@ -118,6 +120,7 @@ pub fn current_root(env: &Env) -> BytesN<32> {
 /// depth-24 empty-tree root (before any insert). The ring's most recently
 /// written slot always holds the current root, so this subsumes the
 /// "or is the current root" case from the ring scan alone.
+#[must_use]
 pub fn is_known_root(env: &Env, root: &BytesN<32>) -> bool {
     let head = ring_head(env);
     if head == 0 {
@@ -140,6 +143,7 @@ pub fn is_known_root(env: &Env, root: &BytesN<32>) -> bool {
 /// persistent entry's TTL to the network max, and increments `next_index`.
 /// Returns the inserted leaf's index. Panics with
 /// `RecoveryError::TreeFull` once `next_index` would reach `2^24`.
+#[must_use]
 pub fn insert_leaf(env: &Env, stored: &BytesN<32>) -> u32 {
     let idx = next_index(env);
     if idx >= MAX_LEAVES {
@@ -284,6 +288,9 @@ mod tests {
     }
 
     #[test]
+    // `n`/`leaves.len()` are bounded by the fixed 8-element `leaves` array
+    // below, always far under u32::MAX -- truncation is not reachable.
+    #[allow(clippy::cast_possible_truncation)]
     fn frontier_root_matches_independent_reference() {
         let env = Env::default();
         env.cost_estimate().budget().reset_unlimited();
@@ -352,12 +359,15 @@ mod tests {
     }
 
     #[test]
+    // `N` is a fixed, small compile-time constant (129) -- truncation to
+    // u32 is not reachable.
+    #[allow(clippy::cast_possible_truncation)]
     fn ring_evicts_oldest_root_after_129_inserts() {
+        const N: usize = 129;
         let env = Env::default();
         env.cost_estimate().budget().reset_unlimited();
         let id = setup(&env);
 
-        const N: usize = 129;
         let leaves: [[u8; 32]; N] = core::array::from_fn(|i| {
             let a = be32_from_u64(i as u64);
             let b = be32_from_u64(i as u64 + 1_000_000);
