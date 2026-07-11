@@ -157,6 +157,16 @@ jobs:
           PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
           PUBLIC_STELLAR_RPC_URL: https://soroban-testnet.stellar.org
           PUBLIC_STELLAR_HORIZON_URL: https://horizon-testnet.stellar.org
+      # adsum's own unit suite (vitest) — includes the claim-payload pin test
+      # (the stop-ship protocol guarantee) — plus its eslint config, so a
+      # regression there fails the PR gate instead of only showing up in a
+      # local `npm test`/`npm run lint` run.
+      - name: Unit tests (adsum)
+        run: npm test
+        working-directory: examples/adsum
+      - name: Lint (adsum)
+        run: npm run lint
+        working-directory: examples/adsum
       - name: Fast UI e2e tier (shim — chromium/firefox/webkit)
         run: npx playwright test --grep @fast
       - name: Chromium CDP virtual-authenticator fidelity lane
