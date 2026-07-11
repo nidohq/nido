@@ -51,6 +51,34 @@ No `fly ips allocate` — the app must keep zero public IPs.
 Verify: `curl --socks5-hostname 127.0.0.1:9050 http://$ONION_ADDR/` (any tor
 daemon), and check `fly logs` for `Bootstrapped 100%` + descriptor upload.
 
+## Local testing before Fly (`./local-test.sh`)
+
+Runs the **real dapp** over a disposable local onion with TLS — proves the
+image and WebAuthn-over-onion end to end without deploying:
+
+```bash
+cd infra/onion && ./local-test.sh      # mint key, build frontend, run container
+# trust .local/certs/ca.pem in your browser, open the printed https://<addr>.onion/
+```
+
+What works over Tor and what to expect:
+
+- **Account creation + signing**: work. Passkey RP ID = the onion hostname;
+  Soroban RPC (`soroban-testnet.stellar.org`) and testnet funding
+  (`friendbot.stellar.org`) are hardcoded clearnet hosts fetched **directly**
+  through Tor exits — functional, occasionally slow/flaky (exit reputation,
+  not the onion setup). The relay / recovery-relay / pool-indexer calls are
+  build-pointed at the onion backhaul vhosts instead.
+- **Known rough edges** (cosmetic for testing, tracked for phase 2):
+  - Google Fonts load from `fonts.googleapis.com` directly (no CSP) — a leak +
+    latency; self-host later.
+  - `astro.config.mjs` bakes `site: https://nido.fyi`, so `og:image` /
+    canonical tags point at clearnet from the onion pages (non-fatal).
+  - `rpc.<addr>.onion` backhaul vhost exists but is unused until the frontend's
+    hardcoded testnet `RPC_URL` is made env-driven (phase 2).
+  - Per-account subdomains work (`<contractid>.<addr>.onion`), but
+    `KNOWN_SUFFIXES` name-stripping doesn't recognize `.onion` — display only.
+
 ## TLS (phase 2 — required for signing)
 
 WebAuthn on onion origins needs https in every proven browser path. Get the

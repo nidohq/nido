@@ -3,15 +3,18 @@
 # header; everything below keys off it. {$ONION_ADDR} is the bare onion
 # hostname, e.g. "nido…xyz.onion".
 #
-# Plain HTTP on :8080 until the HARICA cert lands; :8443 blocks are enabled
-# by mounting the cert (see README) and setting ONION_TLS=1.
+# Serves plain HTTP on :8080 always. When ONION_TLS_CERT/ONION_TLS_KEY point
+# at a cert (the HARICA mixed-SAN cert in prod, or a local-CA wildcard leaf
+# for local testing), the :8443 site is enabled too — WebAuthn on onion
+# origins requires https in every proven browser path.
 
 {
 	auto_https off
 	admin off
 }
 
-http://:8080 {
+# Shared routing logic, imported by both the HTTP and HTTPS site blocks.
+(routes) {
 	# --- API backhauls (EOTK pattern): same fixed egress IP for every -----
 	# --- Tor user, so Cloudflare-fronted upstreams never see exit IPs -----
 	@relay host relay.{$ONION_ADDR}
@@ -28,7 +31,11 @@ http://:8080 {
 		}
 	}
 
-	# Soroban RPC backhaul. RPC_UPSTREAM e.g. https://soroban-testnet.stellar.org
+	# Soroban RPC backhaul. Dead until the frontend's hardcoded testnet
+	# RPC_URL is made env-driven and pointed here (phase 2) — the app calls
+	# soroban-testnet.stellar.org directly today. RPC_UPSTREAM e.g.
+	# https://soroban-testnet.stellar.org. (No Horizon vhost: the codebase
+	# uses Soroban RPC + friendbot only, never Horizon.)
 	@rpc host rpc.{$ONION_ADDR}
 	handle @rpc {
 		reverse_proxy {$RPC_UPSTREAM} {
@@ -53,3 +60,11 @@ http://:8080 {
 		file_server
 	}
 }
+
+http://:8080 {
+	import routes
+}
+
+# The https://:8443 site is appended by entrypoint.sh at boot ONLY when a cert
+# is mounted (ONION_TLS_CERT points at a readable file) — Caddy's `tls`
+# directive errors on empty arguments, so it can't live here unconditionally.

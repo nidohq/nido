@@ -14,7 +14,24 @@ chown -R debian-tor:debian-tor /var/lib/tor
 chmod 700 /var/lib/tor /var/lib/tor/onion
 chmod 600 /var/lib/tor/onion/hs_ed25519_secret_key
 
-caddy run --config /etc/caddy/Caddyfile &
+# Assemble the runtime Caddyfile: base http site always; append the https
+# site only when a cert is actually mounted (WebAuthn on onion needs TLS).
+cp /etc/caddy/Caddyfile /run/Caddyfile
+if [ -n "${ONION_TLS_CERT:-}" ] && [ -r "${ONION_TLS_CERT}" ]; then
+	: "${ONION_TLS_KEY:?ONION_TLS_CERT is set but ONION_TLS_KEY is not}"
+	cat >> /run/Caddyfile <<EOF
+
+https://:8443 {
+	tls ${ONION_TLS_CERT} ${ONION_TLS_KEY}
+	import routes
+}
+EOF
+	echo "TLS enabled: serving https on :8443 with ${ONION_TLS_CERT}" >&2
+else
+	echo "no cert mounted (ONION_TLS_CERT unset/unreadable) — http :8080 only" >&2
+fi
+
+caddy run --config /run/Caddyfile &
 CADDY_PID=$!
 
 # If Caddy dies, take the machine down so Fly restarts it whole.
