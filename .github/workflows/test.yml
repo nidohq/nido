@@ -139,6 +139,8 @@ jobs:
         run: npx tsc -p ./packages/passkey-sdk/tsconfig.json
       - name: Build frontend
         run: npx astro build --root ./packages/frontend
+      - name: Build adsum's generated contract-client packages
+        run: npm run build -w petitions -w web_of_trust
       # examples/adsum/dist is gitignored and never built as part of the repo
       # checkout -- tests/e2e/ui/adsum.spec.ts (and playwright.config.ts's
       # conditional adsum webServer entry) skip themselves gracefully when
