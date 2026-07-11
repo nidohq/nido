@@ -21,7 +21,7 @@ Three goals, in priority order:
 | Hosting | Fly.io machine running tor + Caddy |
 | Onion address | Vanity `nido…` prefix (mkp224o, mined offline) |
 | Tor mode | Single onion service (server anonymity not needed; users keep 3 hops) |
-| Cert strategy | Staged: Onion-Location + Sauteed-Onions SAN day one; HARICA wildcard onion cert in phase 2, gated on spike results |
+| Cert strategy | Onion-Location day one; **HARICA mixed-SAN cert (`nido.fyi` + `<addr>.onion` + `*.<addr>.onion`) required in phase 2** — spike proved TLS is the Chromium/Brave signing path, and a CT-logged cert containing both names IS the public domain↔onion binding (Facebook precedent). Sauteed-Onions SAN demoted to optional interim measure |
 | Tor Browser signing gap | Detect + guide (read-only mode in stock Tor Browser) |
 
 ## Load-bearing facts (verified 2026-07-10 against primary sources)
@@ -30,7 +30,7 @@ Three goals, in priority order:
 2. **Onion subdomains work.** The Tor address spec reserves labels left of the 56-char address for vhosting; they are carried in the HTTP Host header (and SNI). `onion` is on the Public Suffix List, so `<addr>.onion` is the registrable domain and `name.<addr>.onion` is a distinct origin — WebAuthn RP-ID scoping is exactly parallel to `name.nido.fyi`. Nido's per-account-subdomain model ports unchanged.
 3. **RP ID is already dynamic.** `rpId: window.location.hostname` at every create/assert site (`primaryPasskeySigner.ts`, `walletSign.ts`, `sessionKey.ts`, account pages). No auth-code change needed for onion origins. The on-chain verifier does not check rpIdHash/origin; RP binding is enforced client-side by browser + authenticator.
 4. **Plain-HTTP onion is a secure context in Tor Browser** (`dom.securecontext.allowlist_onions=true`) **and in Brave ≥1.56** (brave-core patch to `is_potentially_trustworthy.cc`), but **not** in vanilla Firefox or upstream Chromium. Gecko gates WebAuthn on potentially-trustworthy origin, not the https scheme.
-5. **Signing paths that plausibly work on an onion today:** (a) Brave Private Window with Tor — Chromium WebAuthn stack intact, `.onion` trustworthy; (b) Firefox 152+/Chromium over a Tor SOCKS proxy — requires a real TLS cert on the onion. **No end-to-end WebAuthn ceremony on any .onion origin has been publicly field-verified** — hence the phase-0 spike.
+5. **Signing paths — FIELD-VERIFIED by the phase-0 spike (2026-07-11, `spikes/webauthn-onion/`):** Chrome 147 over Tor SOCKS completed create+assert on `https://<addr>.onion` AND `https://test.<addr>.onion` (distinct RP IDs — per-account model confirmed) with a locally-trusted wildcard onion cert; Brave Private Window with Tor completed create with a real platform authenticator over https. Plain-http onion exposes no WebAuthn in Chromium (`PublicKeyCredential` undefined) — **TLS on the onion is required for every proven signing path**, which is why the HARICA cert is now a hard requirement.
 6. **Wildcard onion TLS is obtainable.** HARICA sells "SSL DV Wildcard Onion" (`*.<addr>.onion`), validated via an ed25519 onion-CSR (BR Appendix B — the only wildcard-permitted method; HARICA publishes an open-source `onion-csr` tool). DigiCert issues EV equivalents (Proton, Brave hold live wildcard onion certs). Lifetimes: ≤200 days now, 100 from 2027-03, 47 from 2029-03. No publicly trusted CA implements ACME for onions (RFC 9799) yet; Let's Encrypt does not issue `.onion`. CT logging is de-facto mandatory, so the onion address becomes public (fine — it's advertised anyway); the wildcard keeps individual account names out of CT logs.
 7. **Onion services are outbound-only** (they punch through NAT; no inbound ports or public IP), so a Fly machine with no `[[services]]` works; autostop only acts on proxy-managed services. Fly's AUP does not address onion services (they are neither exit nodes nor public proxies); public precedent exists for tor daemons on Fly.
 8. **Onion-Location is manual-only.** Tor Browser removed the automatic redirect in 13.0.12 (2024-03) after the PoPETs 2025 fingerprinting study; the header now yields a ".onion available" button. It requires the advertising page to be certified HTTPS and non-onion, preserves the URL path, performs no same-entity check, and therefore supports per-subdomain targets (`name.nido.fyi` → `name.<addr>.onion`).
@@ -84,11 +84,17 @@ Caddy reverse-proxies API vhosts server-side to clearnet over HTTPS from the mac
 
 **Day 1 (free, automatable):**
 
-1. `Onion-Location` header per-subdomain, added in the existing `*.nido.fyi` worker proxy: `name.nido.fyi` → `http://name.<addr>.onion`. Manual button by design — do not attempt auto-redirect.
-2. Sauteed-Onions SAN: Let's Encrypt cert for `<addr>onion.nido.fyi` via DNS-01 (CF API), auto-renewed. The CT log entry is the public binding.
-3. `/tor` docs page + `security.txt` entry listing the onion address.
+1. `Onion-Location` header per-subdomain, added in the existing `*.nido.fyi` worker proxy: `name.nido.fyi` → `http(s)://name.<addr>.onion`. Manual button by design — do not attempt auto-redirect. Env-gated (`ONION_ADDR`) so it ships before the production address exists.
+2. `/tor` docs page + `security.txt` entry listing the onion address.
 
-**Phase 2 (conditional on spike):** HARICA SSL DV Wildcard Onion (`*.<addr>.onion`, ~€36+/yr). Unlocks the Firefox/Chromium-over-Tor signing path, padlock UX, and SNI/Host hygiene. Manual renewal ≤200 days → calendar runbook.
+**Phase 2 (required — spike settled it):** one HARICA DV cert with SANs `{nido.fyi, <addr>.onion, *.<addr>.onion}`:
+
+- Onion names validated via the ed25519 onion-CSR (BR Appendix B — the only wildcard-permitted method); `nido.fyi` via standard DNS validation. Mixed clearnet+onion SANs are BR-legal (Facebook's DigiCert EV onion cert is precedent). **Verify at purchase that HARICA's product packaging accepts mixed SANs**; fallback = onion-only wildcard cert plus a separate free sauteed-SAN cert (`<addr>onion.nido.fyi`, Let's Encrypt) for the binding.
+- The cert serves the onion vhosts on Fly Caddy AND its CT log entry is the public domain↔onion binding — one artifact, two jobs.
+- Clearnet nido.fyi stays on Cloudflare Universal SSL (free). Serving the mixed cert at CF's edge would need a Business plan (~$200/mo) and buys nothing: the binding lives in CT, not in what clearnet visitors are served.
+- Manual renewal ≤200 days → calendar runbook.
+
+Sauteed-Onions SAN: optional interim only (e.g. if the gap between launch and the HARICA purchase is long).
 
 ## Accounts
 
@@ -107,7 +113,8 @@ Caddy reverse-proxies API vhosts server-side to clearnet over HTTPS from the mac
 
 ## Risks
 
-- **Spike refutes Brave path** → onion signing depends on HARICA cert + Firefox path, or waits on TB #44158 (no timeline). Mirror + read-only still ships.
+- ~~Spike may refute Brave path~~ **Resolved 2026-07-11**: Chrome (automated, create+assert, both origins) and Brave (real platform authenticator, create) both pass over https. Remaining spike rows (Firefox, Tor Browser controls, Brave assert) are confirmatory, not gating.
+- **HARICA mixed-SAN packaging unverified** — if their DV Onion product rejects non-onion SANs, fall back to onion-only wildcard + separate sauteed-SAN cert for the binding.
 - **TB first-party isolation** buckets all `*.<addr>.onion` under one circuit/storage — same shape as clearnet eTLD+1 (`nido.fyi`); no regression.
 - **Fly policy** — AUP silent on onion services; low risk (not an exit/proxy); optional support ticket for comfort.
 - **Cert-lifetime squeeze** — 47-day certs by 2029 with no onion ACME CA yet; revisit when a CA implements RFC 9799.

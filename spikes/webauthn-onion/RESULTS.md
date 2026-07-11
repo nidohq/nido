@@ -17,7 +17,7 @@ Record exact error strings — they decide the epic's detect-and-guide copy.
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | Brave (Private Window w/ Tor) | | built-in Tor | http | bare | | | | | | |
 | 1b | Brave (Private Window w/ Tor) | | built-in Tor | http | test. subdomain | | | | | | |
-| 2 | Brave (Private Window w/ Tor) | | built-in Tor | https | bare | | | | | | |
+| 2 | Brave (Private Window w/ Tor) — version TBD | user machine, OS TBD | built-in Tor | https | test. subdomain | | | ✅ OK (2026-07-11) | ✅ OK (2026-07-11) | **platform** (`authenticatorAttachment=platform`, `transports=hybrid,internal`) | Real-hardware full ceremony after trusting spike CA via /ca.pem; `rpId=test.<addr>.onion`, userHandle returned. First human-verified WebAuthn ceremony on an onion origin. |
 | 3 | Firefox 152+ | | SOCKS 9052 | https | bare | | | | | | |
 | 3b | Firefox 152+ | | SOCKS 9052 | https | test. subdomain | | | | | | |
 | 4 | Firefox 152+ (control) | | SOCKS 9052 | http | bare | | | | | | |
