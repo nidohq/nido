@@ -22,6 +22,21 @@ const CONTRACT_ERROR_CODE = /Error\(Contract, #(\d+)\)/
 const trustErrorByCode = TrustError as Record<number, { message: string }>
 
 /**
+ * Thrown by `throwIfSimulationFailed` — meaning the failure was caught at
+ * simulation time, before any wallet signature or ledger submission. Callers
+ * can treat this as "definitely never went anywhere": e.g. Trust.tsx's
+ * `handleSeal` prunes a just-persisted invite on this error (but keeps it on
+ * any other, since those can mean the transaction reached the ledger even
+ * though the promise rejected — see that function's comment).
+ */
+export class TrustSimulationError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = "TrustSimulationError"
+	}
+}
+
+/**
  * Throws when `tx`'s simulation reports an error — with the resolved
  * `TrustError` variant name (e.g. "AlreadyVouched") when the failure is one
  * of this contract's own declared errors, or a generic message otherwise.
@@ -49,7 +64,9 @@ function throwIfSimulationFailed(tx: AssembledTransaction<unknown>): void {
 	const variant = match
 		? trustErrorByCode[Number(match[1])]?.message
 		: undefined
-	throw new Error(variant || "The ledger declined this. Try again.")
+	throw new TrustSimulationError(
+		variant || "The ledger declined this. Try again.",
+	)
 }
 
 /** UI-friendly view of a `PreVouch`. */

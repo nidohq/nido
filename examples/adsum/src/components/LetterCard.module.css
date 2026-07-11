@@ -152,7 +152,8 @@
 }
 
 .revoke:hover:not(:disabled),
-.discard:hover {
+.discard:hover,
+.retry:hover {
 	border-color: var(--seal);
 	color: var(--seal);
 	background: var(--seal-wash);

@@ -14,6 +14,7 @@ import {
 	fetchVouchesGiven,
 	fetchVouchesReceived,
 	revokeVouch,
+	TrustSimulationError,
 	vouchFor,
 } from "../lib/trust"
 import { buildVouchUrl } from "../lib/urls"
@@ -206,29 +207,52 @@ export function Trust() {
 		if (!viewer || !canSeal || sealing) return
 		setSealing(true)
 		setLetterError(null)
+		const expires =
+			daysTrim === "" || currentLedger === null
+				? null
+				: currentLedger + daysNum * LEDGERS_PER_DAY
+		const secret = newInviteSecret()
+		const label = letterLabel.trim()
+		const createdAt = Date.now()
+		// Persisted *before* the on-chain call, flagged `pending`: a throw from
+		// `createPreVouch` doesn't mean the pre_vouch never reached the ledger —
+		// a confirmation timeout or a wallet popup round-trip failure can both
+		// leave a live pre_vouch behind. Losing the seed here would stand up an
+		// invite that's unclaimable (the /claim link needs the seed) and
+		// unrevocable from this UI (revoking needs the seed's pubkey, which is
+		// derived from the seed). Only the simulation-stage errors below —
+		// caught before signing, so nothing was ever submitted — are safe to
+		// prune back out.
+		inviteStore.add({ ...secret, label, createdAt, pending: true })
+		setInvites(inviteStore.list())
 		try {
-			const expires =
-				daysTrim === "" || currentLedger === null
-					? null
-					: currentLedger + daysNum * LEDGERS_PER_DAY
-			const secret = newInviteSecret()
 			await createPreVouch(viewer, secret.pubkeyHex, expires, usesNum)
-			inviteStore.add({
-				...secret,
-				label: letterLabel.trim(),
-				createdAt: Date.now(),
-			})
+			inviteStore.add({ ...secret, label, createdAt })
 			setInvites(inviteStore.list())
 			setLetterLabel("")
 			setUsesInput("1")
 			setDaysInput(DEFAULT_VALID_DAYS)
 			addNotification("Letter sealed — hand its code to the bearer.", "success")
 		} catch (err) {
-			setLetterError(
-				err instanceof Error
-					? err.message
-					: "The letter couldn't be sealed. Try again.",
-			)
+			if (err instanceof TrustSimulationError) {
+				// Caught before signing — the pre_vouch never left the browser.
+				inviteStore.remove(secret.pubkeyHex)
+				setInvites(inviteStore.list())
+				setLetterError(err.message)
+			} else {
+				// Unknown or late failure: keep the seed (clearing only the
+				// pending flag, so the letter card resumes reading the ledger for
+				// itself) and tell the reader it may still be live.
+				inviteStore.add({ ...secret, label, createdAt })
+				setInvites(inviteStore.list())
+				const reason =
+					err instanceof Error
+						? err.message
+						: "The letter couldn't be sealed."
+				setLetterError(
+					`${reason} The letter may still be live — check its terms below before resealing.`,
+				)
+			}
 		} finally {
 			setSealing(false)
 		}

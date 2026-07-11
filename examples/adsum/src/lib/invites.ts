@@ -19,6 +19,14 @@ export interface StoredInvite {
 	label: string
 	/** `Date.now()` at creation, for sorting/display. */
 	createdAt: number
+	/**
+	 * `true` while the `pre_vouch` that backs this invite is still being
+	 * submitted (seed persisted, but `createPreVouch` hasn't settled yet) —
+	 * see Trust.tsx's `handleSeal`. Absent/`false` once the on-chain call has
+	 * resolved one way or another; `LetterCard` skips reading the ledger
+	 * while this is `true`, since there may be nothing there yet.
+	 */
+	pending?: boolean
 }
 
 function readAll(): StoredInvite[] {

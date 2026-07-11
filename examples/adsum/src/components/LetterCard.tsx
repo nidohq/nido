@@ -59,6 +59,11 @@ export const LetterCard = ({
 	const [retryCount, setRetryCount] = useState(0)
 
 	useEffect(() => {
+		// While the seal is still in flight (Trust.tsx's `handleSeal` persists
+		// the invite before submitting it), there may be nothing on the ledger
+		// yet — reading now would misreport a live seal as "no longer on the
+		// ledger". Wait for the pending flag to clear before consulting it.
+		if (invite.pending) return
 		let cancelled = false
 		fetchPreVouch(invite.pubkeyHex)
 			.then((pv) => {
@@ -74,7 +79,7 @@ export const LetterCard = ({
 		return () => {
 			cancelled = true
 		}
-	}, [invite.pubkeyHex, retryCount])
+	}, [invite.pubkeyHex, invite.pending, retryCount])
 
 	/** Re-runs the terms fetch after a transient read failure. */
 	function retry() {
@@ -131,13 +136,15 @@ export const LetterCard = ({
 				)}
 
 				<p className={styles.terms}>
-					{readFailed
-						? "Couldn't read the letter's terms — the code above still works."
-						: preVouch === undefined
-							? "Consulting the record…"
-							: preVouch === null
-								? "No longer on the ledger."
-								: termsLine(preVouch, currentLedger)}
+					{invite.pending
+						? "Sealing on the ledger…"
+						: readFailed
+							? "Couldn't read the letter's terms — the code above still works."
+							: preVouch === undefined
+								? "Consulting the record…"
+								: preVouch === null
+									? "No longer on the ledger."
+									: termsLine(preVouch, currentLedger)}
 				</p>
 
 				{error && (
