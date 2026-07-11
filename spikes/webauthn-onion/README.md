@@ -43,7 +43,23 @@ at it for the Firefox/Chromium rows.
   For https rows: Settings → Certificates → Import `certs/ca.pem`, trust for websites.
 - **Chromium/Chrome over SOCKS**:
   `chromium --proxy-server="socks5://127.0.0.1:9052" --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"`
-  Trust `certs/ca.pem` via chrome://settings/certificates (Authorities).
+
+### Trusting the local CA (Chromium family — Brave/Chrome/Chromium, Linux)
+
+Clicking through the cert interstitial is NOT enough: Chromium refuses WebAuthn
+on any connection with cert errors (`NotAllowedError: WebAuthn is not supported
+on sites with TLS certificate errors`). Install the CA into the NSS DB, then
+fully restart the browser:
+
+```bash
+certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n webauthn-onion-spike-ca -i certs/ca.pem
+```
+
+Remove after the spike:
+
+```bash
+certutil -d sql:$HOME/.pki/nssdb -D -n webauthn-onion-spike-ca
+```
 - **Tor Browser stock / pref-flip**: open the onion URL; for the flip row set
   `security.webauth.webauthn` → `true` in `about:config`, restart.
 
