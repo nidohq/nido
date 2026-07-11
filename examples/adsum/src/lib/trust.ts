@@ -15,6 +15,7 @@ import webOfTrust from "../contracts/web_of_trust"
 import { wallet } from "../util/wallet"
 import { signClaim } from "./claimPayload"
 import { signAndSendWithSentinel, type SendResult } from "./sentinel"
+import { txSourceFor } from "./txSource"
 
 export type { SendResult }
 
@@ -136,7 +137,7 @@ export async function fetchPreVouch(
  * vouched).
  */
 export async function vouchFor(from: string, to: string): Promise<SendResult> {
-	const tx = await webOfTrust.vouch({ from, to }, { publicKey: from })
+	const tx = await webOfTrust.vouch({ from, to }, { publicKey: txSourceFor(from) })
 	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
 }
@@ -149,7 +150,7 @@ export async function revokeVouch(
 	from: string,
 	to: string,
 ): Promise<SendResult> {
-	const tx = await webOfTrust.revoke({ from, to }, { publicKey: from })
+	const tx = await webOfTrust.revoke({ from, to }, { publicKey: txSourceFor(from) })
 	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
 }
@@ -173,7 +174,7 @@ export async function createPreVouch(
 			expires: toOptionU32(expires),
 			max_claims: maxClaims,
 		},
-		{ publicKey: from },
+		{ publicKey: txSourceFor(from) },
 	)
 	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
@@ -191,7 +192,7 @@ export async function revokePreVouch(
 ): Promise<SendResult> {
 	const tx = await webOfTrust.revoke_pre_vouch(
 		{ from, key: Buffer.from(pubkeyHex, "hex") },
-		{ publicKey: from },
+		{ publicKey: txSourceFor(from) },
 	)
 	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)
@@ -214,7 +215,7 @@ export async function claimVouch(
 	const { key, sig } = signClaim(seedHex, contractId, to)
 	const tx = await webOfTrust.claim_vouch(
 		{ key: Buffer.from(key), to, sig: Buffer.from(sig) },
-		{ publicKey: to },
+		{ publicKey: txSourceFor(to) },
 	)
 	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)

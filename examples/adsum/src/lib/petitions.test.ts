@@ -1,4 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { RELAYER_SIM_SOURCE } from "./txSource"
+
+// Real, validly-encoded strkeys (borrowed from urls.test.ts's pinned fixture
+// inputs) — only their strkey validity/kind matters here.
+const G_ADDRESS = "GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2"
+const C_ADDRESS = "CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S"
 
 const mockClient = vi.hoisted(() => ({
 	get_petition: vi.fn(),
@@ -212,6 +218,40 @@ describe("createPetition", () => {
 		).rejects.toThrow("The ledger declined this. Try again.")
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
+
+	it("builds with the relayer sim-source when the creator is a smart account (C-address), while contract args carry the C-address", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.create_petition.mockResolvedValue({
+			result: okResult(42),
+			signAndSend,
+		})
+
+		await createPetition({ title: "Title", body: "Body" }, C_ADDRESS)
+
+		expect(mockClient.create_petition).toHaveBeenCalledWith(
+			expect.objectContaining({ creator: C_ADDRESS }),
+			{ publicKey: RELAYER_SIM_SOURCE },
+		)
+	})
+
+	it("builds with its own address when the creator is a classic G wallet", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.create_petition.mockResolvedValue({
+			result: okResult(42),
+			signAndSend,
+		})
+
+		await createPetition({ title: "Title", body: "Body" }, G_ADDRESS)
+
+		expect(mockClient.create_petition).toHaveBeenCalledWith(
+			expect.objectContaining({ creator: G_ADDRESS }),
+			{ publicKey: G_ADDRESS },
+		)
+	})
 })
 
 describe("signPetition", () => {
@@ -243,5 +283,39 @@ describe("signPetition", () => {
 
 		await expect(signPetition(3, "GADDR")).rejects.toThrow("AlreadySigned")
 		expect(signAndSend).not.toHaveBeenCalled()
+	})
+
+	it("builds with the relayer sim-source when the signer is a smart account (C-address), while contract args carry the C-address", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.sign.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await signPetition(3, C_ADDRESS)
+
+		expect(mockClient.sign).toHaveBeenCalledWith(
+			{ id: 3, signer: C_ADDRESS },
+			{ publicKey: RELAYER_SIM_SOURCE },
+		)
+	})
+
+	it("builds with its own address when the signer is a classic G wallet", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.sign.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await signPetition(3, G_ADDRESS)
+
+		expect(mockClient.sign).toHaveBeenCalledWith(
+			{ id: 3, signer: G_ADDRESS },
+			{ publicKey: G_ADDRESS },
+		)
 	})
 })

@@ -306,6 +306,10 @@ handling `ACCOUNT_SWITCH_REQUESTED` and the `submitted: true` sentinel guard
 (`AlreadySubmittedError` pattern from `StatusMessage.tsx`): a Nido wallet in
 relayer mode submits wallet-side and returns the hash, so Nido users are
 already gasless on this path and `signAndSend` must not re-broadcast.
+Smart-account (C-address) writes build with the relayer's funded sim-source
+G as the tx source (`RELAYER_SIM_SOURCE`, nidoSign.ts precedent) since
+`AssembledTransaction` requires an ed25519 source; auth entries still target
+the C-account.
 
 Deferred as one unit: **in-page session-passkey signing with relayer
 submission** (`signSessionCallInPage` core + `extractFuncAndAuth` →

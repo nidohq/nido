@@ -13,6 +13,7 @@ import { PetitionError } from "petitions"
 import petitions from "../contracts/petitions"
 import { wallet } from "../util/wallet"
 import { signAndSendWithSentinel, type SendResult } from "./sentinel"
+import { txSourceFor } from "./txSource"
 
 export type { SendResult }
 
@@ -174,7 +175,7 @@ export async function createPetition(
 			goal: toOptionU32(fields.goal),
 			deadline: toOptionU32(fields.deadline),
 		},
-		{ publicKey: address },
+		{ publicKey: txSourceFor(address) },
 	)
 	throwIfSimulationFailed(tx)
 	const sendResult = await signAndSendWithSentinel(tx, wallet.signTransaction)
@@ -192,7 +193,7 @@ export async function signPetition(
 ): Promise<SendResult> {
 	const tx = await petitions.sign(
 		{ id, signer: address },
-		{ publicKey: address },
+		{ publicKey: txSourceFor(address) },
 	)
 	throwIfSimulationFailed(tx)
 	return signAndSendWithSentinel(tx, wallet.signTransaction)

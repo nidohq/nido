@@ -1,5 +1,11 @@
 import { Buffer } from "buffer"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { RELAYER_SIM_SOURCE } from "./txSource"
+
+// Real, validly-encoded strkeys (borrowed from urls.test.ts's pinned fixture
+// inputs) — only their strkey validity/kind matters here.
+const G_ADDRESS = "GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2"
+const C_ADDRESS = "CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S"
 
 const mockClient = vi.hoisted(() => ({
 	vouches_given: vi.fn(),
@@ -180,6 +186,40 @@ describe("vouchFor", () => {
 		)
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
+
+	it("builds with the relayer sim-source when the voucher is a smart account (C-address), while contract args carry the C-address", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await vouchFor(C_ADDRESS, "GTO")
+
+		expect(mockClient.vouch).toHaveBeenCalledWith(
+			{ from: C_ADDRESS, to: "GTO" },
+			{ publicKey: RELAYER_SIM_SOURCE },
+		)
+	})
+
+	it("builds with its own address when the voucher is a classic G wallet", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await vouchFor(G_ADDRESS, "GTO")
+
+		expect(mockClient.vouch).toHaveBeenCalledWith(
+			{ from: G_ADDRESS, to: "GTO" },
+			{ publicKey: G_ADDRESS },
+		)
+	})
 })
 
 describe("revokeVouch", () => {
@@ -210,6 +250,40 @@ describe("revokeVouch", () => {
 
 		await expect(revokeVouch("GFROM", "GTO")).rejects.toThrow("VouchNotFound")
 		expect(signAndSend).not.toHaveBeenCalled()
+	})
+
+	it("builds with the relayer sim-source when the revoker is a smart account (C-address), while contract args carry the C-address", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.revoke.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await revokeVouch(C_ADDRESS, "GTO")
+
+		expect(mockClient.revoke).toHaveBeenCalledWith(
+			{ from: C_ADDRESS, to: "GTO" },
+			{ publicKey: RELAYER_SIM_SOURCE },
+		)
+	})
+
+	it("builds with its own address when the revoker is a classic G wallet", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.revoke.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await revokeVouch(G_ADDRESS, "GTO")
+
+		expect(mockClient.revoke).toHaveBeenCalledWith(
+			{ from: G_ADDRESS, to: "GTO" },
+			{ publicKey: G_ADDRESS },
+		)
 	})
 })
 
@@ -266,6 +340,40 @@ describe("createPreVouch", () => {
 		).rejects.toThrow("InvalidMaxClaims")
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
+
+	it("builds with the relayer sim-source when the creator is a smart account (C-address), while contract args carry the C-address", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.pre_vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await createPreVouch(C_ADDRESS, "ab".repeat(32), 5000, 3)
+
+		expect(mockClient.pre_vouch).toHaveBeenCalledWith(
+			expect.objectContaining({ from: C_ADDRESS }),
+			{ publicKey: RELAYER_SIM_SOURCE },
+		)
+	})
+
+	it("builds with its own address when the creator is a classic G wallet", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.pre_vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await createPreVouch(G_ADDRESS, "ab".repeat(32), 5000, 3)
+
+		expect(mockClient.pre_vouch).toHaveBeenCalledWith(
+			expect.objectContaining({ from: G_ADDRESS }),
+			{ publicKey: G_ADDRESS },
+		)
+	})
 })
 
 describe("revokePreVouch", () => {
@@ -301,6 +409,40 @@ describe("revokePreVouch", () => {
 			"PreVouchNotFound",
 		)
 		expect(signAndSend).not.toHaveBeenCalled()
+	})
+
+	it("builds with the relayer sim-source when the revoker is a smart account (C-address), while contract args carry the C-address", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.revoke_pre_vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await revokePreVouch(C_ADDRESS, "ab".repeat(32))
+
+		expect(mockClient.revoke_pre_vouch).toHaveBeenCalledWith(
+			{ from: C_ADDRESS, key: Buffer.from("ab".repeat(32), "hex") },
+			{ publicKey: RELAYER_SIM_SOURCE },
+		)
+	})
+
+	it("builds with its own address when the revoker is a classic G wallet", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.revoke_pre_vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await revokePreVouch(G_ADDRESS, "ab".repeat(32))
+
+		expect(mockClient.revoke_pre_vouch).toHaveBeenCalledWith(
+			{ from: G_ADDRESS, key: Buffer.from("ab".repeat(32), "hex") },
+			{ publicKey: G_ADDRESS },
+		)
 	})
 })
 
@@ -370,5 +512,45 @@ describe("claimVouch", () => {
 			"AlreadyVouched",
 		)
 		expect(signAndSend).not.toHaveBeenCalled()
+	})
+
+	it("builds with the relayer sim-source when the claimant is a smart account (C-address), while contract args carry the C-address", async () => {
+		const key = new Uint8Array(32).fill(7)
+		const sig = new Uint8Array(64).fill(9)
+		mockSignClaim.mockReturnValue({ key, sig })
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.claim_vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await claimVouch("ab".repeat(32), C_ADDRESS)
+
+		expect(mockClient.claim_vouch).toHaveBeenCalledWith(
+			{ key: Buffer.from(key), to: C_ADDRESS, sig: Buffer.from(sig) },
+			{ publicKey: RELAYER_SIM_SOURCE },
+		)
+	})
+
+	it("builds with its own address when the claimant is a classic G wallet", async () => {
+		const key = new Uint8Array(32).fill(7)
+		const sig = new Uint8Array(64).fill(9)
+		mockSignClaim.mockReturnValue({ key, sig })
+		const signAndSend = vi
+			.fn()
+			.mockResolvedValue({ sendTransactionResponse: { hash: "tx-hash" } })
+		mockClient.claim_vouch.mockResolvedValue({
+			result: okResult(undefined),
+			signAndSend,
+		})
+
+		await claimVouch("ab".repeat(32), G_ADDRESS)
+
+		expect(mockClient.claim_vouch).toHaveBeenCalledWith(
+			{ key: Buffer.from(key), to: G_ADDRESS, sig: Buffer.from(sig) },
+			{ publicKey: G_ADDRESS },
+		)
 	})
 })
