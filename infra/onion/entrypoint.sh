@@ -1,0 +1,28 @@
+#!/bin/sh
+# Boot: materialize the onion identity key from the Fly secret, start Caddy,
+# run tor as PID 1 (tor dying restarts the machine; Caddy dying is caught
+# by the health loop below).
+set -eu
+
+: "${ONION_ED25519_SECRET_KEY_B64:?set via: fly secrets set ONION_ED25519_SECRET_KEY_B64=<base64 of hs_ed25519_secret_key>}"
+: "${ONION_ADDR:?set via fly.toml [env] once the address is minted}"
+
+mkdir -p /var/lib/tor/onion
+echo "$ONION_ED25519_SECRET_KEY_B64" | base64 -d > /var/lib/tor/onion/hs_ed25519_secret_key
+# tor derives hs_ed25519_public_key and hostname from the secret key itself
+chown -R debian-tor:debian-tor /var/lib/tor
+chmod 700 /var/lib/tor /var/lib/tor/onion
+chmod 600 /var/lib/tor/onion/hs_ed25519_secret_key
+
+caddy run --config /etc/caddy/Caddyfile &
+CADDY_PID=$!
+
+# If Caddy dies, take the machine down so Fly restarts it whole.
+(
+	while kill -0 "$CADDY_PID" 2>/dev/null; do sleep 5; done
+	echo "caddy exited; stopping tor" >&2
+	kill 1 2>/dev/null
+) &
+
+exec setpriv --reuid=debian-tor --regid=debian-tor --clear-groups \
+	tor -f /etc/tor/torrc-onion
