@@ -143,6 +143,9 @@ export const PageShell = ({ children }: { children: ReactNode }) => {
 					Adsum — petitions pressed on Soroban. Set in Fraunces &amp; Hanken
 					Grotesk.
 				</p>
+				<Link to="/debug" className={styles.debugLink}>
+					Debug
+				</Link>
 				<EditionToggle />
 			</footer>
 		</div>

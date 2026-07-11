@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 import { PageShell } from "./components/PageShell"
 import { Claim } from "./pages/Claim"
+import { Debug } from "./pages/Debug"
 import { Home } from "./pages/Home"
 import { Petition } from "./pages/Petition"
 import { Trust } from "./pages/Trust"
@@ -16,6 +17,7 @@ function App() {
 					<Route path="/trust" element={<Trust />} />
 					<Route path="/vouch" element={<Vouch />} />
 					<Route path="/claim" element={<Claim />} />
+					<Route path="/debug" element={<Debug />} />
 				</Routes>
 			</PageShell>
 		</BrowserRouter>

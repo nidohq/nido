@@ -36,7 +36,6 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
-    "@types/lodash": "^4.17.23",
     "@types/qrcode": "^1",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",

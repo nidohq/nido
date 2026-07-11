@@ -201,6 +201,19 @@
 	letter-spacing: 0.02em;
 }
 
+.debugLink {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+	text-decoration: none;
+}
+
+.debugLink:hover {
+	color: var(--seal);
+}
+
 .edition {
 	margin-left: auto;
 	padding: var(--space-1) var(--space-3);
