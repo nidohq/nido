@@ -21,6 +21,21 @@ PAGE = (ROOT / "index.html").read_bytes()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/ca.pem":
+            ca = ROOT / "certs/ca.pem"
+            if ca.exists():
+                body = ca.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-pem-file")
+                self.send_header("Content-Disposition", "attachment; filename=webauthn-onion-spike-ca.pem")
+            else:
+                body = b"no CA generated"
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/whoami"):
             body = json.dumps(
                 {
