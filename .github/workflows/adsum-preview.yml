@@ -1,0 +1,153 @@
+name: Adsum Example PR Preview
+
+# Per-PR preview of examples/adsum/ on Cloudflare Pages, so the example can be
+# reviewed live before merge. Mirrors example-preview.yml (the
+# status-message-dapp preview) but deploys THIS example to a distinct branch
+# alias (adsum-pr-<N>) on the "adsum" Cloudflare Pages project, so the two
+# never collide. The live home of the example remains the "adsum" project's
+# production branch (see adsum-pages.yml), deployed on push to main.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "examples/adsum/**"
+      - ".github/workflows/adsum-preview.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  PAGES_PROJECT: adsum
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Root install: examples/adsum is an npm workspace member (root
+      # package.json's `workspaces`) and consumes the local @nidohq/*
+      # packages -- mirrors adsum-pages.yml's setup step.
+      - name: Install dependencies
+        run: npm install
+
+      # examples/adsum/src/contracts/{petitions,web_of_trust}.ts import the
+      # generated contract-client packages `petitions` / `web_of_trust`
+      # (examples/adsum/packages/*) by their npm workspace name. Those
+      # packages' `dist/` is gitignored-but-uncommitted (only `src/` ships)
+      # and, unlike the packages listed in the root package.json's
+      # `postinstall` -> `build:packages` script, are NOT built automatically
+      # by `npm install` -- see adsum-pages.yml for the full story. Build them
+      # explicitly here so the build step below doesn't depend on a stale
+      # local dist left over from an earlier checkout.
+      - name: Build adsum's generated contract-client packages
+        run: npm run build -w petitions -w web_of_trust
+
+      # Staging clients are committed (this repo's convention for every
+      # GitHub-Pages/CF-Pages example): src/contracts/{petitions,web_of_trust}.ts
+      # bind the already-deployed testnet contract ids from
+      # environments.toml's [staging.contracts], so this build needs no
+      # Rust / stellar-scaffold / live deploy. The TESTNET env block below is
+      # copied VERBATIM from adsum-pages.yml's "Build examples/adsum" step:
+      # those committed clients construct a `Client` at module scope, and the
+      # default (LOCAL) env's http:// RPC url trips the stellar SDK's
+      # `allowHttp` guard, crashing the whole bundle before anything renders.
+      #
+      # No PR-specific PUBLIC_NIDO_BASE is set here: adsum's wallet connect
+      # (src/util/wallet.ts's `nidoBase()`) defaults to the PRODUCTION Nido
+      # wallet (https://nido.fyi) when the var is unset, and it isn't part of
+      # the zod env schema in src/contracts/util.ts, so nothing requires it.
+      # Every PR preview of this example connects to the production wallet,
+      # same as the main "adsum" deploy.
+      - name: Build examples/adsum
+        run: npm run build
+        working-directory: examples/adsum
+        env:
+          PUBLIC_STELLAR_NETWORK: TESTNET
+          PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+          PUBLIC_STELLAR_RPC_URL: https://soroban-testnet.stellar.org
+          PUBLIC_STELLAR_HORIZON_URL: https://horizon-testnet.stellar.org
+
+      # Gates before deploy: a red typecheck/test/lint should block the
+      # preview deploy, not just get noticed after the fact.
+      - name: Typecheck examples/adsum
+        run: npm run typecheck
+        working-directory: examples/adsum
+
+      - name: Unit tests (vitest) examples/adsum
+        run: npm test
+        working-directory: examples/adsum
+
+      - name: Lint examples/adsum
+        run: npm run lint
+        working-directory: examples/adsum
+
+      # Deploy to a branch alias of the "adsum" project, not its production
+      # branch. wrangler prints the branch-alias *.pages.dev URL as
+      # "Deployment alias URL" -- capture it rather than constructing it: the
+      # project's pages.dev subdomain is NOT simply "adsum.pages.dev" (that
+      # name was taken, so Cloudflare assigned a suffixed one), so any
+      # hand-built URL would be wrong. Parsing wrangler's own output is the
+      # only reliable source, exactly like example-preview.yml does.
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        run: |
+          set +e
+          out=$(npx wrangler pages deploy examples/adsum/dist \
+            --project-name "$PAGES_PROJECT" \
+            --branch "adsum-pr-${{ github.event.pull_request.number }}" 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          [ "$code" -eq 0 ] || exit "$code"
+          url=$(printf '%s\n' "$out" | grep -i 'alias URL' | grep -oE 'https://[^ ]+' | tail -1 || true)
+          echo "preview_url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+        with:
+          script: |
+            const prNum = context.payload.pull_request.number;
+            // No hardcoded fallback URL: the "adsum" project's pages.dev
+            // subdomain isn't derivable from PAGES_PROJECT (bare "adsum" was
+            // taken), so if wrangler's output wasn't parsed, point at the
+            // step's own logs instead of guessing wrong.
+            const previewLine = process.env.PREVIEW_URL
+              || '_Preview URL not captured — see the "Deploy to Cloudflare Pages" step\'s logs in this run._';
+            const body = `**Adsum preview deployed!**\n\n${previewLine}\n\nThe \`adsum\` example (testnet contracts), wallet = production (https://nido.fyi). The live home is the \`adsum\` Cloudflare Pages project's production branch once merged.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNum,
+            });
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Adsum preview deployed!')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNum,
+                body,
+              });
+            }
