@@ -44,7 +44,9 @@
 		handle @options {
 			header Access-Control-Allow-Origin "*"
 			header Access-Control-Allow-Methods "GET, POST, OPTIONS"
-			header Access-Control-Allow-Headers "Content-Type"
+			# `*` (valid because ACAO is `*`, no credentials) covers the
+			# Stellar SDK's X-Client-Name / X-Client-Version and Content-Type.
+			header Access-Control-Allow-Headers "*"
 			header Access-Control-Max-Age "600"
 			respond 204
 		}
