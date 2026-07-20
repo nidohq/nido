@@ -153,6 +153,52 @@ const devDeep = [
   { title: "The proving & verifying stack", where: "zk-verifier · prover.worker.ts", body: "Proofs are UltraHonk over BN254 with a universal SRS. The in-browser worker runs Noir.execute then UltraHonkBackend.generateProof with the keccak oracle to match the on-chain transcript. The Soroban verifier stores a ~1.9 KB verification key, re-derives the Fiat-Shamir transcript, runs sum-check and a batched KZG opening, and ends in one bn254 pairing check — ~159M CPU against a 400M budget." },
   { title: "Owner defenses & anti-grief", where: "controller.rs", body: "cancel_recovery and burn_nullifier both require account.require_auth() plus a fresh proof whose auth_hash zeroes the new-pubkey and timelock. Cancel releases the reservation (secret stays usable); burn marks the nullifier Spent forever. Because the nullifier is public, a foreign account trying to burn a victim's nullifier recomputes auth_hash from its own address and fails verification — proven by a dedicated anti-grief test." },
 ];
+
+// ── Illustrative animated walkthrough ("Watch Alice recover"). Names and
+//    hash values are fictional; the calls, order and on-chain effects mirror
+//    the contracts. Driven by the demo <script> at the foot of the file. ──
+const demoScenes = [
+  { n: 1, station: "Enrolled", actor: "Alice · Browser", tone: "var(--acc)", icon: "fingerprint",
+    headline: "Months ago, Alice set up recovery.",
+    caption: "Her browser turned a seed phrase into a secret, hashed it to a fingerprint, and wrote only the fingerprint on-chain — bound to her account.",
+    chip: "secret (browser only)  →  commitment 0x8f3a…c4" },
+  { n: 2, station: "Phone lost", actor: "Alice", tone: "var(--honey)", icon: "device",
+    headline: "Today, her phone is gone.",
+    caption: "The passkey went with it. On a new device she has no key and no way in — the classic lockout.",
+    chip: "signer: unreachable" },
+  { n: 3, station: "New key", actor: "Alice · Browser", tone: "var(--acc)", icon: "key",
+    headline: "New phone, fresh passkey.",
+    caption: "Alice creates a brand-new passkey. Its public key is where she wants the account to answer from now on.",
+    chip: "new_pubkey 0x04a7…e2" },
+  { n: 4, station: "Prove it", actor: "Alice · Browser", tone: "var(--teal)", icon: "shield", flourish: "proof",
+    headline: "She proves she knows the secret.",
+    caption: "She re-enters her seed phrase. The secret is rebuilt in her browser and a zero-knowledge proof is generated — the secret itself never leaves the page.",
+    chip: "UltraHonk proof  ·  secret stays local" },
+  { n: 5, station: "Initiate", actor: "Relayer · Contract", tone: "var(--honey)", icon: "bolt",
+    headline: "Anyone can submit it — a relayer does.",
+    caption: "The proof and a few public values go on-chain. The contract runs nine checks, re-derives the request fingerprint, verifies the proof, and reserves a one-time tag. A relayer pays the fee, so Alice needs no funds.",
+    chip: "verify_proof ✓  ·  nullifier 0x9d1e…7b reserved" },
+  { n: 6, station: "Timer", actor: "Alice · Contract", tone: "var(--honey)", icon: "clock", flourish: "timer",
+    headline: "A 48-hour window to say no.",
+    caption: "Recovery can't finish yet. If this were an imposter, the real Alice could cancel with her still-working key. Meanwhile, removing signers is frozen.",
+    chip: "timelock 48h  ·  signer removal blocked" },
+  { n: 7, station: "Complete", actor: "Relayer · Policy", tone: "var(--good)", icon: "shieldcheck",
+    headline: "The new key takes over — only that key.",
+    caption: "After the wait, anyone can trigger completion. The policy installs exactly Alice's new passkey and nothing else — no second proof, no signature.",
+    chip: "add_context_rule → enforce ✓  ·  nullifier spent" },
+  { n: 8, station: "Back in", actor: "Alice", tone: "var(--good)", icon: "home",
+    headline: "Alice is back in.",
+    caption: "Her account now answers to the new passkey. Nobody ever learned her secret, saw her balance, or could point to her ticket in the pool.",
+    chip: "250 XLM  ·  secured by new passkey" },
+];
+
+const demoLedger = [
+  { from: 1, icon: "link", text: "commitment 0x8f3a…c4  ·  bound to Alice" },
+  { from: 1, icon: "plus", text: "leaf #24,118 appended" },
+  { from: 1, icon: "refresh", text: "pool root 0x71bd…09" },
+  { from: 5, altFrom: 7, icon: "lock", text: "nullifier 0x9d1e…7b  ·  reserved", alt: "nullifier 0x9d1e…7b  ·  spent" },
+  { from: 5, altFrom: 7, icon: "key", text: "pending → new key 0x04a7…e2", alt: "new signer 0x04a7…e2  ·  installed" },
+];
 ---
 
 <NidoLayout
@@ -168,6 +214,7 @@ const devDeep = [
       <a href="/" style="text-decoration:none;"><Logo size={22} mark markSize={28} /></a>
       <div class="lp-navlinks">
         <a class="lp-navlink" href="#flow">The flow</a>
+        <a class="lp-navlink" href="#demo">Watch it</a>
         <a class="lp-navlink" href="#privacy">Privacy</a>
         <a class="lp-navlink" href="#safe">Why it's safe</a>
         <a class="lp-navlink" href="#faq">FAQ</a>
@@ -275,6 +322,88 @@ const devDeep = [
         ))}
       </ol>
       <p class="mut rx-pipe-cap">The secret never leaves your device. Everything on-chain is a fingerprint, a proof, or a public tag.</p>
+    </section>
+
+    <!-- illustrative animated walkthrough -->
+    <section class="rx-demo" id="demo">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:10px;">
+        <span class="section-label acc">See it happen</span>
+        <h2 class="disp lp-h2" style="text-align:left;">Watch Alice recover her account.</h2>
+      </div>
+      <p class="rx-lede-body" style="margin-bottom:6px;">
+        Press play, or step through it yourself. The name and the hash values are
+        illustrative — the calls, their order, and what lands on-chain are exactly
+        what the contracts do.
+      </p>
+
+      <div class="rx-demo-card">
+        <!-- stepper rail -->
+        <div class="rx-demo-rail" role="tablist" aria-label="Recovery steps">
+          {demoScenes.map((s, i) => (
+            <button
+              class={`rx-demo-station${i === 0 ? " is-active" : ""}`}
+              style={`--tone:${s.tone};`}
+              type="button"
+              aria-label={`Go to step ${s.n}: ${s.station}`}
+              aria-current={i === 0 ? "step" : "false"}
+            >
+              <span class="rx-demo-station-num">{s.n}</span>
+              <span class="rx-demo-station-lbl">{s.station}</span>
+            </button>
+          ))}
+        </div>
+
+        <!-- scene stage -->
+        <div class="rx-demo-stage">
+          {demoScenes.map((s) => (
+            <div class={`rx-scene${s.flourish ? " rx-scene--" + s.flourish : ""}${s.n === 1 ? " is-on" : ""}`} style={`--tone:${s.tone};`}>
+              <div class="rx-scene-ico">
+                <Icon name={s.icon} size={40} color="var(--tone)" />
+                {s.flourish === "proof" && (
+                  <span class="rx-proof-check" aria-hidden="true"><Icon name="check" size={18} color="#fff" /></span>
+                )}
+              </div>
+              <div class="rx-scene-main">
+                <span class="rx-scene-eyebrow">{s.actor}</span>
+                <h3 class="rx-scene-headline">{s.headline}</h3>
+                <p class="rx-scene-caption">{s.caption}</p>
+                <span class="rx-scene-chip mono">{s.chip}</span>
+                {s.flourish === "timer" && (
+                  <div class="rx-timer" aria-hidden="true">
+                    <div class="rx-timer-head"><Icon name="clock" size={14} color="var(--warn)" /> <span>Safety window</span><span class="rx-timer-val">48h</span></div>
+                    <div class="rx-timer-track"><div class="rx-timer-fill"></div></div>
+                    <div class="rx-timer-note"><span class="rx-ghost"><Icon name="info" size={12} color="var(--mut)" /> Not you? Cancel with your live key</span></div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- accumulating on-chain ledger -->
+        <div class="rx-demo-ledger">
+          <div class="rx-demo-ledger-head"><Icon name="link" size={13} color="var(--mut)" /> On-chain, so far</div>
+          <ul class="rx-led-list">
+            {demoLedger.map((l) => (
+              <li class="rx-led-item" data-from={String(l.from)} data-alt-from={l.altFrom ? String(l.altFrom) : undefined} data-alt={l.alt ?? undefined}>
+                <Icon name={l.icon} size={14} color="var(--mut)" />
+                <span class="rx-led-text">{l.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <!-- controls -->
+        <div class="rx-demo-controls">
+          <div class="rx-demo-progress"><div class="rx-demo-progress-fill"></div></div>
+          <div class="rx-demo-btns">
+            <button class="btn ghost sm" data-demo="prev" type="button" aria-label="Previous step"><Icon name="back" size={16} /></button>
+            <button class="btn acc sm" data-demo="play" type="button">Play</button>
+            <button class="btn ghost sm" data-demo="next" type="button" aria-label="Next step"><Icon name="chevron" size={16} /></button>
+          </div>
+        </div>
+        <p class="rx-demo-live" aria-live="polite"></p>
+      </div>
     </section>
 
     <!-- step-by-step timeline -->
@@ -590,6 +719,79 @@ const devDeep = [
   .rx-dev-copy { font-size: 13px; line-height: 1.62; color: #d8c6b4; margin: 9px 0 0; }
   .rx-dev-foot { font-size: 13.5px; margin: 20px 0 0; }
   @media (max-width: 700px) { .rx-dev-grid { grid-template-columns: 1fr; } }
+
+  /* ── illustrative animated walkthrough ── */
+  .rx-demo-card { margin-top: 22px; border: 1px solid var(--line); border-radius: var(--r-xl); background: var(--paper-2); box-shadow: var(--sh-2); overflow: hidden; position: relative; }
+
+  /* stepper rail */
+  .rx-demo-rail { display: flex; gap: 0; padding: 16px 14px; border-bottom: 1px solid var(--line-soft); background: var(--paper-3); overflow-x: auto; scrollbar-width: none; }
+  .rx-demo-rail::-webkit-scrollbar { display: none; }
+  .rx-demo-station { position: relative; flex: 1 0 auto; min-width: 84px; display: flex; flex-direction: column; align-items: center; gap: 7px; background: none; border: none; cursor: pointer; padding: 2px 4px; font: inherit; }
+  .rx-demo-station::before { content: ""; position: absolute; top: 15px; left: -50%; width: 100%; height: 2px; background: var(--line); z-index: 0; }
+  .rx-demo-station:first-child::before { display: none; }
+  .rx-demo-station-num { position: relative; z-index: 1; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--paper-2); border: 2px solid var(--line); font-family: var(--disp); font-weight: 800; font-size: 13px; color: var(--mut); transition: transform .25s, background .25s, border-color .25s, color .25s; }
+  .rx-demo-station-lbl { font-size: 11px; font-weight: 800; letter-spacing: .01em; white-space: nowrap; color: var(--mut); transition: color .2s; }
+  .rx-demo-station.is-done::before, .rx-demo-station.is-active::before { background: var(--acc); }
+  .rx-demo-station.is-done .rx-demo-station-num { background: var(--acc-soft); border-color: var(--acc); color: var(--acc-ink); }
+  .rx-demo-station.is-active .rx-demo-station-num { background: color-mix(in srgb, var(--tone) 16%, var(--paper-2)); border-color: var(--tone); color: var(--tone); transform: scale(1.1); }
+  .rx-demo-station.is-active .rx-demo-station-lbl { color: var(--ink); }
+  .rx-demo-station:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: var(--r-sm); }
+
+  /* scene stage */
+  .rx-demo-stage { position: relative; padding: 32px 30px; min-height: 236px; display: grid; }
+  .rx-scene { grid-area: 1 / 1; display: none; align-items: center; gap: 26px; }
+  .rx-scene.is-on { display: flex; }
+  @media (prefers-reduced-motion: no-preference) { .rx-scene.is-on { animation: rx-scene-in .5s both; } }
+  @keyframes rx-scene-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .rx-scene-ico { position: relative; width: 94px; height: 94px; border-radius: 27px; display: grid; place-items: center; background: color-mix(in srgb, var(--tone) 15%, var(--paper-2)); color: var(--tone); flex: 0 0 auto; }
+  .rx-scene-main { min-width: 0; }
+  .rx-scene-eyebrow { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--tone) 14%, var(--paper-2)); color: var(--tone); font-size: 11.5px; font-weight: 800; margin-bottom: 11px; }
+  .rx-scene-headline { font-family: var(--disp); font-weight: 800; font-size: clamp(20px, 2.4vw, 27px); letter-spacing: -.015em; line-height: 1.12; margin: 0; }
+  .rx-scene-caption { font-size: 15px; line-height: 1.56; color: var(--ink-soft); margin: 10px 0 0; max-width: 50ch; }
+  .rx-scene-chip { display: inline-block; margin-top: 14px; padding: 7px 12px; border-radius: var(--r-sm); background: var(--espresso); color: #f3e4d4; font-size: 12px; word-break: break-word; }
+  @media (max-width: 640px) { .rx-scene { flex-direction: column; align-items: flex-start; gap: 16px; } .rx-demo-stage { padding: 24px 20px; } }
+
+  /* proof flourish — spinning ring + check pop */
+  .rx-scene--proof .rx-scene-ico::after { content: ""; position: absolute; inset: -6px; border-radius: 32px; border: 2px dashed var(--tone); opacity: .5; }
+  @media (prefers-reduced-motion: no-preference) { .rx-scene--proof.is-on .rx-scene-ico::after { animation: spin 2.6s linear infinite; } }
+  .rx-proof-check { position: absolute; right: -8px; bottom: -8px; width: 32px; height: 32px; border-radius: 50%; background: var(--good); color: #fff; display: grid; place-items: center; box-shadow: var(--sh-1); }
+  @media (prefers-reduced-motion: no-preference) {
+    .rx-scene--proof .rx-proof-check { opacity: 0; }
+    .rx-scene--proof.is-on .rx-proof-check { animation: rx-pop .42s .95s both; }
+  }
+  @keyframes rx-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+
+  /* timer flourish — countdown bar + cancel ghost */
+  .rx-timer { margin-top: 16px; max-width: 390px; }
+  .rx-timer-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: var(--warn); }
+  .rx-timer-val { margin-left: auto; font-family: var(--mono); }
+  .rx-timer-track { height: 8px; border-radius: 99px; background: var(--warn-soft); overflow: hidden; margin-top: 8px; }
+  .rx-timer-fill { height: 100%; width: 45%; border-radius: 99px; background: linear-gradient(90deg, var(--honey), var(--coral)); }
+  @media (prefers-reduced-motion: no-preference) { .rx-scene--timer.is-on .rx-timer-fill { width: 8%; animation: rx-timerfill 3s ease-out .2s forwards; } }
+  @keyframes rx-timerfill { to { width: 92%; } }
+  .rx-timer-note { margin-top: 10px; }
+  .rx-ghost { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--mut); padding: 5px 11px; border: 1px dashed var(--line); border-radius: var(--r-pill); }
+  @media (prefers-reduced-motion: no-preference) { .rx-scene--timer.is-on .rx-ghost { animation: rx-ghostpulse 1.7s ease-in-out infinite; } }
+  @keyframes rx-ghostpulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
+
+  /* accumulating ledger */
+  .rx-demo-ledger { padding: 18px 24px 20px; border-top: 1px solid var(--line-soft); background: var(--paper-3); }
+  .rx-demo-ledger-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--mut); margin-bottom: 12px; }
+  .rx-led-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .rx-led-item { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--ink); opacity: 0; transform: translateX(-6px); transition: opacity .4s, transform .4s; }
+  .rx-led-item.is-shown { opacity: 1; transform: none; }
+  .rx-led-text { font-family: var(--mono); font-size: 12px; }
+  .rx-led-item.is-alt .rx-led-text { color: var(--good-ink); }
+
+  /* controls */
+  .rx-demo-controls { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-top: 1px solid var(--line-soft); }
+  .rx-demo-progress { flex: 1; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .rx-demo-progress-fill { height: 100%; width: 12.5%; border-radius: 99px; background: var(--acc); transition: width .4s cubic-bezier(.2,.7,.3,1); }
+  .rx-demo-btns { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .rx-demo-btns .btn.sm { width: auto; }
+  .rx-demo-btns [data-demo="play"] { min-width: 94px; }
+  .rx-demo-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; }
+  @media (max-width: 520px) { .rx-demo-controls { flex-direction: column; align-items: stretch; } .rx-demo-btns { justify-content: center; } }
 </style>
 
 <script>
@@ -621,3 +823,94 @@ const devDeep = [
     .rx-reveal.rx-in { opacity: 1; transform: none; }
   }
 </style>
+
+<script>
+  // "Watch Alice recover" — a self-contained scene player for the .rx-demo
+  // walkthrough. No deps. Progressive enhancement: scene 1 is visible without
+  // JS; JS adds the rail/ledger/timer/autoplay on top.
+  const demo = document.querySelector<HTMLElement>(".rx-demo");
+  if (demo) {
+    const scenes = Array.from(demo.querySelectorAll<HTMLElement>(".rx-scene"));
+    const stations = Array.from(demo.querySelectorAll<HTMLButtonElement>(".rx-demo-station"));
+    const ledger = Array.from(demo.querySelectorAll<HTMLElement>(".rx-led-item"));
+    const fill = demo.querySelector<HTMLElement>(".rx-demo-progress-fill");
+    const live = demo.querySelector<HTMLElement>(".rx-demo-live");
+    const btnPrev = demo.querySelector<HTMLButtonElement>('[data-demo="prev"]');
+    const btnNext = demo.querySelector<HTMLButtonElement>('[data-demo="next"]');
+    const btnPlay = demo.querySelector<HTMLButtonElement>('[data-demo="play"]');
+    const N = scenes.length;
+
+    if (N && fill && btnPrev && btnNext && btnPlay) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // Proof (index 3) and timer (index 5) dwell longer so their motion resolves.
+      const dwell = (i: number) => (i === 3 ? 3900 : i === 5 ? 4400 : 3300);
+      let idx = 0;
+      let playing = false;
+      let timer: number | undefined;
+
+      // Capture each ledger item's base text once, for reserved→spent swaps.
+      ledger.forEach((li) => {
+        const t = li.querySelector<HTMLElement>(".rx-led-text");
+        if (t && !li.dataset.base) li.dataset.base = t.textContent || "";
+      });
+
+      function render() {
+        scenes.forEach((s, i) => s.classList.toggle("is-on", i === idx));
+        stations.forEach((b, i) => {
+          b.classList.toggle("is-active", i === idx);
+          b.classList.toggle("is-done", i < idx);
+          b.setAttribute("aria-current", i === idx ? "step" : "false");
+        });
+        fill!.style.width = `${((idx + 1) / N) * 100}%`;
+        ledger.forEach((li) => {
+          const from = Number(li.dataset.from || "1");
+          li.classList.toggle("is-shown", idx + 1 >= from);
+          const t = li.querySelector<HTMLElement>(".rx-led-text");
+          const altFrom = li.dataset.altFrom ? Number(li.dataset.altFrom) : null;
+          if (t) {
+            if (altFrom && idx + 1 >= altFrom) { t.textContent = li.dataset.alt || t.textContent; li.classList.add("is-alt"); }
+            else { t.textContent = li.dataset.base || t.textContent; li.classList.remove("is-alt"); }
+          }
+        });
+        btnPrev!.disabled = idx === 0;
+        btnNext!.disabled = idx === N - 1;
+        const atEnd = idx === N - 1;
+        btnPlay!.textContent = playing ? "Pause" : atEnd ? "Replay" : "Play";
+        if (live) {
+          const h = scenes[idx].querySelector(".rx-scene-headline")?.textContent?.trim() || "";
+          live.textContent = `Step ${idx + 1} of ${N}: ${h}`;
+        }
+      }
+
+      function stop() { playing = false; if (timer) { clearTimeout(timer); timer = undefined; } render(); }
+      function schedule() {
+        if (!playing) return;
+        timer = window.setTimeout(() => {
+          if (idx >= N - 1) { stop(); return; }
+          idx++; render(); schedule();
+        }, dwell(idx));
+      }
+      function play() { if (idx >= N - 1) idx = 0; playing = true; render(); schedule(); }
+      function goTo(i: number) { stop(); idx = Math.max(0, Math.min(N - 1, i)); render(); }
+
+      btnPrev.addEventListener("click", () => goTo(idx - 1));
+      btnNext.addEventListener("click", () => goTo(idx + 1));
+      btnPlay.addEventListener("click", () => (playing ? stop() : play()));
+      stations.forEach((b, i) => b.addEventListener("click", () => goTo(i)));
+      demo.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") { e.preventDefault(); goTo(idx + 1); }
+        else if (e.key === "ArrowLeft") { e.preventDefault(); goTo(idx - 1); }
+      });
+
+      render();
+
+      // Auto-play once when it scrolls into view (motion only).
+      if (!reduce && "IntersectionObserver" in window) {
+        const io = new IntersectionObserver((entries, o) => {
+          for (const en of entries) if (en.isIntersecting) { play(); o.disconnect(); }
+        }, { threshold: 0.4 });
+        io.observe(demo);
+      }
+    }
+  }
+</script>
