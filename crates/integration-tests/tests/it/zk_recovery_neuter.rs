@@ -194,7 +194,10 @@ fn deploy(env: &Env) -> Deployed<'_> {
     env.mock_all_auths();
 
     let vk_bytes = Bytes::from_slice(env, include_bytes!("../../fixtures/zk/vk"));
-    let verifier_id = env.register(zk_verifier_contract::WASM, (vk_bytes,));
+    let verifier_id = env.register(
+        zk_verifier_contract::WASM,
+        (Address::generate(env), vk_bytes),
+    );
     let controller_addr = addr_from(env, &fixture.controller);
     let factory = Address::generate(env);
     let network_passphrase = Bytes::from_slice(env, fixture.network_passphrase.as_bytes());
@@ -488,7 +491,10 @@ fn fresh_account_fabricated_install_is_a_documented_reentrancy_limitation() {
     env.mock_all_auths();
 
     let vk_bytes = Bytes::from_slice(&env, include_bytes!("../../fixtures/zk/vk"));
-    let verifier_id = env.register(zk_verifier_contract::WASM, (vk_bytes,));
+    let verifier_id = env.register(
+        zk_verifier_contract::WASM,
+        (Address::generate(&env), vk_bytes),
+    );
     let controller_addr = addr_from(&env, &fixture.controller);
     let factory = Address::generate(&env);
     let network_passphrase = Bytes::from_slice(&env, fixture.network_passphrase.as_bytes());
