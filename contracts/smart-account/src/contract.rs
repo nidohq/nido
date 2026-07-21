@@ -6,7 +6,7 @@ use soroban_sdk::{
     auth::{Context, CustomAccountInterface},
     contract, contractclient, contracterror, contractimpl, contracttype,
     crypto::Hash,
-    panic_with_error, symbol_short, Address, Env, IntoVal, Map, String, Symbol, Val, Vec,
+    panic_with_error, symbol_short, Address, BytesN, Env, IntoVal, Map, String, Symbol, Val, Vec,
 };
 use stellar_accounts::policies::simple_threshold::SimpleThresholdAccountParams;
 use stellar_accounts::smart_account::{
@@ -444,6 +444,27 @@ impl NidoSmartAccount {
             &policies,
         )
     }
+
+    /// Upgrade this account's own wasm to `new_wasm_hash` (an
+    /// already-installed wasm hash). Governed by the account's OWN auth --
+    /// the same `current_contract_address().require_auth()` gate as every
+    /// other account mutation, so it is subject to the account's signing
+    /// policy exactly like `add_signer`/`remove_signer`/etc. (no separate
+    /// admin key: the account IS its own admin).
+    ///
+    /// Guarded by `guard_no_pending`: an upgrade is BLOCKED while a recovery
+    /// is pending. Without this a thief who can authorize as the account
+    /// could `upgrade` to a malicious wasm that ignores the recovery rule and
+    /// silently disarm recovery mid-timelock -- bypassing the entire M2 guard
+    /// set (`remove_signer`/`remove_context_rule`/`remove_policy`/
+    /// `update_context_rule_valid_until` are all guarded for the same reason).
+    // `#[contractimpl]` entry point; SDK ABI requires an owned `BytesN`.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn upgrade(e: &Env, new_wasm_hash: BytesN<32>) {
+        e.current_contract_address().require_auth();
+        guard_no_pending(e);
+        e.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
 }
 
 #[contractimpl]
@@ -840,6 +861,29 @@ mod test {
         );
         assert_account_error(
             client.try_remove_context_rule(&extra_rule.id),
+            NidoSmartAccountError::RecoveryPendingBlocked,
+        );
+    }
+
+    /// The guard also blocks `upgrade` while a recovery is pending: without
+    /// it a thief who can authorize as the account could swap in a wasm that
+    /// ignores the recovery rule and disarm recovery mid-timelock, bypassing
+    /// the whole guard set. `guard_no_pending` fires BEFORE
+    /// `update_current_contract_wasm`, so the placeholder hash is never
+    /// reached (no real wasm needs to be installed for this test).
+    #[test]
+    fn guard_blocks_upgrade_while_pending() {
+        let e = Env::default();
+        e.mock_all_auths();
+        let setup = deploy_with_stub(&e);
+        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
+        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
+
+        stub.set_pending(&setup.account_addr, &true);
+
+        let placeholder = soroban_sdk::BytesN::from_array(&e, &[0u8; 32]);
+        assert_account_error(
+            client.try_upgrade(&placeholder),
             NidoSmartAccountError::RecoveryPendingBlocked,
         );
     }
