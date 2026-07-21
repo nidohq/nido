@@ -9,10 +9,15 @@
 # Usage: scripts/check-vendor-drift.sh   (safe to run from anywhere -- it
 # cd's to the repo root itself, based on this script's own location)
 #
+# Covers the vendored src/ tree AND the vendor Cargo.toml (so a dependency or
+# feature-flag change in the vendored crate can't slip past unnoticed).
+#
 # Regenerating the baseline (only when a vendor bump/update is deliberate
 # and has been reviewed):
-#   find contracts/vendor/ultrahonk-soroban-verifier/src -type f | LC_ALL=C sort \
-#     | xargs sha256sum > contracts/vendor/ultrahonk-soroban-verifier/CHECKSUMS.sha256
+#   { find contracts/vendor/ultrahonk-soroban-verifier/src -type f; \
+#     printf '%s\n' contracts/vendor/ultrahonk-soroban-verifier/Cargo.toml; } \
+#     | LC_ALL=C sort | xargs sha256sum \
+#     > contracts/vendor/ultrahonk-soroban-verifier/CHECKSUMS.sha256
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -21,7 +26,16 @@ cd "${REPO_ROOT}"
 
 VENDOR_DIR="contracts/vendor/ultrahonk-soroban-verifier"
 SRC_DIR="${VENDOR_DIR}/src"
+VENDOR_MANIFEST="${VENDOR_DIR}/Cargo.toml"
 CHECKSUMS_FILE="${VENDOR_DIR}/CHECKSUMS.sha256"
+
+# Emits the `find`-plus-Cargo.toml file list the manifest is computed over.
+# Single source of truth so the check and the regeneration hint below stay in
+# lockstep.
+vendor_files() {
+  find "${SRC_DIR}" -type f
+  printf '%s\n' "${VENDOR_MANIFEST}"
+}
 
 if [[ ! -d "${SRC_DIR}" ]]; then
   echo "[!] vendored source dir not found: ${SRC_DIR}" >&2
@@ -36,7 +50,7 @@ fi
 ACTUAL_FILE="$(mktemp)"
 trap 'rm -f "${ACTUAL_FILE}"' EXIT
 
-find "${SRC_DIR}" -type f | LC_ALL=C sort | xargs sha256sum > "${ACTUAL_FILE}"
+vendor_files | LC_ALL=C sort | xargs sha256sum > "${ACTUAL_FILE}"
 
 if diff -q "${CHECKSUMS_FILE}" "${ACTUAL_FILE}" >/dev/null 2>&1; then
   echo "[ok] vendored verifier tree (${SRC_DIR}) matches ${CHECKSUMS_FILE} -- no drift."
@@ -52,5 +66,5 @@ diff "${CHECKSUMS_FILE}" "${ACTUAL_FILE}" | grep -E '^[<>]' | while read -r mark
   esac
 done
 echo "[!] If this vendor bump is deliberate and has been reviewed, regenerate the baseline:" >&2
-echo "    find ${SRC_DIR} -type f | LC_ALL=C sort | xargs sha256sum > ${CHECKSUMS_FILE}" >&2
+echo "    { find ${SRC_DIR} -type f; printf '%s\\n' ${VENDOR_MANIFEST}; } | LC_ALL=C sort | xargs sha256sum > ${CHECKSUMS_FILE}" >&2
 exit 1
