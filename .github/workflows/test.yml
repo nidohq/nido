@@ -16,11 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No rust-toolchain.toml pin in this repo -- `stable` matches local dev.
+      # Pinned to match the workspace-root rust-toolchain.toml (keep the two in
+      # lockstep) so contract wasm bytecode is reproducible rather than built
+      # against whatever `stable` happens to be on the runner that day.
       # `wasm32v1-none` is the target `just build-contracts`/`cargo build
       # --target wasm32v1-none` compiles the contract wasms for.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.96.0
         with:
           targets: wasm32v1-none
 

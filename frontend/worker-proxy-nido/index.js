@@ -50,6 +50,40 @@ export default {
       }
     }
 
-    return fetch(url.toString(), { headers: request.headers });
+    const upstream = await fetch(url.toString(), { headers: request.headers });
+
+    // Attach security headers the Pages origin doesn't set. Cloudflare Response
+    // headers are immutable until copied into a fresh Response.
+    const response = new Response(upstream.body, upstream);
+    // Block MIME-sniffing, framing (this is a signing surface -- no clickjacking),
+    // and strip the path (account subdomain) from cross-origin referrers.
+    response.headers.set("X-Content-Type-Options", "nosniff");
+    response.headers.set("X-Frame-Options", "DENY");
+    response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+
+    // CSP shipped in *Report-Only* first: an enforced strict policy must be
+    // browser-verified against everything the app actually loads (Stellar
+    // RPC/Horizon, Friendbot, fonts, the WebAuthn ceremony) or it will break
+    // onboarding/signing. Report-Only never blocks -- it surfaces what a future
+    // enforced policy would reject. Promote to `Content-Security-Policy` (drop
+    // `-Report-Only`) once the console/report stream is clean.
+    // TODO(audit E): tighten (esp. connect-src to explicit RPC hosts, remove
+    // style 'unsafe-inline' if Astro allows) + enforce. See docs/MAINNET_READINESS.md.
+    response.headers.set(
+      "Content-Security-Policy-Report-Only",
+      [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "connect-src 'self' https:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+      ].join("; "),
+    );
+    return response;
   },
 };
