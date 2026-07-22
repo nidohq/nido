@@ -85,9 +85,13 @@ jobs:
       # budget in-process (see their module docs) rather than depending on
       # any CI-specific configuration.
       # Exclude the vendored UltraHonk verifier crate: its upstream tests read
-      # fixture files we don't vendor ("No such file or directory" on a clean
-      # checkout). nido exercises the verifier through its own integration
-      # tests (crates/integration-tests), which run here.
+      # fixture files (circuits/*/target/) we don't vendor -> "No such file or
+      # directory" on a clean checkout. This is documented indirect coverage,
+      # NOT a gap: nido runs the SAME simple_circuit known-answer fixtures
+      # through the identical UltraHonkVerifier code path at the contract
+      # boundary (contracts/zk-verifier/tests/verifier_smoke.rs) plus 14
+      # real-`bb prove` zk_recovery_* integration tests. See the `test` recipe
+      # in justfile and docs/SECURITY_INVARIANTS.md "Vendored verifier coverage".
       - name: cargo test --workspace
         run: cargo test --workspace --exclude ultrahonk_soroban_verifier
 

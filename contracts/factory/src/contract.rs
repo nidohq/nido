@@ -941,6 +941,55 @@ mod test {
         assert!(pool_client.is_known_root(&pool_client.current_root()));
     }
 
+    /// Salt-reuse / double-deploy: a salt deterministically fixes the account
+    /// address (`get_c_address(salt)` = hash of deployer + salt + wasm-hash),
+    /// so a second `create_account_v2` with the SAME salt targets an
+    /// already-occupied address and the host rejects the re-deploy. This is
+    /// the anti-collision invariant -- a salt can only ever mint ONE account,
+    /// so an attacker cannot re-deploy over (and thus hijack / reset) an
+    /// existing account by replaying its salt. The first account's genesis
+    /// leaf must also remain the pool's only leaf (the rejected second call is
+    /// atomic: no extra leaf inserted).
+    #[test]
+    fn create_account_v2_twice_with_same_salt_is_rejected() {
+        let env = Env::default();
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let client = ContractClient::new(&env, &factory_addr);
+        let pool_client = nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &pool_addr);
+
+        let salt = BytesN::from_array(&env, &[7; 32]);
+        let key = BytesN::from_array(&env, &[4; 65]);
+        let commitment = small_commitment(&env, 13);
+
+        // First deploy succeeds and inserts the genesis leaf (index 0).
+        let account = client.create_account_v2(&salt, &key, &commitment);
+        assert_eq!(pool_client.next_index(), 1);
+
+        // Second deploy at the SAME salt -> same deterministic address ->
+        // host rejects the re-deploy. A different key/commitment is used to
+        // prove the rejection is about the ADDRESS collision, not the args.
+        let other_key = BytesN::from_array(&env, &[5; 65]);
+        let other_commitment = small_commitment(&env, 99);
+        let res = client.try_create_account_v2(&salt, &other_key, &other_commitment);
+        assert!(
+            res.is_err(),
+            "re-deploying an account at an already-used salt must be rejected"
+        );
+
+        // Atomicity: the rejected second call inserted no extra leaf, and the
+        // original account is still the one resolvable at that salt.
+        assert_eq!(
+            pool_client.next_index(),
+            1,
+            "the rejected re-deploy must not have inserted a second genesis leaf"
+        );
+        assert_eq!(
+            client.get_c_address(&salt),
+            account,
+            "the salt must still resolve to the original account address"
+        );
+    }
+
     /// Deploys a second REAL `nido-zk-recovery` pool, configured with
     /// `factory_addr` as its authority (same as the registry-registered pool
     /// `setup_factory_and_pool` sets up), but registered NOWHERE in the
