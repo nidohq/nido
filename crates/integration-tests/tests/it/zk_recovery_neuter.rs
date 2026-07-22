@@ -201,7 +201,7 @@ fn deploy(env: &Env) -> Deployed<'_> {
     let controller_addr = addr_from(env, &fixture.controller);
     let factory = Address::generate(env);
     let network_passphrase = Bytes::from_slice(env, fixture.network_passphrase.as_bytes());
-    let webauthn_verifier = env.register(WEBAUTHN_VERIFIER_WASM, ());
+    let webauthn_verifier = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(env),));
     env.register_at(
         &controller_addr,
         ZkRecovery,
@@ -499,7 +499,7 @@ fn fresh_account_fabricated_install_is_a_documented_reentrancy_limitation() {
     let controller_addr = addr_from(&env, &fixture.controller);
     let factory = Address::generate(&env);
     let network_passphrase = Bytes::from_slice(&env, fixture.network_passphrase.as_bytes());
-    let webauthn_verifier = env.register(WEBAUTHN_VERIFIER_WASM, ());
+    let webauthn_verifier = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(&env),));
     env.register_at(
         &controller_addr,
         ZkRecovery,

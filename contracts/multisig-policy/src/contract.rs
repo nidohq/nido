@@ -4,7 +4,9 @@
 //! by the library.
 
 use soroban_sdk::auth::Context;
-use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, symbol_short, Address, BytesN, Env, Symbol, Vec,
+};
 use stellar_accounts::policies::simple_threshold::{self, SimpleThresholdAccountParams};
 use stellar_accounts::policies::Policy;
 use stellar_accounts::smart_account::{ContextRule, Signer};
@@ -12,8 +14,68 @@ use stellar_accounts::smart_account::{ContextRule, Signer};
 #[contract]
 pub struct MultisigPolicy;
 
+#[contracterror]
+#[repr(u32)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Error {
+    /// No upgrade `admin` is stored (a pre-upgradability instance predating
+    /// this field; the deployed testnet policy has no admin and is immutable).
+    AdminNotSet = 1,
+}
+
 #[contractimpl]
 impl MultisigPolicy {
+    fn key_admin() -> Symbol {
+        symbol_short!("admin")
+    }
+
+    /// Record the `admin` (mainnet: multisig, ideally behind an upgrade
+    /// timelock) authorized to rotate the admin or upgrade this policy (issue
+    /// #26). The `enforce`/`install`/`uninstall` paths never read admin, so
+    /// per-account policy state and gas are unaffected.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn __constructor(e: Env, admin: Address) {
+        e.storage().instance().set(&Self::key_admin(), &admin);
+    }
+
+    /// The admin authorized to rotate the admin or upgrade the policy wasm.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AdminNotSet` if no admin is stored.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn admin(e: Env) -> Result<Address, Error> {
+        e.storage()
+            .instance()
+            .get(&Self::key_admin())
+            .ok_or(Error::AdminNotSet)
+    }
+
+    /// Rotate the admin. Requires the current admin's auth.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AdminNotSet` if no admin is stored.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn set_admin(e: Env, new_admin: Address) -> Result<(), Error> {
+        Self::admin(e.clone())?.require_auth();
+        e.storage().instance().set(&Self::key_admin(), &new_admin);
+        Ok(())
+    }
+
+    /// Upgrade this policy's wasm to `new_wasm_hash` (an already-installed
+    /// wasm hash). Requires admin auth; per-account threshold state survives.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::AdminNotSet` if no admin is stored.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
+        Self::admin(e.clone())?.require_auth();
+        e.deployer().update_current_contract_wasm(new_wasm_hash);
+        Ok(())
+    }
+
     /// Read the installed M-of-N threshold for a given account + rule.
     /// Returns 0 if not installed.
     #[must_use]
@@ -67,10 +129,27 @@ mod test {
     use soroban_sdk::String;
     use stellar_accounts::smart_account::{ContextRuleType, Signer};
 
+    /// Upgradability (issue #26): the constructor stores the `admin`, and
+    /// `set_admin` rotates it under the current admin's auth.
+    #[test]
+    fn admin_is_stored_and_rotatable() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let id = env.register(MultisigPolicy, (admin.clone(),));
+        let client = MultisigPolicyClient::new(&env, &id);
+
+        assert_eq!(client.admin(), admin);
+
+        let new_admin = Address::generate(&env);
+        client.set_admin(&new_admin);
+        assert_eq!(client.admin(), new_admin);
+    }
+
     #[test]
     fn install_stores_threshold_per_account_rule() {
         let env = Env::default();
-        let policy_addr = env.register(MultisigPolicy, ());
+        let policy_addr = env.register(MultisigPolicy, (Address::generate(&env),));
         let account = Address::generate(&env);
         let rule_id = 7u32;
         let threshold = 2u32;
