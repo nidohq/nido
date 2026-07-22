@@ -1,6 +1,6 @@
 use nido_integration_tests::{build_contract_assertion, WEBAUTHN_VERIFIER_WASM};
 use p256::ecdsa::SigningKey;
-use soroban_sdk::Env;
+use soroban_sdk::{testutils::Address as _, Address, Env};
 use stellar_accounts::verifiers::webauthn::{self, WebAuthnSigData};
 
 #[test]
@@ -8,7 +8,7 @@ fn verify_webauthn_assertion_on_chain() {
     let env = Env::default();
 
     // Register the verifier contract
-    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, ());
+    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(&env),));
 
     // Generate a passkey (P-256 keypair)
     let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
@@ -51,7 +51,7 @@ fn verify_webauthn_assertion_on_chain() {
 fn reject_wrong_challenge_on_chain() {
     let env = Env::default();
 
-    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, ());
+    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(&env),));
 
     let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
 
@@ -89,7 +89,7 @@ fn reject_wrong_challenge_on_chain() {
 fn reject_wrong_key_on_chain() {
     let env = Env::default();
 
-    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, ());
+    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(&env),));
 
     let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
     let wrong_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);

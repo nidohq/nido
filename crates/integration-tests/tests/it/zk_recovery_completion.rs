@@ -103,7 +103,7 @@ fn deploy(env: &Env) -> CompletionSetup<'_> {
     let fixture = zk_fixture::lifecycle_fixture(env);
 
     // --- WebAuthn verifier + smart account, pinned at ACCOUNT. ---
-    let webauthn_verifier = env.register(WEBAUTHN_VERIFIER_WASM, ());
+    let webauthn_verifier = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(env),));
     let orig_key = test_key(0xACC0);
     let orig_pubkey = orig_key.verifying_key().to_sec1_bytes();
     let orig_signer = Signer::External(
