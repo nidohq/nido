@@ -210,6 +210,7 @@ fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier.clone(),
+            Address::generate(&env), // upgrade admin (unused by this file's coverage)
         ),
     );
     let zk = ZkRecoveryClient::new(&env, &controller_addr);
@@ -488,6 +489,7 @@ fn setup_factory_and_pool(env: &Env) -> (Address, Address) {
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier.clone(),
+            Address::generate(env), // pool upgrade admin (unused by this file's coverage)
         ),
     );
 

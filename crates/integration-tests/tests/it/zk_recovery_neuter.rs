@@ -214,6 +214,7 @@ fn deploy(env: &Env) -> Deployed<'_> {
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier.clone(),
+            Address::generate(env), // upgrade admin (unused by this file's coverage)
         ),
     );
     let zk = ZkRecoveryClient::new(env, &controller_addr);
@@ -511,6 +512,7 @@ fn fresh_account_fabricated_install_is_a_documented_reentrancy_limitation() {
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier,
+            Address::generate(&env), // upgrade admin (unused by this file's coverage)
         ),
     );
     let zk = ZkRecoveryClient::new(&env, &controller_addr);

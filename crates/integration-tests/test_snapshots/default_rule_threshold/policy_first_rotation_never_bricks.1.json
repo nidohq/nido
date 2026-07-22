@@ -54,7 +54,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "04a33272c697c6bfb549cb91daef6cba497e317544fecf9e459b5e6cbcc8e87a7cb15ad14f7b2641f046ad7c1b77ea1634b0b1edf22abda8b9a9a6bb2a5109a081"
+                          "bytes": "048622112b4d2f8682a20b8b3aea39e6c5999e421c03709f00ba5acef8d9397b7b7b84702c8970ef3c2926d6ed6a31abdcee1762c82e62efc7eafa9784be7624e8"
                         }
                       ]
                     }
@@ -503,7 +503,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "04a33272c697c6bfb549cb91daef6cba497e317544fecf9e459b5e6cbcc8e87a7cb15ad14f7b2641f046ad7c1b77ea1634b0b1edf22abda8b9a9a6bb2a5109a081"
+                          "bytes": "048622112b4d2f8682a20b8b3aea39e6c5999e421c03709f00ba5acef8d9397b7b7b84702c8970ef3c2926d6ed6a31abdcee1762c82e62efc7eafa9784be7624e8"
                         }
                       ]
                     }
@@ -583,13 +583,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "ad0840896d7de2d691ba2575c1cfb0a27d527751592e08c8b8ad0c137abef59f"
+                    "bytes": "9dcfcfd68dcb617cedb96c7fa73d7505fa25ab84e0539f9bf5905647949e460a"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 1
+                "u32": 0
               }
             }
           },
@@ -610,13 +610,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "e10ee25dc00f2865b891950078f0b5d05056b69b3bc10e21187c75c9010bbfcc"
+                    "bytes": "ad0840896d7de2d691ba2575c1cfb0a27d527751592e08c8b8ad0c137abef59f"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 0
+                "u32": 1
               }
             }
           },
@@ -864,7 +864,7 @@
                             "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                           },
                           {
-                            "bytes": "04a33272c697c6bfb549cb91daef6cba497e317544fecf9e459b5e6cbcc8e87a7cb15ad14f7b2641f046ad7c1b77ea1634b0b1edf22abda8b9a9a6bb2a5109a081"
+                            "bytes": "048622112b4d2f8682a20b8b3aea39e6c5999e421c03709f00ba5acef8d9397b7b7b84702c8970ef3c2926d6ed6a31abdcee1762c82e62efc7eafa9784be7624e8"
                           }
                         ]
                       }

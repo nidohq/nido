@@ -8,9 +8,13 @@
 //   DEPLOY_SECRET=$(stellar keys show ci-publisher-testnet) \
 //   node scripts/deploy-zk-recovery.mjs \
 //     --wasm target/wasm32v1-none/contract/nido_zk_recovery.wasm \
-//     --factory C... --verifier C... --webauthn C... \
+//     --factory C... --verifier C... --webauthn C... --admin C... \
 //     --delay 60 --window 604800 --max-cancels 2 --floor 0 \
 //     --passphrase "Test SDF Network ; September 2015"
+//
+// --admin is the upgrade/rotate governance key (issue #26); on mainnet this
+// MUST be a multisig (ideally behind an upgrade timelock), NOT the deployer.
+// Defaults to the deployer's own address when omitted (testnet convenience).
 import { readFileSync } from 'node:fs';
 import { randomBytes, createHash } from 'node:crypto';
 import {
@@ -30,6 +34,9 @@ const wasmPath = arg('wasm');
 const factory = arg('factory');
 const verifier = arg('verifier');
 const webauthn = arg('webauthn');
+// Governance admin for upgrade()/set_admin (issue #26). Defaults to the
+// deployer for testnet; pass a multisig C-address for mainnet.
+const admin = arg('admin');
 const passphrase = arg('passphrase', 'Test SDF Network ; September 2015');
 const delay = BigInt(arg('delay', '60'));
 const window = BigInt(arg('window', '604800'));
@@ -51,6 +58,7 @@ const ctorArgs = [
   nativeToScVal(floor, { type: 'u64' }),
   xdr.ScVal.scvBytes(Buffer.from(passphrase, 'utf8')),
   new Address(webauthn).toScVal(),
+  new Address(admin ?? kp.publicKey()).toScVal(),
 ];
 
 const source = await server.getAccount(kp.publicKey());
