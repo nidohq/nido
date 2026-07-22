@@ -59,17 +59,20 @@ whole set with `just test`; cost gates with `just bench-zk`, `just bench-zk-init
   `zk_recovery_lifecycle.rs`.
 - **R2 — Nullifier no double-spend.** A nullifier moves Reserved→(released|Spent); Spent is
   permanent; check-then-set is atomic within one invocation. Evidence:
-  `zk_recovery_lifecycle.rs`, `zk_recovery_completion.rs`. _Add explicit double-spend
-  negative test (F-task)._
+  `zk_recovery_lifecycle.rs::real_revoke_proof_burns_nullifier_and_blocks_later_initiate`,
+  `zk_recovery_completion.rs`.
 - **R3 — Monotonic nonce replay protection.** Every proof requires `nonce == stored+1`;
   nonce is bound into `auth_hash`. Evidence: `zk_recovery_lifecycle.rs`.
 - **R4 — Timelock cannot be bypassed.** `initiate` requires `timelock_secs == cfg.delay_secs`
   exactly; completion blocked until `now >= executable_after`. Evidence:
-  `zk_recovery_lifecycle.rs`, `zk_recovery_completion.rs`. **Mainnet params 14d/7d/30d must
-  be deployed (blocker A1).**
+  `zk_recovery_lifecycle.rs`, `zk_recovery_completion.rs`. The lifecycle + e2e suites run at
+  the **mainnet** params (14d/7d/30d); only the LIVE testnet pool is still deployed with
+  testnet params (blocker A1).
 - **R5 — Cross-network / cross-controller replay prevented.** `network_passphrase` and
-  controller address are bound into `auth_hash`. Evidence: `zk_recovery_lifecycle.rs`. _Add
-  explicit wrong-network negative test (F-task)._
+  controller address are bound into `auth_hash`. Evidence:
+  `zk_recovery_lifecycle.rs::wrong_network_passphrase_proof_is_rejected` (a testnet-passphrase
+  proof rejected by a mainnet-passphrase pool) + the controller-address bind pinned by
+  `auth_hash_matches_fixture` (`hash.rs`).
 - **R6 — Rate limit + cancel bounds.** ≤3 initiations / rolling 90d; cancel cap (2 mainnet)
   + 24h cooldown bound grief. Evidence: `zk_recovery_lifecycle.rs`.
 - **R7 — Passkey alone cannot grief recovery.** `cancel_recovery` and `burn_nullifier` require
@@ -137,8 +140,11 @@ crate to be self-contained would trip the vendor-drift guard (`scripts/check-ven
 
 ## Policies
 
-- **P1 — Spending-limit rolling window.** Meters SAC `transfer` over a rolling window.
-  Evidence: `spending_limit_policy.rs`. _Add i128 overflow edge test (F-task)._
+- **P1 — Spending-limit rolling window.** Meters SAC `transfer` over a rolling window; the
+  over-limit path is rejected. Evidence: `spending_limit_policy.rs::over_limit_rejected`. The
+  `i128` window arithmetic is the OZ `policies::spending_limit` library's (saturating), not
+  nido code, and is exercised by the over-limit gate; a dedicated `i128::MAX` overflow edge
+  test would test third-party arithmetic and is intentionally out of scope.
 - **P2 — Multisig threshold + rotation.** Threshold enforced; rotation threshold policy.
   Evidence: `multisig_recovery.rs`, `default_rule_threshold.rs`.
 - **P3 — Scoped session keys.** Context rules restrict contract/fn/limit/time window.
