@@ -54,7 +54,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "04c23041f070bf12612ea4398005e204922aabd45135e11ea22b7c274164208c8bdb62f6dfb3666695991970e6dad25bd193a322d2bfb99e16ec80234487c84e0c"
+                          "bytes": "04a8b353a6190d2ed318b9c6a40a578da79930cfe179263a201535f465e84b624506cc257da870c309c3254df31f1eec282aba25c2c1f5ffc681d0452c2be02fa0"
                         }
                       ]
                     }
@@ -607,7 +607,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "04c23041f070bf12612ea4398005e204922aabd45135e11ea22b7c274164208c8bdb62f6dfb3666695991970e6dad25bd193a322d2bfb99e16ec80234487c84e0c"
+                          "bytes": "04a8b353a6190d2ed318b9c6a40a578da79930cfe179263a201535f465e84b624506cc257da870c309c3254df31f1eec282aba25c2c1f5ffc681d0452c2be02fa0"
                         }
                       ]
                     }
@@ -795,33 +795,6 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "12cebb4dc8fce0bf6065377adcd5225b50d3b464c47de024049278973712d62d"
-                  }
-                ]
-              },
-              "durability": "persistent",
-              "val": {
-                "u32": 0
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 4095
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CBRIAA73VOIKPZYM5G3LGPF3NGCFXLR3IW22MKEYJAB3QBOMTUTRCASK",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "SignerLookup"
-                  },
-                  {
                     "bytes": "37325e949ca37241fba9339768b717c05fbb3d691c5be72e61b9701a8b8d346d"
                   }
                 ]
@@ -856,6 +829,33 @@
               "durability": "persistent",
               "val": {
                 "u32": 1
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CBRIAA73VOIKPZYM5G3LGPF3NGCFXLR3IW22MKEYJAB3QBOMTUTRCASK",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "SignerLookup"
+                  },
+                  {
+                    "bytes": "f7345c1cdfe150f3ee41cccb55746fbb0346be46b88edcd0d9464b4cb104023f"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "u32": 0
               }
             }
           },

@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 5,
+    "address": 6,
     "nonce": 0,
     "mux_id": 0
   },
@@ -77,7 +77,7 @@
                       "symbol": "Delegated"
                     },
                     {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                     }
                   ]
                 }
@@ -605,7 +605,7 @@
                           "symbol": "Delegated"
                         },
                         {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                         }
                       ]
                     }
@@ -712,13 +712,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "81049854e5a50ae7e614f6d03e624dc62d305a2e63c9380bfb90f09f9ec367f8"
+                    "bytes": "eb455669ddca0cda70db312aa3a1f8106763a5f1dd972d45491df32517f5383c"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 1
+                "u32": 0
               }
             }
           },
@@ -739,13 +739,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "eb455669ddca0cda70db312aa3a1f8106763a5f1dd972d45491df32517f5383c"
+                    "bytes": "ff51b9fc365fbfbf4d2fece0489d253a49d145cbbffb6979c98d7a21da2b4012"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 0
+                "u32": 1
               }
             }
           },
@@ -1157,6 +1157,18 @@
                     "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                   },
                   "storage": [
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "Admin"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                      }
+                    },
                     {
                       "key": {
                         "vec": [

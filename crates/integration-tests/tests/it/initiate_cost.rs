@@ -194,6 +194,7 @@ fn initiate_recovery_within_budget() {
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier,
+            Address::generate(&env), // upgrade admin (unused by this file's coverage)
         ),
     );
     let client = ZkRecoveryClient::new(&env, &contract_id);

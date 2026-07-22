@@ -92,6 +92,7 @@ fn deploy(env: &Env) -> (SmartAccountClient<'_>, Address, ZkRecoveryClient<'_>, 
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier,
+            Address::generate(env), // upgrade admin (unused by this file's coverage)
         ),
     );
     let zk = ZkRecoveryClient::new(env, &controller_addr);

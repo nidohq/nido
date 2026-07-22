@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 5,
+    "address": 6,
     "nonce": 0,
     "mux_id": 0
   },
@@ -376,7 +376,7 @@
                           "symbol": "Delegated"
                         },
                         {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                         }
                       ]
                     }
@@ -402,7 +402,7 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "81049854e5a50ae7e614f6d03e624dc62d305a2e63c9380bfb90f09f9ec367f8"
+                    "bytes": "ff51b9fc365fbfbf4d2fece0489d253a49d145cbbffb6979c98d7a21da2b4012"
                   }
                 ]
               },
@@ -871,6 +871,18 @@
                     "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                   },
                   "storage": [
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "Admin"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                      }
+                    },
                     {
                       "key": {
                         "vec": [

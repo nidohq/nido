@@ -150,6 +150,7 @@ fn guard_fires_cost_with_real_pending() {
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier,
+            Address::generate(&env), // upgrade admin (unused by this file's coverage)
         ),
     );
     let zk = ZkRecoveryClient::new(&env, &controller_addr);

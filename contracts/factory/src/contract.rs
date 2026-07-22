@@ -871,6 +871,7 @@ mod test {
                 24u64 * 3600,
                 network_passphrase,
                 webauthn_verifier,
+                Address::generate(env), // pool upgrade admin (unused by this test)
             ),
         );
 
@@ -961,6 +962,7 @@ mod test {
                 24u64 * 3600,
                 network_passphrase,
                 webauthn_verifier,
+                Address::generate(env), // pool upgrade admin (unused by this test)
             ),
         )
     }
