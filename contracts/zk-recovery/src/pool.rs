@@ -256,6 +256,25 @@ impl ZkRecovery {
     pub fn next_index(env: Env) -> u32 {
         merkle::next_index(&env)
     }
+
+    /// Read-only view of this pool's immutable `RecoveryConfig` (spec §3.3).
+    /// Exposed as a contract entry point so the mainnet preflight gate
+    /// (`scripts/preflight-recovery-config.mjs`) and off-chain monitoring can
+    /// simulate-read the live `delay_secs`/`completion_window_secs`/
+    /// `timelock_floor_secs` (and the bound `factory`/`verifier`/
+    /// `webauthn_verifier`/`network_passphrase`) and assert they match the
+    /// production spec BEFORE any account is created against this pool -- the
+    /// go/no-go check for blocker A1 (testnet pools were built with a 60s
+    /// delay / 0s floor / 7d window, all wrong for mainnet, and the config is
+    /// immutable so a wrong pool must be caught pre-launch, not fixed later).
+    /// Pure getter; changes no state.
+    #[must_use]
+    // `env` is conventionally by-value for `#[contractimpl]` entry points; the
+    // module-level `config` free function (not this method) does the read.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn config(env: Env) -> RecoveryConfig {
+        config(&env)
+    }
 }
 
 #[cfg(test)]
@@ -369,6 +388,22 @@ mod tests {
             root, ref_root,
             "insert_for's resulting root must match independently inserting \
              wrap_leaf(account, commitment) via merkle::insert_leaf"
+        );
+    }
+
+    /// The `config()` view returns exactly the `RecoveryConfig` stored at
+    /// construction -- the read the mainnet preflight gate
+    /// (`scripts/preflight-recovery-config.mjs`) relies on to assert a live
+    /// pool's delay/window/floor match the production spec (blocker A1).
+    #[test]
+    fn config_view_returns_stored_config() {
+        let env = Env::default();
+        let (id, cfg) = setup(&env);
+        let client = ZkRecoveryClient::new(&env, &id);
+        assert_eq!(
+            client.config(),
+            cfg,
+            "config() must return the RecoveryConfig set at construction"
         );
     }
 

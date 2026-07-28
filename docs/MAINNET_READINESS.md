@@ -8,8 +8,11 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 - [ ] **A1 — ZK recovery params (BLOCKER).** Fresh mainnet pool deployed with
   `delay_secs=1_209_600` (14d), `timelock_floor_secs=604_800` (7d),
   `completion_window_secs=2_592_000` (30d). Params are immutable at construction; the
-  testnet pool uses 60s/0/604800 and cannot be reused. Verified by the preflight script
-  reading the live `config` (B2/A tooling).
+  testnet pool uses 60s/0/604800 and cannot be reused. Tooling in place:
+  `scripts/deploy-zk-recovery.mjs --mainnet` presets these values and its mainnet guard
+  refuses a sub-day delay/floor or a missing `--admin`; verify the live pool afterward with
+  `node scripts/preflight-recovery-config.mjs --contract <POOL>` (reads the on-chain
+  `config()` view and exits non-zero on any spec mismatch — the go/no-go gate).
 - [ ] **A1 — Mainnet circuit VK regenerated.** VK/proof fixtures regenerated under the
   pinned toolchain against the **mainnet network passphrase** and 14d timelock (both are
   bound into `auth_hash`); testnet proofs/VK do not carry over. Hashes recorded in
@@ -41,9 +44,14 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
   with its own upgrade timelock so users can exit before an upgrade lands — is the mitigation
   there. `zk-verifier` VK intentionally immutable (a circuit change still means a fresh verifier
   deploy + re-register, never an in-place VK swap).
-- [ ] **B2 — Registry address pinning.** Factory reverts `RegistryMismatch` if the registry
-  resolves to a non-pinned verifier/zk-recovery address; registry + `set_recovery_pool`
-  keys under multisig; change-monitoring/alerts in place.
+- [x] **B2 (code) — Registry address pinning implemented.** Factory has admin-settable pins
+  (`set_registry_pins(verifier, zk_recovery)`) and reverts `RegistryMismatch` on any registry
+  disagreement, on every `create_account`/`create_account_v2` (invariant F5, tested). Unpinned =
+  pre-B2 behavior; the `set_recovery_pool` override intentionally bypasses the pin.
+- [ ] **B2 (deploy) — Pins set + keys under multisig.** At cutover, call `set_registry_pins`
+  with the mainnet verifier/zk-recovery addresses (from `DEPLOYED.md`); put the registry-owner
+  + factory admin (`set_registry_pins`/`set_recovery_pool`) keys under the multisig; add
+  change-monitoring/alerts on any registry address change.
 
 ## C. Reproducible builds & provenance
 
@@ -83,9 +91,13 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 ## Cutover sequence (release day)
 
 1. Confirm B/C/D/E/F all green on the frozen, audited commit; audit findings applied.
-2. Deploy contracts fresh with mainnet params (A1) + mainnet registry (A3); multisig admin (B1).
+2. Deploy contracts fresh: pool via `deploy-zk-recovery.mjs --mainnet` (A1 params) with a
+   multisig `--admin` (B1); factory rebuilt with the mainnet `REGISTRY` constant (A3).
 3. Regenerate + register mainnet VK (A1); wire zk-verifier/zk-recovery in the mainnet registry.
-4. Run the **preflight config-assert script** → must pass before any user account is created.
-5. Relayer on KMS (A4); alerts firing; run the incident-response drill.
-6. Frontend on mainnet config (A2/A3); smoke-test onboarding + a full recovery lifecycle.
-7. Update `DEPLOYED.md` with mainnet addresses, params, wasm/VK/circuit hashes.
+4. **Pin the registry (B2):** `factory.set_registry_pins(<verifier>, <zk-recovery>)` with the
+   just-deployed mainnet addresses, so a later registry repoint cannot reroute new accounts.
+5. Run `preflight-recovery-config.mjs --contract <POOL>` → must print **GO** before any user
+   account is created. (Optionally `--expect-factory/-verifier/-webauthn` to assert the binds.)
+6. Relayer on KMS (A4); alerts firing; run the incident-response drill.
+7. Frontend on mainnet config (A2/A3); smoke-test onboarding + a full recovery lifecycle.
+8. Update `DEPLOYED.md` with mainnet addresses, params, wasm/VK/circuit hashes.
