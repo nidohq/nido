@@ -28,9 +28,19 @@ whole set with `just test`; cost gates with `just bench-zk`, `just bench-zk-init
   `create_account_and_create_account_v2_are_uniform_except_commitment`.
 - **F4 — Cross-crate param shape parity.** `ZkRecoveryInstallParams` (smart-account copy)
   round-trips against the real controller struct. Evidence: `drift.rs`.
-- **F5 (planned, B2) — Registry pinning.** Factory reverts (`RegistryMismatch`) if the
-  registry resolves `verifier`/`zk-recovery` to anything other than the admin-pinned
-  address. _Test to be added with B2._
+- **F5 — Registry pinning.** Once the admin pins the expected addresses
+  (`set_registry_pins(verifier, zk_recovery)`), the factory reverts (`RegistryMismatch`,
+  `Error = 1`) if the registry ever resolves `verifier`/`zk-recovery` to anything other
+  than the pin — on EVERY `create_account`/`create_account_v2`, cache hit or miss — so a
+  compromised/repointed registry cannot silently route new accounts to attacker contracts.
+  Unpinned (the default) preserves the pre-B2 behavior. The `set_recovery_pool` override
+  is a separate, explicit admin path and deliberately bypasses the pin. Evidence:
+  `create_account_reverts_when_verifier_pin_disagrees`,
+  `create_account_v2_reverts_when_zk_recovery_pin_disagrees`,
+  `create_account_v2_succeeds_when_pins_match_registry`,
+  `set_registry_pins_requires_admin_auth` (`contracts/factory/src/contract.rs`). The
+  mainnet registry constant swap (blocker A3) is a deploy-time change; the pins make the
+  factory safe against a wrong/hostile registry regardless.
 
 ## Smart account & guard
 
