@@ -89,6 +89,23 @@ import Logo from "../../../components/Logo.astro";
 
       <div class="grid-cell">
         <section class="card sm-card">
+          <div class="section-label">Step 3 · Enroll</div>
+          <h2 class="disp sm-h2">Enroll on-chain</h2>
+          <p class="sm-lead">
+            Installs a <code>pq-backstop</code> context rule on your Nido —
+            scoped to the account itself, so this key can add or remove
+            signers (and cancel a hostile recovery) but can never spend. Your
+            passkey signs the enrollment.
+          </p>
+          <p id="enroll-status" class="sm-lead">Checking…</p>
+          <div class="field">
+            <button id="enroll-btn" class="btn soft" disabled>Enroll backstop key</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid-cell">
+        <section class="card sm-card">
           <div class="section-label">Danger zone</div>
           <h2 class="disp sm-h2">Forget this key</h2>
           <p class="sm-lead">
@@ -115,6 +132,7 @@ import Logo from "../../../components/Logo.astro";
 
 <script>
   import { bytesToHex } from "@noble/hashes/utils.js";
+  import { contractIdFromHostname, accountUrl, stripSubdomain } from "@nidohq/passkey-sdk";
   import {
     generateBackstopKey,
     signDigest,
@@ -125,6 +143,12 @@ import Logo from "../../../components/Logo.astro";
     SIG_LEN,
     type BackstopKey,
   } from "../../../lib/mlDsaBackstop.js";
+  import {
+    enrollBackstop,
+    getBackstopEnrollment,
+    type BackstopEnrollment,
+  } from "../../../lib/mlDsaEnroll.js";
+  import { resolveAccountAddress } from "../../../lib/resolveAccount.js";
   import { toast } from "../../../lib/toast.js";
 
   const keyStatus = document.getElementById("key-status")!;
@@ -138,8 +162,12 @@ import Logo from "../../../components/Logo.astro";
   const signResult = document.getElementById("sign-result")!;
   const signResultText = document.getElementById("sign-result-text")!;
   const forgetBtn = document.getElementById("forget-btn") as HTMLButtonElement;
+  const enrollBtn = document.getElementById("enroll-btn") as HTMLButtonElement;
+  const enrollStatus = document.getElementById("enroll-status")!;
 
   let current: BackstopKey | null = loadBackstopKey(localStorage);
+  let account: string | null = null;
+  let enrollment: BackstopEnrollment | null = null;
 
   function render() {
     if (current) {
@@ -204,8 +232,92 @@ import Logo from "../../../components/Logo.astro";
     current = null;
     signResult.classList.add("hidden");
     render();
+    renderEnrollment();
     toast("Backstop key forgotten.");
   });
 
+  function renderEnrollment() {
+    if (!account) {
+      enrollStatus.textContent =
+        "Open this page from your account's subdomain (where your passkey lives) to enroll.";
+      enrollBtn.disabled = true;
+      return;
+    }
+    if (enrollment) {
+      const matches =
+        current && bytesToHex(enrollment.commitment) === bytesToHex(current.commitment);
+      enrollStatus.textContent = matches
+        ? `Enrolled — rule #${enrollment.ruleId} holds this device's backstop key.`
+        : `Enrolled as rule #${enrollment.ruleId}, but with a DIFFERENT key than this device holds.`;
+      enrollBtn.disabled = true;
+      return;
+    }
+    if (!current) {
+      enrollStatus.textContent = "Generate a backstop key first (Step 1).";
+      enrollBtn.disabled = true;
+      return;
+    }
+    enrollStatus.textContent = "Not enrolled yet. Your passkey will be asked to sign.";
+    enrollBtn.disabled = false;
+  }
+
+  async function refreshEnrollment() {
+    if (!account) return renderEnrollment();
+    try {
+      enrollment = await getBackstopEnrollment(account);
+    } catch (err) {
+      enrollStatus.textContent = `Couldn't check enrollment: ${err instanceof Error ? err.message : String(err)}`;
+      enrollBtn.disabled = true;
+      return;
+    }
+    renderEnrollment();
+  }
+
+  enrollBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account || !current) return;
+      if (
+        !confirm(
+          "Enroll this backstop key on your account? It will be able to manage signers (but never spend).",
+        )
+      ) {
+        return;
+      }
+      enrollBtn.disabled = true;
+      try {
+        await enrollBackstop({
+          account,
+          commitment: current.commitment,
+          onProgress: (p) => {
+            enrollStatus.textContent = {
+              build: "Building the enrollment transaction…",
+              sign: "Waiting for your passkey…",
+              submit: "Submitting…",
+              confirm: "Waiting for confirmation…",
+            }[p.phase];
+          },
+        });
+        toast("Backstop key enrolled on-chain.");
+      } catch (err) {
+        toast(`Enrollment failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await refreshEnrollment();
+    })();
+  });
+
   render();
+  void (async () => {
+    account = await resolveAccountAddress();
+    // A NAME subdomain resolves to the account id but the passkey ceremony
+    // binds to the hostname it was registered on — hop to the contract-id
+    // subdomain before offering enrollment (mirrors /security/).
+    if (account && contractIdFromHostname(window.location.hostname) !== account) {
+      const rootHost = stripSubdomain(window.location.host);
+      window.location.replace(
+        window.location.protocol + accountUrl(rootHost, account, window.location.pathname),
+      );
+      return;
+    }
+    await refreshEnrollment();
+  })();
 </script>
