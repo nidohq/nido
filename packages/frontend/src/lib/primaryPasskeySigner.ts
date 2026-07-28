@@ -53,6 +53,138 @@ export async function getSubmitter(): Promise<Keypair> {
   return kp;
 }
 
+/** Everything a signer needs after recording-mode simulation, before the
+ *  actual signature is produced. Shared by the passkey flow below and the
+ *  ML-DSA backstop flow (`mlDsaSign.ts`). */
+export interface SimulatedForSigning {
+  server: rpc.Server;
+  /** Classic-mode ephemeral submitter; null in relayer mode. */
+  submitter: Keypair | null;
+  simTx: ReturnType<TransactionBuilder['build']>;
+  successSim: rpc.Api.SimulateTransactionSuccessResponse;
+  authEntry: ReturnType<typeof getAuthEntry>;
+  lastLedger: number;
+  /** Pass this SAME value to buildAuthHash and the inject helper. */
+  expirationOffset: number | undefined;
+  /** Auth entries baked in, ready for signature injection. */
+  assembledTx: ReturnType<ReturnType<typeof rpc.assembleTransaction>['build']>;
+}
+
+/**
+ * Source-selection + auth-strip + recording-mode simulate + assemble — the
+ * signer-agnostic front half of a signing flow. See inline comments for why
+ * auth entries MUST be stripped before simulating.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function simulateForSigning(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  operation: any,
+  onProgress?: (p: { phase: 'build' | 'sign' | 'submit' | 'confirm'; detail?: string }) => void,
+): Promise<SimulatedForSigning> {
+  const server = new rpc.Server(RPC_URL);
+
+  // 1. Pick the simulation source account. This is the tx source/fee-payer,
+  //    NOT the smart account itself.
+  //
+  //    Relayer mode: no ephemeral G is created or funded — recording-mode
+  //    simulation just needs SOME existing on-chain source account, so we use
+  //    the relayer's (public) fund address. It never signs and never pays here.
+  //    Classic mode: friendbot-funded ephemeral G as before.
+  const submitter = relayerEnabled() ? null : await getSubmitter();
+  if (relayerEnabled() && !RELAYER_SIM_SOURCE) {
+    throw new Error('Relayer misconfigured: PUBLIC_RELAYER_URL is set but PUBLIC_RELAYER_SIM_SOURCE is not.');
+  }
+  const sourceAccount = submitter
+    ? await server.getAccount(submitter.publicKey())
+    : await server.getAccount(RELAYER_SIM_SOURCE);
+
+  // 2. Build & simulate the un-signed tx.
+  //
+  // CRUCIAL: strip any existing auth entries off the operation before
+  // simulating. The operation is an `xdr.Operation` carrying the
+  // unsigned auth-entry templates that the contract bindings'
+  // AssembledTransaction.simulate left on the built tx (Void signature,
+  // SorobanAddressCredentials placeholder). If we hand those back to
+  // simulateTransaction in recording mode, the simulator runs
+  // __check_auth(payload, Void, contexts) against the smart account —
+  // and the OZ contract can't deserialize Void as AuthPayload, traps
+  // with UnreachableCodeReached, simulate returns Auth/InvalidAction,
+  // and we throw BEFORE the signature ceremony.
+  //
+  // Mirror what AssembledTransaction.simulate does internally: build
+  // from an op with no auth entries so the simulator generates them
+  // fresh in recording mode. Clone the XDR op so we don't mutate the
+  // caller's operation.
+  onProgress?.({ phase: 'build' });
+  const opClone = xdr.Operation.fromXDR(operation.toXDR());
+  opClone.body().invokeHostFunctionOp().auth([]);
+  const simTx = new TransactionBuilder(sourceAccount, {
+    fee: '10000000',
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(opClone)
+    .setTimeout(0)
+    .build();
+
+  const sim = await server.simulateTransaction(simTx);
+  if (rpc.Api.isSimulationError(sim)) {
+    throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
+  }
+  const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
+
+  const authEntry = getAuthEntry(successSim);
+  const lastLedger = successSim.latestLedger;
+  const expirationOffset = relayerEnabled() ? RELAYER_EXPIRATION_OFFSET : undefined;
+
+  // Assemble so auth entries are baked into the tx XDR before signing.
+  const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
+
+  return { server, submitter, simTx, successSim, authEntry, lastLedger, expirationOffset, assembledTx };
+}
+
+/**
+ * Submit a signature-injected assembled tx — relayer or classic path — and
+ * synthesize the response shape. The signer-agnostic back half of a signing
+ * flow.
+ */
+export async function submitSigned(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assembledTx: any,
+  submitter: Keypair | null,
+  server: rpc.Server,
+  authHashHex: string,
+  onProgress?: (p: { phase: 'build' | 'sign' | 'submit' | 'confirm'; detail?: string }) => void,
+): Promise<rpc.Api.SendTransactionResponse & { authHashHex: string }> {
+  onProgress?.({ phase: 'submit' });
+  if (relayerEnabled()) {
+    // The Channels plugin re-simulates server-side in enforce mode, builds
+    // the footprint itself, and a channel account becomes the tx source with
+    // the fund account fee-bumping — the enforce re-sim + fee refit + G
+    // signature + RPC submission below are all its job now. We ship only the
+    // host function and the signed auth entry.
+    onProgress?.({ phase: 'confirm' });
+    const { hash } = await relayerSubmitAndConfirm(assembledTx);
+    // Only `hash` is real (the transfer page links it to the explorer) —
+    // latestLedger/latestLedgerCloseTime are placeholder zeros and the tx is
+    // already confirmed ('PENDING' kept for shape compatibility).
+    return {
+      status: 'PENDING',
+      hash,
+      latestLedger: 0,
+      latestLedgerCloseTime: 0,
+      authHashHex,
+    };
+  }
+
+  // Re-simulate + fee refit + sign + submit + poll (classic path).
+  // See classicSubmitAndPoll for full commentary on why enforce re-sim
+  // is required and why cloneFrom is used instead of assembleTransaction.
+  if (!submitter) throw new Error('unreachable: classic path without submitter');
+  onProgress?.({ phase: 'confirm' });
+  const classicResult = await classicSubmitAndPoll(assembledTx, submitter, server);
+  return { ...classicResult, authHashHex };
+}
+
 /**
  * Build, simulate, sign with the user's primary passkey via in-page WebAuthn,
  * and submit the given operation against the user's smart account.
@@ -104,73 +236,24 @@ export async function signAndSubmit(args: {
   }
   const finalVerifierAddress = args.verifierAddress ?? resolved.verifier;
 
-  // 1. Pick the simulation source account. This is the tx source/fee-payer,
-  //    NOT the smart account itself.
-  //
-  //    Relayer mode: no ephemeral G is created or funded — recording-mode
-  //    simulation just needs SOME existing on-chain source account, so we use
-  //    the relayer's (public) fund address. It never signs and never pays here.
-  //    Classic mode: friendbot-funded ephemeral G as before.
-  const submitter = relayerEnabled() ? null : await getSubmitter();
-  if (relayerEnabled() && !RELAYER_SIM_SOURCE) {
-    throw new Error('Relayer misconfigured: PUBLIC_RELAYER_URL is set but PUBLIC_RELAYER_SIM_SOURCE is not.');
-  }
-  const sourceAccount = submitter
-    ? await server.getAccount(submitter.publicKey())
-    : await server.getAccount(RELAYER_SIM_SOURCE);
+  // 1-2. Source selection + auth-strip + recording sim + assemble (shared
+  //      with the ML-DSA backstop flow).
+  const { submitter, authEntry, lastLedger, expirationOffset, assembledTx } =
+    await simulateForSigning(args.operation, args.onProgress);
 
-  // 2. Build & simulate the un-signed tx.
-  //
-  // CRUCIAL: strip any existing auth entries off the operation before
-  // simulating. `args.operation` is an `xdr.Operation` carrying the
-  // unsigned auth-entry templates that the contract bindings'
-  // AssembledTransaction.simulate left on the built tx (Void signature,
-  // SorobanAddressCredentials placeholder). If we hand those back to
-  // simulateTransaction in recording mode, the simulator runs
-  // __check_auth(payload, Void, contexts) against the smart account —
-  // and the OZ contract can't deserialize Void as AuthPayload, traps
-  // with UnreachableCodeReached, simulate returns Auth/InvalidAction,
-  // and we throw BEFORE the WebAuthn prompt.
-  //
-  // Mirror what AssembledTransaction.simulate does internally: build
-  // from an op with no auth entries so the simulator generates them
-  // fresh in recording mode. Clone the XDR op so we don't mutate the
-  // caller's operation.
-  args.onProgress?.({ phase: "build" });
-  const opClone = xdr.Operation.fromXDR(args.operation.toXDR());
-  opClone.body().invokeHostFunctionOp().auth([]);
-  const sim_tx = new TransactionBuilder(sourceAccount, {
-    fee: '10000000',
-    networkPassphrase: Networks.TESTNET,
-  })
-    .addOperation(opClone)
-    .setTimeout(0)
-    .build();
-
-  const sim = await server.simulateTransaction(sim_tx);
-  if (rpc.Api.isSimulationError(sim)) {
-    throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
-  }
-  const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
-
-  // 3. Extract the auth entry and compute the OZ v0.7 auth digest:
+  // 3. Compute the OZ v0.7 auth digest:
   //
   //    auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
   //
   //    The same `contextRuleIds` array passed here MUST be the one passed
   //    to `injectPasskeySignature` so the AuthPayload's `context_rule_ids`
   //    and the digest the contract recomputes both refer to the same rule.
-  const authEntry = getAuthEntry(successSim);
-  const lastLedger = successSim.latestLedger;
-  const expirationOffset = relayerEnabled() ? RELAYER_EXPIRATION_OFFSET : undefined;
   const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger, expirationOffset);
   // The signing rule was resolved up front (see resolveSignerRule above).
   const contextRuleIds = [resolved.ruleId];
   const challengeBytes = computeAuthDigest(signaturePayload, contextRuleIds);
   const authHashHex = buf2hex(challengeBytes);
-
-  // 4. Assemble so auth entries are baked into the tx XDR before signing.
-  const assembled_tx = rpc.assembleTransaction(sim_tx, successSim).build();
+  const assembled_tx = assembledTx;
 
   // 5. Get a WebAuthn assertion over the challenge.
   args.onProgress?.({ phase: "sign" });
@@ -205,32 +288,6 @@ export async function signAndSubmit(args: {
     contextRuleIds,
   );
 
-  args.onProgress?.({ phase: "submit" });
-  if (relayerEnabled()) {
-    // The Channels plugin re-simulates server-side in enforce mode, builds
-    // the footprint itself, and a channel account becomes the tx source with
-    // the fund account fee-bumping — the enforce re-sim + fee refit + G
-    // signature + RPC submission below are all its job now. We ship only the
-    // host function and the passkey-signed auth entry.
-    args.onProgress?.({ phase: "confirm" });
-    const { hash } = await relayerSubmitAndConfirm(assembled_tx);
-    // Only `hash` is real (the transfer page links it to the explorer) —
-    // latestLedger/latestLedgerCloseTime are placeholder zeros and the tx is
-    // already confirmed ('PENDING' kept for shape compatibility).
-    return {
-      status: 'PENDING',
-      hash,
-      latestLedger: 0,
-      latestLedgerCloseTime: 0,
-      authHashHex,
-    };
-  }
-
-  // 7. Re-simulate + fee refit + sign + submit + poll (classic path).
-  //    See classicSubmitAndPoll for full commentary on why enforce re-sim
-  //    is required and why cloneFrom is used instead of assembleTransaction.
-  if (!submitter) throw new Error('unreachable: classic path without submitter');
-  args.onProgress?.({ phase: "confirm" });
-  const classicResult = await classicSubmitAndPoll(assembled_tx, submitter, server);
-  return { ...classicResult, authHashHex };
+  // 7. Submit — relayer or classic path (shared with the ML-DSA flow).
+  return submitSigned(assembled_tx, submitter, server, authHashHex, args.onProgress);
 }

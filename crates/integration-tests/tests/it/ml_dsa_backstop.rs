@@ -6,7 +6,10 @@
 
 use fips204::ml_dsa_65;
 use fips204::traits::{KeyGen, SerDes, Signer as FipsSigner};
-use nido_integration_tests::{compute_auth_digest, deploy_smart_account, ML_DSA_VERIFIER_WASM};
+use nido_integration_tests::{
+    build_contract_assertion, compute_auth_digest, deploy_smart_account, test_key,
+    ML_DSA_VERIFIER_WASM,
+};
 use nido_ml_dsa_verifier::contract::{MlDsaSigData, PK_LEN, SIG_CONTEXT};
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::Address as _;
@@ -129,6 +132,121 @@ fn backstop_cannot_authorize_spend() {
         result.is_err(),
         "self-scoped backstop rule must not authorize calls to other contracts"
     );
+}
+
+/// Rotation drill end-state: a replacement passkey installed as a SECOND
+/// Default rule (the "recovered" pattern — Default rules coexist and act as
+/// OR because the `AuthPayload` names its rule id) fully controls the
+/// account, and after `remove_context_rule(0)` the old passkey's rule is
+/// gone. Pins the exact sequence the frontend's recovery drill submits with
+/// ML-DSA-authorized transactions.
+#[test]
+fn rotation_installs_second_default_rule_and_retires_rule_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, account_addr, webauthn_addr, old_passkey) = deploy_smart_account(&env);
+
+    // Backstop enrolled as rule 1 (parity with the frontend's state; the
+    // ML-DSA auth for these mutations is proven by
+    // backstop_authorizes_self_administration — mock_all_auths here).
+    let ml_dsa_addr = env.register(ML_DSA_VERIFIER_WASM, ());
+    let (ml_pk, _ml_sk) = ml_dsa_test_key(7);
+    client.add_context_rule(
+        &ContextRuleType::CallContract(account_addr.clone()),
+        &String::from_str(&env, "pq-backstop"),
+        &None,
+        &vec![
+            &env,
+            Signer::External(ml_dsa_addr, key_commitment(&env, &ml_pk.into_bytes())),
+        ],
+        &Map::new(&env),
+    );
+
+    // Replacement passkey as a fresh Default rule ("recovered").
+    let new_key = test_key(5);
+    let new_pub = Bytes::from_slice(&env, &new_key.verifying_key().to_sec1_bytes());
+    let recovered = client.add_context_rule(
+        &ContextRuleType::Default,
+        &String::from_str(&env, "recovered"),
+        &None,
+        &vec![
+            &env,
+            Signer::External(webauthn_addr.clone(), new_pub.clone()),
+        ],
+        &Map::new(&env),
+    );
+
+    // The new passkey authorizes an arbitrary call under its own rule id.
+    let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0x31; 32]));
+    let context_rule_ids = vec![&env, recovered.id];
+    let auth_digest = compute_auth_digest(&env, &hash, &context_rule_ids);
+    let assertion = build_contract_assertion(&new_key, &env, &auth_digest);
+    let sig_data = stellar_accounts::verifiers::webauthn::WebAuthnSigData {
+        signature: assertion.signature,
+        authenticator_data: assertion.authenticator_data,
+        client_data: assertion.client_data,
+    }
+    .to_xdr(&env);
+    let mut signers: Map<Signer, Bytes> = Map::new(&env);
+    signers.set(Signer::External(webauthn_addr.clone(), new_pub), sig_data);
+    let signatures = AuthPayload {
+        signers,
+        context_rule_ids,
+    };
+    env.as_contract(&account_addr, || {
+        do_check_auth(
+            &env,
+            &hash,
+            &signatures,
+            &vec![&env, transfer_context(&env)],
+        )
+        .unwrap();
+    });
+
+    // Retire the old passkey's rule; authorizing via rule 0 now fails even
+    // with a valid old-passkey assertion.
+    client.remove_context_rule(&0u32);
+
+    let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0x32; 32]));
+    let context_rule_ids = vec![&env, 0u32];
+    let auth_digest = compute_auth_digest(&env, &hash, &context_rule_ids);
+    let assertion = build_contract_assertion(&old_passkey, &env, &auth_digest);
+    let sig_data = stellar_accounts::verifiers::webauthn::WebAuthnSigData {
+        signature: assertion.signature,
+        authenticator_data: assertion.authenticator_data,
+        client_data: assertion.client_data,
+    }
+    .to_xdr(&env);
+    let old_pub = Bytes::from_slice(&env, &old_passkey.verifying_key().to_sec1_bytes());
+    let mut signers: Map<Signer, Bytes> = Map::new(&env);
+    signers.set(Signer::External(webauthn_addr, old_pub), sig_data);
+    let signatures = AuthPayload {
+        signers,
+        context_rule_ids,
+    };
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        env.as_contract(&account_addr, || {
+            do_check_auth(
+                &env,
+                &hash,
+                &signatures,
+                &vec![&env, transfer_context(&env)],
+            )
+            .unwrap();
+        });
+    }));
+    assert!(
+        result.is_err(),
+        "the retired rule 0 must no longer authorize"
+    );
+}
+
+fn transfer_context(env: &Env) -> Context {
+    Context::Contract(ContractContext {
+        contract: Address::generate(env),
+        fn_name: symbol_short!("transfer"),
+        args: vec![env],
+    })
 }
 
 /// (c) The enrollment itself requires the account's auth: without

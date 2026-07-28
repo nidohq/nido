@@ -8,6 +8,7 @@
 // the key as an account signer is a follow-up on the epic.
 import NidoLayout from "../../../layouts/NidoLayout.astro";
 import Toast from "../../../components/Toast.astro";
+import PasskeySheet from "../../../components/PasskeySheet.astro";
 import Logo from "../../../components/Logo.astro";
 ---
 
@@ -106,6 +107,24 @@ import Logo from "../../../components/Logo.astro";
 
       <div class="grid-cell">
         <section class="card sm-card">
+          <div class="section-label">Step 4 · Rotate</div>
+          <h2 class="disp sm-h2">Recovery drill</h2>
+          <p class="sm-lead">
+            The quantum-emergency move, end to end: mint a <strong>new
+            passkey</strong> on this device, then let the <strong>backstop
+            key</strong> — not a passkey — authorize installing it as a fresh
+            signing rule. Afterwards you can retire the old passkey rule.
+          </p>
+          <p id="rotate-status" class="sm-lead">Checking…</p>
+          <div class="field">
+            <button id="rotate-btn" class="btn soft" disabled>Mint passkey &amp; rotate via ML-DSA</button>
+            <button id="retire-btn" class="btn soft hidden">Retire old passkey rule (#0)</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid-cell">
+        <section class="card sm-card">
           <div class="section-label">Danger zone</div>
           <h2 class="disp sm-h2">Forget this key</h2>
           <p class="sm-lead">
@@ -128,6 +147,7 @@ import Logo from "../../../components/Logo.astro";
     </p>
   </div>
   <Toast />
+  <PasskeySheet />
 </NidoLayout>
 
 <script>
@@ -148,6 +168,15 @@ import Logo from "../../../components/Logo.astro";
     getBackstopEnrollment,
     type BackstopEnrollment,
   } from "../../../lib/mlDsaEnroll.js";
+  import {
+    signAndSubmitWithBackstop,
+    buildRecoveredRuleOperation,
+    buildRemoveRuleOperation,
+    RECOVERED_RULE_NAME,
+  } from "../../../lib/mlDsaSign.js";
+  import { parseRegistration, saveCredential } from "@nidohq/passkey-sdk";
+  import { fetchVerifierAddress, fetchAllChainRules } from "../../../lib/policyChainFetch.js";
+  import { withPasskeySheet } from "../../../lib/passkeySheet.js";
   import { resolveAccountAddress } from "../../../lib/resolveAccount.js";
   import { toast } from "../../../lib/toast.js";
 
@@ -262,7 +291,11 @@ import Logo from "../../../components/Logo.astro";
   }
 
   async function refreshEnrollment() {
-    if (!account) return renderEnrollment();
+    if (!account) {
+      renderEnrollment();
+      await renderRotate();
+      return;
+    }
     try {
       enrollment = await getBackstopEnrollment(account);
     } catch (err) {
@@ -271,6 +304,7 @@ import Logo from "../../../components/Logo.astro";
       return;
     }
     renderEnrollment();
+    await renderRotate();
   }
 
   enrollBtn.addEventListener("click", () => {
@@ -302,6 +336,128 @@ import Logo from "../../../components/Logo.astro";
         toast(`Enrollment failed: ${err instanceof Error ? err.message : String(err)}`);
       }
       await refreshEnrollment();
+    })();
+  });
+
+  // --- Step 4: recovery drill (rotate via ML-DSA) ---
+  const rotateBtn = document.getElementById("rotate-btn") as HTMLButtonElement;
+  const retireBtn = document.getElementById("retire-btn") as HTMLButtonElement;
+  const rotateStatus = document.getElementById("rotate-status")!;
+
+  const drillProgress = (p: { phase: string }) => {
+    rotateStatus.textContent = {
+      build: "Building the rotation transaction…",
+      sign: "Signing with the backstop key (no passkey involved)…",
+      submit: "Submitting…",
+      confirm: "Waiting for confirmation…",
+    }[p.phase] ?? p.phase;
+  };
+
+  async function renderRotate() {
+    if (!account || !current || !enrollment) {
+      rotateStatus.textContent = "Needs an enrolled backstop key on this device (Steps 1-3).";
+      rotateBtn.disabled = true;
+      retireBtn.classList.add("hidden");
+      return;
+    }
+    rotateBtn.disabled = false;
+    try {
+      const rules = await fetchAllChainRules(account);
+      const recovered = rules.find(
+        (r) => r.contextType.kind === "default" && r.name === RECOVERED_RULE_NAME,
+      );
+      const ruleZero = rules.find((r) => r.ruleId === 0);
+      if (recovered) {
+        rotateStatus.textContent = `Rotated — "${RECOVERED_RULE_NAME}" rule #${recovered.ruleId} holds the replacement passkey.`;
+        if (ruleZero) {
+          retireBtn.classList.toggle("hidden", ruleZero.policies.length > 0);
+          if (ruleZero.policies.length > 0) {
+            rotateStatus.textContent += " Old rule #0 carries policies — retire it manually after re-attaching them.";
+          }
+        } else {
+          retireBtn.classList.add("hidden");
+          rotateStatus.textContent += " Old rule #0 already retired.";
+        }
+      } else {
+        rotateStatus.textContent = "Ready. This creates a new passkey and installs it WITHOUT using your old one.";
+        retireBtn.classList.add("hidden");
+      }
+    } catch {
+      rotateStatus.textContent = "Ready (couldn't read current rules — status may be stale).";
+    }
+  }
+
+  rotateBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account || !current) return;
+      if (
+        !confirm(
+          "Recovery drill: mint a NEW passkey and install it via the ML-DSA backstop? Your browser's stored passkey reference switches to the new one once it confirms.",
+        )
+      ) {
+        return;
+      }
+      rotateBtn.disabled = true;
+      try {
+        rotateStatus.textContent = "Creating the replacement passkey…";
+        const credential = (await withPasskeySheet(
+          () =>
+            navigator.credentials.create({
+              publicKey: {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                rp: { name: `Soroban ${account}`, id: window.location.hostname },
+                user: {
+                  id: crypto.getRandomValues(new Uint8Array(16)),
+                  name: account!,
+                  displayName: `Account ${account}`,
+                },
+                pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                authenticatorSelection: { residentKey: "required", userVerification: "required" },
+                attestation: "none",
+                timeout: 60000,
+              },
+            }),
+          { title: "Mint a replacement passkey", sub: "Confirm to create the new key." },
+        )) as PublicKeyCredential | null;
+        if (!credential) throw new Error("Passkey creation was cancelled.");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const reg = parseRegistration(credential as any);
+
+        const webauthnVerifier = await fetchVerifierAddress(account);
+        const operation = await buildRecoveredRuleOperation(account, webauthnVerifier, reg.publicKey);
+        await signAndSubmitWithBackstop({ account, operation, onProgress: drillProgress });
+
+        // Only after on-chain confirmation: point this browser at the new
+        // credential (overwrites the old passkey reference).
+        saveCredential(account, reg.credentialId, reg.publicKey);
+        toast("Rotated: new passkey installed, authorized by the backstop key.");
+      } catch (err) {
+        toast(`Rotation failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await renderRotate();
+    })();
+  });
+
+  retireBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account) return;
+      if (
+        !confirm(
+          "Remove rule #0 (the old passkey's rule)? The old passkey stops working for this account. Cannot be undone.",
+        )
+      ) {
+        return;
+      }
+      retireBtn.disabled = true;
+      try {
+        const operation = await buildRemoveRuleOperation(account, 0);
+        await signAndSubmitWithBackstop({ account, operation, onProgress: drillProgress });
+        toast("Old passkey rule removed.");
+      } catch (err) {
+        toast(`Retire failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      retireBtn.disabled = false;
+      await renderRotate();
     })();
   });
 
