@@ -249,6 +249,91 @@ fn transfer_context(env: &Env) -> Context {
     })
 }
 
+/// Paranoid (hybrid 2-of-2) enforced end-state: a Default rule holding
+/// [passkey, ML-DSA] with rule 0 removed requires BOTH signatures over the
+/// same digest for ANY call — either signature alone is rejected. Pins the
+/// arm→enforce sequence the frontend's paranoid mode submits.
+#[test]
+#[allow(clippy::similar_names)]
+fn paranoid_enforced_requires_both_signatures() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, account_addr, webauthn_addr, passkey) = deploy_smart_account(&env);
+
+    let ml_dsa_addr = env.register(ML_DSA_VERIFIER_WASM, ());
+    let (ml_pk, ml_sk) = ml_dsa_test_key(7);
+    let ml_pk_bytes = ml_pk.into_bytes();
+    let passkey_pub = Bytes::from_slice(&env, &passkey.verifying_key().to_sec1_bytes());
+    let passkey_signer = Signer::External(webauthn_addr.clone(), passkey_pub);
+    let ml_dsa_signer = Signer::External(ml_dsa_addr, key_commitment(&env, &ml_pk_bytes));
+
+    // ARM: hybrid Default rule; ENFORCE: retire the passkey-only rule 0.
+    let hybrid = client.add_context_rule(
+        &ContextRuleType::Default,
+        &String::from_str(&env, "paranoid"),
+        &None,
+        &vec![&env, passkey_signer.clone(), ml_dsa_signer.clone()],
+        &Map::new(&env),
+    );
+    client.remove_context_rule(&0u32);
+
+    let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0x41; 32]));
+    let context_rule_ids = vec![&env, hybrid.id];
+    let auth_digest = compute_auth_digest(&env, &hash, &context_rule_ids);
+
+    let assertion = build_contract_assertion(&passkey, &env, &auth_digest);
+    let webauthn_sig = stellar_accounts::verifiers::webauthn::WebAuthnSigData {
+        signature: assertion.signature,
+        authenticator_data: assertion.authenticator_data,
+        client_data: assertion.client_data,
+    }
+    .to_xdr(&env);
+    let ml_dsa_sig = build_ml_dsa_sig_data(&env, &ml_sk, &ml_pk_bytes, &auth_digest);
+
+    // Both signatures → authorized.
+    let mut both: Map<Signer, Bytes> = Map::new(&env);
+    both.set(passkey_signer.clone(), webauthn_sig.clone());
+    both.set(ml_dsa_signer.clone(), ml_dsa_sig.clone());
+    let signatures = AuthPayload {
+        signers: both,
+        context_rule_ids: context_rule_ids.clone(),
+    };
+    env.as_contract(&account_addr, || {
+        do_check_auth(
+            &env,
+            &hash,
+            &signatures,
+            &vec![&env, transfer_context(&env)],
+        )
+        .unwrap();
+    });
+
+    // Either signature alone → rejected (strict AND).
+    for (label, signer, sig) in [
+        ("passkey alone", &passkey_signer, &webauthn_sig),
+        ("ML-DSA alone", &ml_dsa_signer, &ml_dsa_sig),
+    ] {
+        let mut solo: Map<Signer, Bytes> = Map::new(&env);
+        solo.set(signer.clone(), sig.clone());
+        let signatures = AuthPayload {
+            signers: solo,
+            context_rule_ids: context_rule_ids.clone(),
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            env.as_contract(&account_addr, || {
+                do_check_auth(
+                    &env,
+                    &hash,
+                    &signatures,
+                    &vec![&env, transfer_context(&env)],
+                )
+                .unwrap();
+            });
+        }));
+        assert!(result.is_err(), "{label} must not satisfy the hybrid rule");
+    }
+}
+
 /// (c) The enrollment itself requires the account's auth: without
 /// `mock_all_auths`, `add_context_rule` is rejected.
 #[test]

@@ -125,6 +125,26 @@ import Logo from "../../../components/Logo.astro";
 
       <div class="grid-cell">
         <section class="card sm-card">
+          <div class="section-label">Step 5 · Paranoid</div>
+          <h2 class="disp sm-h2">Hybrid 2-of-2 mode</h2>
+          <p class="sm-lead">
+            The strongest setting: every transaction must be signed by your
+            passkey <strong>and</strong> the ML-DSA key together — spending
+            stays unforgeable even if P-256 is ever broken. Two stages:
+            <em>arm</em> installs the hybrid rule; <em>enforce</em> retires
+            the passkey-only rules so the hybrid one is the only way in.
+          </p>
+          <p id="paranoid-status" class="sm-lead">Checking…</p>
+          <div class="field">
+            <button id="arm-btn" class="btn soft" disabled>Arm</button>
+            <button id="enforce-btn" class="btn soft hidden">Enforce</button>
+            <button id="standdown-btn" class="btn soft hidden">Stand down</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid-cell">
+        <section class="card sm-card">
           <div class="section-label">Danger zone</div>
           <h2 class="disp sm-h2">Forget this key</h2>
           <p class="sm-lead">
@@ -174,6 +194,13 @@ import Logo from "../../../components/Logo.astro";
     buildRemoveRuleOperation,
     RECOVERED_RULE_NAME,
   } from "../../../lib/mlDsaSign.js";
+  import {
+    getParanoidStatus,
+    armParanoid,
+    enforceParanoid,
+    standDownParanoid,
+    type ParanoidStatus,
+  } from "../../../lib/mlDsaParanoid.js";
   import { parseRegistration, saveCredential } from "@nidohq/passkey-sdk";
   import { fetchVerifierAddress, fetchAllChainRules } from "../../../lib/policyChainFetch.js";
   import { withPasskeySheet } from "../../../lib/passkeySheet.js";
@@ -305,6 +332,7 @@ import Logo from "../../../components/Logo.astro";
     }
     renderEnrollment();
     await renderRotate();
+    await renderParanoid();
   }
 
   enrollBtn.addEventListener("click", () => {
@@ -458,6 +486,109 @@ import Logo from "../../../components/Logo.astro";
       }
       retireBtn.disabled = false;
       await renderRotate();
+    })();
+  });
+
+  // --- Step 5: paranoid (hybrid 2-of-2) mode ---
+  const armBtn = document.getElementById("arm-btn") as HTMLButtonElement;
+  const enforceBtn = document.getElementById("enforce-btn") as HTMLButtonElement;
+  const standdownBtn = document.getElementById("standdown-btn") as HTMLButtonElement;
+  const paranoidStatus = document.getElementById("paranoid-status")!;
+  let paranoid: ParanoidStatus | null = null;
+
+  async function renderParanoid() {
+    if (!account || !current) {
+      paranoidStatus.textContent = "Needs a backstop key on this device (Step 1).";
+      armBtn.disabled = true;
+      enforceBtn.classList.add("hidden");
+      standdownBtn.classList.add("hidden");
+      return;
+    }
+    try {
+      paranoid = await getParanoidStatus(account);
+    } catch (err) {
+      paranoidStatus.textContent = `Couldn't check: ${err instanceof Error ? err.message : String(err)}`;
+      return;
+    }
+    armBtn.disabled = paranoid.state !== "off";
+    armBtn.classList.toggle("hidden", paranoid.state !== "off");
+    enforceBtn.classList.toggle("hidden", paranoid.state !== "armed");
+    standdownBtn.classList.toggle("hidden", paranoid.state === "off");
+    if (paranoid.state === "off") {
+      paranoidStatus.textContent = "Off. Arming keeps your account working as usual until you enforce.";
+    } else if (paranoid.state === "armed") {
+      const blockedNote = paranoid.blocked.length
+        ? ` (${paranoid.blocked.length} rule(s) carry policies and must be handled manually)`
+        : "";
+      paranoidStatus.textContent = `Armed — hybrid rule #${paranoid.hybridRuleId} installed, but passkey-only rules still work${blockedNote}.`;
+    } else {
+      paranoidStatus.textContent = `Enforced — every transaction now needs passkey + backstop key (rule #${paranoid.hybridRuleId}).`;
+    }
+  }
+
+  const paranoidProgress = (p: { phase: string }) => {
+    paranoidStatus.textContent = {
+      build: "Building…",
+      sign: "Waiting for your passkey (+ backstop co-signature)…",
+      submit: "Submitting…",
+      confirm: "Waiting for confirmation…",
+    }[p.phase] ?? p.phase;
+  };
+
+  armBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account) return;
+      if (!confirm("Install the hybrid passkey+ML-DSA rule? Nothing changes until you also enforce.")) return;
+      armBtn.disabled = true;
+      try {
+        const webauthnVerifier = await fetchVerifierAddress(account);
+        await armParanoid({ account, webauthnVerifier, onProgress: paranoidProgress });
+        toast("Paranoid mode armed.");
+      } catch (err) {
+        toast(`Arm failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await renderParanoid();
+    })();
+  });
+
+  enforceBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account || !paranoid) return;
+      if (
+        !confirm(
+          `Enforce paranoid mode? Removes ${paranoid.removable.length} passkey-only rule(s). ` +
+            "EVERY transaction will then require this device's backstop key too — " +
+            "lose the key (or this browser's storage) and only ZK recovery can restore access.",
+        )
+      ) {
+        return;
+      }
+      enforceBtn.disabled = true;
+      try {
+        await enforceParanoid({ account, onProgress: paranoidProgress });
+        toast("Paranoid mode enforced.");
+      } catch (err) {
+        toast(`Enforce failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      enforceBtn.disabled = false;
+      await renderParanoid();
+    })();
+  });
+
+  standdownBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account) return;
+      if (!confirm("Stand down? Restores passkey-only signing and removes the hybrid rule.")) return;
+      standdownBtn.disabled = true;
+      try {
+        const webauthnVerifier = await fetchVerifierAddress(account);
+        await standDownParanoid({ account, webauthnVerifier, onProgress: paranoidProgress });
+        toast("Paranoid mode stood down.");
+      } catch (err) {
+        toast(`Stand down failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      standdownBtn.disabled = false;
+      await renderParanoid();
     })();
   });
 

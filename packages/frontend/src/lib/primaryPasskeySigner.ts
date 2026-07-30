@@ -11,11 +11,14 @@ import {
   computeAuthDigest,
   getAuthEntry,
   injectPasskeySignature,
+  injectSignedAuthPayload,
+  encodeMlDsaSigData,
   parseAssertionResponse,
   hex2buf,
   buf2hex,
 } from '@nidohq/passkey-sdk';
 import { resolveSignerRule } from './policyChainFetch.js';
+import { loadBackstopKey, signDigest, type BackstopKey } from './mlDsaBackstop.js';
 import {
   relayerEnabled,
 } from './relayerClient';
@@ -236,6 +239,25 @@ export async function signAndSubmit(args: {
   }
   const finalVerifierAddress = args.verifierAddress ?? resolved.verifier;
 
+  // Hybrid ("paranoid") rules: a policy-less rule holding this passkey PLUS
+  // other External signers is a strict AND — every co-signer must sign the
+  // same digest. The only co-signer this device can satisfy is the ML-DSA
+  // backstop key (matched by its 32-byte commitment). Fail BEFORE the
+  // WebAuthn ceremony if a co-signer can't be satisfied.
+  const coSigners = resolved.coSigners ?? [];
+  let backstop: BackstopKey | null = null;
+  if (coSigners.length > 0) {
+    backstop = loadBackstopKey(localStorage);
+    const commitmentHex = backstop ? buf2hex(backstop.commitment) : null;
+    const unsatisfiable = coSigners.filter((c) => c.keyDataHex !== commitmentHex);
+    if (unsatisfiable.length > 0) {
+      throw new Error(
+        'This signing rule requires co-signers this device cannot satisfy. ' +
+          'Paranoid mode needs the ML-DSA backstop key generated on this device.',
+      );
+    }
+  }
+
   // 1-2. Source selection + auth-strip + recording sim + assemble (shared
   //      with the ML-DSA backstop flow).
   const { submitter, authEntry, lastLedger, expirationOffset, assembledTx } =
@@ -277,16 +299,44 @@ export async function signAndSubmit(args: {
     signature: response.signature,
   });
 
-  // 6. Inject the passkey signature into the assembled tx's auth entry.
-  injectPasskeySignature(
-    assembled_tx,
-    parsed,
-    finalVerifierAddress,
-    hex2buf(cred.publicKey),
-    lastLedger,
-    expirationOffset,
-    contextRuleIds,
-  );
+  // 6. Inject the signature(s) into the assembled tx's auth entry. A hybrid
+  //    rule bundles the ML-DSA co-signature over the SAME digest into one
+  //    AuthPayload; otherwise this is the classic single-passkey injection.
+  if (backstop && coSigners.length > 0) {
+    injectSignedAuthPayload(
+      assembled_tx,
+      [
+        {
+          kind: 'external',
+          verifierAddress: finalVerifierAddress,
+          publicKey: hex2buf(cred.publicKey),
+          passkeySignature: parsed,
+        },
+        {
+          kind: 'external-bytes',
+          verifierAddress: coSigners[0].verifier,
+          keyData: backstop.commitment,
+          sigData: encodeMlDsaSigData(
+            backstop.publicKey,
+            signDigest(backstop.seed, challengeBytes),
+          ),
+        },
+      ],
+      lastLedger,
+      expirationOffset,
+      contextRuleIds,
+    );
+  } else {
+    injectPasskeySignature(
+      assembled_tx,
+      parsed,
+      finalVerifierAddress,
+      hex2buf(cred.publicKey),
+      lastLedger,
+      expirationOffset,
+      contextRuleIds,
+    );
+  }
 
   // 7. Submit — relayer or classic path (shared with the ML-DSA flow).
   return submitSigned(assembled_tx, submitter, server, authHashHex, args.onProgress);
