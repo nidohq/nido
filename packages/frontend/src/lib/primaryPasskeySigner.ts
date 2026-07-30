@@ -19,6 +19,7 @@ import {
 } from '@nidohq/passkey-sdk';
 import { resolveSignerRule } from './policyChainFetch.js';
 import { loadBackstopKey, signDigest, type BackstopKey } from './mlDsaBackstop.js';
+import { openPasskeySheet, closePasskeySheet } from './passkeySheet.js';
 import {
   relayerEnabled,
 } from './relayerClient';
@@ -277,20 +278,42 @@ export async function signAndSubmit(args: {
   const authHashHex = buf2hex(challengeBytes);
   const assembled_tx = assembledTx;
 
-  // 5. Get a WebAuthn assertion over the challenge.
-  args.onProgress?.({ phase: "sign" });
+  // 5. Get a WebAuthn assertion over the challenge. In hybrid (paranoid)
+  //    mode the approval is a visible two-step: the sheet (no-op on pages
+  //    without the host) labels the passkey as signature 1 of 2 so the user
+  //    sees the second key is in play BEFORE the OS dialog appears.
+  const hybrid = Boolean(backstop) && coSigners.length > 0;
+  args.onProgress?.({
+    phase: "sign",
+    detail: hybrid ? "Signature 1 of 2 — your passkey" : undefined,
+  });
+  if (hybrid) {
+    openPasskeySheet({
+      title: "Confirm it's you · 1 of 2",
+      sub: "Your passkey signs first; the post-quantum backstop key co-signs next.",
+    });
+  }
   const challengeBuf = new ArrayBuffer(challengeBytes.byteLength);
   new Uint8Array(challengeBuf).set(challengeBytes);
-  const assertion = (await navigator.credentials.get({
-    publicKey: {
-      challenge: challengeBuf,
-      rpId: window.location.hostname,
-      allowCredentials: [{ id: cred.credentialId as unknown as Uint8Array<ArrayBuffer>, type: 'public-key' }],
-      userVerification: 'required',
-      timeout: 60000,
-    },
-  })) as PublicKeyCredential | null;
-  if (!assertion) throw new Error('Passkey signing was cancelled.');
+  let assertion: PublicKeyCredential | null;
+  try {
+    assertion = (await navigator.credentials.get({
+      publicKey: {
+        challenge: challengeBuf,
+        rpId: window.location.hostname,
+        allowCredentials: [{ id: cred.credentialId as unknown as Uint8Array<ArrayBuffer>, type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+      },
+    })) as PublicKeyCredential | null;
+  } catch (err) {
+    if (hybrid) closePasskeySheet();
+    throw err;
+  }
+  if (!assertion) {
+    if (hybrid) closePasskeySheet();
+    throw new Error('Passkey signing was cancelled.');
+  }
 
   const response = assertion.response as AuthenticatorAssertionResponse;
   const parsed = parseAssertionResponse({
@@ -303,29 +326,46 @@ export async function signAndSubmit(args: {
   //    rule bundles the ML-DSA co-signature over the SAME digest into one
   //    AuthPayload; otherwise this is the classic single-passkey injection.
   if (backstop && coSigners.length > 0) {
-    injectSignedAuthPayload(
-      assembled_tx,
-      [
-        {
-          kind: 'external',
-          verifierAddress: finalVerifierAddress,
-          publicKey: hex2buf(cred.publicKey),
-          passkeySignature: parsed,
-        },
-        {
-          kind: 'external-bytes',
-          verifierAddress: coSigners[0].verifier,
-          keyData: backstop.commitment,
-          sigData: encodeMlDsaSigData(
-            backstop.publicKey,
-            signDigest(backstop.seed, challengeBytes),
-          ),
-        },
-      ],
-      lastLedger,
-      expirationOffset,
-      contextRuleIds,
-    );
+    // Step 2 of 2: the local backstop key co-signs. The signature is real
+    // work but fast (~tens of ms), so the sheet holds for a beat purely so
+    // the step is legible — this is a readability pause, not a simulated
+    // scan (see passkeySheet.ts's stance on fake scanners).
+    args.onProgress?.({
+      phase: "sign",
+      detail: "Signature 2 of 2 — post-quantum backstop key (ML-DSA-65)",
+    });
+    openPasskeySheet({
+      title: "Co-signing · 2 of 2",
+      sub: "The post-quantum backstop key (ML-DSA-65) is co-signing this transaction.",
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      injectSignedAuthPayload(
+        assembled_tx,
+        [
+          {
+            kind: 'external',
+            verifierAddress: finalVerifierAddress,
+            publicKey: hex2buf(cred.publicKey),
+            passkeySignature: parsed,
+          },
+          {
+            kind: 'external-bytes',
+            verifierAddress: coSigners[0].verifier,
+            keyData: backstop.commitment,
+            sigData: encodeMlDsaSigData(
+              backstop.publicKey,
+              signDigest(backstop.seed, challengeBytes),
+            ),
+          },
+        ],
+        lastLedger,
+        expirationOffset,
+        contextRuleIds,
+      );
+    } finally {
+      closePasskeySheet();
+    }
   } else {
     injectPasskeySignature(
       assembled_tx,

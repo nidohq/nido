@@ -526,13 +526,13 @@ import Logo from "../../../components/Logo.astro";
     }
   }
 
-  const paranoidProgress = (p: { phase: string }) => {
-    paranoidStatus.textContent = {
+  const paranoidProgress = (p: { phase: string; detail?: string }) => {
+    paranoidStatus.textContent = p.detail ?? ({
       build: "Building…",
-      sign: "Waiting for your passkey (+ backstop co-signature)…",
+      sign: "Waiting for your passkey…",
       submit: "Submitting…",
       confirm: "Waiting for confirmation…",
-    }[p.phase] ?? p.phase;
+    }[p.phase] ?? p.phase);
   };
 
   armBtn.addEventListener("click", () => {
