@@ -18,7 +18,10 @@ import {
   buf2hex,
 } from '@nidohq/passkey-sdk';
 import { resolveSignerRule } from './policyChainFetch.js';
-import { loadBackstopKey, signDigest, type BackstopKey } from './mlDsaBackstop.js';
+import {
+  loadBackstopKey, signDigest, unlockSeed, prfEvalForKey, prfFromAssertionResults,
+  type BackstopKey,
+} from './mlDsaBackstop.js';
 import { openPasskeySheet, closePasskeySheet } from './passkeySheet.js';
 import {
   relayerEnabled,
@@ -295,6 +298,16 @@ export async function signAndSubmit(args: {
   }
   const challengeBuf = new ArrayBuffer(challengeBytes.byteLength);
   new Uint8Array(challengeBuf).set(challengeBytes);
+  // When the co-signing backstop is passkey-encrypted AND wrapped against the
+  // SAME credential doing this assertion, ride a PRF eval on it so one Touch ID
+  // both signs (1 of 2) and unlocks the seed — no second ceremony. If the seed
+  // was wrapped under a different credential (e.g. after a rotation), don't
+  // piggyback: unlockSeed runs its own ceremony against the wrapping credential.
+  const wrapMatchesCred =
+    hybrid && backstop?.protection === "passkey" && backstop.wrapped
+      ? buf2hex(new Uint8Array(cred.credentialId)) === buf2hex(backstop.wrapped.credentialId)
+      : false;
+  const prfEval = wrapMatchesCred && backstop ? prfEvalForKey(backstop) : null;
   let assertion: PublicKeyCredential | null;
   try {
     assertion = (await navigator.credentials.get({
@@ -304,6 +317,7 @@ export async function signAndSubmit(args: {
         allowCredentials: [{ id: cred.credentialId as unknown as Uint8Array<ArrayBuffer>, type: 'public-key' }],
         userVerification: 'required',
         timeout: 60000,
+        ...(prfEval ? { extensions: prfEval as AuthenticationExtensionsClientInputs } : {}),
       },
     })) as PublicKeyCredential | null;
   } catch (err) {
@@ -339,6 +353,11 @@ export async function signAndSubmit(args: {
       sub: "The post-quantum backstop key (ML-DSA-65) is co-signing this transaction.",
     });
     try {
+      // Unlock the seed: plain → immediate; passkey-encrypted → decrypt with
+      // the PRF secret carried on the assertion above (same ceremony), or a
+      // dedicated ceremony if this platform didn't return one.
+      const prf = prfEval ? prfFromAssertionResults(assertion) : { ok: false as const };
+      const seed = await unlockSeed(backstop, prf.ok ? { prfOutput: prf.output } : {});
       await new Promise((resolve) => setTimeout(resolve, 700));
       injectSignedAuthPayload(
         assembled_tx,
@@ -355,7 +374,7 @@ export async function signAndSubmit(args: {
             keyData: backstop.commitment,
             sigData: encodeMlDsaSigData(
               backstop.publicKey,
-              signDigest(backstop.seed, challengeBytes),
+              signDigest(seed, challengeBytes),
             ),
           },
         ],

@@ -31,7 +31,7 @@ import {
   simulateForSigning,
   submitSigned,
 } from "./primaryPasskeySigner.js";
-import { loadBackstopKey, signDigest } from "./mlDsaBackstop.js";
+import { loadBackstopKey, signDigest, unlockSeed } from "./mlDsaBackstop.js";
 import { getBackstopEnrollment, resolveMlDsaVerifier } from "./mlDsaEnroll.js";
 import { RPC_URL, NETWORK_PASSPHRASE } from "./network.js";
 
@@ -84,8 +84,18 @@ export async function signAndSubmitWithBackstop(args: {
   const digest = computeAuthDigest(signaturePayload, contextRuleIds);
   const authHashHex = buf2hex(digest);
 
-  args.onProgress?.({ phase: "sign", detail: "Signing with the backstop key" });
-  const signature = signDigest(key.seed, digest);
+  // Unlock the seed (immediate for plain keys; a passkey ceremony for
+  // passkey-protected ones). If the wrapping passkey is gone the error steers
+  // the user to a mnemonic restore.
+  args.onProgress?.({
+    phase: "sign",
+    detail:
+      key.protection === "passkey"
+        ? "Unlock the backstop key with your passkey, then it signs"
+        : "Signing with the backstop key",
+  });
+  const seed = await unlockSeed(key);
+  const signature = signDigest(seed, digest);
 
   injectMlDsaSignature(
     assembledTx,
