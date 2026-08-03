@@ -1,0 +1,916 @@
+---
+// Educational explainer: "How account recovery with zero-knowledge proofs works".
+// A landing-style (shell="bleed") page, styled with the Warm Nest design system
+// (.lp-*, .td-*, tokens from styles/nido.css). Content lives in the frontmatter
+// data below and is rendered via .map() so Astro auto-escapes code identifiers
+// like `nido:zkrecovery:backup:<account>`, `>=`, `->` in techNotes/definitions.
+//
+// The technical claims here were derived from the on-chain zk-recovery contract,
+// the Noir circuit, the passkey-sdk client, and the integration lifecycle tests,
+// and fact-checked against them. Keep them accurate if the mechanism changes.
+import NidoLayout from "../../layouts/NidoLayout.astro";
+import Logo from "../../components/Logo.astro";
+import Icon from "../../components/Icon.astro";
+import Nest from "../../components/Nest.astro";
+
+const githubRepository = import.meta.env.PUBLIC_GITHUB_REPOSITORY as string | undefined;
+const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : undefined;
+const circuitUrl = githubUrl ? `${githubUrl}/blob/main/circuits/zk_recovery/src/main.nr` : undefined;
+const contractUrl = githubUrl ? `${githubUrl}/tree/main/contracts/zk-recovery` : undefined;
+
+// ── The recovery pipeline, left to right (the centerpiece diagram) ──
+const pipeline = [
+  { label: "Self-held secret", sub: "Seed phrase or wallet signature, hashed in your browser. Never stored." },
+  { label: "Commitment enrolled", sub: "Only a fingerprint goes on-chain, bound to your account." },
+  { label: "Merkle pool", sub: "One giant append-only tree of everyone's tickets." },
+  { label: "New passkey + proof", sub: "New device makes a proof you know the secret." },
+  { label: "Initiate", sub: "Anyone can submit it; only your proof is valid." },
+  { label: "Safety timer", sub: "A window for the real you to say no." },
+  { label: "Completion", sub: "The new passkey — and only that key — is installed." },
+  { label: "Account restored", sub: "Yours again, with the new passkey." },
+];
+
+// ── The six-step flow. `body` is plain-language; `dev` is the precise
+//    developer-layer detail with real names. tone/icon are presentation only. ──
+const steps = [
+  {
+    num: "1",
+    title: "Enroll a secret only you hold",
+    actor: "You · Browser",
+    icon: "fingerprint",
+    tone: "var(--acc)",
+    body: "When you set up recovery, your browser turns a written-down seed phrase — or a repeatable signature from a wallet you already control — into a single secret number. It lives in memory just long enough to compute a fingerprint, then it's gone. Only the fingerprint, never the secret, is written to the blockchain.",
+    dev: "deriveSecretM1 (seed) or deriveM2SecretSafely (wallet signature) in passkey-sdk/src/zkRecovery run HKDF-SHA256 with salt=networkPassphrase and info='nido-recovery-v1:'+tag, then reduce384 into a BN254 field element (Fr). The client submits only inner = Poseidon2([DOM_LEAF, secret], 2). The secret is never persisted — only an advisory flag at localStorage key nido:zkrecovery:backup:<account>.",
+  },
+  {
+    num: "2",
+    title: "The fingerprint is bound to your account",
+    actor: "Controller contract",
+    icon: "shield",
+    tone: "var(--honey)",
+    body: "The contract takes your fingerprint and stamps it with your account address — a step you can't do yourself and can't fake — then files it into a giant append-only tree of everyone's recovery tickets. Because the binding happens on-chain, from the account that just authorized the insert, your ticket can only ever recover your account.",
+    dev: "insert(account, commitment) [factory.require_auth, genesis] or insert_for(account, commitment) [account.require_auth, re-enroll] in pool.rs call insert_bound, which rejects non-canonical values via require_canonical, computes stored = Poseidon2([DOM_BIND, acct_hi, acct_lo, inner], 4) and appends it to the depth-24 Merkle tree, emitting leaf_inserted. A pre-wrapped leaf can never be trusted.",
+  },
+  {
+    num: "3",
+    title: "Later: new passkey, and prove you know the secret",
+    actor: "You · Browser",
+    icon: "key",
+    tone: "var(--acc)",
+    body: "You've lost your device. You create a brand-new passkey, then re-enter your seed phrase (or re-sign with your wallet) to reproduce the secret. Your browser rebuilds the recovery tree from public blockchain data, double-checks it against the contract, and generates a zero-knowledge proof: \"I know a secret whose ticket sits in this tree, bound to this account.\" The secret never leaves your browser.",
+    dev: "createSessionPasskey yields new_pubkey (65-byte SEC1 P-256). syncPoolAndLocate rebuilds the depth-24 tree from leaf_inserted events (or the pool-indexer) and gates on verifyAgainstOnChainRoot against current_root — a mismatch is a hard error. prover.worker.ts fetches circuits/zk_recovery.json, checks its sha256 against MANIFEST.circuitSha256, then runs Noir.execute and UltraHonkBackend.generateProof.",
+  },
+  {
+    num: "4",
+    title: "Anyone can submit it — only your proof is valid",
+    actor: "Relayer · Controller contract",
+    icon: "bolt",
+    tone: "var(--teal)",
+    body: "The proof plus a few public values go to the contract. It doesn't matter who sends it — a fee-paying relayer does, so you need no funds and no working key. The contract runs a strict checklist, re-derives the request fingerprint from the actual call, verifies the proof, and starts a safety timer. A malicious sender can't smuggle in a different key: any tampering breaks the proof.",
+    dev: "initiate_recovery(account, new_pubkey, nonce, timelock_secs, root, nullifier, proof) has NO require_auth. It runs 9 ordered checks, recomputes auth_hash for ACTION_INITIATE=1 via compute_auth_hash from the call's own args, assembles public_inputs = root || nullifier || auth_hash (96 bytes) and cross-calls the UltraHonk verifier via env.try_invoke_contract(cfg.verifier, 'verify_proof', ...). Fee-sponsored by the nido.fly.dev relayer.",
+  },
+  {
+    num: "5",
+    title: "The safety timer — your window to say no",
+    actor: "You · Controller contract",
+    icon: "clock",
+    tone: "var(--honey)",
+    body: "Recovery can't finish immediately. During the wait, your account freezes key-removal so an attacker can't strip the incoming passkey. If a pending recovery is an imposter and your live key still works, you can cancel it (your secret stays usable) or permanently burn a leaked secret. Only after the timer elapses can recovery complete.",
+    dev: "executable_after = now + delay_secs; expires_at = executable_after + completion_window_secs. The in-account guard_no_pending cross-calls has_pending before remove_signer / remove_context_rule / remove_policy / update_context_rule_valid_until; the recovery rule itself is unremovable (RecoveryRuleProtected). cancel_recovery / burn_nullifier both need account.require_auth plus a fresh ACTION_CANCEL=2 / ACTION_REVOKE=3 proof.",
+  },
+  {
+    num: "6",
+    title: "The new passkey takes over",
+    actor: "Relayer · Verifier",
+    icon: "shieldcheck",
+    tone: "var(--good)",
+    body: "Once the timer is up, anyone can trigger the final step. The account installs your new passkey — but only that exact key; the recovery policy refuses to authorize anything else. No signature and no second proof are needed here: the earlier, already-proven pending record is the sole authority. Your account is yours again.",
+    dev: "A permissionless add_context_rule(Default, 'recovered', None, [Signer::External(webauthn_verifier, new_pubkey)], {}) resolves through the zero-signer recovery rule into ZkRecovery::enforce, which gates fn_name, the exact new-signer set == pending.new_pubkey, empty policies, and the timelock. On success it marks the nullifier Spent, deletes the pending, and emits RecoveryCompleted. No verify_proof runs at completion.",
+  },
+];
+
+// ── Privacy: what the proof hides vs reveals ──
+const hidden = [
+  "Your recovery secret — a private witness inside the proof. It never appears on-chain, never touches a Nido server, and is wiped from browser memory after use.",
+  "Which leaf in the tree is yours — plus your account, action, nonce and new public key as raw values. They're folded into one fingerprint: bound, but never exposed.",
+];
+const revealed = [
+  { k: "root", v: "which snapshot of the pool your proof was built against." },
+  { k: "nullifier", v: "a one-time public tag that says \"this secret was used\" — never the secret itself." },
+  { k: "auth_hash", v: "the request fingerprint, which the contract re-derives on its own to catch any swap." },
+];
+
+// ── Why it's safe ──
+const whySafe = [
+  {
+    icon: "link",
+    title: "Only your proof, for only your account",
+    body: "The proof is cryptographically welded to the exact request — your account, this controller, the network, the action, the nonce, the new key, the timer. The contract re-derives that fingerprint (auth_hash) from the live call and rejects any mismatch. Flip a single byte of the new public key and verification fails.",
+  },
+  {
+    icon: "clock",
+    title: "A timer the real owner controls",
+    body: "Recovery can never complete the instant it starts. The delay gives the genuine owner time to notice and cancel an imposter with their still-working passkey. Meanwhile the account freezes any attempt to remove signers or rules, so a thief can't quietly strip out the incoming key mid-recovery.",
+  },
+  {
+    icon: "refresh",
+    title: "One secret, one use",
+    body: "Each secret produces a single deterministic public tag (the nullifier). Once used it's spent forever and can't start another recovery, the nonce must advance by exactly one, and initiations are capped at 3 per rolling 90 days. A stranger can't kill your credential either — burning it requires proving you know the secret bound to your own account.",
+  },
+  {
+    icon: "lock",
+    title: "The completion gate can only install your key",
+    body: "The final key-swap runs through a tightly fenced policy: ZkRecovery::enforce refuses everything except installing exactly your pending new passkey, with no extra policies. And a thief with a stolen live passkey still can't disable recovery — the policy can't be repointed, and uninstalling it simply panics.",
+  },
+];
+
+// ── Glossary ──
+const glossary = [
+  { term: "Recovery secret", def: "A single secret number only you can reproduce — from a written-down seed phrase or a repeatable wallet signature. Nido never stores or sees it; it's derived transiently in the browser and discarded." },
+  { term: "Commitment", def: "A fingerprint of your secret. The client submits only inner = Poseidon2([DOM_LEAF, secret], 2); the pool wraps it on-chain into an account-bound stored leaf. You can never submit the wrapped form." },
+  { term: "Nullifier", def: "A PUBLIC one-time tag, unique per account+secret, that says \"this secret was used\" without revealing it. Tracked as Reserved then Spent so a secret can never start two recoveries." },
+  { term: "auth_hash", def: "A fingerprint of every consequential argument of a recovery call. It's one of the three public inputs; the contract recomputes it from the live call, so a proof can't be reused with swapped inputs." },
+  { term: "Merkle pool", def: "A depth-24 append-only Poseidon2 tree of everyone's recovery tickets — one leaf per enrolled secret, bound to one account. The root summarizes it. It is NOT a set of guardians." },
+  { term: "UltraHonk", def: "The zero-knowledge proving system used — Barretenberg's Honk family over the BN254 curve, not Groth16. A universal SRS means no per-circuit trusted-setup ceremony." },
+  { term: "Timelock", def: "The mandatory delay between starting and finishing recovery, plus an expiry window after which an uncompleted attempt lapses. It gives the real owner time to cancel an imposter." },
+];
+
+// ── FAQ ──
+const faq = [
+  { q: "Does Nido or anyone store my seed phrase or recovery secret?", a: "No. Your secret is entirely self-held — a seed phrase you wrote down, or a value re-derived on demand from a wallet signature. It's computed transiently in your browser and immediately discarded. Only a non-secret commitment ever goes on-chain, and only a non-secret flag lives in your browser. There is no server copy to leak, subpoena, or breach." },
+  { q: "Do guardians or friends approve my recovery? Can they see my balance?", a: "No — Nido's zero-knowledge recovery has no guardians and no M-of-N social voting at all. The pool is a set of commitments (one leaf = one secret bound to one account), not a set of people. Recovery is a single self-held secret, a proof, and a timer. Nobody watches your account." },
+  { q: "Does the proof hide my balance or transaction amounts?", a: "That's a common misconception. This circuit proves membership in the recovery pool, the nullifier, and the request binding — it has nothing to do with money. There's no amount, value, or balance anywhere in the circuit. What it hides is your secret and which ticket is yours." },
+  { q: "If anyone can submit the recovery transaction, can a stranger take my account?", a: "No. Submission is permissionless on purpose, so a relayer can pay the fee for someone with no funds and no working key — but security comes entirely from the proof. Only someone who knows your secret can produce a valid one, it's welded to your exact account, and the timer lets the real you cancel an imposter first." },
+  { q: "Does completing recovery require the new passkey to sign, or re-run the proof?", a: "Neither. Completion is a permissionless, zero-signer call whose sole authority is the recovery policy checking the already-proven pending record. (Canceling or burning a recovery, by contrast, does require your live passkey plus a fresh proof.)" },
+  { q: "What proving system is this, and does it need a trusted setup?", a: "It's UltraHonk (Barretenberg) over the BN254 curve — not Groth16 and not plain PLONK. It uses a universal SRS, so there's no per-circuit trusted-setup ceremony. The on-chain verifier finishes in a single pairing check using Stellar's native BN254 host functions to fit the CPU budget." },
+];
+
+// ── Developer deep-dive ──
+const devDeep = [
+  { title: "The circuit statement", where: "circuits/zk_recovery/src/main.nr", body: "main() takes exactly three public inputs — root, nullifier, auth_hash — and everything else is a private witness (secret, account halves, 24 Merkle siblings + bits, action, new-pubkey fields, controller halves, nonce, timelock). It asserts three things: (1) the account-bound leaf climbs 24 levels to root; (2) Poseidon2([DOM_NULL, acct_hi, acct_lo, secret], 4) == nullifier; (3) the 15-input Poseidon2 over the request fields == auth_hash." },
+  { title: "Verification is recomputed on-chain, every time", where: "controller.rs · hash.rs", body: "The controller never trusts a caller-supplied auth_hash. In initiate_recovery it recomputes it via compute_auth_hash from the call's own args, assembles public_inputs = root(32) || nullifier(32) || auth_hash(32), and cross-calls the verifier's verify_proof; any failure maps to VerificationFailed. Host hashing in hash.rs (leaf_inner, wrap_leaf, compute_nullifier, compute_auth_hash) is asserted equal to committed circuit fixtures." },
+  { title: "Completion is a policy, not a re-proof", where: "policy.rs", body: "There is no complete_recovery entry point. A permissionless add_context_rule on the account resolves through a zero-signer rule into ZkRecovery::enforce, which requires a live, timelock-elapsed pending and gates fn_name, an exact new-signer set equal to pending.new_pubkey, and empty policies. This gate matters because OZ rule-matching validates only a rule's target contract, not its fn_name/args." },
+  { title: "The proving & verifying stack", where: "zk-verifier · prover.worker.ts", body: "Proofs are UltraHonk over BN254 with a universal SRS. The in-browser worker runs Noir.execute then UltraHonkBackend.generateProof with the keccak oracle to match the on-chain transcript. The Soroban verifier stores a ~1.9 KB verification key, re-derives the Fiat-Shamir transcript, runs sum-check and a batched KZG opening, and ends in one bn254 pairing check — ~159M CPU against a 400M budget." },
+  { title: "Owner defenses & anti-grief", where: "controller.rs", body: "cancel_recovery and burn_nullifier both require account.require_auth() plus a fresh proof whose auth_hash zeroes the new-pubkey and timelock. Cancel releases the reservation (secret stays usable); burn marks the nullifier Spent forever. Because the nullifier is public, a foreign account trying to burn a victim's nullifier recomputes auth_hash from its own address and fails verification — proven by a dedicated anti-grief test." },
+];
+
+// ── Illustrative animated walkthrough ("Watch Alice recover"). Names and
+//    hash values are fictional; the calls, order and on-chain effects mirror
+//    the contracts. Driven by the demo <script> at the foot of the file. ──
+const demoScenes = [
+  { n: 1, station: "Enrolled", actor: "Alice · Browser", tone: "var(--acc)", icon: "fingerprint",
+    headline: "Months ago, Alice set up recovery.",
+    caption: "Her browser turned a seed phrase into a secret, hashed it to a fingerprint, and wrote only the fingerprint on-chain — bound to her account.",
+    chip: "secret (browser only)  →  commitment 0x8f3a…c4" },
+  { n: 2, station: "Phone lost", actor: "Alice", tone: "var(--honey)", icon: "device",
+    headline: "Today, her phone is gone.",
+    caption: "The passkey went with it. On a new device she has no key and no way in — the classic lockout.",
+    chip: "signer: unreachable" },
+  { n: 3, station: "New key", actor: "Alice · Browser", tone: "var(--acc)", icon: "key",
+    headline: "New phone, fresh passkey.",
+    caption: "Alice creates a brand-new passkey. Its public key is where she wants the account to answer from now on.",
+    chip: "new_pubkey 0x04a7…e2" },
+  { n: 4, station: "Prove it", actor: "Alice · Browser", tone: "var(--teal)", icon: "shield", flourish: "proof",
+    headline: "She proves she knows the secret.",
+    caption: "She re-enters her seed phrase. The secret is rebuilt in her browser and a zero-knowledge proof is generated — the secret itself never leaves the page.",
+    chip: "UltraHonk proof  ·  secret stays local" },
+  { n: 5, station: "Initiate", actor: "Relayer · Contract", tone: "var(--honey)", icon: "bolt",
+    headline: "Anyone can submit it — a relayer does.",
+    caption: "The proof and a few public values go on-chain. The contract runs nine checks, re-derives the request fingerprint, verifies the proof, and reserves a one-time tag. A relayer pays the fee, so Alice needs no funds.",
+    chip: "verify_proof ✓  ·  nullifier 0x9d1e…7b reserved" },
+  { n: 6, station: "Timer", actor: "Alice · Contract", tone: "var(--honey)", icon: "clock", flourish: "timer",
+    headline: "A 48-hour window to say no.",
+    caption: "Recovery can't finish yet. If this were an imposter, the real Alice could cancel with her still-working key. Meanwhile, removing signers is frozen.",
+    chip: "timelock 48h  ·  signer removal blocked" },
+  { n: 7, station: "Complete", actor: "Relayer · Policy", tone: "var(--good)", icon: "shieldcheck",
+    headline: "The new key takes over — only that key.",
+    caption: "After the wait, anyone can trigger completion. The policy installs exactly Alice's new passkey and nothing else — no second proof, no signature.",
+    chip: "add_context_rule → enforce ✓  ·  nullifier spent" },
+  { n: 8, station: "Back in", actor: "Alice", tone: "var(--good)", icon: "home",
+    headline: "Alice is back in.",
+    caption: "Her account now answers to the new passkey. Nobody ever learned her secret, saw her balance, or could point to her ticket in the pool.",
+    chip: "250 XLM  ·  secured by new passkey" },
+];
+
+const demoLedger = [
+  { from: 1, icon: "link", text: "commitment 0x8f3a…c4  ·  bound to Alice" },
+  { from: 1, icon: "plus", text: "leaf #24,118 appended" },
+  { from: 1, icon: "refresh", text: "pool root 0x71bd…09" },
+  { from: 5, altFrom: 7, icon: "lock", text: "nullifier 0x9d1e…7b  ·  reserved", alt: "nullifier 0x9d1e…7b  ·  spent" },
+  { from: 5, altFrom: 7, icon: "key", text: "pending → new key 0x04a7…e2", alt: "new signer 0x04a7…e2  ·  installed" },
+];
+---
+
+<NidoLayout
+  title="How recovery works — zero-knowledge proofs"
+  description="Lose your passkey and your account is still yours. Here's how Nido brings you back in with a self-held secret and a zero-knowledge proof — revealing nothing."
+  shell="bleed"
+>
+  <div class="lp rx">
+    <div class="halo" style="width: 460px; height: 460px; top: -200px; right: -160px;"></div>
+
+    <!-- nav -->
+    <nav class="lp-nav">
+      <a href="/" style="text-decoration:none;"><Logo size={22} mark markSize={28} /></a>
+      <div class="lp-navlinks">
+        <a class="lp-navlink" href="#flow">The flow</a>
+        <a class="lp-navlink" href="#demo">Watch it</a>
+        <a class="lp-navlink" href="#privacy">Privacy</a>
+        <a class="lp-navlink" href="#safe">Why it's safe</a>
+        <a class="lp-navlink" href="#faq">FAQ</a>
+      </div>
+      {githubUrl && (
+        <a class="lp-navlink" href={githubUrl} target="_blank" rel="noopener" title="View on GitHub" style="display:inline-flex;align-items:center;">
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        </a>
+      )}
+    </nav>
+
+    <!-- hero -->
+    <header class="rx-hero">
+      <div>
+        <span class="chip acc" style="margin-bottom:20px;"><Icon name="sparkle" size={13} color="var(--acc-ink)" /> Zero-knowledge recovery</span>
+        <h1 class="disp rx-h1">Recover your account,<br /><span class="acc" style="font-style:italic;">reveal nothing.</span></h1>
+        <p class="lp-sub">
+          Lose your passkey and your account is still yours. A secret only you hold,
+          plus a zero-knowledge proof and a safety timer, brings you back in —
+          without ever telling anyone what your secret is.
+        </p>
+        <div class="lp-cta">
+          <a class="btn acc" href="/security/" style="width:auto;padding:0 24px;height:52px;">Set up recovery <Icon name="arrow" size={17} color="#fff" /></a>
+          {circuitUrl && <a class="btn ghost" href={circuitUrl} target="_blank" rel="noopener" style="width:auto;padding:0 22px;height:52px;">Read the circuit</a>}
+        </div>
+        <div class="lp-trust">
+          <span><Icon name="lock" size={15} color="var(--mut)" /> No secret stored anywhere</span>
+          <span><Icon name="eye" size={15} color="var(--mut)" /> No guardians watching</span>
+          <span><Icon name="shieldcheck" size={15} color="var(--mut)" /> No backdoor for anyone</span>
+        </div>
+      </div>
+
+      <div class="rx-hero-art" aria-hidden="true">
+        <div class="rx-proofcard">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="chip mono">secret</span>
+            <Icon name="lock" size={16} color="var(--mut)" />
+          </div>
+          <div class="rx-proofcard-body">
+            <div class="rx-pf-row"><span class="rx-pf-dot" style="background:var(--acc);"></span> I know a secret</div>
+            <div class="rx-pf-row"><span class="rx-pf-dot" style="background:var(--honey);"></span> in this pool</div>
+            <div class="rx-pf-row"><span class="rx-pf-dot" style="background:var(--teal);"></span> bound to this account</div>
+          </div>
+          <div class="rx-proofcard-foot">
+            <span class="chip good"><Icon name="shieldcheck" size={13} color="var(--good-ink)" /> Proved</span>
+            <span class="mut" style="font-size:11.5px;font-weight:700;">…without saying which</span>
+          </div>
+        </div>
+        <div class="rx-float"><Icon name="fingerprint" size={26} color="var(--coral)" /></div>
+      </div>
+    </header>
+
+    <!-- the problem -->
+    <section class="rx-lede">
+      <span class="section-label acc">The problem</span>
+      <h2 class="disp lp-h2" style="text-align:left;margin-top:8px;">The lost-key problem, without a backdoor.</h2>
+      <p class="rx-lede-body">
+        Passkeys are wonderful — until the device holding them is gone. The usual
+        fixes are grim: hand a company your seed phrase to babysit (now they can
+        drain you), or lean on a cluster of "guardians" who can see and gate your
+        account. Nido takes neither path. Your backup is a single secret only you
+        can reproduce — written down, or re-derived from a wallet you already
+        control. Nido never stores it, never transmits it, never sees it. At
+        recovery time your browser <em>proves</em> you know it, a timer lets the
+        real you veto an imposter, and a fresh passkey takes over.
+        <strong>No custodian. No guardians. No backdoor — including for us.</strong>
+      </p>
+    </section>
+
+    <!-- analogy -->
+    <section class="rx-analogy">
+      <div class="rx-analogy-icon"><Icon name="key" size={30} color="var(--acc)" /></div>
+      <div>
+        <span class="section-label">The intuition</span>
+        <h3 class="disp rx-analogy-h">A claim ticket you keep in your head.</h3>
+        <p class="rx-analogy-body">
+          Picture a coat check with millions of coats. When you drop yours off, the
+          attendant seals it in a tamper-proof bag stamped with your name — you
+          never touch the seal, so you can only ever reclaim <em>your</em> coat.
+          Instead of a paper stub, you keep a secret number memorized. To get your
+          coat back you don't hand over the number; you step behind a screen and
+          prove, mathematically, that you know a number matching one sealed bag on
+          the racks — without saying which bag, or what the number is. The
+          attendant hangs a "claimed" marker so the same secret can't be used
+          twice, waits a set time in case the real you shows up to object, then
+          hands the coat to your new pocket. Nobody ever learned your number, saw
+          your coat, or could point to your bag. That's zero-knowledge recovery.
+        </p>
+      </div>
+    </section>
+
+    <!-- pipeline diagram -->
+    <section class="rx-pipe-wrap" id="flow">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:22px;">
+        <span class="section-label acc">The pipeline</span>
+        <h2 class="disp lp-h2" style="text-align:left;">Secret in, account back — end to end.</h2>
+      </div>
+      <ol class="rx-pipe">
+        {pipeline.map((n, i) => (
+          <li class="rx-pipe-node">
+            <span class="rx-pipe-num">{i + 1}</span>
+            <span class="rx-pipe-label disp">{n.label}</span>
+            <span class="rx-pipe-sub">{n.sub}</span>
+          </li>
+        ))}
+      </ol>
+      <p class="mut rx-pipe-cap">The secret never leaves your device. Everything on-chain is a fingerprint, a proof, or a public tag.</p>
+    </section>
+
+    <!-- illustrative animated walkthrough -->
+    <section class="rx-demo" id="demo">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:10px;">
+        <span class="section-label acc">See it happen</span>
+        <h2 class="disp lp-h2" style="text-align:left;">Watch Alice recover her account.</h2>
+      </div>
+      <p class="rx-lede-body" style="margin-bottom:6px;">
+        Press play, or step through it yourself. The name and the hash values are
+        illustrative — the calls, their order, and what lands on-chain are exactly
+        what the contracts do.
+      </p>
+
+      <div class="rx-demo-card">
+        <!-- stepper rail -->
+        <div class="rx-demo-rail" role="tablist" aria-label="Recovery steps">
+          {demoScenes.map((s, i) => (
+            <button
+              class={`rx-demo-station${i === 0 ? " is-active" : ""}`}
+              style={`--tone:${s.tone};`}
+              type="button"
+              aria-label={`Go to step ${s.n}: ${s.station}`}
+              aria-current={i === 0 ? "step" : "false"}
+            >
+              <span class="rx-demo-station-num">{s.n}</span>
+              <span class="rx-demo-station-lbl">{s.station}</span>
+            </button>
+          ))}
+        </div>
+
+        <!-- scene stage -->
+        <div class="rx-demo-stage">
+          {demoScenes.map((s) => (
+            <div class={`rx-scene${s.flourish ? " rx-scene--" + s.flourish : ""}${s.n === 1 ? " is-on" : ""}`} style={`--tone:${s.tone};`}>
+              <div class="rx-scene-ico">
+                <Icon name={s.icon} size={40} color="var(--tone)" />
+                {s.flourish === "proof" && (
+                  <span class="rx-proof-check" aria-hidden="true"><Icon name="check" size={18} color="#fff" /></span>
+                )}
+              </div>
+              <div class="rx-scene-main">
+                <span class="rx-scene-eyebrow">{s.actor}</span>
+                <h3 class="rx-scene-headline">{s.headline}</h3>
+                <p class="rx-scene-caption">{s.caption}</p>
+                <span class="rx-scene-chip mono">{s.chip}</span>
+                {s.flourish === "timer" && (
+                  <div class="rx-timer" aria-hidden="true">
+                    <div class="rx-timer-head"><Icon name="clock" size={14} color="var(--warn)" /> <span>Safety window</span><span class="rx-timer-val">48h</span></div>
+                    <div class="rx-timer-track"><div class="rx-timer-fill"></div></div>
+                    <div class="rx-timer-note"><span class="rx-ghost"><Icon name="info" size={12} color="var(--mut)" /> Not you? Cancel with your live key</span></div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- accumulating on-chain ledger -->
+        <div class="rx-demo-ledger">
+          <div class="rx-demo-ledger-head"><Icon name="link" size={13} color="var(--mut)" /> On-chain, so far</div>
+          <ul class="rx-led-list">
+            {demoLedger.map((l) => (
+              <li class="rx-led-item" data-from={String(l.from)} data-alt-from={l.altFrom ? String(l.altFrom) : undefined} data-alt={l.alt ?? undefined}>
+                <Icon name={l.icon} size={14} color="var(--mut)" />
+                <span class="rx-led-text">{l.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <!-- controls -->
+        <div class="rx-demo-controls">
+          <div class="rx-demo-progress"><div class="rx-demo-progress-fill"></div></div>
+          <div class="rx-demo-btns">
+            <button class="btn ghost sm" data-demo="prev" type="button" aria-label="Previous step"><Icon name="back" size={16} /></button>
+            <button class="btn acc sm" data-demo="play" type="button">Play</button>
+            <button class="btn ghost sm" data-demo="next" type="button" aria-label="Next step"><Icon name="chevron" size={16} /></button>
+          </div>
+        </div>
+        <p class="rx-demo-live" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- step-by-step timeline -->
+    <section class="rx-steps-wrap">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:30px;">
+        <span class="section-label acc">Step by step</span>
+        <h2 class="disp lp-h2" style="text-align:left;">How it actually works.</h2>
+      </div>
+      <ol class="rx-timeline">
+        {steps.map((s) => (
+          <li class="rx-step" style={`--tone:${s.tone};`}>
+            <div class="rx-step-rail" aria-hidden="true">
+              <span class="rx-step-num">{s.num}</span>
+            </div>
+            <div class="rx-step-body">
+              <div class="rx-step-head">
+                <span class="rx-step-badge"><Icon name={s.icon} size={16} color="currentColor" /> {s.actor}</span>
+              </div>
+              <h3 class="disp rx-step-title">{s.title}</h3>
+              <p class="rx-step-copy">{s.body}</p>
+              <details class="rx-devnote">
+                <summary><Icon name="info" size={14} /> For developers</summary>
+                <p class="mono">{s.dev}</p>
+              </details>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <!-- privacy: hide vs reveal -->
+    <section class="rx-privacy" id="privacy">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:8px;">
+        <span class="section-label acc">Privacy</span>
+        <h2 class="disp lp-h2" style="text-align:left;">What the proof hides — and what it reveals.</h2>
+      </div>
+      <p class="rx-lede-body" style="margin-bottom:30px;">
+        A zero-knowledge proof lets you demonstrate you know a secret without
+        disclosing it. Nido's circuit proves exactly three things about your hidden
+        secret and nothing more — that its ticket is in the pool, tied to your
+        account, for this specific request.
+      </p>
+      <div class="rx-split">
+        <div class="rx-split-col rx-split-col--hide">
+          <div class="rx-split-head"><Icon name="lock" size={18} color="var(--acc-ink)" /> Never revealed</div>
+          <ul class="rx-split-list">
+            {hidden.map((h) => <li>{h}</li>)}
+          </ul>
+        </div>
+        <div class="rx-split-col rx-split-col--show">
+          <div class="rx-split-head"><Icon name="eye" size={18} color="var(--good-ink)" /> Public on-chain</div>
+          <ul class="rx-split-list rx-split-list--kv">
+            {revealed.map((r) => <li><code class="mono">{r.k}</code> — {r.v}</li>)}
+          </ul>
+        </div>
+      </div>
+      <div class="alert info rx-notbalance">
+        <Icon name="info" size={16} color="var(--acc-ink)" class="alert-ico" />
+        <span><strong>Not your balance.</strong> The circuit proves membership, a nullifier, and a request binding — there is no amount or balance anywhere in it. Enrolling a real secret and enrolling a decoy look identical on-chain, so whether you set up recovery at all stays private.</span>
+      </div>
+    </section>
+
+    <!-- why it's safe -->
+    <section class="rx-safe" id="safe">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:30px;">
+        <span class="section-label acc">Why it's safe</span>
+        <h2 class="disp lp-h2" style="text-align:left;">Four guarantees, all checkable.</h2>
+      </div>
+      <div class="rx-safe-grid">
+        {whySafe.map((c) => (
+          <div class="rx-safe-card">
+            <div class="rx-safe-ico"><Icon name={c.icon} size={22} color="var(--acc)" /></div>
+            <h3 class="disp rx-safe-title">{c.title}</h3>
+            <p class="rx-safe-copy">{c.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- glossary -->
+    <section class="rx-gloss">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:24px;">
+        <span class="section-label acc">Glossary</span>
+        <h2 class="disp lp-h2" style="text-align:left;">The words, in plain terms.</h2>
+      </div>
+      <dl class="rx-gloss-grid">
+        {glossary.map((g) => (
+          <div class="rx-gloss-item">
+            <dt class="disp">{g.term}</dt>
+            <dd>{g.def}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+
+    <!-- faq -->
+    <section class="rx-faq" id="faq">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:24px;">
+        <span class="section-label acc">Questions</span>
+        <h2 class="disp lp-h2" style="text-align:left;">Straight answers.</h2>
+      </div>
+      <div class="rx-faq-list">
+        {faq.map((f) => (
+          <details class="rx-faq-item">
+            <summary>{f.q}<Icon name="chevron" size={18} class="rx-faq-chev" /></summary>
+            <p>{f.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <!-- developer deep-dive -->
+    <section class="rx-dev">
+      <div class="lp-secthead" style="text-align:left;margin-bottom:24px;">
+        <span class="section-label acc">Under the hood</span>
+        <h2 class="disp lp-h2" style="text-align:left;">For the engineers.</h2>
+      </div>
+      <div class="rx-dev-grid">
+        {devDeep.map((d) => (
+          <div class="rx-dev-card">
+            <div class="rx-dev-where mono">{d.where}</div>
+            <h3 class="disp rx-dev-title">{d.title}</h3>
+            <p class="rx-dev-copy">{d.body}</p>
+          </div>
+        ))}
+      </div>
+      {contractUrl && (
+        <p class="mut rx-dev-foot">
+          Read the full contract at <a class="link" href={contractUrl} target="_blank" rel="noopener">contracts/zk-recovery</a>{circuitUrl && (<Fragment> and the circuit at <a class="link" href={circuitUrl} target="_blank" rel="noopener">circuits/zk_recovery</a></Fragment>)}.
+        </p>
+      )}
+    </section>
+
+    <!-- CTA band -->
+    <section class="lp-band">
+      <div class="halo" style="width: 360px; height: 360px; bottom: -220px; left: 50%; transform: translateX(-50%);"></div>
+      <div style="display:flex;justify-content:center;margin-bottom:22px;position:relative;"><Nest size={64} /></div>
+      <h2 class="disp" style="font-weight:800;font-size:clamp(28px,7vw,40px);letter-spacing:-.01em;position:relative;line-height:1.05;">Never locked out,<br />never watched.</h2>
+      <p class="lp-sub" style="margin:14px auto 0;max-width:380px;position:relative;">Set up zero-knowledge recovery in your Nido — a secret only you hold, and no one to trust with it.</p>
+      <a class="btn acc" href="/security/" style="width:auto;padding:0 28px;height:54px;margin:26px auto 0;position:relative;">Set up recovery <Icon name="arrow" size={18} color="#fff" /></a>
+    </section>
+
+    <footer class="lp-foot">
+      <a href="/" style="text-decoration:none;"><Logo size={18} mark markSize={22} /></a>
+      <span class="mut" style="font-size:13px;">A safe place for everything.</span>
+    </footer>
+  </div>
+</NidoLayout>
+
+<style>
+  /* Page-scoped. Tokens (var(--acc) etc.) come from the global nido.css. */
+  .rx { padding-bottom: 40px; }
+
+  /* hero */
+  .rx-hero {
+    display: grid; grid-template-columns: 1.05fr .95fr; gap: 44px; align-items: center;
+    padding: 30px 0 60px;
+  }
+  .rx-h1 { font-weight: 800; font-size: clamp(40px, 6vw, 72px); line-height: 1; letter-spacing: -.02em; margin: 0; }
+  .rx .lp-sub { margin-top: 20px; }
+  .rx-hero-art { position: relative; display: flex; justify-content: center; }
+  .rx-proofcard {
+    width: 300px; background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: 24px; padding: 20px; box-shadow: var(--sh-3); transform: rotate(-1.4deg);
+  }
+  .rx-proofcard-body { margin: 18px 0; display: flex; flex-direction: column; gap: 11px; }
+  .rx-pf-row { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14.5px; color: var(--ink); }
+  .rx-pf-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+  .rx-proofcard-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+  .rx-float {
+    position: absolute; top: -18px; left: 4px; width: 58px; height: 58px;
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: var(--sh-2); display: grid; place-items: center;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .rx-float { animation: rx-floaty 5s ease-in-out infinite; }
+    @keyframes rx-floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+  }
+  @media (max-width: 860px) {
+    .rx-hero { grid-template-columns: 1fr; gap: 30px; padding-bottom: 40px; }
+    .rx-hero-art { justify-content: flex-start; }
+    .rx-proofcard { transform: none; }
+  }
+
+  /* generic section rhythm */
+  .rx-lede, .rx-pipe-wrap, .rx-steps-wrap, .rx-privacy, .rx-safe, .rx-gloss, .rx-faq, .rx-dev {
+    padding: 52px 0; border-top: 1px solid var(--line);
+  }
+  .rx-lede-body { font-size: clamp(16px, 1.5vw, 18.5px); line-height: 1.62; color: var(--ink-soft); max-width: 62ch; margin: 0; }
+  .rx-lede-body strong { color: var(--ink); }
+
+  /* analogy callout */
+  .rx-analogy {
+    display: grid; grid-template-columns: auto 1fr; gap: 26px; align-items: start;
+    padding: 34px; margin: 52px 0 0; border-radius: var(--r-xl);
+    background: var(--paper-3); border: 1px solid var(--line);
+  }
+  .rx-analogy-icon {
+    width: 62px; height: 62px; border-radius: 18px; display: grid; place-items: center;
+    background: var(--acc-soft); flex: 0 0 auto;
+  }
+  .rx-analogy-h { font-weight: 800; font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.015em; margin: 8px 0 0; }
+  .rx-analogy-body { font-size: 16.5px; line-height: 1.64; color: var(--ink-soft); margin: 14px 0 0; }
+  @media (max-width: 620px) { .rx-analogy { grid-template-columns: 1fr; gap: 16px; padding: 24px; } }
+
+  /* pipeline */
+  .rx-pipe {
+    list-style: none; margin: 0; padding: 4px 0 2px;
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(190px, 1fr);
+    gap: 14px; overflow-x: auto; scroll-snap-type: x proximity;
+  }
+  .rx-pipe::-webkit-scrollbar { height: 6px; }
+  .rx-pipe::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+  .rx-pipe-node {
+    position: relative; scroll-snap-align: start;
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .rx-pipe-node::after {
+    content: "→"; position: absolute; right: -13px; top: 50%; transform: translateY(-50%);
+    color: var(--mut); font-weight: 800; z-index: 2;
+  }
+  .rx-pipe-node:last-child::after { content: none; }
+  .rx-pipe-num {
+    width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--acc-soft); color: var(--acc-ink); font-weight: 800; font-size: 13px;
+  }
+  .rx-pipe-label { font-weight: 800; font-size: 15.5px; line-height: 1.2; }
+  .rx-pipe-sub { font-size: 12.5px; line-height: 1.45; color: var(--mut); }
+  .rx-pipe-cap { font-size: 13px; margin: 18px 0 0; }
+  @media (min-width: 900px) { .rx-pipe { grid-auto-columns: 1fr; grid-template-columns: repeat(4, 1fr); grid-auto-flow: row; overflow: visible; } .rx-pipe-node:nth-child(4)::after { content: none; } }
+
+  /* timeline */
+  .rx-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .rx-step { display: grid; grid-template-columns: 56px 1fr; gap: 20px; }
+  .rx-step-rail { position: relative; display: flex; justify-content: center; }
+  .rx-step-rail::before {
+    content: ""; position: absolute; top: 44px; bottom: -6px; width: 2px; background: var(--line);
+  }
+  .rx-step:last-child .rx-step-rail::before { display: none; }
+  .rx-step-num {
+    width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--tone) 16%, var(--paper-2));
+    color: var(--tone); border: 2px solid var(--tone);
+    font-family: var(--disp); font-weight: 800; font-size: 19px; z-index: 1;
+  }
+  .rx-step-body { padding-bottom: 34px; min-width: 0; }
+  .rx-step:last-child .rx-step-body { padding-bottom: 0; }
+  .rx-step-badge {
+    display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--tone) 14%, var(--paper-2)); color: var(--tone);
+    font-size: 12px; font-weight: 800; letter-spacing: .01em;
+  }
+  .rx-step-title { font-weight: 800; font-size: clamp(18px, 2vw, 22px); letter-spacing: -.01em; margin: 12px 0 0; }
+  .rx-step-copy { font-size: 15.5px; line-height: 1.6; color: var(--ink-soft); margin: 9px 0 0; }
+  .rx-devnote { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper-3); }
+  .rx-devnote > summary {
+    list-style: none; cursor: pointer; padding: 10px 14px;
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 800; color: var(--ink-soft);
+  }
+  .rx-devnote > summary::-webkit-details-marker { display: none; }
+  .rx-devnote[open] > summary { border-bottom: 1px solid var(--line); width: 100%; }
+  .rx-devnote > p { margin: 0; padding: 12px 14px; font-size: 12px; line-height: 1.62; color: var(--ink-soft); word-break: break-word; }
+
+  /* privacy split */
+  .rx-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .rx-split-col { border-radius: var(--r-lg); padding: 22px; border: 1px solid var(--line); }
+  .rx-split-col--hide { background: var(--acc-soft); border-color: #f6d3c2; }
+  .rx-split-col--show { background: var(--good-soft); border-color: #bfe6e9; }
+  .rx-split-head { display: inline-flex; align-items: center; gap: 9px; font-family: var(--disp); font-weight: 800; font-size: 17px; margin-bottom: 14px; }
+  .rx-split-col--hide .rx-split-head { color: var(--acc-ink); }
+  .rx-split-col--show .rx-split-head { color: var(--good-ink); }
+  .rx-split-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .rx-split-list li { font-size: 14px; line-height: 1.55; color: var(--ink); }
+  .rx-split-list--kv code { background: rgba(255,255,255,.6); padding: 1px 7px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
+  .rx-notbalance { margin-top: 16px; }
+  @media (max-width: 700px) { .rx-split { grid-template-columns: 1fr; } }
+
+  /* why it's safe */
+  .rx-safe-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .rx-safe-card { padding: 24px; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--paper-2); }
+  .rx-safe-ico { width: 50px; height: 50px; border-radius: 15px; background: var(--acc-soft); display: grid; place-items: center; margin-bottom: 14px; }
+  .rx-safe-title { font-weight: 800; font-size: 18.5px; letter-spacing: -.01em; }
+  .rx-safe-copy { font-size: 14.5px; line-height: 1.58; color: var(--ink-soft); margin: 8px 0 0; }
+  @media (max-width: 700px) { .rx-safe-grid { grid-template-columns: 1fr; } }
+
+  /* glossary */
+  .rx-gloss-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 22px; margin: 0; }
+  .rx-gloss-item { padding: 18px 20px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--paper-2); }
+  .rx-gloss-item dt { font-weight: 800; font-size: 15.5px; color: var(--ink); }
+  .rx-gloss-item dd { margin: 6px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-soft); }
+  @media (max-width: 700px) { .rx-gloss-grid { grid-template-columns: 1fr; } }
+
+  /* faq */
+  .rx-faq-list { display: flex; flex-direction: column; gap: 10px; }
+  .rx-faq-item { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper-2); overflow: hidden; }
+  .rx-faq-item > summary {
+    list-style: none; cursor: pointer; padding: 17px 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    font-weight: 700; font-size: 15px; color: var(--ink);
+  }
+  .rx-faq-item > summary::-webkit-details-marker { display: none; }
+  .rx-faq-chev { flex: 0 0 auto; color: var(--mut); transition: transform .2s; }
+  .rx-faq-item[open] .rx-faq-chev { transform: rotate(90deg); }
+  .rx-faq-item > p { margin: 0; padding: 0 18px 18px; font-size: 14px; line-height: 1.6; color: var(--ink-soft); }
+
+  /* dev deep-dive */
+  .rx-dev-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .rx-dev-card { padding: 22px; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--espresso); color: #f3e4d4; }
+  .rx-dev-where { font-size: 11.5px; color: var(--honey); opacity: .9; margin-bottom: 10px; word-break: break-all; }
+  .rx-dev-title { font-weight: 800; font-size: 17px; color: #fff; letter-spacing: -.01em; }
+  .rx-dev-copy { font-size: 13px; line-height: 1.62; color: #d8c6b4; margin: 9px 0 0; }
+  .rx-dev-foot { font-size: 13.5px; margin: 20px 0 0; }
+  @media (max-width: 700px) { .rx-dev-grid { grid-template-columns: 1fr; } }
+
+  /* ── illustrative animated walkthrough ── */
+  .rx-demo-card { margin-top: 22px; border: 1px solid var(--line); border-radius: var(--r-xl); background: var(--paper-2); box-shadow: var(--sh-2); overflow: hidden; position: relative; }
+
+  /* stepper rail */
+  .rx-demo-rail { display: flex; gap: 0; padding: 16px 14px; border-bottom: 1px solid var(--line-soft); background: var(--paper-3); overflow-x: auto; scrollbar-width: none; }
+  .rx-demo-rail::-webkit-scrollbar { display: none; }
+  .rx-demo-station { position: relative; flex: 1 0 auto; min-width: 84px; display: flex; flex-direction: column; align-items: center; gap: 7px; background: none; border: none; cursor: pointer; padding: 2px 4px; font: inherit; }
+  .rx-demo-station::before { content: ""; position: absolute; top: 15px; left: -50%; width: 100%; height: 2px; background: var(--line); z-index: 0; }
+  .rx-demo-station:first-child::before { display: none; }
+  .rx-demo-station-num { position: relative; z-index: 1; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--paper-2); border: 2px solid var(--line); font-family: var(--disp); font-weight: 800; font-size: 13px; color: var(--mut); transition: transform .25s, background .25s, border-color .25s, color .25s; }
+  .rx-demo-station-lbl { font-size: 11px; font-weight: 800; letter-spacing: .01em; white-space: nowrap; color: var(--mut); transition: color .2s; }
+  .rx-demo-station.is-done::before, .rx-demo-station.is-active::before { background: var(--acc); }
+  .rx-demo-station.is-done .rx-demo-station-num { background: var(--acc-soft); border-color: var(--acc); color: var(--acc-ink); }
+  .rx-demo-station.is-active .rx-demo-station-num { background: color-mix(in srgb, var(--tone) 16%, var(--paper-2)); border-color: var(--tone); color: var(--tone); transform: scale(1.1); }
+  .rx-demo-station.is-active .rx-demo-station-lbl { color: var(--ink); }
+  .rx-demo-station:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: var(--r-sm); }
+
+  /* scene stage */
+  .rx-demo-stage { position: relative; padding: 32px 30px; min-height: 236px; display: grid; }
+  .rx-scene { grid-area: 1 / 1; display: none; align-items: center; gap: 26px; }
+  .rx-scene.is-on { display: flex; }
+  @media (prefers-reduced-motion: no-preference) { .rx-scene.is-on { animation: rx-scene-in .5s both; } }
+  @keyframes rx-scene-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .rx-scene-ico { position: relative; width: 94px; height: 94px; border-radius: 27px; display: grid; place-items: center; background: color-mix(in srgb, var(--tone) 15%, var(--paper-2)); color: var(--tone); flex: 0 0 auto; }
+  .rx-scene-main { min-width: 0; }
+  .rx-scene-eyebrow { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--tone) 14%, var(--paper-2)); color: var(--tone); font-size: 11.5px; font-weight: 800; margin-bottom: 11px; }
+  .rx-scene-headline { font-family: var(--disp); font-weight: 800; font-size: clamp(20px, 2.4vw, 27px); letter-spacing: -.015em; line-height: 1.12; margin: 0; }
+  .rx-scene-caption { font-size: 15px; line-height: 1.56; color: var(--ink-soft); margin: 10px 0 0; max-width: 50ch; }
+  .rx-scene-chip { display: inline-block; margin-top: 14px; padding: 7px 12px; border-radius: var(--r-sm); background: var(--espresso); color: #f3e4d4; font-size: 12px; word-break: break-word; }
+  @media (max-width: 640px) { .rx-scene { flex-direction: column; align-items: flex-start; gap: 16px; } .rx-demo-stage { padding: 24px 20px; } }
+
+  /* proof flourish — spinning ring + check pop */
+  .rx-scene--proof .rx-scene-ico::after { content: ""; position: absolute; inset: -6px; border-radius: 32px; border: 2px dashed var(--tone); opacity: .5; }
+  @media (prefers-reduced-motion: no-preference) { .rx-scene--proof.is-on .rx-scene-ico::after { animation: spin 2.6s linear infinite; } }
+  .rx-proof-check { position: absolute; right: -8px; bottom: -8px; width: 32px; height: 32px; border-radius: 50%; background: var(--good); color: #fff; display: grid; place-items: center; box-shadow: var(--sh-1); }
+  @media (prefers-reduced-motion: no-preference) {
+    .rx-scene--proof .rx-proof-check { opacity: 0; }
+    .rx-scene--proof.is-on .rx-proof-check { animation: rx-pop .42s .95s both; }
+  }
+  @keyframes rx-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+
+  /* timer flourish — countdown bar + cancel ghost */
+  .rx-timer { margin-top: 16px; max-width: 390px; }
+  .rx-timer-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: var(--warn); }
+  .rx-timer-val { margin-left: auto; font-family: var(--mono); }
+  .rx-timer-track { height: 8px; border-radius: 99px; background: var(--warn-soft); overflow: hidden; margin-top: 8px; }
+  .rx-timer-fill { height: 100%; width: 45%; border-radius: 99px; background: linear-gradient(90deg, var(--honey), var(--coral)); }
+  @media (prefers-reduced-motion: no-preference) { .rx-scene--timer.is-on .rx-timer-fill { width: 8%; animation: rx-timerfill 3s ease-out .2s forwards; } }
+  @keyframes rx-timerfill { to { width: 92%; } }
+  .rx-timer-note { margin-top: 10px; }
+  .rx-ghost { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--mut); padding: 5px 11px; border: 1px dashed var(--line); border-radius: var(--r-pill); }
+  @media (prefers-reduced-motion: no-preference) { .rx-scene--timer.is-on .rx-ghost { animation: rx-ghostpulse 1.7s ease-in-out infinite; } }
+  @keyframes rx-ghostpulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
+
+  /* accumulating ledger */
+  .rx-demo-ledger { padding: 18px 24px 20px; border-top: 1px solid var(--line-soft); background: var(--paper-3); }
+  .rx-demo-ledger-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--mut); margin-bottom: 12px; }
+  .rx-led-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .rx-led-item { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--ink); opacity: 0; transform: translateX(-6px); transition: opacity .4s, transform .4s; }
+  .rx-led-item.is-shown { opacity: 1; transform: none; }
+  .rx-led-text { font-family: var(--mono); font-size: 12px; }
+  .rx-led-item.is-alt .rx-led-text { color: var(--good-ink); }
+
+  /* controls */
+  .rx-demo-controls { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-top: 1px solid var(--line-soft); }
+  .rx-demo-progress { flex: 1; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .rx-demo-progress-fill { height: 100%; width: 12.5%; border-radius: 99px; background: var(--acc); transition: width .4s cubic-bezier(.2,.7,.3,1); }
+  .rx-demo-btns { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .rx-demo-btns .btn.sm { width: auto; }
+  .rx-demo-btns [data-demo="play"] { min-width: 94px; }
+  .rx-demo-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; }
+  @media (max-width: 520px) { .rx-demo-controls { flex-direction: column; align-items: stretch; } .rx-demo-btns { justify-content: center; } }
+</style>
+
+<script>
+  // Reveal timeline steps + safe cards as they scroll in. Progressive
+  // enhancement only: base state is fully visible; we add the hiding class
+  // (.rx-reveal) exclusively when JS runs AND motion is welcome.
+  const motionOK = window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
+  if (motionOK && "IntersectionObserver" in window) {
+    const targets = document.querySelectorAll<HTMLElement>(".rx-step, .rx-safe-card, .rx-pipe-node, .rx-gloss-item, .rx-dev-card");
+    const obs = new IntersectionObserver(
+      (entries, o) => {
+        for (const e of entries) {
+          if (e.isIntersecting) { e.target.classList.add("rx-in"); o.unobserve(e.target); }
+        }
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -6% 0px" },
+    );
+    targets.forEach((t, i) => {
+      t.classList.add("rx-reveal");
+      t.style.setProperty("--rx-delay", `${(i % 4) * 55}ms`);
+      obs.observe(t);
+    });
+  }
+</script>
+
+<style>
+  @media (prefers-reduced-motion: no-preference) {
+    .rx-reveal { opacity: 0; transform: translateY(18px); transition: opacity .55s cubic-bezier(.2,.7,.3,1), transform .55s cubic-bezier(.2,.7,.3,1); transition-delay: var(--rx-delay, 0ms); }
+    .rx-reveal.rx-in { opacity: 1; transform: none; }
+  }
+</style>
+
+<script>
+  // "Watch Alice recover" — a self-contained scene player for the .rx-demo
+  // walkthrough. No deps. Progressive enhancement: scene 1 is visible without
+  // JS; JS adds the rail/ledger/timer/autoplay on top.
+  const demo = document.querySelector<HTMLElement>(".rx-demo");
+  if (demo) {
+    const scenes = Array.from(demo.querySelectorAll<HTMLElement>(".rx-scene"));
+    const stations = Array.from(demo.querySelectorAll<HTMLButtonElement>(".rx-demo-station"));
+    const ledger = Array.from(demo.querySelectorAll<HTMLElement>(".rx-led-item"));
+    const fill = demo.querySelector<HTMLElement>(".rx-demo-progress-fill");
+    const live = demo.querySelector<HTMLElement>(".rx-demo-live");
+    const btnPrev = demo.querySelector<HTMLButtonElement>('[data-demo="prev"]');
+    const btnNext = demo.querySelector<HTMLButtonElement>('[data-demo="next"]');
+    const btnPlay = demo.querySelector<HTMLButtonElement>('[data-demo="play"]');
+    const N = scenes.length;
+
+    if (N && fill && btnPrev && btnNext && btnPlay) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // Proof (index 3) and timer (index 5) dwell longer so their motion resolves.
+      const dwell = (i: number) => (i === 3 ? 3900 : i === 5 ? 4400 : 3300);
+      let idx = 0;
+      let playing = false;
+      let timer: number | undefined;
+
+      // Capture each ledger item's base text once, for reserved→spent swaps.
+      ledger.forEach((li) => {
+        const t = li.querySelector<HTMLElement>(".rx-led-text");
+        if (t && !li.dataset.base) li.dataset.base = t.textContent || "";
+      });
+
+      function render() {
+        scenes.forEach((s, i) => s.classList.toggle("is-on", i === idx));
+        stations.forEach((b, i) => {
+          b.classList.toggle("is-active", i === idx);
+          b.classList.toggle("is-done", i < idx);
+          b.setAttribute("aria-current", i === idx ? "step" : "false");
+        });
+        fill!.style.width = `${((idx + 1) / N) * 100}%`;
+        ledger.forEach((li) => {
+          const from = Number(li.dataset.from || "1");
+          li.classList.toggle("is-shown", idx + 1 >= from);
+          const t = li.querySelector<HTMLElement>(".rx-led-text");
+          const altFrom = li.dataset.altFrom ? Number(li.dataset.altFrom) : null;
+          if (t) {
+            if (altFrom && idx + 1 >= altFrom) { t.textContent = li.dataset.alt || t.textContent; li.classList.add("is-alt"); }
+            else { t.textContent = li.dataset.base || t.textContent; li.classList.remove("is-alt"); }
+          }
+        });
+        btnPrev!.disabled = idx === 0;
+        btnNext!.disabled = idx === N - 1;
+        const atEnd = idx === N - 1;
+        btnPlay!.textContent = playing ? "Pause" : atEnd ? "Replay" : "Play";
+        if (live) {
+          const h = scenes[idx].querySelector(".rx-scene-headline")?.textContent?.trim() || "";
+          live.textContent = `Step ${idx + 1} of ${N}: ${h}`;
+        }
+      }
+
+      function stop() { playing = false; if (timer) { clearTimeout(timer); timer = undefined; } render(); }
+      function schedule() {
+        if (!playing) return;
+        timer = window.setTimeout(() => {
+          if (idx >= N - 1) { stop(); return; }
+          idx++; render(); schedule();
+        }, dwell(idx));
+      }
+      function play() { if (idx >= N - 1) idx = 0; playing = true; render(); schedule(); }
+      function goTo(i: number) { stop(); idx = Math.max(0, Math.min(N - 1, i)); render(); }
+
+      btnPrev.addEventListener("click", () => goTo(idx - 1));
+      btnNext.addEventListener("click", () => goTo(idx + 1));
+      btnPlay.addEventListener("click", () => (playing ? stop() : play()));
+      stations.forEach((b, i) => b.addEventListener("click", () => goTo(i)));
+      demo.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") { e.preventDefault(); goTo(idx + 1); }
+        else if (e.key === "ArrowLeft") { e.preventDefault(); goTo(idx - 1); }
+      });
+
+      render();
+
+      // Auto-play once when it scrolls into view (motion only).
+      if (!reduce && "IntersectionObserver" in window) {
+        const io = new IntersectionObserver((entries, o) => {
+          for (const en of entries) if (en.isIntersecting) { play(); o.disconnect(); }
+        }, { threshold: 0.4 });
+        io.observe(demo);
+      }
+    }
+  }
+</script>
