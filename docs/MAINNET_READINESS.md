@@ -81,7 +81,10 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 - [ ] Legacy query-param sign path validates callback/return origin (no signature exfiltration).
 - [ ] `expirationOffset`/`relayerEnabled` centralized with a parity test.
 - [ ] localStorage credential material encrypted + expiring.
-- [ ] Relayer per-client fee fairness; metrics + alerts; incident-response playbook.
+- [x] Relayer per-client fairness (per-IP token bucket in Caddy, 30/min), metrics enabled
+  (Prometheus on :8081, Fly-scraped), alert definitions + incident-response playbook in
+  RUNBOOKS §4. (Needs a Fly deploy to verify the xcaddy build + confirm live metric names;
+  true per-*client* fee accounting via per-client keys remains future work.)
 - [x] Structured error on malformed/truncated proofs — the zk-verifier boundary
   (`verify_proof`) length-pre-checks against the VK and returns `ProofParseError` instead of
   letting the vendored parser's `assert_eq!` trap (invariant V3; no vendored edit, no

@@ -1,7 +1,14 @@
+# Build Caddy WITH the rate-limit plugin (not in the stock apk `caddy`): the
+# per-IP token bucket in Caddyfile needs github.com/mholt/caddy-ratelimit
+# compiled in. The output is a static Go binary (CGO off), so it runs on the
+# Wolfi-glibc relayer base below regardless of the builder's libc.
+FROM docker.io/library/caddy:2-builder AS caddybuild
+RUN xcaddy build --with github.com/mholt/caddy-ratelimit
+
 FROM docker.io/openzeppelin/openzeppelin-relayer:v1.5.0
 
 USER root
-RUN apk add --no-cache caddy
+COPY --from=caddybuild /usr/bin/caddy /usr/bin/caddy
 
 COPY plugins/channels /app/plugins/channels
 RUN cd /app/plugins/channels && pnpm install --prod --frozen-lockfile \

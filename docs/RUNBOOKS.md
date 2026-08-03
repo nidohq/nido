@@ -59,16 +59,49 @@ knobs are the highest-leverage controls — a repoint silently changes the contr
 The relayer (`infra/relayer`, Fly.io) sponsors/submits txs. It cannot forge account auth, so
 worst case is **censorship** or **sponsor-budget drain**, not theft.
 
-- **Monitoring (to enable, E-task):** `METRICS_ENABLED=true`; alerts on health-check failures
-  (3+ consecutive), fee-limit ≥80%, channel-pool unregistered, tx error rate >5%.
-- **Outage:** redeploy via `deploy-relayer.yml` (GH action, loads Fly token from 1Password).
-  Health endpoint: `https://nido.fly.dev/api/v1/health`. If down >30 min, notify affected users.
-- **Budget exhaustion:** the OZ Channels plugin `FEE_LIMIT` caps daily spend (currently a
-  single global bucket — replace with per-client fairness, E-task). On depletion, investigate
-  the spend pattern before raising the limit; a single client exhausting it is the DoS this
-  guards against.
-- **Suspected key compromise:** rotate immediately (§3), redeploy, re-fund, and audit recent
-  sponsored txs. Keys in KMS (A4) cannot be exfiltrated from the host.
+### Defenses in place
+
+- **Per-client fairness (`Caddyfile`):** a per-IP token bucket (`rate_limit`, keyed on
+  `Fly-Client-IP`, 30 relays/min/IP) throttles any single source so it cannot burst-drain the
+  shared daily budget — the DoS the old single-`x-api-key` + one global `FEE_LIMIT` allowed.
+  Layered under the relayer's own global 20 req/s ceiling.
+- **Budget cap (`fly.toml` `FEE_LIMIT`):** the Channels plugin caps sponsor spend at 100 XLM
+  per `FEE_RESET_PERIOD_SECONDS` (24h). Still a single global bucket; per-IP limiting is what
+  makes it fair. True per-*client* fee accounting needs per-client keys (future work).
+- **Metrics (`METRICS_ENABLED=true`):** Prometheus on `:8081` (`/debug/metrics/scrape`),
+  scraped by Fly's managed Prometheus (`[metrics]` in `fly.toml`); dashboards + alert rules in
+  `grafana.fly.dev`. Kept off the public `:8080` listener.
+
+### Alerts (wire in Fly Grafana against the scraped metrics)
+
+| Alert | Condition | Action |
+|---|---|---|
+| **Relayer down** | `/api/v1/health` failing 3+ consecutive checks (≈45s) | Outage procedure below |
+| **Budget ≥80%** | sponsor fee spend ≥ 80% of `FEE_LIMIT` within the reset window | Investigate spend pattern before raising |
+| **Error rate** | relayed-tx failure ratio > 5% over 5 min | Check RPC/network + channel health |
+| **Rate-limit spike** | sustained 429s from one IP | Confirm abuse vs. legit burst; tighten bucket if abuse |
+| **Channel unregistered** | a channel relayer missing/paused | Re-register / unpause via `config.json` |
+
+> Confirm exact metric names against the live `/debug/metrics/scrape` output after the first
+> deploy with `METRICS_ENABLED=true` — the alert *conditions* above are the contract; the
+> PromQL is filled in once the series names are observed.
+
+### Procedure
+
+1. **Detect** — alert fires (or a user report). Check `grafana.fly.dev` + `fly logs -a nido`.
+2. **Triage** — classify: outage (health down), drain (budget alert), abuse (rate-limit spike),
+   or suspected key compromise.
+3. **Contain** —
+   - *Abuse/drain:* the per-IP bucket already throttles; if a distributed drain, lower
+     `FEE_LIMIT` (or pause a relayer via `paused: true` in `config.json` + redeploy) to freeze
+     spend while investigating. Do **not** raise `FEE_LIMIT` before understanding the pattern —
+     a single client exhausting it is exactly the DoS this guards against.
+   - *Outage:* redeploy via `deploy-relayer.yml` (GH action, Fly token from 1Password). Health:
+     `https://nido.fly.dev/api/v1/health`. If down >30 min, notify affected users.
+   - *Key compromise:* rotate immediately (§3), redeploy, re-fund, audit recent sponsored txs.
+     Keys in KMS (A4) cannot be exfiltrated from the host.
+4. **Recover** — confirm health green, budget/error alerts cleared, a test relay succeeds.
+5. **Post-mortem** — record timeline, root cause, and any threshold/bucket changes here.
 
 ## 5. ZK circuit / VK change
 
