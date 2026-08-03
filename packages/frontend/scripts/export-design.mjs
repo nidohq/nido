@@ -51,9 +51,17 @@ const linkMap = new Map(routes.map(([, file, route]) => [route, file]));
 // static markup as-is.)
 const reveal = {
   "account.html": ["home-mode"],
-  // Reveal the key fingerprint + advanced tools so the static snapshot shows
-  // the full page (both are JS-hidden until a key exists / is expanded).
-  "security-pq-backstop.html": ["key-details", "advanced-section"],
+  // The page is a one-step-at-a-time wizard; reveal every step panel (+ the
+  // key detail and advanced tools) so the static snapshot shows all screens
+  // stacked. At runtime only one panel is visible.
+  "security-pq-backstop.html": [
+    "wiz-create",
+    "wiz-protect",
+    "wiz-enable",
+    "wiz-done",
+    "key-details",
+    "advanced-section",
+  ],
 };
 
 function exportPage(srcRel, outFile) {
