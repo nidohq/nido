@@ -446,12 +446,24 @@ still moving. Before upgrading:
 4. Re-run session-key tipping flow.
 5. Confirm Caddy route and auth injection still match plugin API shape.
 
+## Rate limiting & metrics
+
+- **Per-IP token bucket (Caddy):** `/relay` is capped at **30 requests/min per client IP**
+  (keyed on `Fly-Client-IP`, since Caddy sits behind Fly's proxy) via the `caddy-ratelimit`
+  plugin compiled into the image (`xcaddy` stage in the `Dockerfile`). This bounds any single
+  client's share of the shared daily sponsor budget. Layered under the relayer's own global
+  20 req/s ceiling (`RATE_LIMIT_REQUESTS_PER_SECOND`).
+- **Metrics:** `METRICS_ENABLED=true` runs the Prometheus server on `:8081`
+  (`/debug/metrics/scrape`), scraped by Fly's managed Prometheus (`[metrics]` in `fly.toml`),
+  private to the org (not on the public `:8080`). Dashboards + alerts in `grafana.fly.dev`;
+  alert definitions in `docs/RUNBOOKS.md` §4.
+
 ## Known Limitations
 
 - CORS is wildcard.
-- Rate limit is global: 20 req/s, burst 60.
-- Fee budget is global.
-- Local keystores are testnet-only operational posture.
+- Fee budget is a single global bucket (per-IP rate limiting bounds one client's share; true
+  per-*client* fee accounting needs per-client keys — future work).
+- Local keystores are testnet-only operational posture (A4: migrate to KMS/HSM for mainnet).
 - Memos are not supported on Soroban operations; do not include memos in relay
   requests.
 - The relayer is now used for account creation; recovery rotation still has its

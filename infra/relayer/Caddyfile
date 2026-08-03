@@ -1,6 +1,9 @@
 {
 	admin off
 	persist_config off
+	# caddy-ratelimit is an HTTP handler module; give it an explicit order so it
+	# runs before the request is proxied to the relayer.
+	order rate_limit before reverse_proxy
 }
 
 :8080 {
@@ -20,6 +23,21 @@
 		path /relay
 	}
 	handle @relay {
+		# Per-client fairness: a token bucket keyed on the REAL client IP (Caddy
+		# sits behind Fly's proxy, so `{remote_host}` is Fly's edge -- use the
+		# Fly-Client-IP header instead). One shared x-api-key + one global
+		# FEE_LIMIT means a single flooding client could otherwise drain the
+		# daily sponsor budget; capping each IP to a sane relay rate bounds any
+		# one source to a small slice of that budget. 30 relays/min/IP is far
+		# above a real wallet's usage (a few relays per onboarding/recovery) and
+		# well under the relayer's global 20 req/s ceiling.
+		rate_limit {
+			zone relay_per_ip {
+				key {http.request.header.Fly-Client-IP}
+				events 30
+				window 1m
+			}
+		}
 		header Access-Control-Allow-Origin "*"
 		request_header Authorization "Bearer {$API_KEY}"
 		request_header x-api-key "nido-wallet"
