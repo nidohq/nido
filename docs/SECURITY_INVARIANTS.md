@@ -128,8 +128,17 @@ whole set with `just test`; cost gates with `just bench-zk`, `just bench-zk-init
 - **V2 — All public inputs checked; exact size.** Verification binds and requires the exact
   `root||nullifier||auth_hash` (96 bytes). Evidence: `contract_verifier.rs`;
   `verifier_smoke.rs::verify_with_tampered_public_inputs_fails`.
-- **V3 — Malformed proofs fail closed.** An empty or truncated proof never yields a pending
-  recovery and writes no pending/nullifier state (the rejection is atomic). Evidence:
+- **V3 — Malformed proofs fail closed, with a structured error.** An empty or truncated proof
+  never yields a pending recovery and writes no pending/nullifier state (the rejection is
+  atomic). The zk-verifier boundary (`contracts/zk-verifier/src/lib.rs::verify_proof`)
+  pre-checks the proof length (`expected_proof_fields(log_n) * 32`, a pure function of the
+  immutable VK) and returns a typed `ProofParseError` *before* the vendored parser's length
+  `assert_eq!` can panic — so a bad-length proof is rejected legibly, not via an opaque host
+  trap. Curve-point validity for a correct-length proof (on-curve, subgroup, canonical
+  coordinates) is delegated to the Soroban host BN254 functions (`env.crypto().bn254()`
+  msm/pairing in `contracts/vendor/.../ec.rs::SorobanEc`), which reject invalid points; the
+  controller's `try_invoke_contract` catches any such host rejection and fails closed.
+  Evidence: `verifier_smoke.rs::verify_with_truncated_proof_returns_parse_error`,
   `zk_recovery_lifecycle.rs::malformed_proof_never_initiates_recovery`.
 - **V4 — Cross-network replay rejected.** A proof bound to one network's passphrase (via
   `sha256(passphrase)` folded into `auth_hash`) does not verify against a pool configured for a
