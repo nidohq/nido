@@ -11,11 +11,23 @@ rebuild every deployed artifact.
 | `soroban-sdk` | `26.0.1` | crates.io tagged | Low. |
 | `stellar-accounts` (OZ `stellar-contracts`) | **git rev `637c53a8c4928fd0c71d330bd866f482c3454578`** | git, **untagged main branch** | **Elevated** — see below. Core auth (`do_check_auth`) delegates here. |
 | `soroban-sdk-tools` (`BlaineHeffron/soroban-sdk-tools`) | git rev `cbafae3439f01a4add2411c6162885edb30e7389` | git rev | Medium — third-party, pinned by rev. |
-| `stellar-registry` | `0.0.10` | crates.io | Medium — `0.0.x`. |
+| `stellar-registry` | `0.0.10` | crates.io | Medium — `0.0.x`. Macros only (re-exports `stellar-scaffold-macro`); **not** the registry contract. |
 | `base64` | `0.22` | crates.io | Low. |
 
 `Cargo.lock` is committed, so transitive versions are reproducible. `cargo-audit`
 is **not yet run in CI** (see gaps).
+
+### On-chain Stellar Registry contract (external, not the crate above)
+
+The registry the factory queries/publishes into is an **external on-chain contract** (AhaLabs
+smart-deploy), distinct from the `stellar-registry` *crate* (which is macros only). On mainnet
+Nido deploys its **own instance** of it via `scripts/deploy-registry.sh`, which
+`stellar contract fetch`es the reference registry's exact deployed wasm, records its sha256,
+and redeploys that byte-identical bytecode under a Nido owner (multisig). Provenance to record
+in `DEPLOYED.md` at cutover: the source registry id + network, the fetched **wasm sha256**, and
+the new instance id — so an auditor can confirm the instance runs identical code to the
+reference. Residual trust is bounded by the factory pin bypass (invariant F5): once pinned, the
+registry cannot reroute or block account creation.
 
 ### OZ pinned to an untagged commit — action
 

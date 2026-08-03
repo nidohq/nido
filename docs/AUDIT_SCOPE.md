@@ -56,6 +56,13 @@ proof-system verification), separate from a general Soroban/Rust reviewer.
   the intended, uncompromised commit**, but the library itself is OZ's audited code,
   not part of Nido's authored surface. See [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).
 - **`soroban-sdk` 26.0.1**, `soroban-sdk-tools`, `stellar-registry` — pinned deps.
+- **Stellar Registry contract (AhaLabs smart-deploy)** — an external on-chain contract, not
+  authored by Nido. On mainnet Nido runs its **own instance** (owner under the multisig,
+  deployed by `scripts/deploy-registry.sh` from the reference registry's exact wasm, hash
+  recorded in `DEPLOYED.md`). Trust in it is bounded: once the factory pins `verifier`/
+  `zk-recovery` (B2 pin bypass), the registry is off the account-creation critical path and a
+  repoint can neither reroute nor block new accounts (invariant F5). It remains authoritative
+  only for off-chain discovery and unpinned names.
 - **Stellar protocol / consensus / RPC** — trusted platform.
 
 ## Explicitly NOT for mainnet (must not be deployed / must be excluded)

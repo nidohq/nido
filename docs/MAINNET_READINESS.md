@@ -20,9 +20,14 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 - [ ] **A2 — `G_temp` secret off URL query params (BLOCKER).** Onboarding no longer passes
   the funding secret via `?key=`; it uses a non-logged channel (hash fragment /
   sessionStorage) cleared after deploy. Verified: never in history/referrer/worker logs.
-- [ ] **A3 — Mainnet registry wired.** Factory `REGISTRY` constant + all client fallbacks
-  (`passkey-sdk/src/registry.ts`, `frontend/src/lib/policyChainFetch.ts`) point at the
-  chosen mainnet registry; rebuilt + tested against mainnet RPC.
+- [ ] **A3 — Mainnet registry deployed + wired.** Deploy a Nido-owned `stellar-registry`
+  instance on mainnet (registry-owner key under the multisig) and register
+  `factory`/`verifier`/`zk-recovery` into it (`scripts/deploy-registry.mjs` +
+  `just publish-registry`, rehearsed on testnet). Factory `REGISTRY` constant + all client
+  fallbacks (`passkey-sdk/src/registry.ts`, `frontend/src/lib/policyChainFetch.ts`) point at
+  its contract-id; rebuilt + tested against mainnet RPC. Registry wasm hash + id recorded in
+  `DEPLOYED.md`; registry added to the trusted-external set in `AUDIT_SCOPE.md`/`SUPPLY_CHAIN.md`.
+  (Later: register this registry's id into the AhaLabs verified registry — additive, not a blocker.)
 - [ ] **A4 — Relayer keys in KMS/HSM (BLOCKER).** Sponsor + channel keys no longer live as
   on-disk keystores; migrated to a KMS/HSM signer; testnet keys rotated out.
 
@@ -44,10 +49,12 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
   with its own upgrade timelock so users can exit before an upgrade lands — is the mitigation
   there. `zk-verifier` VK intentionally immutable (a circuit change still means a fresh verifier
   deploy + re-register, never an in-place VK swap).
-- [x] **B2 (code) — Registry address pinning implemented.** Factory has admin-settable pins
-  (`set_registry_pins(verifier, zk_recovery)`) and reverts `RegistryMismatch` on any registry
-  disagreement, on every `create_account`/`create_account_v2` (invariant F5, tested). Unpinned =
-  pre-B2 behavior; the `set_recovery_pool` override intentionally bypasses the pin.
+- [x] **B2 (code) — Registry address pinning implemented (pin bypass).** Factory has
+  admin-settable pins (`set_registry_pins(verifier, zk_recovery)`); once pinned it resolves
+  `verifier`/`zk-recovery` directly from the pin and never consults the registry, on every
+  `create_account`/`create_account_v2` (invariant F5, tested) — so a repointed/broken registry
+  can neither reroute nor block new accounts. Unpinned = pre-B2 behavior; the
+  `set_recovery_pool` override is checked before the `zk-recovery` pin.
 - [ ] **B2 (deploy) — Pins set + keys under multisig.** At cutover, call `set_registry_pins`
   with the mainnet verifier/zk-recovery addresses (from `DEPLOYED.md`); put the registry-owner
   + factory admin (`set_registry_pins`/`set_recovery_pool`) keys under the multisig; add
@@ -91,11 +98,15 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 ## Cutover sequence (release day)
 
 1. Confirm B/C/D/E/F all green on the frozen, audited commit; audit findings applied.
-2. Deploy contracts fresh: pool via `deploy-zk-recovery.mjs --mainnet` (A1 params) with a
-   multisig `--admin` (B1); factory rebuilt with the mainnet `REGISTRY` constant (A3).
-3. Regenerate + register mainnet VK (A1); wire zk-verifier/zk-recovery in the mainnet registry.
+2. Deploy the Nido-owned `stellar-registry` instance (A3, `deploy-registry.mjs`), registry-owner
+   key under the multisig. Deploy contracts fresh: pool via `deploy-zk-recovery.mjs --mainnet`
+   (A1 params) with a multisig `--admin` (B1); factory rebuilt with the mainnet `REGISTRY`
+   constant set to the just-deployed registry id (A3).
+3. Register `factory`/`verifier`/`zk-recovery` into the registry; regenerate + register the
+   mainnet VK (A1).
 4. **Pin the registry (B2):** `factory.set_registry_pins(<verifier>, <zk-recovery>)` with the
-   just-deployed mainnet addresses, so a later registry repoint cannot reroute new accounts.
+   just-deployed mainnet addresses. Once pinned the registry is off the account-creation path
+   (pin bypass), so a later repoint cannot reroute or block new accounts.
 5. Run `preflight-recovery-config.mjs --contract <POOL>` → must print **GO** before any user
    account is created. (Optionally `--expect-factory/-verifier/-webauthn` to assert the binds.)
 6. Relayer on KMS (A4); alerts firing; run the incident-response drill.

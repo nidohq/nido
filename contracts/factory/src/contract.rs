@@ -1,26 +1,19 @@
 use soroban_sdk::{
-    contract, contracterror, contractimpl, deploy::DeployerWithAddress, panic_with_error, Address,
-    Bytes, BytesN, Env, String, Symbol, U256,
+    contract, contractimpl, deploy::DeployerWithAddress, Address, Bytes, BytesN, Env, String,
+    Symbol, U256,
 };
 use soroban_sdk_tools::{contractstorage, InstanceItem};
 use stellar_accounts::smart_account::Signer;
 
-/// Factory error codes. Kept deliberately small: the factory's other failure
-/// modes (unresolvable registry name, tree full, non-canonical commitment, ...)
-/// originate in the registry or the pool cross-call and surface as those
-/// contracts' own traps/errors, which is what an operator debugging a failed
-/// `create_account` wants to see.
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum Error {
-    /// The registry resolved a name (`verifier`/`zk-recovery`) to an address
-    /// that differs from the admin-pinned expected address. A compromised or
-    /// repointed registry cannot silently route new accounts to an attacker's
-    /// verifier/controller: the factory reverts instead of deploying. See
-    /// `Contract::pin_registry_addresses` / `Contract::enforce_pin` (plan B2).
-    RegistryMismatch = 1,
-}
+// The factory defines no custom error type. Under registry pinning (plan B2)
+// a pinned name is resolved DIRECTLY from the pin without consulting the
+// registry (`Self::resolve`), so there is no "registry disagrees with the
+// pin" condition to report -- the pin is authoritative by construction. The
+// factory's remaining failure modes (unresolvable registry name for an
+// UNPINNED name, tree full, non-canonical commitment, ...) originate in the
+// registry or the pool cross-call and surface as those contracts' own
+// traps/errors, which is what an operator debugging a failed `create_account`
+// wants to see.
 
 mod smart_account {
     //! Embeds the smart-account contract wasm so the factory no longer
@@ -115,21 +108,21 @@ pub struct Config {
     /// resolving `"zk-recovery"` from the registry exactly as before this
     /// field existed.
     recovery_pool: InstanceItem<Address>,
-    /// Admin-pinned expected address for the `"verifier"` registry name (plan
-    /// B2). `None` (default) = unpinned, i.e. trust whatever the registry
-    /// returns (the pre-B2 behavior, kept for existing testnet factories).
-    /// Once set (via `set_registry_pins`), `resolve("verifier")` reverts
-    /// `RegistryMismatch` if the registry ever resolves to anything else --
-    /// so a repointed/compromised registry cannot silently swap the passkey
-    /// verifier under new accounts. Set at mainnet cutover, before any account
-    /// is created.
+    /// Admin-pinned address for the `"verifier"` registry name (plan B2).
+    /// `None` (default) = unpinned, i.e. resolve from the registry and trust
+    /// whatever it returns (the pre-B2 behavior, kept for existing testnet
+    /// factories). Once set (via `set_registry_pins`), `resolve("verifier")`
+    /// returns this address DIRECTLY and never consults the registry -- so a
+    /// repointed, broken, or unreachable registry can neither swap the passkey
+    /// verifier under new accounts nor even block their creation. Set at
+    /// mainnet cutover, before any account is created.
     pinned_verifier: InstanceItem<Address>,
-    /// Admin-pinned expected address for the `"zk-recovery"` registry name
-    /// (plan B2). Same semantics as `pinned_verifier`: `None` = unpinned;
-    /// once set, `resolve("zk-recovery")` reverts `RegistryMismatch` on any
-    /// disagreement, so the recovery controller installed into every new
-    /// account (and handed the genesis `insert`) cannot be swapped by a
-    /// registry repoint.
+    /// Admin-pinned address for the `"zk-recovery"` registry name (plan B2).
+    /// Same semantics as `pinned_verifier`: `None` = unpinned; once set,
+    /// `resolve("zk-recovery")` returns this address directly (registry
+    /// bypassed), so the recovery controller installed into every new account
+    /// (and handed the genesis `insert`) is fixed to the pin and cannot be
+    /// swapped -- or knocked out -- by a registry repoint.
     pinned_zk_recovery: InstanceItem<Address>,
 }
 
@@ -195,19 +188,21 @@ impl Contract {
         Config::get_recovery_pool(e)
     }
 
-    /// Pin the expected `verifier` and `zk-recovery` addresses the registry
-    /// must resolve to (plan B2). After this, every `resolve("verifier")` /
-    /// `resolve("zk-recovery")` (i.e. every `create_account`/`create_account_v2`)
-    /// asserts the registry still returns exactly these addresses and reverts
-    /// `RegistryMismatch` otherwise -- closing the "compromised/repointed
+    /// Pin the `verifier` and `zk-recovery` addresses (plan B2). After this,
+    /// every `resolve("verifier")` / `resolve("zk-recovery")` (i.e. every
+    /// `create_account`/`create_account_v2`) returns exactly these addresses
+    /// DIRECTLY, without consulting the registry at all -- taking the registry
+    /// off the runtime critical path and closing the "compromised/repointed
     /// registry silently routes new accounts to attacker contracts" hole
-    /// (`resolve` had no address check before this). Both are set together
-    /// because a cutover pins both at once from `DEPLOYED.md`; call again to
-    /// re-pin after a deliberate verifier/controller upgrade. Requires the
-    /// current admin's auth. NOTE: this pins the REGISTRY lookup only; the
-    /// admin-set `set_recovery_pool` override deliberately bypasses both the
-    /// registry and this pin (it is an explicit, separately-audited admin
-    /// choice -- see `resolve_recovery`).
+    /// (`resolve` trusted the registry unconditionally before this). Because
+    /// the registry is bypassed, a later repoint cannot reroute NOR block new
+    /// accounts; the registry remains authoritative only for unpinned names
+    /// and for off-chain discovery. Both are set together because a cutover
+    /// pins both at once from `DEPLOYED.md`; call again to re-pin after a
+    /// deliberate verifier/controller upgrade. Requires the current admin's
+    /// auth. NOTE: the `zk-recovery` pin is superseded by the admin-set
+    /// `set_recovery_pool` override, which is checked first (an explicit,
+    /// separately-audited admin choice -- see `resolve_recovery`).
     // `#[contractimpl]` entry point; SDK ABI requires owned `Address`.
     #[allow(clippy::needless_pass_by_value)]
     pub fn set_registry_pins(e: &Env, verifier: Address, zk_recovery: Address) {
@@ -217,9 +212,9 @@ impl Contract {
         cfg.pinned_zk_recovery.set(&zk_recovery);
     }
 
-    /// The pinned expected `verifier` address, or `None` if unpinned. `None`
-    /// is the default (pre-B2 / testnet) state: `resolve("verifier")` trusts
-    /// the registry with no address check.
+    /// The pinned `verifier` address, or `None` if unpinned. `None` is the
+    /// default (pre-B2 / testnet) state: `resolve("verifier")` resolves from
+    /// the registry. When `Some`, the registry is bypassed for that name.
     pub fn pinned_verifier(e: &Env) -> Option<Address> {
         Config::get_pinned_verifier(e)
     }
@@ -298,42 +293,37 @@ impl Contract {
     }
 
     fn resolve(env: &Env, name: &str) -> Address {
+        // Pin bypass (plan B2): once the admin has pinned an address for
+        // `name`, the pin is AUTHORITATIVE -- return it directly and never
+        // touch the registry. This takes the registry off the runtime critical
+        // path for pinned names entirely: a repointed, broken, or unreachable
+        // registry can no longer reroute new accounts to an attacker's
+        // verifier/controller *nor even block their creation*. Only unpinned
+        // names (the pre-B2 default) fall through to the registry lookup below,
+        // where there is nothing to disagree with; the registry also remains
+        // the source for off-chain discovery (the SDK's `fetch_contract_id`).
+        if let Some(pinned) = Self::pinned_for(env, name) {
+            return pinned;
+        }
         let key = Self::cache_key(env, name);
-        let addr = if let Some(addr) = env.storage().instance().get::<_, Address>(&key) {
-            addr
-        } else {
-            let client = registry::RegistryClient::new(env, &Address::from_str(env, REGISTRY));
-            let addr = client.fetch_contract_id(&String::from_str(env, name));
-            env.storage().instance().set(&key, &addr);
-            addr
-        };
-        // Enforced on EVERY resolve (cache hit or miss), so pinning after a
-        // value was already cached still catches a subsequent registry
-        // disagreement -- and so a repointed registry is caught even for a
-        // name whose address was cached before the repoint.
-        Self::enforce_pin(env, name, &addr);
+        if let Some(addr) = env.storage().instance().get::<_, Address>(&key) {
+            return addr;
+        }
+        let client = registry::RegistryClient::new(env, &Address::from_str(env, REGISTRY));
+        let addr = client.fetch_contract_id(&String::from_str(env, name));
+        env.storage().instance().set(&key, &addr);
         addr
     }
 
-    /// The admin-pinned expected address for `name`, or `None` if that name is
-    /// unpinned. Only `"verifier"` and `"zk-recovery"` are pinnable (the only
-    /// two names `resolve` looks up); any other name is always unpinned.
+    /// The admin-pinned address for `name`, or `None` if that name is unpinned.
+    /// Only `"verifier"` and `"zk-recovery"` are pinnable (the only two names
+    /// `resolve` looks up); any other name is always unpinned. A `Some` result
+    /// short-circuits `resolve` before the registry is ever consulted.
     fn pinned_for(env: &Env, name: &str) -> Option<Address> {
         match name {
             "verifier" => Config::get_pinned_verifier(env),
             "zk-recovery" => Config::get_pinned_zk_recovery(env),
             _ => None,
-        }
-    }
-
-    /// Reverts `RegistryMismatch` if `name` is pinned and the registry-resolved
-    /// `addr` differs from the pin. A no-op when `name` is unpinned (the
-    /// default), so pre-B2 factories behave exactly as before.
-    fn enforce_pin(env: &Env, name: &str, addr: &Address) {
-        if let Some(pinned) = Self::pinned_for(env, name) {
-            if pinned != *addr {
-                panic_with_error!(env, Error::RegistryMismatch);
-            }
         }
     }
 
@@ -1400,12 +1390,30 @@ mod test {
     }
 
     // ---------------------------------------------------------------------
-    // B2: registry pinning. `resolve` had no address check -- a
-    // compromised/repointed registry could route new accounts to an
-    // attacker's verifier/controller. `set_registry_pins` lets the admin pin
-    // the expected addresses; `resolve` then reverts `RegistryMismatch` on any
-    // disagreement. Invariant F5 in docs/SECURITY_INVARIANTS.md.
+    // B2: registry pinning + pin bypass. `resolve` trusted the registry
+    // unconditionally -- a compromised/repointed registry could route new
+    // accounts to an attacker's verifier/controller (or, by returning a dead
+    // address, block account creation). `set_registry_pins` lets the admin pin
+    // the expected addresses; once pinned, `resolve` returns the pin DIRECTLY
+    // and never consults the registry, so a repoint can neither reroute nor
+    // block new accounts. Invariant F5 in docs/SECURITY_INVARIANTS.md.
     // ---------------------------------------------------------------------
+
+    /// A registry whose `fetch_contract_id` always panics. Registering it at
+    /// `REGISTRY` and then creating an account proves the pin bypass takes the
+    /// registry entirely off the resolution path: if `resolve` consulted it
+    /// for a pinned name the panic would abort the test.
+    #[contract]
+    struct PanicRegistry;
+
+    #[contractimpl]
+    impl PanicRegistry {
+        // `#[contractimpl]` entry point; SDK ABI requires owned `String`.
+        #[allow(clippy::needless_pass_by_value)]
+        pub fn fetch_contract_id(_env: &Env, _name: String) -> Address {
+            panic!("registry must not be consulted for a pinned name");
+        }
+    }
 
     /// A fresh factory is unpinned (both pins `None`): pre-B2 / testnet
     /// behavior, trusting whatever the registry returns.
@@ -1487,59 +1495,66 @@ mod test {
         );
     }
 
-    /// A repointed registry: the `verifier` pin no longer matches what the
-    /// registry returns, so `create_account` reverts `RegistryMismatch`
-    /// (`resolve("verifier")` is the first lookup on the deploy path).
+    /// Pin bypass, repoint case: with the correct addresses pinned, the factory
+    /// ignores a registry that has since been repointed to attacker/garbage
+    /// addresses. If `resolve` still consulted the registry, `"zk-recovery"`
+    /// would now resolve to a non-pool address and the genesis-insert cross-call
+    /// would trap; instead creation succeeds against the pins.
     #[test]
-    fn create_account_reverts_when_verifier_pin_disagrees() {
+    fn create_account_v2_uses_pins_when_registry_repointed() {
         let env = Env::default();
-        let (factory_addr, _pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
         let client = ContractClient::new(&env, &factory_addr);
 
+        // The correct addresses the registry resolves today (a real verifier
+        // stub + the real pool) -- captured before repointing.
+        let verifier = env.as_contract(&factory_addr, || Contract::resolve(&env, "verifier"));
         env.mock_all_auths();
-        // Pin verifier to an address the registry will NOT resolve to.
-        let bogus_verifier = Address::generate(&env);
-        let some_zk = Address::generate(&env);
-        client.set_registry_pins(&bogus_verifier, &some_zk);
+        client.set_registry_pins(&verifier, &pool_addr);
+
+        // Repoint the registry to bogus addresses for BOTH names.
+        let registry_addr = Address::from_str(&env, REGISTRY);
+        let bogus_v = Address::generate(&env);
+        let bogus_zk = Address::generate(&env);
+        env.register_at(&registry_addr, NamedRegistry, (bogus_v, bogus_zk));
 
         let salt = BytesN::from_array(&env, &[42; 32]);
         let key = BytesN::from_array(&env, &[6; 65]);
-        let res = client.try_create_account(&salt, &key);
-        // The `try_` outer error is `soroban_sdk::Error`; convert our typed
-        // variant to compare against exactly it.
-        let expected: soroban_sdk::Error = Error::RegistryMismatch.into();
+        let commitment = small_commitment(&env, 9);
+        let account = client.create_account_v2(&salt, &key, &commitment);
         assert_eq!(
-            res,
-            Err(Ok(expected)),
-            "create_account must revert RegistryMismatch when the verifier pin disagrees"
+            account,
+            client.get_c_address(&salt),
+            "a pinned name must resolve from the pin, bypassing the repointed registry"
         );
     }
 
-    /// The `zk-recovery` pin is enforced too: with the verifier pin matching
-    /// (so the deploy path gets past the verifier lookup) but the zk-recovery
-    /// pin disagreeing, `create_account_v2` reverts `RegistryMismatch` at the
-    /// recovery-controller resolution.
+    /// Pin bypass, dead-registry case: the strongest form. With both names
+    /// pinned, `resolve` never constructs the registry client, so a registry
+    /// that panics on any lookup is unreachable and `create_account` (the
+    /// legacy dummy-commitment path, which also resolves both names) still
+    /// succeeds -- proving the registry is fully off the critical path.
     #[test]
-    fn create_account_v2_reverts_when_zk_recovery_pin_disagrees() {
+    fn pinned_resolve_never_consults_registry() {
         let env = Env::default();
-        let (factory_addr, _pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
         let client = ContractClient::new(&env, &factory_addr);
 
-        // Verifier pin matches the registry; zk-recovery pin does not.
         let verifier = env.as_contract(&factory_addr, || Contract::resolve(&env, "verifier"));
         env.mock_all_auths();
-        let bogus_zk = Address::generate(&env);
-        client.set_registry_pins(&verifier, &bogus_zk);
+        client.set_registry_pins(&verifier, &pool_addr);
+
+        // Replace the registry with one that panics on ANY lookup.
+        let registry_addr = Address::from_str(&env, REGISTRY);
+        env.register_at(&registry_addr, PanicRegistry, ());
 
         let salt = BytesN::from_array(&env, &[43; 32]);
         let key = BytesN::from_array(&env, &[7; 65]);
-        let commitment = small_commitment(&env, 9);
-        let res = client.try_create_account_v2(&salt, &key, &commitment);
-        let expected: soroban_sdk::Error = Error::RegistryMismatch.into();
+        let account = client.create_account(&salt, &key);
         assert_eq!(
-            res,
-            Err(Ok(expected)),
-            "create_account_v2 must revert RegistryMismatch when the zk-recovery pin disagrees"
+            account,
+            client.get_c_address(&salt),
+            "pinned names must resolve without ever calling the (panicking) registry"
         );
     }
 }
