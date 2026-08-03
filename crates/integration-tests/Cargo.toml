@@ -40,3 +40,8 @@ nido-zk-recovery = { path = "../../contracts/zk-recovery" }
 # wasm-export collision; the account under test is still deployed from
 # `SMART_ACCOUNT_WASM` bytes, not this Rust type).
 nido-smart-account = { path = "../../contracts/smart-account" }
+# ML-DSA (post-quantum) verifier tests: `fips204` signs host-side (needs the
+# "default-rng" feature the workspace dep drops); the contract crate rlib
+# supplies `MlDsaSigData` + `SIG_CONTEXT` so the sig encoding can't drift.
+fips204 = { workspace = true, features = ["default-rng"] }
+nido-ml-dsa-verifier = { path = "../../contracts/ml-dsa-verifier" }

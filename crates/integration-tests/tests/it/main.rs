@@ -3,6 +3,7 @@ mod default_rule_threshold;
 mod drift;
 mod guard_cost;
 mod initiate_cost;
+mod ml_dsa_verifier;
 mod multisig_recovery;
 mod name_registry;
 mod name_registry_passkey_auth;

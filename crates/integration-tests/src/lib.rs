@@ -15,6 +15,9 @@ pub const SMART_ACCOUNT_WASM: &[u8] =
 pub const WEBAUTHN_VERIFIER_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_webauthn_verifier.wasm");
 
+pub const ML_DSA_VERIFIER_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/nido_ml_dsa_verifier.wasm");
+
 pub const MULTISIG_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_multisig_policy.wasm");
 

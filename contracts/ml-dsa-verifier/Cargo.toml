@@ -1,0 +1,20 @@
+[package]
+name = "nido-ml-dsa-verifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# "rlib" so crates/integration-tests can import `MlDsaSigData` + the
+# generated client directly (same pattern as nido-smart-account).
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellar-accounts = { workspace = true }
+fips204 = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
