@@ -320,6 +320,10 @@ import Logo from "../../../components/Logo.astro";
     signResult.classList.add("hidden");
     mnemonicBox.classList.add("hidden");
     render();
+    // Re-sync the enrollment / rotate / paranoid sections against the new key
+    // (mirrors the restore handler). Without this the "Enroll" button keeps its
+    // stale disabled state until a page reload.
+    void refreshEnrollment();
     toast("Backstop key generated. Encrypt it and save the recovery phrase (Step 1b).");
   });
 
@@ -464,7 +468,9 @@ import Logo from "../../../components/Logo.astro";
     current = null;
     signResult.classList.add("hidden");
     render();
-    renderEnrollment();
+    // Re-sync enrollment / rotate / paranoid too, so their buttons don't keep
+    // a stale enabled state now that the key is gone.
+    void refreshEnrollment();
     toast("Backstop key forgotten.");
   });
 
