@@ -398,12 +398,31 @@ describe('initiateZkRecovery', () => {
 
     const staged = readStaged(ACCOUNT);
     expect(staged).not.toBeNull();
+    // Only these three non-secret fields are staged — and none is even NAMED
+    // like a secret. This exact-shape check is the real invariant.
     expect(Object.keys(staged!).sort()).toEqual(['executableAfter', 'initiatedAt', 'newPubkey65Hex'].sort());
-    const serialized = JSON.stringify(staged);
-    // Never the raw secret's decimal/hex form, and no field even shaped like one.
-    expect(serialized).not.toContain(secret.toString());
-    expect(serialized).not.toContain(secret.toString(16));
     expect(Object.keys(staged!).some((k) => /secret|mnemonic|sig(nature)?$/i.test(k))).toBe(false);
+
+    // The numeric fields are a timestamp / ledger value — verify by type, not
+    // by scanning their digits. (A small test secret's decimal digits can
+    // coincidentally appear inside a unix-seconds timestamp — a false positive
+    // with nothing to do with a real leak.)
+    expect(typeof staged!.initiatedAt).toBe('number');
+    expect(staged!.initiatedAt).toBeGreaterThan(1e9); // a real unix-seconds timestamp, not the secret
+    expect(typeof staged!.executableAfter).toBe('number');
+    expect(staged!.executableAfter).not.toBe(Number(secret));
+
+    // The secret value must not appear inside any STRING-valued staged field
+    // (e.g. smuggled into the pubkey hex). String fields don't collide with a
+    // long random hex the way numeric timestamps do with short decimals.
+    const secretDec = secret.toString();
+    const secretHex = secret.toString(16);
+    for (const value of Object.values(staged!)) {
+      if (typeof value === 'string') {
+        expect(value).not.toContain(secretDec);
+        expect(value.toLowerCase()).not.toContain(secretHex.toLowerCase());
+      }
+    }
   });
 
   it('throws when the account has no enrollment leaf in the pool', async () => {
