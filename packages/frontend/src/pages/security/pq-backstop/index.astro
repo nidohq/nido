@@ -1,198 +1,237 @@
 ---
-// Post-quantum backstop key demo (epic #142). Generates an ML-DSA-65 keypair
-// in the browser via @noble/post-quantum, persists the 32-byte SEED in
-// localStorage (dev-only custody — see issue #145), and signs/verifies a
-// sample 32-byte digest in exactly the format the on-chain
-// nido-ml-dsa-verifier contract accepts (SHA-256 key commitment as key_data,
-// context "nido-mldsa-v1"). No chain interaction on this page: enrollment of
-// the key as an account signer is a follow-up on the epic.
+// Post-quantum backstop setup (epic #142). Reskinned to match the account-
+// creation flow (focused shell, Nest hero, feature rows, progressive reveal).
+// Generates an ML-DSA-65 keypair in the browser via @noble/post-quantum,
+// optionally encrypts the 32-byte seed at rest under a WebAuthn PRF secret
+// (custody, issue #145), enrolls it on-chain as a self-scoped signer, and
+// exposes the recovery drill + hybrid 2-of-2 mode behind an Advanced reveal.
+// Every element id below is referenced by the <script> — this is a restyle,
+// not a behavior change.
 import NidoLayout from "../../../layouts/NidoLayout.astro";
 import Toast from "../../../components/Toast.astro";
 import PasskeySheet from "../../../components/PasskeySheet.astro";
 import Logo from "../../../components/Logo.astro";
+import Nest from "../../../components/Nest.astro";
+import Icon from "../../../components/Icon.astro";
 ---
 
-<NidoLayout title="Post-quantum backstop (demo)">
-  <div class="col-scroll screen-in pad">
-    <div class="topbar">
-      <a href="/" class="topbar-mark"><Logo mark size={20} /></a>
-      <div class="header-links">
-        <a class="chip" href="/security/">Security</a>
-        <a class="chip" href="/">Home</a>
+<NidoLayout title="Nido — Post-quantum backstop" shell="focused">
+  <div class="col-scroll scroll-hide pad screen-in">
+    <!-- header: brand + testnet chip + 3-step progress -->
+    <div style="padding: 6px 4px 22px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+        <Logo size={19} mark markSize={24} />
+        <a class="chip" href="/security/" style="text-decoration:none;">
+          <Icon name="back" size={13} color="var(--mut)" /> Security
+        </a>
+      </div>
+      <div class="steps">
+        <i id="step-1"></i>
+        <i id="step-2"></i>
+        <i id="step-3"></i>
       </div>
     </div>
 
-    <header class="sm-head rise">
-      <h1 class="disp sm-title">A key for the quantum rainy day</h1>
-      <p class="sm-lead">
-        Passkeys are P-256 — a curve a large quantum computer could break.
-        This developer demo generates an <strong>ML-DSA-65</strong> (FIPS 204,
-        post-quantum) backstop key in your browser and signs the way the
-        on-chain <code>nido-ml-dsa-verifier</code> contract verifies.
+    <!-- ===================== HERO · CREATE THE KEY ===================== -->
+    <section>
+      <div style="display:grid; place-items:center; margin:10px 0 22px;">
+        <Nest size={104} />
+      </div>
+      <h1 class="disp" style="font-weight:800; font-size:28px; line-height:1.06; text-align:center;">
+        A backup key quantum can't forge
+      </h1>
+      <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:340px; margin-inline:auto;">
+        Your passkey keeps you safe today. This adds a post-quantum spare — a
+        key that stays unforgeable even if tomorrow's computers break the math
+        behind passkeys.
       </p>
-    </header>
 
-    <div role="alert" class="alert" id="custody-banner">
-      Encrypt the seed with your passkey (Step 1b) so it isn't readable at rest,
-      and save the recovery phrase — it's the only way back if this device or
-      passkey is lost. Custody options are tracked in
-      <a href="https://github.com/nidohq/nido/issues/145" class="link">issue #145</a>.
-    </div>
-
-    <div class="card-grid">
-      <div class="grid-cell">
-        <section class="card sm-card">
-          <div class="section-label">Step 1 · Key</div>
-          <h2 class="disp sm-h2">Generate a backstop key</h2>
-          <p id="key-status" class="sm-lead">No backstop key on this device yet.</p>
-          <div class="field">
-            <button id="generate-btn" class="btn soft">Generate ML-DSA-65 key</button>
+      <div style="display:flex; flex-direction:column; gap:14px; margin-top:26px;">
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="shieldcheck" size={19} color="var(--ink-soft)" />
           </div>
-          <div id="key-details" class="hidden">
-            <div class="field">
-              <label for="commitment-value">On-chain <code>key_data</code> (SHA-256 commitment, 32 bytes)</label>
-              <div class="sm-display">
-                <div class="value mono" id="commitment-value"></div>
-              </div>
-            </div>
-            <div class="field">
-              <label for="pubkey-value">Public key (1952 bytes, first 32 shown)</label>
-              <div class="sm-display">
-                <div class="value mono" id="pubkey-value"></div>
-              </div>
-            </div>
-            <div class="field">
-              <button id="copy-commitment-btn" class="btn soft">Copy commitment</button>
-              <button id="copy-pubkey-btn" class="btn soft">Copy full public key</button>
-            </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Quantum-proof</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">Built on ML-DSA (FIPS 204) — a signature a quantum computer can't fake.</div>
           </div>
-        </section>
+        </div>
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="lock" size={19} color="var(--ink-soft)" />
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Recovery, never spending</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">It can restore your access if a passkey is ever compromised, but can never move your funds.</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="fingerprint" size={19} color="var(--ink-soft)" />
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Sealed to this device</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">Encrypted with your passkey and backed up by a recovery phrase you keep.</div>
+          </div>
+        </div>
       </div>
 
-      <div class="grid-cell">
-        <section class="card sm-card">
-          <div class="section-label">Step 1b · Custody</div>
-          <h2 class="disp sm-h2">Protect the key</h2>
-          <p id="custody-status" class="sm-lead">Generate a key first.</p>
-          <div class="field">
-            <button id="protect-btn" class="btn soft hidden">Encrypt with passkey</button>
-            <button id="backup-btn" class="btn soft hidden">Show recovery phrase</button>
-            <button id="restore-btn" class="btn soft">Restore from phrase</button>
-          </div>
-          <div id="mnemonic-box" class="sm-display hidden">
-            <div class="label">Recovery phrase — write it down, never paste it online</div>
-            <div class="value mono" id="mnemonic-value" style="line-height:1.7;"></div>
-            <div class="field" style="margin-top:10px;">
-              <button id="mnemonic-hide-btn" class="btn soft">Hide</button>
-            </div>
-          </div>
-          <div id="restore-box" class="hidden">
-            <div class="field">
-              <label for="restore-input">Enter your 24-word recovery phrase</label>
-              <textarea id="restore-input" class="input mono" rows="3" placeholder="word1 word2 …"></textarea>
-            </div>
-            <div class="field">
-              <button id="restore-confirm-btn" class="btn soft">Restore</button>
-              <button id="restore-cancel-btn" class="btn soft">Cancel</button>
-            </div>
-          </div>
-        </section>
-      </div>
+      <button id="generate-btn" class="btn acc" style="margin-top:28px;">
+        <Icon name="sparkle" size={20} color="#fff" />
+        <span id="generate-label">Create the backup key</span>
+      </button>
+      <p id="key-status" class="mut" style="font-size:12.5px; text-align:center; margin-top:12px;">No backup key on this device yet.</p>
+    </section>
 
-      <div class="grid-cell">
-        <section class="card sm-card">
-          <div class="section-label">Step 2 · Sign</div>
-          <h2 class="disp sm-h2">Sign a sample digest</h2>
-          <p class="sm-lead">
-            Signs a random 32-byte digest (the shape of a Soroban auth payload)
-            with context <code>nido-mldsa-v1</code>, then verifies it locally —
-            the same check the contract runs on-chain.
-          </p>
-          <div class="field">
-            <button id="sign-btn" class="btn soft" disabled>Sign &amp; verify</button>
-          </div>
-          <div id="sign-result" class="sm-display hidden">
-            <div class="label">Result</div>
-            <div class="value" id="sign-result-text"></div>
-          </div>
-        </section>
-      </div>
-
-      <div class="grid-cell">
-        <section class="card sm-card">
-          <div class="section-label">Step 3 · Enroll</div>
-          <h2 class="disp sm-h2">Enroll on-chain</h2>
-          <p class="sm-lead">
-            Installs a <code>pq-backstop</code> context rule on your Nido —
-            scoped to the account itself, so this key can add or remove
-            signers (and cancel a hostile recovery) but can never spend. Your
-            passkey signs the enrollment.
-          </p>
-          <p id="enroll-status" class="sm-lead">Checking…</p>
-          <div class="field">
-            <button id="enroll-btn" class="btn soft" disabled>Enroll backstop key</button>
-          </div>
-        </section>
-      </div>
-
-      <div class="grid-cell">
-        <section class="card sm-card">
-          <div class="section-label">Step 4 · Rotate</div>
-          <h2 class="disp sm-h2">Recovery drill</h2>
-          <p class="sm-lead">
-            The quantum-emergency move, end to end: mint a <strong>new
-            passkey</strong> on this device, then let the <strong>backstop
-            key</strong> — not a passkey — authorize installing it as a fresh
-            signing rule. Afterwards you can retire the old passkey rule.
-          </p>
-          <p id="rotate-status" class="sm-lead">Checking…</p>
-          <div class="field">
-            <button id="rotate-btn" class="btn soft" disabled>Mint passkey &amp; rotate via ML-DSA</button>
-            <button id="retire-btn" class="btn soft hidden">Retire old passkey rule (#0)</button>
-          </div>
-        </section>
-      </div>
-
-      <div class="grid-cell">
-        <section class="card sm-card">
-          <div class="section-label">Step 5 · Paranoid</div>
-          <h2 class="disp sm-h2">Hybrid 2-of-2 mode</h2>
-          <p class="sm-lead">
-            The strongest setting: every transaction must be signed by your
-            passkey <strong>and</strong> the ML-DSA key together — spending
-            stays unforgeable even if P-256 is ever broken. Two stages:
-            <em>arm</em> installs the hybrid rule; <em>enforce</em> retires
-            the passkey-only rules so the hybrid one is the only way in.
-          </p>
-          <p id="paranoid-status" class="sm-lead">Checking…</p>
-          <div class="field">
-            <button id="arm-btn" class="btn soft" disabled>Arm</button>
-            <button id="enforce-btn" class="btn soft hidden">Enforce</button>
-            <button id="standdown-btn" class="btn soft hidden">Stand down</button>
-          </div>
-        </section>
-      </div>
-
-      <div class="grid-cell">
-        <section class="card sm-card">
-          <div class="section-label">Danger zone</div>
-          <h2 class="disp sm-h2">Forget this key</h2>
-          <p class="sm-lead">
-            Removes the seed from this browser. A real backstop enrolled
-            on-chain would be unrecoverable without a backup.
-          </p>
-          <div class="field">
-            <button id="forget-btn" class="btn soft" disabled>Forget key</button>
-          </div>
-        </section>
+    <!-- key fingerprint, revealed once a key exists -->
+    <div id="key-details" class="card hidden" style="padding:16px; margin-top:16px;">
+      <div class="section-label" style="margin-bottom:12px;">Your key</div>
+      <label for="commitment-value" style="display:block; font-size:12.5px; font-weight:700; color:var(--ink-soft); margin-bottom:6px;">On-chain <code>key_data</code> · SHA-256 commitment</label>
+      <div id="commitment-value" class="addr addr-full mono" style="margin-bottom:14px;"></div>
+      <label for="pubkey-value" style="display:block; font-size:12.5px; font-weight:700; color:var(--ink-soft); margin-bottom:6px;">Public key · 1952 bytes (first 32 shown)</label>
+      <div id="pubkey-value" class="addr addr-full mono" style="margin-bottom:14px;"></div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="copy-commitment-btn" class="btn soft" style="flex:1; min-width:140px;">
+          <Icon name="copy" size={17} color="var(--ink)" /> <span>Commitment</span>
+        </button>
+        <button id="copy-pubkey-btn" class="btn soft" style="flex:1; min-width:140px;">
+          <Icon name="copy" size={17} color="var(--ink)" /> <span>Public key</span>
+        </button>
       </div>
     </div>
 
-    <p class="sm-lead">
-      On-chain mapping: the account stores
-      <code>Signer::External(ml_dsa_verifier, sha256(public_key))</code>; each
-      signature travels with the full public key in <code>sig_data</code>, and
-      the verifier recomputes the commitment before verifying. Details on the
+    <!-- ===================== KEEP IT SAFE · custody ===================== -->
+    <div class="card" style="padding:18px; margin-top:16px;">
+      <div style="display:flex; gap:11px; align-items:center; margin-bottom:6px;">
+        <div style="width:34px; height:34px; border-radius:10px; background:var(--good-soft); display:grid; place-items:center; flex:0 0 auto;">
+          <Icon name="shield" size={18} color="var(--good-ink)" />
+        </div>
+        <div style="font-weight:800; font-size:16px;" class="disp">Keep it safe</div>
+      </div>
+      <p id="custody-status" class="mut" style="font-size:13px; line-height:1.5; margin:0 0 14px;">Generate a key first.</p>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <button id="protect-btn" class="btn acc hidden">
+          <Icon name="faceid" size={19} color="#fff" /> <span>Encrypt with passkey</span>
+        </button>
+        <button id="backup-btn" class="btn soft hidden">
+          <Icon name="key" size={18} color="var(--ink)" /> <span>Show recovery phrase</span>
+        </button>
+        <button id="restore-btn" class="link" style="align-self:center; font-size:13.5px; background:none; border:none; cursor:pointer;">
+          Restore from a recovery phrase
+        </button>
+      </div>
+      <div id="mnemonic-box" class="hidden" style="margin-top:14px; padding:14px; border-radius:var(--r-md); background:var(--warn-soft, #FBF0DA); border:1px solid var(--line);">
+        <div style="font-size:12.5px; font-weight:700; color:var(--ink-soft); margin-bottom:8px;">Recovery phrase — write it down, never paste it online</div>
+        <div id="mnemonic-value" class="mono" style="line-height:1.8; font-size:13.5px; word-spacing:2px;"></div>
+        <button id="mnemonic-hide-btn" class="btn soft" style="margin-top:12px;">Hide</button>
+      </div>
+      <div id="restore-box" class="hidden" style="margin-top:14px;">
+        <label for="restore-input" style="display:block; font-size:12.5px; font-weight:700; color:var(--ink-soft); margin-bottom:7px;">Enter your 24-word recovery phrase</label>
+        <textarea id="restore-input" class="input mono" rows="3" placeholder="word1 word2 …" style="width:100%;"></textarea>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button id="restore-confirm-btn" class="btn acc" style="flex:1;">Restore</button>
+          <button id="restore-cancel-btn" class="btn soft" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== TURN IT ON · enroll ===================== -->
+    <div class="card" style="padding:18px; margin-top:16px;">
+      <div style="display:flex; gap:11px; align-items:center; margin-bottom:6px;">
+        <div style="width:34px; height:34px; border-radius:10px; background:var(--acc-soft); display:grid; place-items:center; flex:0 0 auto;">
+          <Icon name="bolt" size={18} color="var(--acc)" />
+        </div>
+        <div style="font-weight:800; font-size:16px;" class="disp">Turn it on for this account</div>
+      </div>
+      <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 6px;">
+        Installs the backup key as a self-scoped signer on your Nido — able to
+        rotate signers and cancel a hostile recovery, never to spend. Your
+        passkey signs it.
+      </p>
+      <p id="enroll-status" class="mut" style="font-size:12.5px; margin:0 0 14px;">Checking…</p>
+      <button id="enroll-btn" class="btn acc" disabled>
+        <Icon name="shieldcheck" size={19} color="#fff" /> <span>Turn on backup key</span>
+      </button>
+    </div>
+
+    <!-- ===================== ADVANCED (experimental) ===================== -->
+    <button id="advanced-toggle" type="button" class="link" style="display:flex; align-items:center; gap:6px; margin:22px auto 0; background:none; border:none; cursor:pointer; font-size:13.5px;">
+      <Icon name="settings" size={16} color="var(--acc)" />
+      <span id="advanced-toggle-label">Advanced tools</span>
+      <Icon name="chevron" size={15} color="var(--acc)" />
+    </button>
+
+    <div id="advanced-section" class="hidden" style="margin-top:16px; display:flex; flex-direction:column; gap:16px;">
+      <!-- sign self-test -->
+      <div class="card" style="padding:18px;">
+        <div class="section-label" style="margin-bottom:6px;">Self-test</div>
+        <div class="disp" style="font-weight:800; font-size:16px; margin-bottom:6px;">Sign a sample digest</div>
+        <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 14px;">
+          Signs a random 32-byte digest with context <code>nido-mldsa-v1</code>
+          and verifies it locally — the exact check the on-chain verifier runs.
+        </p>
+        <button id="sign-btn" class="btn soft" disabled>Sign &amp; verify</button>
+        <div id="sign-result" class="hidden" style="margin-top:12px; padding:12px; border-radius:var(--r-md); background:var(--good-soft);">
+          <div id="sign-result-text" style="font-size:13px; line-height:1.5; color:var(--good-ink);"></div>
+        </div>
+      </div>
+
+      <!-- recovery drill -->
+      <div class="card" style="padding:18px;">
+        <div class="section-label" style="margin-bottom:6px;">Recovery drill</div>
+        <div class="disp" style="font-weight:800; font-size:16px; margin-bottom:6px;">Replace a lost passkey</div>
+        <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 14px;">
+          The quantum-emergency move end to end: mint a new passkey, then let
+          the backup key — not a passkey — authorize installing it. Afterwards
+          you can retire the old passkey rule.
+        </p>
+        <p id="rotate-status" class="mut" style="font-size:12.5px; margin:0 0 14px;">Checking…</p>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <button id="rotate-btn" class="btn soft" disabled>Mint passkey &amp; rotate via backup key</button>
+          <button id="retire-btn" class="btn soft hidden">Retire old passkey rule (#0)</button>
+        </div>
+      </div>
+
+      <!-- paranoid 2-of-2 -->
+      <div class="card" style="padding:18px; border:1px solid var(--acc-soft);">
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+          <span class="chip warn" style="font-size:10.5px;">Experimental</span>
+          <span class="section-label">Paranoid mode</span>
+        </div>
+        <div class="disp" style="font-weight:800; font-size:16px; margin-bottom:6px;">Require both keys to spend</div>
+        <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 10px;">
+          The strongest setting: every transaction needs your passkey
+          <strong>and</strong> the backup key together, so spending stays
+          unforgeable even if passkeys are broken. <em>Arm</em> installs the
+          rule; <em>enforce</em> makes it the only way in.
+        </p>
+        <p class="mut" style="font-size:12px; line-height:1.45; margin:0 0 14px;">
+          Trade-off: the software backup key co-signs every payment, so it's in
+          play far more often than a recovery-only setup.
+        </p>
+        <p id="paranoid-status" class="mut" style="font-size:12.5px; margin:0 0 14px;">Checking…</p>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <button id="arm-btn" class="btn soft" disabled>Arm</button>
+          <button id="enforce-btn" class="btn soft hidden">Enforce</button>
+          <button id="standdown-btn" class="btn soft hidden">Stand down</button>
+        </div>
+      </div>
+
+      <!-- danger zone -->
+      <div class="card" style="padding:18px;">
+        <div class="section-label" style="margin-bottom:6px; color:var(--danger, #c0392b);">Danger zone</div>
+        <div class="disp" style="font-weight:800; font-size:16px; margin-bottom:6px;">Forget this key</div>
+        <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 14px;">
+          Removes the seed from this browser. If it's enrolled on-chain and you
+          have no recovery phrase, it's gone for good.
+        </p>
+        <button id="forget-btn" class="btn soft" disabled style="color:var(--danger, #c0392b);">Forget key</button>
+      </div>
+    </div>
+
+    <p class="mut" style="font-size:11.5px; line-height:1.5; text-align:center; margin:24px auto 0; max-width:360px;">
+      On-chain, your account stores <code>Signer::External(verifier, sha256(pk))</code>;
+      each signature carries the full public key. More on the
       <a href="https://github.com/nidohq/nido/issues/142" class="link">post-quantum epic</a>.
     </p>
   </div>
@@ -266,29 +305,49 @@ import Logo from "../../../components/Logo.astro";
   const restoreInput = document.getElementById("restore-input") as HTMLTextAreaElement;
   const restoreConfirmBtn = document.getElementById("restore-confirm-btn") as HTMLButtonElement;
   const restoreCancelBtn = document.getElementById("restore-cancel-btn") as HTMLButtonElement;
+  const generateLabel = document.getElementById("generate-label")!;
+  const advancedToggle = document.getElementById("advanced-toggle") as HTMLButtonElement;
+  const advancedToggleLabel = document.getElementById("advanced-toggle-label")!;
+  const advancedSection = document.getElementById("advanced-section")!;
+  const step1 = document.getElementById("step-1")!;
+  const step2 = document.getElementById("step-2")!;
+  const step3 = document.getElementById("step-3")!;
 
   let current: BackstopKey | null = loadBackstopKey(localStorage);
   let account: string | null = null;
   let enrollment: BackstopEnrollment | null = null;
 
+  /** Light the 3 progress dots: create → protect → enable. */
+  function updateSteps() {
+    const created = Boolean(current);
+    const protectedAtRest = current?.protection === "passkey";
+    const enrolled = Boolean(
+      enrollment && current && bytesToHex(enrollment.commitment) === bytesToHex(current.commitment),
+    );
+    step1.className = created ? "done" : "on";
+    step2.className = protectedAtRest ? "done" : created ? "on" : "";
+    step3.className = enrolled ? "done" : protectedAtRest ? "on" : "";
+  }
+
   function render() {
     if (current) {
       const when = current.createdAt ? new Date(current.createdAt).toLocaleString() : "unknown";
-      keyStatus.textContent = `Backstop key present on this device (created ${when}).`;
+      keyStatus.textContent = `Backup key on this device · created ${when}.`;
       commitmentValue.textContent = bytesToHex(current.commitment);
       pubkeyValue.textContent = `${bytesToHex(current.publicKey.slice(0, 32))}…`;
       keyDetails.classList.remove("hidden");
-      generateBtn.textContent = "Rotate (replace) key";
+      generateLabel.textContent = "Replace the backup key";
       signBtn.disabled = false;
       forgetBtn.disabled = false;
     } else {
-      keyStatus.textContent = "No backstop key on this device yet.";
+      keyStatus.textContent = "No backup key on this device yet.";
       keyDetails.classList.add("hidden");
-      generateBtn.textContent = "Generate ML-DSA-65 key";
+      generateLabel.textContent = "Create the backup key";
       signBtn.disabled = true;
       forgetBtn.disabled = true;
     }
     renderCustody();
+    updateSteps();
   }
 
   function renderCustody() {
@@ -502,6 +561,7 @@ import Logo from "../../../components/Logo.astro";
   async function refreshEnrollment() {
     if (!account) {
       renderEnrollment();
+      updateSteps();
       await renderRotate();
       return;
     }
@@ -513,9 +573,15 @@ import Logo from "../../../components/Logo.astro";
       return;
     }
     renderEnrollment();
+    updateSteps();
     await renderRotate();
     await renderParanoid();
   }
+
+  advancedToggle.addEventListener("click", () => {
+    const open = advancedSection.classList.toggle("hidden") === false;
+    advancedToggleLabel.textContent = open ? "Hide advanced tools" : "Advanced tools";
+  });
 
   enrollBtn.addEventListener("click", () => {
     void (async () => {
