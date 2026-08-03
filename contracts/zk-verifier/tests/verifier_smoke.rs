@@ -64,6 +64,38 @@ fn admin_is_stored_and_rotatable() {
 }
 
 #[test]
+// Error #2 is `Error::ProofParseError` in `contracts/zk-verifier/src/lib.rs`.
+// A truncated proof used to panic inside the vendored parser's length
+// `assert_eq!` (a host trap); the boundary length pre-check now rejects it with
+// a structured `ProofParseError` BEFORE the vendored code runs. `try_verify_proof`
+// returns the typed error rather than trapping, proving the failure is clean.
+fn verify_with_truncated_proof_returns_parse_error() {
+    let vk_bytes_raw: &[u8] = include_bytes!("fixtures/vk");
+    let proof_bin: &[u8] = include_bytes!("fixtures/proof");
+    let pub_inputs_bin: &[u8] = include_bytes!("fixtures/public_inputs");
+
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    let vk_bytes = Bytes::from_slice(&env, vk_bytes_raw);
+    // Drop the last 32-byte field: a valid-prefix but too-short proof.
+    let truncated = &proof_bin[..proof_bin.len() - 32];
+    let proof_bytes: Bytes = Bytes::from_slice(&env, truncated);
+    let public_inputs: Bytes = Bytes::from_slice(&env, pub_inputs_bin);
+
+    let client = register_client(&env, &vk_bytes);
+    let res = client.try_verify_proof(&public_inputs, &proof_bytes);
+    // The WASM client's `try_` maps a returned contract error into its own
+    // generated `Error` enum; a bad-length proof must surface as the typed
+    // `ProofParseError` (not a trap), proving the failure is clean.
+    assert_eq!(
+        res,
+        Err(Ok(zk_verifier_contract::Error::ProofParseError)),
+        "a truncated proof must return ProofParseError, not trap"
+    );
+}
+
+#[test]
 // Error #3 is `Error::VerificationFailed` in `contracts/zk-verifier/src/lib.rs`.
 #[should_panic(expected = "Error(Contract, #3)")]
 fn verify_with_tampered_public_inputs_fails() {

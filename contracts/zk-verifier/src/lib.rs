@@ -94,8 +94,11 @@ impl UltraHonkVerifierContract {
     /// # Errors
     ///
     /// Returns `Error::VkNotSet` if no VK has been stored, `Error::VkParseError`
-    /// if the stored VK bytes fail to parse, or `Error::VerificationFailed` if
-    /// the proof does not verify against `public_inputs`.
+    /// if the stored VK bytes fail to parse, `Error::ProofParseError` if
+    /// `proof_bytes` is not the exact length the stored VK's circuit size
+    /// requires (e.g. a truncated or over-long proof), or
+    /// `Error::VerificationFailed` if a well-formed proof does not verify
+    /// against `public_inputs`.
     #[allow(clippy::needless_pass_by_value)]
     pub fn verify_proof(env: Env, public_inputs: Bytes, proof_bytes: Bytes) -> Result<(), Error> {
         let vk_bytes: Bytes = env
@@ -105,6 +108,22 @@ impl UltraHonkVerifierContract {
             .ok_or(Error::VkNotSet)?;
         // Deserialize verification key bytes
         let verifier = UltraHonkVerifier::new(&env, &vk_bytes).map_err(|_| Error::VkParseError)?;
+
+        // Fail closed with a STRUCTURED error on a malformed/truncated proof.
+        // The vendored parser (`utils::load_proof`) asserts the proof is exactly
+        // `expected_proof_fields(log_n) * 32` bytes and PANICS otherwise -> a
+        // host trap, which is opaque to callers and relies on trap-as-revert
+        // semantics. Pre-check the length here (a pure function of the stored,
+        // immutable VK's circuit size) and return `ProofParseError` instead, so
+        // a bad-length proof is rejected atomically and legibly before the
+        // vendored code can trap. Well-formed-but-invalid proofs still flow
+        // through and surface as `VerificationFailed` below.
+        let log_n =
+            usize::try_from(verifier.get_vk().log_circuit_size).map_err(|_| Error::VkParseError)?;
+        let expected_len = ultrahonk_soroban_verifier::utils::expected_proof_fields(log_n) * 32;
+        if proof_bytes.len() as usize != expected_len {
+            return Err(Error::ProofParseError);
+        }
 
         // Verify
         verifier

@@ -82,7 +82,10 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 - [ ] `expirationOffset`/`relayerEnabled` centralized with a parity test.
 - [ ] localStorage credential material encrypted + expiring.
 - [ ] Relayer per-client fee fairness; metrics + alerts; incident-response playbook.
-- [ ] Vendored verifier returns structured errors on malformed/truncated proofs.
+- [x] Structured error on malformed/truncated proofs — the zk-verifier boundary
+  (`verify_proof`) length-pre-checks against the VK and returns `ProofParseError` instead of
+  letting the vendored parser's `assert_eq!` trap (invariant V3; no vendored edit, no
+  drift-guard churn). Curve-point validity delegated to the host BN254 ops.
 - [ ] Storage TTL/archival empirically validated across the 44-day active window (invariant T1).
 - [ ] `status-message` demo typo fixed + redeployed, or explicitly excluded from mainnet.
 
