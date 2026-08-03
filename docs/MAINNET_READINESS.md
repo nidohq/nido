@@ -77,7 +77,12 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 
 ## E. Security hardening
 
-- [ ] Strict CSP + security headers (frame/content-type/referrer) live at Pages + worker proxy.
+- [~] Security headers (frame/content-type/referrer) ENFORCED at both the worker proxy
+  (`frontend/worker-proxy-nido/index.js`) and the static Pages origin
+  (`packages/frontend/public/_headers`). CSP ships Report-Only with a tightened allowlist
+  (explicit connect-src hosts + Google Fonts), identical in both places. Remaining: verify a
+  clean report stream in prod, then promote Report-Only → enforced (drop `-Report-Only`) in
+  both files, and separately try dropping `style-src 'unsafe-inline'`.
 - [ ] Legacy query-param sign path validates callback/return origin (no signature exfiltration).
 - [ ] `expirationOffset`/`relayerEnabled` centralized with a parity test.
 - [ ] localStorage credential material encrypted + expiring.
