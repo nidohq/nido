@@ -65,23 +65,28 @@ export default {
     // the app relies on it (cross-origin calls are unauthenticated and addressed by URL).
     response.headers.set("Referrer-Policy", "no-referrer");
 
-    // CSP shipped in *Report-Only* first: an enforced strict policy must be
-    // browser-verified against everything the app actually loads (Stellar
-    // RPC/Horizon, Friendbot, fonts, the WebAuthn ceremony) or it will break
-    // onboarding/signing. Report-Only never blocks -- it surfaces what a future
-    // enforced policy would reject. Promote to `Content-Security-Policy` (drop
-    // `-Report-Only`) once the console/report stream is clean.
-    // TODO(audit E): tighten (esp. connect-src to explicit RPC hosts, remove
-    // style 'unsafe-inline' if Astro allows) + enforce. See docs/MAINNET_READINESS.md.
+    // CSP still shipped in *Report-Only* (never blocks) so the enforced flip can
+    // be browser-verified first -- but the policy is now TIGHT, not `connect-src
+    // https:`. The allowlist below is every host the app actually reaches:
+    //   - *.nido.fyi          — sibling account/app subdomains (name resolution, cross-app)
+    //   - nido.fly.dev        — OZ relayer (Channels)
+    //   - soroban/horizon/friendbot.stellar.org — Stellar RPC / Horizon / testnet funding
+    //   - api.refractor.space, api.soroswap.finance — tx-coordination + token/price API
+    //   - fonts.googleapis.com (stylesheet) + fonts.gstatic.com (font files) — NidoLayout.astro
+    // Keep it identical to packages/frontend/public/_headers (the static-origin
+    // copy). style-src still carries 'unsafe-inline' (Astro/Tailwind inline styles);
+    // dropping it needs its own verification pass.
+    // TODO(audit E): after a clean report stream in prod, promote to
+    // `Content-Security-Policy` (drop `-Report-Only`). See docs/MAINNET_READINESS.md.
     response.headers.set(
       "Content-Security-Policy-Report-Only",
       [
         "default-src 'self'",
         "script-src 'self'",
-        "style-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "img-src 'self' data:",
-        "font-src 'self' data:",
-        "connect-src 'self' https:",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        "connect-src 'self' https://*.nido.fyi https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org https://api.refractor.space https://api.soroswap.finance",
         "object-src 'none'",
         "base-uri 'self'",
         "frame-ancestors 'none'",
