@@ -213,6 +213,13 @@ dev: build-ts
 publish-policy-builder-v1 alias network="testnet":
     ./scripts/deploy-policy-builder-v1.sh {{alias}} {{network}}
 
+# Deploy a Nido-owned stellar-registry instance and register factory/verifier/
+# zk-recovery into it (plan A3). Fetches the reference registry wasm, redeploys
+# it under our owner, records the wasm hash. Rehearse on testnet before mainnet;
+# set FACTORY/VERIFIER/ZK_RECOVERY (+ OWNER/ctor args). See scripts/deploy-registry.sh.
+publish-registry alias network="testnet":
+    ./scripts/deploy-registry.sh {{alias}} {{network}}
+
 # Regenerate one binding from a fresh .wasm and apply post-gen fixes.
 # Usage: just bindings smart-account
 # Run after `just build-contracts`. See scripts/fix-bindings.sh for what
