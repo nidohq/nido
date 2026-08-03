@@ -80,6 +80,20 @@ import Nest from '../../components/Nest.astro';
               <div class="skeleton" style="height:20px;width:70%;"></div>
             </div>
           </section>
+
+          <!-- Post-quantum backstop (developer preview): generate + enroll an
+               ML-DSA key that can rotate signers if passkeys are ever broken.
+               Static link — all state lives on the pq-backstop page itself. -->
+          <section style="margin-top:24px;">
+            <span class="section-label" style="display:block;margin:0 0 10px;">Quantum backstop</span>
+            <div class="card" style="padding:18px;">
+              <p class="mut" style="font-size:13px;margin:0 0 14px;line-height:1.55;">
+                A post-quantum spare key (ML-DSA) that can replace your passkey
+                in an emergency — but can never spend.
+              </p>
+              <a href="/security/pq-backstop/" class="link" style="font-size:13.5px;">Set up the backstop key &rarr;</a>
+            </div>
+          </section>
         </div>
 
         <!-- ============ Apps you've let in (delegation) ============ -->

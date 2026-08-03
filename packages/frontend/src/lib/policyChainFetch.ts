@@ -261,16 +261,48 @@ export async function findRuleForPubkey(
   return resolved ? resolved.ruleId : null;
 }
 
+/** Decode an External signer's key_data — scValToNative hands the bytes back
+ *  as Uint8Array, number[], or an object with numeric keys depending on the
+ *  account's on-chain shape vintage. Returns lowercase hex, or null. */
+function externalKeyDataHex(raw: unknown): string | null {
+  if (raw instanceof Uint8Array) {
+    return Array.from(raw, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  if (Array.isArray(raw)) {
+    return (raw as number[]).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    const obj = raw as Record<string, number>;
+    const ordered: number[] = [];
+    for (let j = 0; obj[j as unknown as string] !== undefined; j++) {
+      ordered.push(obj[j as unknown as string]);
+    }
+    if (ordered.length > 0) {
+      return ordered.map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+  }
+  return null;
+}
+
 /** The rule a passkey signs under, plus the verifier that rule's External
  *  signer is registered against. Returns both from ONE gap-tolerant scan so a
  *  caller needs neither a separate `get_context_rule(0)` (fetchVerifierAddress)
  *  nor a second scan — and the verifier comes from the RESOLVED rule, not an
  *  assumed rule 0 (which diverges for a recovered account whose new passkey
- *  lives in a later rule). `null` when the pubkey is on no rule. */
+ *  lives in a later rule). `null` when the pubkey is on no rule.
+ *
+ *  `coSigners` lists the rule's OTHER External signers: for a policy-less
+ *  multi-signer rule (strict AND — e.g. the hybrid passkey+ML-DSA "paranoid"
+ *  rule) every one of them must also sign, so callers must either satisfy
+ *  them or fail loudly before the ceremony. */
 export async function resolveSignerRule(
   account: string,
   pubkeyHex: string,
-): Promise<{ ruleId: number; verifier: string } | null> {
+): Promise<{
+  ruleId: number;
+  verifier: string;
+  coSigners: Array<{ verifier: string; keyDataHex: string }>;
+} | null> {
   const server = new rpc.Server(RPC_URL);
   const countRv = await simulateView(server, new Contract(account), 'get_context_rules_count');
   const count = scValToNative(countRv) as number;
@@ -292,34 +324,28 @@ export async function resolveSignerRule(
     }
     found++;
     const native = scValToNative(ruleRv) as { id?: number; signers?: unknown[] };
+    // Decode every External signer first so a match can also report the
+    // rule's remaining co-signers (hybrid/paranoid rules are strict AND).
+    const externals: Array<{ verifier: string; keyDataHex: string }> = [];
     for (const s of native.signers ?? []) {
-      // ["External", verifier, pubkey_bytes_as_array_or_buffer]
+      // ["External", verifier, key_data_bytes]
       if (Array.isArray(s) && s[0] === 'External') {
-        const raw = s[2];
-        let candidateHex: string | null = null;
-        if (raw instanceof Uint8Array) {
-          candidateHex = Array.from(raw, (b) => b.toString(16).padStart(2, '0')).join('');
-        } else if (Array.isArray(raw)) {
-          candidateHex = (raw as number[])
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join('');
-        } else if (typeof raw === 'object' && raw !== null) {
-          // scValToNative sometimes hands back the buffer as an object with
-          // numeric keys; rebuild as bytes.
-          const obj = raw as Record<string, number>;
-          const ordered: number[] = [];
-          for (let j = 0; obj[j as unknown as string] !== undefined; j++) {
-            ordered.push(obj[j as unknown as string]);
-          }
-          if (ordered.length > 0) {
-            candidateHex = ordered.map((b) => b.toString(16).padStart(2, '0')).join('');
-          }
-        }
-        if (candidateHex && candidateHex === lowerHex) {
-          const verifier = typeof s[1] === 'string' ? s[1] : String(s[1]);
-          return { ruleId: native.id ?? id, verifier };
+        const keyDataHex = externalKeyDataHex(s[2]);
+        if (keyDataHex) {
+          externals.push({
+            verifier: typeof s[1] === 'string' ? s[1] : String(s[1]),
+            keyDataHex,
+          });
         }
       }
+    }
+    const match = externals.find((e) => e.keyDataHex === lowerHex);
+    if (match) {
+      return {
+        ruleId: native.id ?? id,
+        verifier: match.verifier,
+        coSigners: externals.filter((e) => e !== match),
+      };
     }
   }
   // A truncated scan must be LOUD: returning a silently short list re-creates

@@ -56,6 +56,12 @@ export const REGISTRY_FALLBACKS: Record<string, string> = {
   // to this registry lookup; this entry covers the case where that lookup also
   // can't reach the registry.
   verifier: "CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY",
+  // Post-quantum ML-DSA-65 verifier (contracts/ml-dsa-verifier), deployed
+  // 2026-07-28 from the feat/ml-dsa-verifier wasm. The `mldsa-verifier`
+  // registry name is not yet registered on-chain, so until that one-time
+  // `register_contract` runs this fallback is the primary resolution path,
+  // not just outage cover.
+  "mldsa-verifier": "CB6JLLB3B52C6WJ5BH3JUVLAXWWV7KIPE6JW5N3BBNWCF5XB4E7F74UK",
 };
 
 export interface FetchRegistryAddressOptions {

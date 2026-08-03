@@ -37,6 +37,7 @@ const routes = [
   ["dist/security/index.html", "security.html", "/security/"],
   ["dist/security/delegate/index.html", "security-delegate.html", "/security/delegate/"],
   ["dist/security/recover/index.html", "security-recover.html", "/security/recover/"],
+  ["dist/security/pq-backstop/index.html", "security-pq-backstop.html", "/security/pq-backstop/"],
   ["dist/sign/index.html", "sign.html", "/sign/"],
   ["dist/status-message/index.html", "status-message.html", "/status-message/"],
 ];
@@ -50,6 +51,17 @@ const linkMap = new Map(routes.map(([, file, route]) => [route, file]));
 // static markup as-is.)
 const reveal = {
   "account.html": ["home-mode"],
+  // The page is a one-step-at-a-time wizard; reveal every step panel (+ the
+  // key detail and advanced tools) so the static snapshot shows all screens
+  // stacked. At runtime only one panel is visible.
+  "security-pq-backstop.html": [
+    "wiz-create",
+    "wiz-protect",
+    "wiz-enable",
+    "wiz-done",
+    "key-details",
+    "advanced-section",
+  ],
 };
 
 function exportPage(srcRel, outFile) {

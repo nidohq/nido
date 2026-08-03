@@ -1,0 +1,948 @@
+---
+// Post-quantum backstop setup (epic #142). Reskinned to match the account-
+// creation flow (focused shell, Nest hero, feature rows, progressive reveal).
+// Generates an ML-DSA-65 keypair in the browser via @noble/post-quantum,
+// optionally encrypts the 32-byte seed at rest under a WebAuthn PRF secret
+// (custody, issue #145), enrolls it on-chain as a self-scoped signer, and
+// exposes the recovery drill + hybrid 2-of-2 mode behind an Advanced reveal.
+// Every element id below is referenced by the <script> — this is a restyle,
+// not a behavior change.
+import NidoLayout from "../../../layouts/NidoLayout.astro";
+import Toast from "../../../components/Toast.astro";
+import PasskeySheet from "../../../components/PasskeySheet.astro";
+import Logo from "../../../components/Logo.astro";
+import Nest from "../../../components/Nest.astro";
+import Icon from "../../../components/Icon.astro";
+---
+
+<NidoLayout title="Nido — Post-quantum backstop" shell="focused">
+  <div class="col-scroll scroll-hide pad screen-in">
+    <!-- header: brand + testnet chip + 3-step progress -->
+    <div style="padding: 6px 4px 22px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+        <Logo size={19} mark markSize={24} />
+        <a class="chip" href="/security/" style="text-decoration:none;">
+          <Icon name="back" size={13} color="var(--mut)" /> Security
+        </a>
+      </div>
+      <div class="steps">
+        <i id="step-1"></i>
+        <i id="step-2"></i>
+        <i id="step-3"></i>
+      </div>
+    </div>
+
+    <!-- ===================== STEP 1 · CREATE ===================== -->
+    <section id="wiz-create">
+      <div style="display:grid; place-items:center; margin:10px 0 22px;">
+        <Nest size={104} />
+      </div>
+      <h1 class="disp" style="font-weight:800; font-size:28px; line-height:1.06; text-align:center;">
+        A backup key quantum can't forge
+      </h1>
+      <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:340px; margin-inline:auto;">
+        Your passkey keeps you safe today. This adds a post-quantum spare — a
+        key that stays unforgeable even if tomorrow's computers break the math
+        behind passkeys.
+      </p>
+
+      <div style="display:flex; flex-direction:column; gap:14px; margin-top:26px;">
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="shieldcheck" size={19} color="var(--ink-soft)" />
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Quantum-proof</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">Built on ML-DSA (FIPS 204) — a signature a quantum computer can't fake.</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="lock" size={19} color="var(--ink-soft)" />
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Recovery, never spending</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">It can restore your access if a passkey is ever compromised, but can never move your funds.</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:13px; align-items:flex-start;">
+          <div style="width:38px; height:38px; border-radius:11px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
+            <Icon name="fingerprint" size={19} color="var(--ink-soft)" />
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:14.5px;">Sealed to this device</div>
+            <div class="mut" style="font-size:13px; line-height:1.45;">Encrypted with your passkey and backed up by a recovery phrase you keep.</div>
+          </div>
+        </div>
+      </div>
+
+      <button id="generate-btn" class="btn acc" style="margin-top:28px;">
+        <Icon name="sparkle" size={20} color="#fff" />
+        <span id="generate-label">Create the backup key</span>
+      </button>
+      <p id="key-status" class="mut" style="font-size:12.5px; text-align:center; margin-top:12px;">No backup key on this device yet.</p>
+
+      <button id="restore-btn" class="link" style="display:block; margin:16px auto 0; font-size:13.5px; background:none; border:none; cursor:pointer;">
+        Already have a backup? Restore from a recovery phrase
+      </button>
+      <div id="restore-box" class="hidden" style="margin-top:14px;">
+        <label for="restore-input" style="display:block; font-size:12.5px; font-weight:700; color:var(--ink-soft); margin-bottom:7px;">Enter your 24-word recovery phrase</label>
+        <textarea id="restore-input" class="input mono" rows="3" placeholder="word1 word2 …" style="width:100%;"></textarea>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button id="restore-confirm-btn" class="btn acc" style="flex:1;">Restore</button>
+          <button id="restore-cancel-btn" class="btn soft" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== STEP 2 · PROTECT ===================== -->
+    <section id="wiz-protect" class="hidden">
+      <div style="display:grid; place-items:center; margin:10px 0 18px;">
+        <div style="width:60px; height:60px; border-radius:18px; background:var(--good-soft); display:grid; place-items:center;">
+          <Icon name="shield" size={28} color="var(--good-ink)" />
+        </div>
+      </div>
+      <h1 class="disp" style="font-weight:800; font-size:26px; line-height:1.08; text-align:center;">Keep it safe</h1>
+      <p id="custody-status" class="mut" style="font-size:14px; line-height:1.55; margin:10px auto 0; text-align:center; max-width:340px;">Generate a key first.</p>
+
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:24px;">
+        <button id="protect-btn" class="btn acc hidden">
+          <Icon name="faceid" size={19} color="#fff" /> <span>Encrypt with passkey</span>
+        </button>
+        <button id="backup-btn" class="btn soft hidden">
+          <Icon name="key" size={18} color="var(--ink)" /> <span>Show recovery phrase</span>
+        </button>
+      </div>
+
+      <div id="mnemonic-box" class="hidden" style="margin-top:14px; padding:14px; border-radius:var(--r-md); background:var(--warn-soft, #FBF0DA); border:1px solid var(--line);">
+        <div style="font-size:12.5px; font-weight:700; color:var(--ink-soft); margin-bottom:8px;">Recovery phrase — write it down, never paste it online</div>
+        <div id="mnemonic-value" class="mono" style="line-height:1.8; font-size:13.5px; word-spacing:2px;"></div>
+        <button id="mnemonic-hide-btn" class="btn soft" style="margin-top:12px;">Hide</button>
+      </div>
+
+      <!-- the created key's fingerprint (collapsible detail) -->
+      <div id="key-details" class="card hidden" style="padding:16px; margin-top:16px;">
+        <div class="section-label" style="margin-bottom:12px;">Key details</div>
+        <label for="commitment-value" style="display:block; font-size:12.5px; font-weight:700; color:var(--ink-soft); margin-bottom:6px;">On-chain <code>key_data</code> · SHA-256 commitment</label>
+        <div id="commitment-value" class="addr addr-full mono" style="margin-bottom:14px;"></div>
+        <label for="pubkey-value" style="display:block; font-size:12.5px; font-weight:700; color:var(--ink-soft); margin-bottom:6px;">Public key · 1952 bytes (first 32 shown)</label>
+        <div id="pubkey-value" class="addr addr-full mono" style="margin-bottom:14px;"></div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button id="copy-commitment-btn" class="btn soft" style="flex:1; min-width:130px;">
+            <Icon name="copy" size={17} color="var(--ink)" /> <span>Commitment</span>
+          </button>
+          <button id="copy-pubkey-btn" class="btn soft" style="flex:1; min-width:130px;">
+            <Icon name="copy" size={17} color="var(--ink)" /> <span>Public key</span>
+          </button>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:24px;">
+        <button id="protect-back" type="button" class="link" style="background:none; border:none; cursor:pointer; font-size:13.5px;">Back</button>
+        <button id="protect-continue" type="button" class="btn acc" style="width:auto; padding-inline:22px;">Continue</button>
+      </div>
+    </section>
+
+    <!-- ===================== STEP 3 · TURN ON ===================== -->
+    <section id="wiz-enable" class="hidden">
+      <div style="display:grid; place-items:center; margin:10px 0 18px;">
+        <div style="width:60px; height:60px; border-radius:18px; background:var(--acc-soft); display:grid; place-items:center;">
+          <Icon name="bolt" size={28} color="var(--acc)" />
+        </div>
+      </div>
+      <h1 class="disp" style="font-weight:800; font-size:26px; line-height:1.08; text-align:center;">Turn it on</h1>
+      <p class="mut" style="font-size:14px; line-height:1.55; margin:10px auto 0; text-align:center; max-width:340px;">
+        Installs the backup key as a self-scoped signer on your Nido — able to
+        rotate signers and cancel a hostile recovery, never to spend. Your
+        passkey signs it.
+      </p>
+      <p id="enroll-status" class="mut" style="font-size:12.5px; text-align:center; margin:14px auto 0; max-width:340px;">Checking…</p>
+
+      <button id="enroll-btn" class="btn acc" disabled style="margin-top:22px;">
+        <Icon name="shieldcheck" size={19} color="#fff" /> <span>Turn on backup key</span>
+      </button>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:22px;">
+        <button id="enable-back" type="button" class="link" style="background:none; border:none; cursor:pointer; font-size:13.5px;">Back</button>
+        <button id="enable-later" type="button" class="link" style="background:none; border:none; cursor:pointer; font-size:13.5px;">Do this later</button>
+      </div>
+    </section>
+
+    <!-- ===================== STEP 4 · DONE / MANAGE ===================== -->
+    <section id="wiz-done" class="hidden">
+      <div style="display:grid; place-items:center; margin:10px 0 18px;">
+        <div style="width:72px; height:72px; border-radius:22px; background:var(--good-soft); display:grid; place-items:center;">
+          <Icon name="check" size={34} color="var(--good-ink)" />
+        </div>
+      </div>
+      <h1 class="disp" style="font-weight:800; font-size:26px; line-height:1.08; text-align:center;">You're covered</h1>
+      <p id="done-status" class="mut" style="font-size:14px; line-height:1.55; margin:10px auto 0; text-align:center; max-width:340px;">Your post-quantum backup key is set up.</p>
+
+      <a href="/security/" class="btn acc" style="margin-top:24px; text-decoration:none;">
+        <span>Back to Security</span>
+      </a>
+
+      <button id="advanced-toggle" type="button" class="link" style="display:flex; align-items:center; gap:6px; margin:22px auto 0; background:none; border:none; cursor:pointer; font-size:13.5px;">
+        <Icon name="settings" size={16} color="var(--acc)" />
+        <span id="advanced-toggle-label">Advanced tools</span>
+        <Icon name="chevron" size={15} color="var(--acc)" />
+      </button>
+
+      <div id="advanced-section" class="hidden" style="margin-top:16px; display:flex; flex-direction:column; gap:16px;">
+        <!-- sign self-test -->
+        <div class="card" style="padding:18px;">
+          <div class="section-label" style="margin-bottom:6px;">Self-test</div>
+          <div class="disp" style="font-weight:800; font-size:16px; margin-bottom:6px;">Sign a sample digest</div>
+          <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 14px;">
+            Signs a random 32-byte digest with context <code>nido-mldsa-v1</code>
+            and verifies it locally — the exact check the on-chain verifier runs.
+          </p>
+          <button id="sign-btn" class="btn soft" disabled>Sign &amp; verify</button>
+          <div id="sign-result" class="hidden" style="margin-top:12px; padding:12px; border-radius:var(--r-md); background:var(--good-soft);">
+            <div id="sign-result-text" style="font-size:13px; line-height:1.5; color:var(--good-ink);"></div>
+          </div>
+        </div>
+
+        <!-- recovery drill -->
+        <div class="card" style="padding:18px;">
+          <div class="section-label" style="margin-bottom:6px;">Recovery drill</div>
+          <div class="disp" style="font-weight:800; font-size:16px; margin-bottom:6px;">Replace a lost passkey</div>
+          <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 14px;">
+            The quantum-emergency move end to end: mint a new passkey, then let
+            the backup key — not a passkey — authorize installing it. Afterwards
+            you can retire the old passkey rule.
+          </p>
+          <p id="rotate-status" class="mut" style="font-size:12.5px; margin:0 0 14px;">Checking…</p>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <button id="rotate-btn" class="btn soft" disabled>Mint passkey &amp; rotate via backup key</button>
+            <button id="retire-btn" class="btn soft hidden">Retire old passkey rule (#0)</button>
+          </div>
+        </div>
+
+        <!-- paranoid 2-of-2 -->
+        <div class="card" style="padding:18px; border:1px solid var(--acc-soft);">
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+            <span class="chip warn" style="font-size:10.5px;">Experimental</span>
+            <span class="section-label">Paranoid mode</span>
+          </div>
+          <div class="disp" style="font-weight:800; font-size:16px; margin-bottom:6px;">Require both keys to spend</div>
+          <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 10px;">
+            The strongest setting: every transaction needs your passkey
+            <strong>and</strong> the backup key together, so spending stays
+            unforgeable even if passkeys are broken. <em>Arm</em> installs the
+            rule; <em>enforce</em> makes it the only way in.
+          </p>
+          <p class="mut" style="font-size:12px; line-height:1.45; margin:0 0 14px;">
+            Trade-off: the software backup key co-signs every payment, so it's in
+            play far more often than a recovery-only setup.
+          </p>
+          <p id="paranoid-status" class="mut" style="font-size:12.5px; margin:0 0 14px;">Checking…</p>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <button id="arm-btn" class="btn soft" disabled>Arm</button>
+            <button id="enforce-btn" class="btn soft hidden">Enforce</button>
+            <button id="standdown-btn" class="btn soft hidden">Stand down</button>
+          </div>
+        </div>
+
+        <!-- danger zone -->
+        <div class="card" style="padding:18px;">
+          <div class="section-label" style="margin-bottom:6px; color:var(--danger, #c0392b);">Danger zone</div>
+          <div class="disp" style="font-weight:800; font-size:16px; margin-bottom:6px;">Forget this key</div>
+          <p class="mut" style="font-size:13px; line-height:1.5; margin:0 0 14px;">
+            Removes the seed from this browser. If it's enrolled on-chain and you
+            have no recovery phrase, it's gone for good.
+          </p>
+          <button id="forget-btn" class="btn soft" disabled style="color:var(--danger, #c0392b);">Forget key</button>
+        </div>
+      </div>
+
+      <p class="mut" style="font-size:11.5px; line-height:1.5; text-align:center; margin:24px auto 0; max-width:360px;">
+        On-chain, your account stores <code>Signer::External(verifier, sha256(pk))</code>;
+        each signature carries the full public key. More on the
+        <a href="https://github.com/nidohq/nido/issues/142" class="link">post-quantum epic</a>.
+      </p>
+    </section>
+  </div>
+  <Toast />
+  <PasskeySheet />
+</NidoLayout>
+
+<script>
+  import { bytesToHex } from "@noble/hashes/utils.js";
+  import { contractIdFromHostname, accountUrl, stripSubdomain } from "@nidohq/passkey-sdk";
+  import {
+    generateBackstopKey,
+    signDigest,
+    verifyDigest,
+    saveBackstopKey,
+    loadBackstopKey,
+    clearBackstopKey,
+    unlockSeed,
+    protectWithPasskey,
+    seedToMnemonic,
+    mnemonicToSeed,
+    SIG_LEN,
+    type BackstopKey,
+  } from "../../../lib/mlDsaBackstop.js";
+  import { loadCredential } from "@nidohq/passkey-sdk";
+  import {
+    enrollBackstop,
+    getBackstopEnrollment,
+    type BackstopEnrollment,
+  } from "../../../lib/mlDsaEnroll.js";
+  import {
+    signAndSubmitWithBackstop,
+    buildRecoveredRuleOperation,
+    buildRemoveRuleOperation,
+    RECOVERED_RULE_NAME,
+  } from "../../../lib/mlDsaSign.js";
+  import {
+    getParanoidStatus,
+    armParanoid,
+    enforceParanoid,
+    standDownParanoid,
+    type ParanoidStatus,
+  } from "../../../lib/mlDsaParanoid.js";
+  import { parseRegistration, saveCredential } from "@nidohq/passkey-sdk";
+  import { fetchVerifierAddress, fetchAllChainRules } from "../../../lib/policyChainFetch.js";
+  import { withPasskeySheet } from "../../../lib/passkeySheet.js";
+  import { resolveAccountAddress } from "../../../lib/resolveAccount.js";
+  import { toast } from "../../../lib/toast.js";
+
+  const keyStatus = document.getElementById("key-status")!;
+  const keyDetails = document.getElementById("key-details")!;
+  const commitmentValue = document.getElementById("commitment-value")!;
+  const pubkeyValue = document.getElementById("pubkey-value")!;
+  const generateBtn = document.getElementById("generate-btn") as HTMLButtonElement;
+  const copyCommitmentBtn = document.getElementById("copy-commitment-btn") as HTMLButtonElement;
+  const copyPubkeyBtn = document.getElementById("copy-pubkey-btn") as HTMLButtonElement;
+  const signBtn = document.getElementById("sign-btn") as HTMLButtonElement;
+  const signResult = document.getElementById("sign-result")!;
+  const signResultText = document.getElementById("sign-result-text")!;
+  const forgetBtn = document.getElementById("forget-btn") as HTMLButtonElement;
+  const enrollBtn = document.getElementById("enroll-btn") as HTMLButtonElement;
+  const enrollStatus = document.getElementById("enroll-status")!;
+  const custodyStatus = document.getElementById("custody-status")!;
+  const protectBtn = document.getElementById("protect-btn") as HTMLButtonElement;
+  const backupBtn = document.getElementById("backup-btn") as HTMLButtonElement;
+  const restoreBtn = document.getElementById("restore-btn") as HTMLButtonElement;
+  const mnemonicBox = document.getElementById("mnemonic-box")!;
+  const mnemonicValue = document.getElementById("mnemonic-value")!;
+  const mnemonicHideBtn = document.getElementById("mnemonic-hide-btn") as HTMLButtonElement;
+  const restoreBox = document.getElementById("restore-box")!;
+  const restoreInput = document.getElementById("restore-input") as HTMLTextAreaElement;
+  const restoreConfirmBtn = document.getElementById("restore-confirm-btn") as HTMLButtonElement;
+  const restoreCancelBtn = document.getElementById("restore-cancel-btn") as HTMLButtonElement;
+  const generateLabel = document.getElementById("generate-label")!;
+  const advancedToggle = document.getElementById("advanced-toggle") as HTMLButtonElement;
+  const advancedToggleLabel = document.getElementById("advanced-toggle-label")!;
+  const advancedSection = document.getElementById("advanced-section")!;
+  const step1 = document.getElementById("step-1")!;
+  const step2 = document.getElementById("step-2")!;
+  const step3 = document.getElementById("step-3")!;
+  const wizCreate = document.getElementById("wiz-create")!;
+  const wizProtect = document.getElementById("wiz-protect")!;
+  const wizEnable = document.getElementById("wiz-enable")!;
+  const wizDone = document.getElementById("wiz-done")!;
+  const protectBack = document.getElementById("protect-back") as HTMLButtonElement;
+  const protectContinue = document.getElementById("protect-continue") as HTMLButtonElement;
+  const enableBack = document.getElementById("enable-back") as HTMLButtonElement;
+  const enableLater = document.getElementById("enable-later") as HTMLButtonElement;
+  const doneStatus = document.getElementById("done-status")!;
+
+  let current: BackstopKey | null = loadBackstopKey(localStorage);
+  let account: string | null = null;
+  let enrollment: BackstopEnrollment | null = null;
+  type WizStep = "create" | "protect" | "enable" | "done";
+  let currentStep: WizStep = "create";
+
+  /** Show one wizard panel and light the progress dots for it. */
+  function showStep(step: WizStep) {
+    currentStep = step;
+    wizCreate.classList.toggle("hidden", step !== "create");
+    wizProtect.classList.toggle("hidden", step !== "protect");
+    wizEnable.classList.toggle("hidden", step !== "enable");
+    wizDone.classList.toggle("hidden", step !== "done");
+    const idx = { create: 0, protect: 1, enable: 2, done: 3 }[step];
+    [step1, step2, step3].forEach((el, i) => {
+      el.className = i < idx ? "done" : i === idx ? "on" : "";
+    });
+    window.scrollTo(0, 0);
+  }
+
+  /** Re-light the dots for the active wizard step (the dots are owned by
+   *  showStep; this keeps legacy render() call sites consistent). */
+  function updateSteps() {
+    const idx = { create: 0, protect: 1, enable: 2, done: 3 }[currentStep];
+    [step1, step2, step3].forEach((el, i) => {
+      el.className = i < idx ? "done" : i === idx ? "on" : "";
+    });
+  }
+
+  /** The wizard step the current on-chain + local state implies. */
+  function stepForState(): WizStep {
+    if (!current) return "create";
+    const enrolled =
+      enrollment && bytesToHex(enrollment.commitment) === bytesToHex(current.commitment);
+    if (enrolled) return "done";
+    if (current.protection !== "passkey") return "protect";
+    return "enable";
+  }
+
+  function renderDone() {
+    if (!current) {
+      doneStatus.textContent = "Your backup key isn't set up on this device.";
+      return;
+    }
+    const enrolled =
+      enrollment && bytesToHex(enrollment.commitment) === bytesToHex(current.commitment);
+    const custody =
+      current.protection === "passkey" ? "encrypted with your passkey" : "stored in plaintext";
+    doneStatus.textContent = enrolled
+      ? `Your backup key is turned on (rule #${enrollment!.ruleId}) and ${custody} on this device.`
+      : `Your backup key is ready and ${custody}, but not yet turned on for this account.`;
+  }
+
+  function render() {
+    if (current) {
+      const when = current.createdAt ? new Date(current.createdAt).toLocaleString() : "unknown";
+      keyStatus.textContent = `Backup key on this device · created ${when}.`;
+      commitmentValue.textContent = bytesToHex(current.commitment);
+      pubkeyValue.textContent = `${bytesToHex(current.publicKey.slice(0, 32))}…`;
+      keyDetails.classList.remove("hidden");
+      generateLabel.textContent = "Replace the backup key";
+      signBtn.disabled = false;
+      forgetBtn.disabled = false;
+    } else {
+      keyStatus.textContent = "No backup key on this device yet.";
+      keyDetails.classList.add("hidden");
+      generateLabel.textContent = "Create the backup key";
+      signBtn.disabled = true;
+      forgetBtn.disabled = true;
+    }
+    renderCustody();
+    updateSteps();
+  }
+
+  function renderCustody() {
+    if (!current) {
+      custodyStatus.textContent = "Generate a key first.";
+      protectBtn.classList.add("hidden");
+      backupBtn.classList.add("hidden");
+      return;
+    }
+    if (current.protection === "passkey") {
+      custodyStatus.textContent =
+        "Encrypted at rest — the seed is unreadable without a passkey ceremony.";
+      protectBtn.classList.add("hidden");
+    } else {
+      custodyStatus.textContent =
+        "Stored in plaintext. Encrypt it with your passkey so it isn't readable at rest.";
+      protectBtn.classList.remove("hidden");
+      protectBtn.disabled = false;
+    }
+    backupBtn.classList.remove("hidden");
+  }
+
+  generateBtn.addEventListener("click", () => {
+    if (current && !confirm("Replace the existing backstop key? The old one is gone for good.")) {
+      return;
+    }
+    current = generateBackstopKey();
+    saveBackstopKey(current, localStorage);
+    signResult.classList.add("hidden");
+    mnemonicBox.classList.add("hidden");
+    render();
+    // Re-sync the enrollment / rotate / paranoid sections against the new key,
+    // then advance to the Protect step.
+    void refreshEnrollment();
+    showStep("protect");
+    toast("Backup key created. Now encrypt it and save the recovery phrase.");
+  });
+
+  protectBack.addEventListener("click", () => showStep("create"));
+  protectContinue.addEventListener("click", () => showStep("enable"));
+  enableBack.addEventListener("click", () => showStep("protect"));
+  enableLater.addEventListener("click", () => showStep("done"));
+
+  protectBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!current || current.protection === "passkey") return;
+      const cred = account ? loadCredential(account) : null;
+      if (!cred) {
+        toast("Open this page on your account's subdomain (where your passkey lives) to encrypt.");
+        return;
+      }
+      // GATE: once the seed is coupled to the passkey, the mnemonic is the ONLY
+      // recovery if that passkey is lost. Reveal it and require an explicit
+      // acknowledgement BEFORE encrypting. (Seed is plaintext here, so the
+      // reveal is immediate — no ceremony yet.)
+      let seed: Uint8Array;
+      try {
+        seed = await unlockSeed(current);
+      } catch (err) {
+        toast(`Couldn't read the key: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+      mnemonicValue.textContent = seedToMnemonic(seed);
+      mnemonicBox.classList.remove("hidden");
+      await new Promise((r) => setTimeout(r, 60)); // let the phrase paint first
+      if (
+        !confirm(
+          "Write down the recovery phrase shown on the page FIRST.\n\n" +
+            "It is the ONLY way to recover this key if your passkey is lost or reset. " +
+            "Encrypt the key now?",
+        )
+      ) {
+        custodyStatus.textContent = "Encryption cancelled — save the recovery phrase, then encrypt.";
+        return;
+      }
+      protectBtn.disabled = true;
+      custodyStatus.textContent = "Confirm with your passkey to derive the encryption key…";
+      try {
+        const ok = await protectWithPasskey(current, cred.credentialId, localStorage);
+        if (!ok) {
+          toast("This passkey/browser doesn't support PRF encryption. Keep the recovery phrase safe.");
+          protectBtn.disabled = false;
+          return;
+        }
+        current = loadBackstopKey(localStorage);
+        renderCustody();
+        toast("Backstop key encrypted with your passkey.");
+      } catch (err) {
+        toast(`Couldn't encrypt: ${err instanceof Error ? err.message : String(err)}`);
+        protectBtn.disabled = false;
+      }
+    })();
+  });
+
+  backupBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!current) return;
+      try {
+        custodyStatus.textContent = current.protection === "passkey"
+          ? "Confirm with your passkey to reveal the phrase…"
+          : "Revealing recovery phrase…";
+        const seed = await unlockSeed(current);
+        mnemonicValue.textContent = seedToMnemonic(seed);
+        mnemonicBox.classList.remove("hidden");
+        renderCustody();
+      } catch (err) {
+        toast(`Couldn't reveal the phrase: ${err instanceof Error ? err.message : String(err)}`);
+        renderCustody();
+      }
+    })();
+  });
+
+  mnemonicHideBtn.addEventListener("click", () => {
+    mnemonicValue.textContent = "";
+    mnemonicBox.classList.add("hidden");
+  });
+
+  restoreBtn.addEventListener("click", () => {
+    restoreBox.classList.toggle("hidden");
+  });
+  restoreCancelBtn.addEventListener("click", () => {
+    restoreInput.value = "";
+    restoreBox.classList.add("hidden");
+  });
+  restoreConfirmBtn.addEventListener("click", () => {
+    if (current && !confirm("Restore replaces the backstop key on this device. Continue?")) return;
+    try {
+      const seed = mnemonicToSeed(restoreInput.value);
+      current = generateBackstopKey(seed);
+      saveBackstopKey(current, localStorage);
+      restoreInput.value = "";
+      restoreBox.classList.add("hidden");
+      signResult.classList.add("hidden");
+      render();
+      void refreshEnrollment();
+      showStep("protect");
+      toast("Backup key restored. Re-encrypt it with your passkey below.");
+    } catch (err) {
+      toast(`Restore failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  copyCommitmentBtn.addEventListener("click", async () => {
+    if (!current) return;
+    await navigator.clipboard.writeText(bytesToHex(current.commitment));
+    toast("Commitment copied.");
+  });
+
+  copyPubkeyBtn.addEventListener("click", async () => {
+    if (!current) return;
+    await navigator.clipboard.writeText(bytesToHex(current.publicKey));
+    toast("Public key copied (3904 hex chars).");
+  });
+
+  signBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!current) return;
+      const digest = crypto.getRandomValues(new Uint8Array(32));
+      let seed: Uint8Array;
+      try {
+        seed = await unlockSeed(current);
+      } catch (err) {
+        signResultText.textContent = err instanceof Error ? err.message : String(err);
+        signResult.classList.remove("hidden");
+        return;
+      }
+      const t0 = performance.now();
+      const sig = signDigest(seed, digest);
+      const signMs = performance.now() - t0;
+      const t1 = performance.now();
+      const ok = verifyDigest(sig, digest, current.publicKey);
+      const verifyMs = performance.now() - t1;
+      signResultText.textContent = ok
+        ? `Signature valid. ${sig.length} bytes (expected ${SIG_LEN}) — signed in ${signMs.toFixed(1)} ms, verified in ${verifyMs.toFixed(1)} ms.`
+        : "Verification FAILED — this should never happen.";
+      signResult.classList.remove("hidden");
+    })();
+  });
+
+  forgetBtn.addEventListener("click", () => {
+    if (!confirm("Forget the backstop key on this device?")) return;
+    clearBackstopKey(localStorage);
+    current = null;
+    signResult.classList.add("hidden");
+    render();
+    // Re-sync enrollment / rotate / paranoid too, so their buttons don't keep
+    // a stale enabled state now that the key is gone, and return to Step 1.
+    void refreshEnrollment();
+    showStep("create");
+    toast("Backup key forgotten.");
+  });
+
+  function renderEnrollment() {
+    if (!account) {
+      enrollStatus.textContent =
+        "Open this page from your account's subdomain (where your passkey lives) to enroll.";
+      enrollBtn.disabled = true;
+      return;
+    }
+    if (enrollment) {
+      const matches =
+        current && bytesToHex(enrollment.commitment) === bytesToHex(current.commitment);
+      enrollStatus.textContent = matches
+        ? `Enrolled — rule #${enrollment.ruleId} holds this device's backstop key.`
+        : `Enrolled as rule #${enrollment.ruleId}, but with a DIFFERENT key than this device holds.`;
+      enrollBtn.disabled = true;
+      return;
+    }
+    if (!current) {
+      enrollStatus.textContent = "Generate a backstop key first (Step 1).";
+      enrollBtn.disabled = true;
+      return;
+    }
+    enrollStatus.textContent = "Not enrolled yet. Your passkey will be asked to sign.";
+    enrollBtn.disabled = false;
+  }
+
+  async function refreshEnrollment() {
+    if (!account) {
+      renderEnrollment();
+      updateSteps();
+      await renderRotate();
+      return;
+    }
+    try {
+      enrollment = await getBackstopEnrollment(account);
+    } catch (err) {
+      enrollStatus.textContent = `Couldn't check enrollment: ${err instanceof Error ? err.message : String(err)}`;
+      enrollBtn.disabled = true;
+      return;
+    }
+    renderEnrollment();
+    renderDone();
+    updateSteps();
+    await renderRotate();
+    await renderParanoid();
+  }
+
+  advancedToggle.addEventListener("click", () => {
+    const open = advancedSection.classList.toggle("hidden") === false;
+    advancedToggleLabel.textContent = open ? "Hide advanced tools" : "Advanced tools";
+  });
+
+  enrollBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account || !current) return;
+      if (
+        !confirm(
+          "Enroll this backstop key on your account? It will be able to manage signers (but never spend).",
+        )
+      ) {
+        return;
+      }
+      enrollBtn.disabled = true;
+      try {
+        await enrollBackstop({
+          account,
+          commitment: current.commitment,
+          onProgress: (p) => {
+            enrollStatus.textContent = {
+              build: "Building the enrollment transaction…",
+              sign: "Waiting for your passkey…",
+              submit: "Submitting…",
+              confirm: "Waiting for confirmation…",
+            }[p.phase];
+          },
+        });
+        toast("Backup key turned on for this account.");
+        await refreshEnrollment();
+        showStep("done");
+        return;
+      } catch (err) {
+        toast(`Enrollment failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await refreshEnrollment();
+    })();
+  });
+
+  // --- recovery drill (rotate via ML-DSA) ---
+  const rotateBtn = document.getElementById("rotate-btn") as HTMLButtonElement;
+  const retireBtn = document.getElementById("retire-btn") as HTMLButtonElement;
+  const rotateStatus = document.getElementById("rotate-status")!;
+
+  const drillProgress = (p: { phase: string }) => {
+    rotateStatus.textContent = {
+      build: "Building the rotation transaction…",
+      sign: "Signing with the backstop key (no passkey involved)…",
+      submit: "Submitting…",
+      confirm: "Waiting for confirmation…",
+    }[p.phase] ?? p.phase;
+  };
+
+  async function renderRotate() {
+    if (!account || !current || !enrollment) {
+      rotateStatus.textContent = "Needs an enrolled backstop key on this device (Steps 1-3).";
+      rotateBtn.disabled = true;
+      retireBtn.classList.add("hidden");
+      return;
+    }
+    rotateBtn.disabled = false;
+    try {
+      const rules = await fetchAllChainRules(account);
+      const recovered = rules.find(
+        (r) => r.contextType.kind === "default" && r.name === RECOVERED_RULE_NAME,
+      );
+      const ruleZero = rules.find((r) => r.ruleId === 0);
+      if (recovered) {
+        rotateStatus.textContent = `Rotated — "${RECOVERED_RULE_NAME}" rule #${recovered.ruleId} holds the replacement passkey.`;
+        if (ruleZero) {
+          retireBtn.classList.toggle("hidden", ruleZero.policies.length > 0);
+          if (ruleZero.policies.length > 0) {
+            rotateStatus.textContent += " Old rule #0 carries policies — retire it manually after re-attaching them.";
+          }
+        } else {
+          retireBtn.classList.add("hidden");
+          rotateStatus.textContent += " Old rule #0 already retired.";
+        }
+      } else {
+        rotateStatus.textContent = "Ready. This creates a new passkey and installs it WITHOUT using your old one.";
+        retireBtn.classList.add("hidden");
+      }
+    } catch {
+      rotateStatus.textContent = "Ready (couldn't read current rules — status may be stale).";
+    }
+  }
+
+  rotateBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account || !current) return;
+      if (
+        !confirm(
+          "Recovery drill: mint a NEW passkey and install it via the ML-DSA backstop? Your browser's stored passkey reference switches to the new one once it confirms.",
+        )
+      ) {
+        return;
+      }
+      rotateBtn.disabled = true;
+      try {
+        rotateStatus.textContent = "Creating the replacement passkey…";
+        const credential = (await withPasskeySheet(
+          () =>
+            navigator.credentials.create({
+              publicKey: {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                rp: { name: `Soroban ${account}`, id: window.location.hostname },
+                user: {
+                  id: crypto.getRandomValues(new Uint8Array(16)),
+                  name: account!,
+                  displayName: `Account ${account}`,
+                },
+                pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                authenticatorSelection: { residentKey: "required", userVerification: "required" },
+                attestation: "none",
+                timeout: 60000,
+              },
+            }),
+          { title: "Mint a replacement passkey", sub: "Confirm to create the new key." },
+        )) as PublicKeyCredential | null;
+        if (!credential) throw new Error("Passkey creation was cancelled.");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const reg = parseRegistration(credential as any);
+
+        const webauthnVerifier = await fetchVerifierAddress(account);
+        const operation = await buildRecoveredRuleOperation(account, webauthnVerifier, reg.publicKey);
+        await signAndSubmitWithBackstop({ account, operation, onProgress: drillProgress });
+
+        // Only after on-chain confirmation: point this browser at the new
+        // credential (overwrites the old passkey reference).
+        saveCredential(account, reg.credentialId, reg.publicKey);
+        toast("Rotated: new passkey installed, authorized by the backstop key.");
+      } catch (err) {
+        toast(`Rotation failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await renderRotate();
+    })();
+  });
+
+  retireBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account) return;
+      if (
+        !confirm(
+          "Remove rule #0 (the old passkey's rule)? The old passkey stops working for this account. Cannot be undone.",
+        )
+      ) {
+        return;
+      }
+      retireBtn.disabled = true;
+      try {
+        const operation = await buildRemoveRuleOperation(account, 0);
+        await signAndSubmitWithBackstop({ account, operation, onProgress: drillProgress });
+        toast("Old passkey rule removed.");
+      } catch (err) {
+        toast(`Retire failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      retireBtn.disabled = false;
+      await renderRotate();
+    })();
+  });
+
+  // --- Step 5: paranoid (hybrid 2-of-2) mode ---
+  const armBtn = document.getElementById("arm-btn") as HTMLButtonElement;
+  const enforceBtn = document.getElementById("enforce-btn") as HTMLButtonElement;
+  const standdownBtn = document.getElementById("standdown-btn") as HTMLButtonElement;
+  const paranoidStatus = document.getElementById("paranoid-status")!;
+  let paranoid: ParanoidStatus | null = null;
+
+  async function renderParanoid() {
+    if (!account || !current) {
+      paranoidStatus.textContent = "Needs a backstop key on this device (Step 1).";
+      armBtn.disabled = true;
+      enforceBtn.classList.add("hidden");
+      standdownBtn.classList.add("hidden");
+      return;
+    }
+    try {
+      paranoid = await getParanoidStatus(account);
+    } catch (err) {
+      paranoidStatus.textContent = `Couldn't check: ${err instanceof Error ? err.message : String(err)}`;
+      return;
+    }
+    armBtn.disabled = paranoid.state !== "off";
+    armBtn.classList.toggle("hidden", paranoid.state !== "off");
+    enforceBtn.classList.toggle("hidden", paranoid.state !== "armed");
+    standdownBtn.classList.toggle("hidden", paranoid.state === "off");
+    if (paranoid.state === "off") {
+      paranoidStatus.textContent = "Off. Arming keeps your account working as usual until you enforce.";
+    } else if (paranoid.state === "armed") {
+      const blockedNote = paranoid.blocked.length
+        ? ` (${paranoid.blocked.length} rule(s) carry policies and must be handled manually)`
+        : "";
+      paranoidStatus.textContent = `Armed — hybrid rule #${paranoid.hybridRuleId} installed, but passkey-only rules still work${blockedNote}.`;
+    } else {
+      paranoidStatus.textContent = `Enforced — every transaction now needs passkey + backstop key (rule #${paranoid.hybridRuleId}).`;
+    }
+  }
+
+  const paranoidProgress = (p: { phase: string; detail?: string }) => {
+    paranoidStatus.textContent = p.detail ?? ({
+      build: "Building…",
+      sign: "Waiting for your passkey…",
+      submit: "Submitting…",
+      confirm: "Waiting for confirmation…",
+    }[p.phase] ?? p.phase);
+  };
+
+  armBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account) return;
+      if (!confirm("Install the hybrid passkey+ML-DSA rule? Nothing changes until you also enforce.")) return;
+      armBtn.disabled = true;
+      try {
+        const webauthnVerifier = await fetchVerifierAddress(account);
+        await armParanoid({ account, webauthnVerifier, onProgress: paranoidProgress });
+        toast("Paranoid mode armed.");
+      } catch (err) {
+        toast(`Arm failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await renderParanoid();
+    })();
+  });
+
+  enforceBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account || !paranoid) return;
+      if (
+        !confirm(
+          `Enforce paranoid mode? Removes ${paranoid.removable.length} passkey-only rule(s). ` +
+            "EVERY transaction will then require this device's backstop key too — " +
+            "lose the key (or this browser's storage) and only ZK recovery can restore access.",
+        )
+      ) {
+        return;
+      }
+      enforceBtn.disabled = true;
+      try {
+        await enforceParanoid({ account, onProgress: paranoidProgress });
+        toast("Paranoid mode enforced.");
+      } catch (err) {
+        toast(`Enforce failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      enforceBtn.disabled = false;
+      await renderParanoid();
+    })();
+  });
+
+  standdownBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!account) return;
+      if (!confirm("Stand down? Restores passkey-only signing and removes the hybrid rule.")) return;
+      standdownBtn.disabled = true;
+      try {
+        const webauthnVerifier = await fetchVerifierAddress(account);
+        await standDownParanoid({ account, webauthnVerifier, onProgress: paranoidProgress });
+        toast("Paranoid mode stood down.");
+      } catch (err) {
+        toast(`Stand down failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      standdownBtn.disabled = false;
+      await renderParanoid();
+    })();
+  });
+
+  render();
+  // Land on the create step until state is read; a returning user with a key
+  // jumps forward once refreshEnrollment resolves.
+  showStep(current ? (current.protection === "passkey" ? "enable" : "protect") : "create");
+  void (async () => {
+    account = await resolveAccountAddress();
+    // A NAME subdomain resolves to the account id but the passkey ceremony
+    // binds to the hostname it was registered on — hop to the contract-id
+    // subdomain before offering enrollment (mirrors /security/).
+    if (account && contractIdFromHostname(window.location.hostname) !== account) {
+      const rootHost = stripSubdomain(window.location.host);
+      window.location.replace(
+        window.location.protocol + accountUrl(rootHost, account, window.location.pathname),
+      );
+      return;
+    }
+    await refreshEnrollment();
+    // Now that on-chain enrollment is known, land on the right step.
+    showStep(stepForState());
+  })();
+</script>

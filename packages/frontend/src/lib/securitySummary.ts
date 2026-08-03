@@ -13,6 +13,7 @@ import {
   loadCredential,
 } from "@nidohq/passkey-sdk";
 import { fetchAllChainRules, fetchPolicyState } from "./policyChainFetch.js";
+import { isSelfAdminRule } from "./mlDsaEnroll.js";
 
 export interface SecuritySummary {
   /** A passkey credential for this account is stored on this device. */
@@ -47,8 +48,13 @@ export async function fetchSecuritySummary(account: string): Promise<SecuritySum
     sessionKeyMaterial: collectSessionKeyMaterial(account),
   };
   const rules = await fetchAllChainRules(account);
+  // Self-admin rules (the ML-DSA backstop: CallContract(self), no policies)
+  // share the session-key module's claim shape — keep them out of the block
+  // loader or they'd render as revocable "session keys". The pq-backstop page
+  // owns their display.
+  const blockRules = rules.filter((r) => !isSelfAdminRule(r, account));
   const blocks = await loadPolicyBlocks({
-    rules,
+    rules: blockRules,
     fetchPolicyState: (rule) => fetchPolicyState(account, rule),
     overlay,
   });

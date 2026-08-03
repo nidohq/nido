@@ -90,6 +90,14 @@ export {
 
 export { extractXdrOperations } from './assembledTx.js';
 
+export {
+  encodeMlDsaSigData,
+  injectMlDsaSignature,
+  ML_DSA_PK_LEN,
+  ML_DSA_SIG_LEN,
+  type MlDsaSignature,
+} from './mlDsa.js';
+
 export * from './policyBlocks/index.js';
 
 export * from './resolveFriendInput.js';

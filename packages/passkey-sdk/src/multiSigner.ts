@@ -55,6 +55,20 @@ export type SignerSignature =
        * is left empty by default.
        */
       sigData?: Uint8Array;
+    }
+  | {
+      /**
+       * External signer with caller-encoded sig_data — for verifiers whose
+       * SigData isn't `WebAuthnSigData` (e.g. the ML-DSA backstop, whose
+       * sig_data is the XDR of `MlDsaSigData { public_key, signature }`).
+       */
+      kind: 'external-bytes';
+      /** Verifier contract address. */
+      verifierAddress: string;
+      /** Raw on-chain key_data (32-byte key commitment for ML-DSA). */
+      keyData: Uint8Array;
+      /** Pre-encoded sig_data bytes (XDR of the verifier's SigData struct). */
+      sigData: Uint8Array;
     };
 
 export interface AuthPayloadSpec {
@@ -86,13 +100,13 @@ function webAuthnSigDataBytes(sig: PasskeySignature): Buffer {
 
 /** Build the `Signer` enum ScVal key for a single signer. */
 function signerScVal(s: SignerSignature): xdr.ScVal {
-  if (s.kind === 'external') {
-    // Signer::External(verifier_address, public_key)
+  if (s.kind === 'external' || s.kind === 'external-bytes') {
+    // Signer::External(verifier_address, key_data)
     // → Vec[Symbol("External"), Address, Bytes]
     return xdr.ScVal.scvVec([
       xdr.ScVal.scvSymbol('External'),
       Address.fromString(s.verifierAddress).toScVal(),
-      xdr.ScVal.scvBytes(Buffer.from(s.publicKey)),
+      xdr.ScVal.scvBytes(Buffer.from(s.kind === 'external' ? s.publicKey : s.keyData)),
     ]);
   }
   // Signer::Delegated(address) → Vec[Symbol("Delegated"), Address]
@@ -106,6 +120,9 @@ function signerScVal(s: SignerSignature): xdr.ScVal {
 function sigDataScVal(s: SignerSignature): xdr.ScVal {
   if (s.kind === 'external') {
     return xdr.ScVal.scvBytes(webAuthnSigDataBytes(s.passkeySignature));
+  }
+  if (s.kind === 'external-bytes') {
+    return xdr.ScVal.scvBytes(Buffer.from(s.sigData));
   }
   // Delegated: bytes are ignored on-chain; emit an empty Bytes (or any
   // provided placeholder) so the map entry exists and `authenticate` runs.

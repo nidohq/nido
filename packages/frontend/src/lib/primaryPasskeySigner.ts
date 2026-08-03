@@ -11,11 +11,18 @@ import {
   computeAuthDigest,
   getAuthEntry,
   injectPasskeySignature,
+  injectSignedAuthPayload,
+  encodeMlDsaSigData,
   parseAssertionResponse,
   hex2buf,
   buf2hex,
 } from '@nidohq/passkey-sdk';
 import { resolveSignerRule } from './policyChainFetch.js';
+import {
+  loadBackstopKey, signDigest, unlockSeed, prfEvalForKey, prfFromAssertionResults,
+  type BackstopKey,
+} from './mlDsaBackstop.js';
+import { openPasskeySheet, closePasskeySheet } from './passkeySheet.js';
 import {
   relayerEnabled,
 } from './relayerClient';
@@ -51,6 +58,138 @@ export async function getSubmitter(): Promise<Keypair> {
   if (!resp.ok) throw new Error(`Friendbot funding failed: ${resp.statusText}`);
   localStorage.setItem(SUBMITTER_KEY, kp.secret());
   return kp;
+}
+
+/** Everything a signer needs after recording-mode simulation, before the
+ *  actual signature is produced. Shared by the passkey flow below and the
+ *  ML-DSA backstop flow (`mlDsaSign.ts`). */
+export interface SimulatedForSigning {
+  server: rpc.Server;
+  /** Classic-mode ephemeral submitter; null in relayer mode. */
+  submitter: Keypair | null;
+  simTx: ReturnType<TransactionBuilder['build']>;
+  successSim: rpc.Api.SimulateTransactionSuccessResponse;
+  authEntry: ReturnType<typeof getAuthEntry>;
+  lastLedger: number;
+  /** Pass this SAME value to buildAuthHash and the inject helper. */
+  expirationOffset: number | undefined;
+  /** Auth entries baked in, ready for signature injection. */
+  assembledTx: ReturnType<ReturnType<typeof rpc.assembleTransaction>['build']>;
+}
+
+/**
+ * Source-selection + auth-strip + recording-mode simulate + assemble — the
+ * signer-agnostic front half of a signing flow. See inline comments for why
+ * auth entries MUST be stripped before simulating.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function simulateForSigning(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  operation: any,
+  onProgress?: (p: { phase: 'build' | 'sign' | 'submit' | 'confirm'; detail?: string }) => void,
+): Promise<SimulatedForSigning> {
+  const server = new rpc.Server(RPC_URL);
+
+  // 1. Pick the simulation source account. This is the tx source/fee-payer,
+  //    NOT the smart account itself.
+  //
+  //    Relayer mode: no ephemeral G is created or funded — recording-mode
+  //    simulation just needs SOME existing on-chain source account, so we use
+  //    the relayer's (public) fund address. It never signs and never pays here.
+  //    Classic mode: friendbot-funded ephemeral G as before.
+  const submitter = relayerEnabled() ? null : await getSubmitter();
+  if (relayerEnabled() && !RELAYER_SIM_SOURCE) {
+    throw new Error('Relayer misconfigured: PUBLIC_RELAYER_URL is set but PUBLIC_RELAYER_SIM_SOURCE is not.');
+  }
+  const sourceAccount = submitter
+    ? await server.getAccount(submitter.publicKey())
+    : await server.getAccount(RELAYER_SIM_SOURCE);
+
+  // 2. Build & simulate the un-signed tx.
+  //
+  // CRUCIAL: strip any existing auth entries off the operation before
+  // simulating. The operation is an `xdr.Operation` carrying the
+  // unsigned auth-entry templates that the contract bindings'
+  // AssembledTransaction.simulate left on the built tx (Void signature,
+  // SorobanAddressCredentials placeholder). If we hand those back to
+  // simulateTransaction in recording mode, the simulator runs
+  // __check_auth(payload, Void, contexts) against the smart account —
+  // and the OZ contract can't deserialize Void as AuthPayload, traps
+  // with UnreachableCodeReached, simulate returns Auth/InvalidAction,
+  // and we throw BEFORE the signature ceremony.
+  //
+  // Mirror what AssembledTransaction.simulate does internally: build
+  // from an op with no auth entries so the simulator generates them
+  // fresh in recording mode. Clone the XDR op so we don't mutate the
+  // caller's operation.
+  onProgress?.({ phase: 'build' });
+  const opClone = xdr.Operation.fromXDR(operation.toXDR());
+  opClone.body().invokeHostFunctionOp().auth([]);
+  const simTx = new TransactionBuilder(sourceAccount, {
+    fee: '10000000',
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(opClone)
+    .setTimeout(0)
+    .build();
+
+  const sim = await server.simulateTransaction(simTx);
+  if (rpc.Api.isSimulationError(sim)) {
+    throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
+  }
+  const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
+
+  const authEntry = getAuthEntry(successSim);
+  const lastLedger = successSim.latestLedger;
+  const expirationOffset = relayerEnabled() ? RELAYER_EXPIRATION_OFFSET : undefined;
+
+  // Assemble so auth entries are baked into the tx XDR before signing.
+  const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
+
+  return { server, submitter, simTx, successSim, authEntry, lastLedger, expirationOffset, assembledTx };
+}
+
+/**
+ * Submit a signature-injected assembled tx — relayer or classic path — and
+ * synthesize the response shape. The signer-agnostic back half of a signing
+ * flow.
+ */
+export async function submitSigned(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assembledTx: any,
+  submitter: Keypair | null,
+  server: rpc.Server,
+  authHashHex: string,
+  onProgress?: (p: { phase: 'build' | 'sign' | 'submit' | 'confirm'; detail?: string }) => void,
+): Promise<rpc.Api.SendTransactionResponse & { authHashHex: string }> {
+  onProgress?.({ phase: 'submit' });
+  if (relayerEnabled()) {
+    // The Channels plugin re-simulates server-side in enforce mode, builds
+    // the footprint itself, and a channel account becomes the tx source with
+    // the fund account fee-bumping — the enforce re-sim + fee refit + G
+    // signature + RPC submission below are all its job now. We ship only the
+    // host function and the signed auth entry.
+    onProgress?.({ phase: 'confirm' });
+    const { hash } = await relayerSubmitAndConfirm(assembledTx);
+    // Only `hash` is real (the transfer page links it to the explorer) —
+    // latestLedger/latestLedgerCloseTime are placeholder zeros and the tx is
+    // already confirmed ('PENDING' kept for shape compatibility).
+    return {
+      status: 'PENDING',
+      hash,
+      latestLedger: 0,
+      latestLedgerCloseTime: 0,
+      authHashHex,
+    };
+  }
+
+  // Re-simulate + fee refit + sign + submit + poll (classic path).
+  // See classicSubmitAndPoll for full commentary on why enforce re-sim
+  // is required and why cloneFrom is used instead of assembleTransaction.
+  if (!submitter) throw new Error('unreachable: classic path without submitter');
+  onProgress?.({ phase: 'confirm' });
+  const classicResult = await classicSubmitAndPoll(assembledTx, submitter, server);
+  return { ...classicResult, authHashHex };
 }
 
 /**
@@ -104,88 +243,91 @@ export async function signAndSubmit(args: {
   }
   const finalVerifierAddress = args.verifierAddress ?? resolved.verifier;
 
-  // 1. Pick the simulation source account. This is the tx source/fee-payer,
-  //    NOT the smart account itself.
-  //
-  //    Relayer mode: no ephemeral G is created or funded — recording-mode
-  //    simulation just needs SOME existing on-chain source account, so we use
-  //    the relayer's (public) fund address. It never signs and never pays here.
-  //    Classic mode: friendbot-funded ephemeral G as before.
-  const submitter = relayerEnabled() ? null : await getSubmitter();
-  if (relayerEnabled() && !RELAYER_SIM_SOURCE) {
-    throw new Error('Relayer misconfigured: PUBLIC_RELAYER_URL is set but PUBLIC_RELAYER_SIM_SOURCE is not.');
+  // Hybrid ("paranoid") rules: a policy-less rule holding this passkey PLUS
+  // other External signers is a strict AND — every co-signer must sign the
+  // same digest. The only co-signer this device can satisfy is the ML-DSA
+  // backstop key (matched by its 32-byte commitment). Fail BEFORE the
+  // WebAuthn ceremony if a co-signer can't be satisfied.
+  const coSigners = resolved.coSigners ?? [];
+  let backstop: BackstopKey | null = null;
+  if (coSigners.length > 0) {
+    backstop = loadBackstopKey(localStorage);
+    const commitmentHex = backstop ? buf2hex(backstop.commitment) : null;
+    const unsatisfiable = coSigners.filter((c) => c.keyDataHex !== commitmentHex);
+    if (unsatisfiable.length > 0) {
+      throw new Error(
+        'This signing rule requires co-signers this device cannot satisfy. ' +
+          'Paranoid mode needs the ML-DSA backstop key generated on this device.',
+      );
+    }
   }
-  const sourceAccount = submitter
-    ? await server.getAccount(submitter.publicKey())
-    : await server.getAccount(RELAYER_SIM_SOURCE);
 
-  // 2. Build & simulate the un-signed tx.
-  //
-  // CRUCIAL: strip any existing auth entries off the operation before
-  // simulating. `args.operation` is an `xdr.Operation` carrying the
-  // unsigned auth-entry templates that the contract bindings'
-  // AssembledTransaction.simulate left on the built tx (Void signature,
-  // SorobanAddressCredentials placeholder). If we hand those back to
-  // simulateTransaction in recording mode, the simulator runs
-  // __check_auth(payload, Void, contexts) against the smart account —
-  // and the OZ contract can't deserialize Void as AuthPayload, traps
-  // with UnreachableCodeReached, simulate returns Auth/InvalidAction,
-  // and we throw BEFORE the WebAuthn prompt.
-  //
-  // Mirror what AssembledTransaction.simulate does internally: build
-  // from an op with no auth entries so the simulator generates them
-  // fresh in recording mode. Clone the XDR op so we don't mutate the
-  // caller's operation.
-  args.onProgress?.({ phase: "build" });
-  const opClone = xdr.Operation.fromXDR(args.operation.toXDR());
-  opClone.body().invokeHostFunctionOp().auth([]);
-  const sim_tx = new TransactionBuilder(sourceAccount, {
-    fee: '10000000',
-    networkPassphrase: Networks.TESTNET,
-  })
-    .addOperation(opClone)
-    .setTimeout(0)
-    .build();
+  // 1-2. Source selection + auth-strip + recording sim + assemble (shared
+  //      with the ML-DSA backstop flow).
+  const { submitter, authEntry, lastLedger, expirationOffset, assembledTx } =
+    await simulateForSigning(args.operation, args.onProgress);
 
-  const sim = await server.simulateTransaction(sim_tx);
-  if (rpc.Api.isSimulationError(sim)) {
-    throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
-  }
-  const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
-
-  // 3. Extract the auth entry and compute the OZ v0.7 auth digest:
+  // 3. Compute the OZ v0.7 auth digest:
   //
   //    auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
   //
   //    The same `contextRuleIds` array passed here MUST be the one passed
   //    to `injectPasskeySignature` so the AuthPayload's `context_rule_ids`
   //    and the digest the contract recomputes both refer to the same rule.
-  const authEntry = getAuthEntry(successSim);
-  const lastLedger = successSim.latestLedger;
-  const expirationOffset = relayerEnabled() ? RELAYER_EXPIRATION_OFFSET : undefined;
   const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger, expirationOffset);
   // The signing rule was resolved up front (see resolveSignerRule above).
   const contextRuleIds = [resolved.ruleId];
   const challengeBytes = computeAuthDigest(signaturePayload, contextRuleIds);
   const authHashHex = buf2hex(challengeBytes);
+  const assembled_tx = assembledTx;
 
-  // 4. Assemble so auth entries are baked into the tx XDR before signing.
-  const assembled_tx = rpc.assembleTransaction(sim_tx, successSim).build();
-
-  // 5. Get a WebAuthn assertion over the challenge.
-  args.onProgress?.({ phase: "sign" });
+  // 5. Get a WebAuthn assertion over the challenge. In hybrid (paranoid)
+  //    mode the approval is a visible two-step: the sheet (no-op on pages
+  //    without the host) labels the passkey as signature 1 of 2 so the user
+  //    sees the second key is in play BEFORE the OS dialog appears.
+  const hybrid = Boolean(backstop) && coSigners.length > 0;
+  args.onProgress?.({
+    phase: "sign",
+    detail: hybrid ? "Signature 1 of 2 — your passkey" : undefined,
+  });
+  if (hybrid) {
+    openPasskeySheet({
+      title: "Confirm it's you · 1 of 2",
+      sub: "Your passkey signs first; the post-quantum backstop key co-signs next.",
+    });
+  }
   const challengeBuf = new ArrayBuffer(challengeBytes.byteLength);
   new Uint8Array(challengeBuf).set(challengeBytes);
-  const assertion = (await navigator.credentials.get({
-    publicKey: {
-      challenge: challengeBuf,
-      rpId: window.location.hostname,
-      allowCredentials: [{ id: cred.credentialId as unknown as Uint8Array<ArrayBuffer>, type: 'public-key' }],
-      userVerification: 'required',
-      timeout: 60000,
-    },
-  })) as PublicKeyCredential | null;
-  if (!assertion) throw new Error('Passkey signing was cancelled.');
+  // When the co-signing backstop is passkey-encrypted AND wrapped against the
+  // SAME credential doing this assertion, ride a PRF eval on it so one Touch ID
+  // both signs (1 of 2) and unlocks the seed — no second ceremony. If the seed
+  // was wrapped under a different credential (e.g. after a rotation), don't
+  // piggyback: unlockSeed runs its own ceremony against the wrapping credential.
+  const wrapMatchesCred =
+    hybrid && backstop?.protection === "passkey" && backstop.wrapped
+      ? buf2hex(new Uint8Array(cred.credentialId)) === buf2hex(backstop.wrapped.credentialId)
+      : false;
+  const prfEval = wrapMatchesCred && backstop ? prfEvalForKey(backstop) : null;
+  let assertion: PublicKeyCredential | null;
+  try {
+    assertion = (await navigator.credentials.get({
+      publicKey: {
+        challenge: challengeBuf,
+        rpId: window.location.hostname,
+        allowCredentials: [{ id: cred.credentialId as unknown as Uint8Array<ArrayBuffer>, type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+        ...(prfEval ? { extensions: prfEval as AuthenticationExtensionsClientInputs } : {}),
+      },
+    })) as PublicKeyCredential | null;
+  } catch (err) {
+    if (hybrid) closePasskeySheet();
+    throw err;
+  }
+  if (!assertion) {
+    if (hybrid) closePasskeySheet();
+    throw new Error('Passkey signing was cancelled.');
+  }
 
   const response = assertion.response as AuthenticatorAssertionResponse;
   const parsed = parseAssertionResponse({
@@ -194,43 +336,67 @@ export async function signAndSubmit(args: {
     signature: response.signature,
   });
 
-  // 6. Inject the passkey signature into the assembled tx's auth entry.
-  injectPasskeySignature(
-    assembled_tx,
-    parsed,
-    finalVerifierAddress,
-    hex2buf(cred.publicKey),
-    lastLedger,
-    expirationOffset,
-    contextRuleIds,
-  );
-
-  args.onProgress?.({ phase: "submit" });
-  if (relayerEnabled()) {
-    // The Channels plugin re-simulates server-side in enforce mode, builds
-    // the footprint itself, and a channel account becomes the tx source with
-    // the fund account fee-bumping — the enforce re-sim + fee refit + G
-    // signature + RPC submission below are all its job now. We ship only the
-    // host function and the passkey-signed auth entry.
-    args.onProgress?.({ phase: "confirm" });
-    const { hash } = await relayerSubmitAndConfirm(assembled_tx);
-    // Only `hash` is real (the transfer page links it to the explorer) —
-    // latestLedger/latestLedgerCloseTime are placeholder zeros and the tx is
-    // already confirmed ('PENDING' kept for shape compatibility).
-    return {
-      status: 'PENDING',
-      hash,
-      latestLedger: 0,
-      latestLedgerCloseTime: 0,
-      authHashHex,
-    };
+  // 6. Inject the signature(s) into the assembled tx's auth entry. A hybrid
+  //    rule bundles the ML-DSA co-signature over the SAME digest into one
+  //    AuthPayload; otherwise this is the classic single-passkey injection.
+  if (backstop && coSigners.length > 0) {
+    // Step 2 of 2: the local backstop key co-signs. The signature is real
+    // work but fast (~tens of ms), so the sheet holds for a beat purely so
+    // the step is legible — this is a readability pause, not a simulated
+    // scan (see passkeySheet.ts's stance on fake scanners).
+    args.onProgress?.({
+      phase: "sign",
+      detail: "Signature 2 of 2 — post-quantum backstop key (ML-DSA-65)",
+    });
+    openPasskeySheet({
+      title: "Co-signing · 2 of 2",
+      sub: "The post-quantum backstop key (ML-DSA-65) is co-signing this transaction.",
+    });
+    try {
+      // Unlock the seed: plain → immediate; passkey-encrypted → decrypt with
+      // the PRF secret carried on the assertion above (same ceremony), or a
+      // dedicated ceremony if this platform didn't return one.
+      const prf = prfEval ? prfFromAssertionResults(assertion) : { ok: false as const };
+      const seed = await unlockSeed(backstop, prf.ok ? { prfOutput: prf.output } : {});
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      injectSignedAuthPayload(
+        assembled_tx,
+        [
+          {
+            kind: 'external',
+            verifierAddress: finalVerifierAddress,
+            publicKey: hex2buf(cred.publicKey),
+            passkeySignature: parsed,
+          },
+          {
+            kind: 'external-bytes',
+            verifierAddress: coSigners[0].verifier,
+            keyData: backstop.commitment,
+            sigData: encodeMlDsaSigData(
+              backstop.publicKey,
+              signDigest(seed, challengeBytes),
+            ),
+          },
+        ],
+        lastLedger,
+        expirationOffset,
+        contextRuleIds,
+      );
+    } finally {
+      closePasskeySheet();
+    }
+  } else {
+    injectPasskeySignature(
+      assembled_tx,
+      parsed,
+      finalVerifierAddress,
+      hex2buf(cred.publicKey),
+      lastLedger,
+      expirationOffset,
+      contextRuleIds,
+    );
   }
 
-  // 7. Re-simulate + fee refit + sign + submit + poll (classic path).
-  //    See classicSubmitAndPoll for full commentary on why enforce re-sim
-  //    is required and why cloneFrom is used instead of assembleTransaction.
-  if (!submitter) throw new Error('unreachable: classic path without submitter');
-  args.onProgress?.({ phase: "confirm" });
-  const classicResult = await classicSubmitAndPoll(assembled_tx, submitter, server);
-  return { ...classicResult, authHashHex };
+  // 7. Submit — relayer or classic path (shared with the ML-DSA flow).
+  return submitSigned(assembled_tx, submitter, server, authHashHex, args.onProgress);
 }

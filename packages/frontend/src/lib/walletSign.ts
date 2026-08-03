@@ -38,6 +38,7 @@ import {
   injectSignedAuthPayload,
   identifyAssertionSigner,
   parseAssertionResponse,
+  encodeMlDsaSigData,
   buf2hex,
   hex2buf,
   type SignerSignature,
@@ -48,8 +49,50 @@ import {
   fetchDefaultRuleAuthInfo,
   type DefaultRuleAuthInfo,
 } from './policyChainFetch.js';
+import {
+  loadBackstopKey, unlockSeed, signDigest, prfEvalForKey, prfFromAssertionResults,
+  type BackstopKey,
+} from './mlDsaBackstop.js';
 import { relayerEnabled } from './relayerClient';
 import { RELAYER_EXPIRATION_OFFSET } from './network';
+
+/** An external rule signer whose 32-byte key_data is a commitment (ML-DSA
+ *  backstop) rather than a 65-byte P-256 passkey. */
+const COMMITMENT_LEN = 32;
+
+export interface RuleSignerClassification {
+  /** P-256 passkey signers (WebAuthn ceremony). */
+  passkeys: { verifier: string; publicKey: Uint8Array }[];
+  /** ML-DSA backstop signers (32-byte commitment key_data). */
+  mlDsa: { verifier: string; publicKey: Uint8Array }[];
+  /** null when satisfiable; a reason code otherwise. */
+  error: null | 'no-backstop' | 'wrong-backstop';
+}
+
+/**
+ * Split a rule's external signers into passkeys vs ML-DSA backstop (by
+ * key_data length) and check the ML-DSA signers are satisfiable from this
+ * device's backstop key. Pure — unit-testable without a chain or navigator.
+ */
+export function classifyRuleSigners(
+  externalSigners: { verifier: string; publicKey: Uint8Array }[],
+  backstopCommitment: Uint8Array | null,
+): RuleSignerClassification {
+  const mlDsa = externalSigners.filter((s) => s.publicKey.length === COMMITMENT_LEN);
+  const passkeys = externalSigners.filter((s) => s.publicKey.length !== COMMITMENT_LEN);
+  let error: RuleSignerClassification['error'] = null;
+  if (mlDsa.length > 0) {
+    if (!backstopCommitment) {
+      error = 'no-backstop';
+    } else {
+      const hex = buf2hex(backstopCommitment).toLowerCase();
+      if (mlDsa.some((s) => buf2hex(s.publicKey).toLowerCase() !== hex)) {
+        error = 'wrong-backstop';
+      }
+    }
+  }
+  return { passkeys, mlDsa, error };
+}
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 
@@ -207,11 +250,10 @@ export async function signTransactionXdr(args: {
       contextRuleIds,
     );
   } else {
-    // Multi-passkey ceremony (issue #87): collect `requiredSignatures`
-    // assertions over the SAME auth digest — every signer in the AuthPayload
-    // map is verified against that one digest — and bundle them into one
-    // multi-signer payload.
-    const signers = await collectMultiPasskeySignatures({
+    // Multi-signer rule (issue #87 + hybrid paranoid): collect every required
+    // signature over the SAME auth digest — passkeys via WebAuthn, the ML-DSA
+    // backstop locally — and bundle them into one multi-signer payload.
+    const signers = await collectRuleSignatures({
       ruleInfo: ruleInfo!,
       required: requiredSignatures,
       challengeBytes,
@@ -257,6 +299,17 @@ async function runAssertionCeremony(
   challenge: Uint8Array,
   credentialId?: Uint8Array,
 ): Promise<PasskeySignature> {
+  return (await runAssertion(challenge, credentialId)).sig;
+}
+
+/** Like `runAssertionCeremony` but also returns the raw credential so callers
+ *  can read a PRF result (`prfEval` rides the assertion — one ceremony both
+ *  signs and unlocks a passkey-protected backstop seed). */
+async function runAssertion(
+  challenge: Uint8Array,
+  credentialId?: Uint8Array,
+  prfEval?: { prf: { eval: { first: BufferSource } } } | null,
+): Promise<{ sig: PasskeySignature; assertion: PublicKeyCredential }> {
   const challengeBuf = new ArrayBuffer(challenge.byteLength);
   new Uint8Array(challengeBuf).set(challenge);
   let assertion: PublicKeyCredential | null;
@@ -274,6 +327,7 @@ async function runAssertionCeremony(
           : {}),
         userVerification: 'required',
         timeout: 60000,
+        ...(prfEval ? { extensions: prfEval as AuthenticationExtensionsClientInputs } : {}),
       },
     })) as PublicKeyCredential | null;
   } catch (e) {
@@ -284,24 +338,31 @@ async function runAssertionCeremony(
   }
   if (!assertion) throw new Error('Passkey signing was cancelled.');
   const response = assertion.response as AuthenticatorAssertionResponse;
-  return parseAssertionResponse({
+  const sig = parseAssertionResponse({
     authenticatorData: response.authenticatorData,
     clientDataJSON: response.clientDataJSON,
     signature: response.signature,
   });
+  return { sig, assertion };
 }
 
 /**
- * Collect `required` passkey signatures over the same auth digest from rule
- * 0's External signers (issue #87 — N-of-N or M-of-N rules).
+ * Collect all signatures a multi-signer rule needs over the same auth digest,
+ * bundled into one `AuthPayload`.
  *
- * Strategy: sign first with the locally-stored credential (its public key is
- * known), then run DISCOVERABLE ceremonies for the rest. A discoverable
- * assertion does not say which public key it belongs to, so each one is
- * matched against the still-unmatched rule signers by verifying its P-256
- * signature (`identifyAssertionSigner`).
+ * Two kinds of External signer are handled:
+ *  - **passkeys** (65-byte SEC1 key_data): a WebAuthn ceremony — the stored
+ *    credential first, then DISCOVERABLE ceremonies matched by verifying the
+ *    P-256 signature (`identifyAssertionSigner`). Issue #87 (N-of-N / M-of-N).
+ *  - **ML-DSA backstop** (32-byte commitment key_data): produced locally from
+ *    this device's backstop key — the hybrid "paranoid" rule. The passkey
+ *    ceremony rides a PRF eval so one Touch ID both signs and unlocks the
+ *    encrypted seed.
+ *
+ * Throws before any ceremony when the rule needs an ML-DSA signature this
+ * device can't produce (no local key, or a different key than enrolled).
  */
-async function collectMultiPasskeySignatures(args: {
+async function collectRuleSignatures(args: {
   ruleInfo: DefaultRuleAuthInfo;
   required: number;
   challengeBytes: Uint8Array;
@@ -311,21 +372,36 @@ async function collectMultiPasskeySignatures(args: {
   const { ruleInfo, required, challengeBytes, storedCred, onStatus } = args;
   const total = ruleInfo.externalSigners.length + ruleInfo.delegatedCount;
 
-  // Rule signers still awaiting a signature, keyed by lowercase pubkey hex.
-  const remaining = new Map<string, { verifier: string; publicKey: Uint8Array }>(
-    ruleInfo.externalSigners.map((s) => [buf2hex(s.publicKey).toLowerCase(), s]),
+  // Validate the ML-DSA signers up front — this device must hold the exact
+  // enrolled backstop key for each, or signing is impossible.
+  const backstop: BackstopKey | null = loadBackstopKey(localStorage);
+  const { passkeys: passkeySigners, mlDsa: mlDsaSigners, error } = classifyRuleSigners(
+    ruleInfo.externalSigners,
+    backstop?.commitment ?? null,
   );
-  const collected: SignerSignature[] = [];
+  if (error === 'no-backstop') {
+    throw new Error(
+      'This rule requires the post-quantum backstop key, which this device ' +
+        "doesn't hold. Sign from the device that has it, or restore it from its " +
+        'recovery phrase.',
+    );
+  }
+  if (error === 'wrong-backstop') {
+    throw new Error(
+      "This rule's post-quantum signer is a different backstop key than this " +
+        'device holds.',
+    );
+  }
 
-  const wrapCancel = async (run: () => Promise<PasskeySignature>): Promise<PasskeySignature> => {
+  const collected: SignerSignature[] = [];
+  const wrapCancel = async <T,>(run: () => Promise<T>): Promise<T> => {
     try {
       return await run();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/cancelled/i.test(msg)) {
         throw new Error(
-          `Signing stopped after ${collected.length} of ${required} required ` +
-            `passkey approvals. ` +
+          `Signing stopped after ${collected.length} of ${required} approvals. ` +
             nOfNHelp(required, total),
         );
       }
@@ -333,14 +409,33 @@ async function collectMultiPasskeySignatures(args: {
     }
   };
 
+  // Passkey signers awaiting a signature, keyed by lowercase pubkey hex.
+  const remaining = new Map<string, { verifier: string; publicKey: Uint8Array }>(
+    passkeySigners.map((s) => [buf2hex(s.publicKey).toLowerCase(), s]),
+  );
+  const stepTotal = passkeySigners.length + mlDsaSigners.length;
+
+  // Ride a PRF eval on the stored-credential ceremony when the backstop is
+  // encrypted under THAT credential, so one ceremony both signs and unlocks.
+  const wrapMatchesStored =
+    backstop?.protection === 'passkey' &&
+    backstop.wrapped &&
+    buf2hex(new Uint8Array(storedCred.credentialId)) === buf2hex(backstop.wrapped.credentialId);
+  const prfEval = wrapMatchesStored && backstop ? prfEvalForKey(backstop) : null;
+  let ridePrf: Uint8Array | undefined;
+
   // 1) The locally-stored credential first — its public key is known.
   const storedHex = storedCred.publicKey.toLowerCase();
   const storedSigner = remaining.get(storedHex);
   if (storedSigner) {
-    onStatus?.(`Approve with this device's passkey (signature 1 of ${required})…`);
-    const sig = await wrapCancel(() =>
-      runAssertionCeremony(challengeBytes, storedCred.credentialId),
+    onStatus?.(`Approve with your passkey (signature 1 of ${stepTotal})…`);
+    const { sig, assertion } = await wrapCancel(() =>
+      runAssertion(challengeBytes, storedCred.credentialId, prfEval),
     );
+    if (prfEval) {
+      const prf = prfFromAssertionResults(assertion);
+      if (prf.ok) ridePrf = prf.output;
+    }
     collected.push({
       kind: 'external',
       verifierAddress: storedSigner.verifier,
@@ -350,11 +445,11 @@ async function collectMultiPasskeySignatures(args: {
     remaining.delete(storedHex);
   }
 
-  // 2) Discoverable ceremonies for the remaining signers.
-  while (collected.length < required) {
+  // 2) Discoverable ceremonies for the remaining passkey signers.
+  while (collected.length < passkeySigners.length) {
     onStatus?.(
       `Approve with another of this account's passkeys ` +
-        `(signature ${collected.length + 1} of ${required})…`,
+        `(signature ${collected.length + 1} of ${stepTotal})…`,
     );
     const sig = await wrapCancel(() => runAssertionCeremony(challengeBytes));
     const candidates = [...remaining.values()];
@@ -377,6 +472,24 @@ async function collectMultiPasskeySignatures(args: {
       passkeySignature: sig,
     });
     remaining.delete(buf2hex(matched.publicKey).toLowerCase());
+  }
+
+  // 3) ML-DSA co-signature(s), produced locally from the backstop key over the
+  //    SAME digest. Unlock via the ride-along PRF secret when we have it.
+  if (mlDsaSigners.length > 0 && backstop) {
+    onStatus?.(
+      `Post-quantum backstop key co-signing (signature ${stepTotal} of ${stepTotal})…`,
+    );
+    const seed = await unlockSeed(backstop, ridePrf ? { prfOutput: ridePrf } : {});
+    const sigData = encodeMlDsaSigData(backstop.publicKey, signDigest(seed, challengeBytes));
+    for (const s of mlDsaSigners) {
+      collected.push({
+        kind: 'external-bytes',
+        verifierAddress: s.verifier,
+        keyData: s.publicKey,
+        sigData,
+      });
+    }
   }
 
   return collected;
