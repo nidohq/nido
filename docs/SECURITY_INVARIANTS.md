@@ -181,6 +181,18 @@ crate to be self-contained would trip the vendor-drift guard (`scripts/check-ven
 
 ## Storage / liveness
 
-- **T1 (to validate) — Recovery state survives the active window.** Pending + nullifier +
-  rate-window entries must remain live across the full 14d timelock + 30d completion window
-  under Soroban `max_ttl`, with fail-closed archival. **Empirical test to be added (E-task).**
+- **T1 — Recovery state survives the active window.** The `Pending` + `Nullifier` + `Nonce`
+  + `RateWindow` entries `initiate_recovery` writes must remain live across the full 14d
+  timelock + 30d completion window (~44d) so a legitimate recovery can complete at the last
+  moment. Every recovery write extends the entry's TTL to the network max
+  (`extend_ttl(max, max)` in `controller.rs`/`merkle.rs`/`policy.rs`), and 44 days of ledgers
+  (~760k at ~5s/ledger) sits far under `max_ttl` (~6.31M in-env), so nothing archives
+  mid-window. Evidence: `zk_recovery_completion.rs::recovery_state_survives_full_active_window`
+  — asserts the window-in-ledgers is far below the env's real `max_ttl`, advances BOTH the
+  ledger timestamp and sequence across the full window, asserts all four entries are still
+  readable, and drives a real completion at the end of the window. Scope note: the soroban-sdk
+  test env does not model archival eviction, so the test validates the *survival premise*
+  (window ≪ `max_ttl` + extend-to-max on every write); fail-closed archival itself is a Soroban
+  **protocol** guarantee — an archived persistent entry is inaccessible (a read errors and
+  reverts), never silently readable as `None` — which is exactly why staying under `max_ttl`
+  matters.
