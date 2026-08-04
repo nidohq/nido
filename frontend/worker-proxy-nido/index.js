@@ -76,6 +76,10 @@ export default {
     // Keep it identical to packages/frontend/public/_headers (the static-origin
     // copy). style-src still carries 'unsafe-inline' (Astro/Tailwind inline styles);
     // dropping it needs its own verification pass.
+    // TODO(mainnet cutover): the Stellar hosts below are TESTNET
+    // (soroban-testnet/horizon-testnet/friendbot). At mainnet, swap to
+    // soroban.stellar.org + horizon.stellar.org and REMOVE friendbot, in lockstep
+    // with the frontend network config AND packages/frontend/public/_headers.
     // TODO(audit E): after a clean report stream in prod, promote to
     // `Content-Security-Policy` (drop `-Report-Only`). See docs/MAINNET_READINESS.md.
     response.headers.set(
