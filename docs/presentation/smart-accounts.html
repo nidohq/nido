@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nido — Passkey-Native Smart Accounts on Stellar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Hanken+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* Nido "Warm Nest" palette, adapted for slides (see packages/frontend/src/styles/nido.css) */
+:root {
+  --coral: #F25C2A; --honey: #F5A623; --teal: #0E9AA8;
+  --espresso: #2A1A12; --cream: #FFF8F0;
+  --paper: #FFF8F0; --paper-2: #ffffff; --paper-3: #FBEFE0; --chip: #F4E8D7;
+  --ink: #2A1A12; --ink-soft: #6b5446; --mut: #7a6655;
+  --line: #efe2d2; --line-soft: #f4ebde;
+  --acc: #F25C2A; --acc-ink: #b83e14; --acc-soft: #FCE3D6;
+  --good: #0E9AA8; --good-ink: #0a6b75; --good-soft: #DBF0F1;
+  --warn-soft: #F8ECD4; --warn-ink: #815a14;
+  --disp: "Fraunces", Georgia, serif;
+  --body: "Hanken Grotesk", -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: only light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: var(--body); color: var(--ink); background: var(--paper);
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+::selection { background: var(--acc); color: #fff; }
+a { color: var(--acc-ink); }
+
+/* ---------- deck chrome ---------- */
+.slide {
+  position: absolute; inset: 0; display: none;
+  padding: clamp(24px, 4.5vh, 56px) clamp(28px, 7vw, 110px);
+  flex-direction: column;
+}
+.slide.active { display: flex; }
+.slide-body { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+
+#hud {
+  position: fixed; right: 22px; bottom: 16px; z-index: 50;
+  font-family: var(--mono); font-size: 12px; color: var(--mut);
+  user-select: none;
+}
+#bar {
+  position: fixed; left: 0; bottom: 0; height: 4px; background: var(--acc);
+  transition: width .25s ease; z-index: 50;
+}
+.halo {
+  position: fixed; border-radius: 50%; pointer-events: none; z-index: 0;
+  background: radial-gradient(circle, rgba(242,92,42,.16), rgba(242,92,42,0) 68%);
+  width: 60vw; height: 60vw; top: -25vw; right: -20vw;
+}
+
+/* ---------- type ---------- */
+h1, h2, h3 { font-family: var(--disp); letter-spacing: -0.01em; margin: 0; }
+h1 { font-size: clamp(40px, 6.5vw, 84px); font-weight: 800; line-height: 1.04; }
+h2 { font-size: clamp(26px, 3.4vw, 44px); font-weight: 800; line-height: 1.1; margin-bottom: .55em; }
+p, li { font-size: clamp(15px, 1.5vw, 20px); line-height: 1.5; }
+p { margin: .4em 0; }
+ul, ol { margin: .5em 0; padding-left: 1.2em; }
+li { margin: .4em 0; }
+li::marker { color: var(--acc); }
+.kicker {
+  font-family: var(--mono); font-size: clamp(12px, 1.1vw, 14px); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .14em; color: var(--acc-ink); margin-bottom: 8px;
+}
+.sub { color: var(--ink-soft); }
+.mut { color: var(--mut); }
+.big { font-size: clamp(19px, 2.1vw, 27px); }
+b, strong { font-weight: 700; }
+em.acc { color: var(--acc-ink); font-style: normal; font-weight: 700; }
+
+code, .mono { font-family: var(--mono); }
+p code, li code, td code, .step code, h2 code, h3 code {
+  background: var(--chip); border-radius: 6px; padding: .08em .35em;
+  font-size: .88em; white-space: nowrap;
+}
+pre {
+  background: var(--paper-2); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 20px; overflow-x: auto; margin: .7em 0;
+  box-shadow: 0 1px 2px rgba(42,26,18,.05);
+}
+pre code { font-size: clamp(12.5px, 1.2vw, 16px); line-height: 1.5; background: none; padding: 0; white-space: pre; }
+.cm { color: var(--mut); }          /* comment */
+.kw { color: var(--acc-ink); }      /* keyword */
+.ty { color: var(--good-ink); }     /* type */
+.st { color: #8a6d1f; }             /* string */
+
+/* ---------- layout helpers ---------- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(18px, 2.6vw, 42px); align-items: start; }
+.cols-32 { grid-template-columns: 3fr 2fr; }
+.cols-23 { grid-template-columns: 2fr 3fr; }
+.card {
+  background: var(--paper-2); border: 1px solid var(--line); border-radius: 18px;
+  padding: clamp(12px, 1.6vw, 22px) clamp(15px, 1.9vw, 28px);
+  box-shadow: 0 10px 34px rgba(42,26,18,.07), 0 2px 6px rgba(42,26,18,.04);
+}
+.card h3 { font-size: clamp(16px, 1.65vw, 22px); margin-bottom: .3em; }
+.card p, .card li { font-size: clamp(13.5px, 1.3vw, 17.5px); }
+.card.soft { background: var(--paper-3); box-shadow: none; }
+.card.good { background: var(--good-soft); border-color: #c4e2e4; }
+.card.warn { background: var(--warn-soft); border-color: #ecd9b0; }
+.card.accent { background: var(--acc-soft); border-color: #f4c4ad; }
+.stack { display: flex; flex-direction: column; gap: clamp(9px, 1.3vh, 16px); }
+.row { display: flex; gap: clamp(10px, 1.3vw, 18px); align-items: stretch; }
+.row > * { flex: 1; }
+.pill {
+  display: inline-block; font-family: var(--mono); font-size: clamp(11px, 1vw, 13px);
+  font-weight: 600; padding: .3em .8em; border-radius: 999px;
+  background: var(--chip); color: var(--ink-soft); white-space: nowrap;
+}
+.pill.acc { background: var(--acc-soft); color: var(--acc-ink); }
+.pill.good { background: var(--good-soft); color: var(--good-ink); }
+.arrow { color: var(--acc); font-weight: 700; }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: .45em .9em; border-bottom: 1px solid var(--line); font-size: clamp(13.5px, 1.35vw, 17.5px); }
+th { font-family: var(--mono); font-size: clamp(11px, 1vw, 13px); text-transform: uppercase; letter-spacing: .1em; color: var(--mut); font-weight: 600; }
+
+/* flow diagram strip */
+.flow { display: flex; align-items: center; gap: clamp(6px, .9vw, 13px); flex-wrap: wrap; }
+.flow .step {
+  background: var(--paper-2); border: 1px solid var(--line); border-radius: 13px;
+  padding: .5em .85em; font-size: clamp(12.5px, 1.25vw, 16.5px); font-weight: 600; text-align: center;
+}
+.flow .step small { display: block; font-weight: 400; color: var(--mut); font-size: .82em; }
+.flow .sep { color: var(--acc); font-weight: 700; font-size: 1.2em; }
+
+.wordmark { font-family: var(--disp); font-weight: 800; }
+.wordmark b { color: var(--acc); }
+footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 13px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+<div class="halo"></div>
+
+<main id="deck">
+
+<!-- 1 · Title -->
+<section class="slide">
+  <div class="slide-body">
+    <div class="kicker">nido.fyi · Stellar testnet</div>
+    <h1 class="wordmark">n<b>i</b>do</h1>
+    <h1 style="font-size: clamp(26px, 3.6vw, 48px); margin-top:.25em;">Passkey-native smart accounts for Stellar</h1>
+    <p class="big sub" style="margin-top: 1em; max-width: 32em;">
+      An open account-abstraction stack: Soroban contracts, a browser wallet, and a
+      TypeScript SDK that move users from G-addresses to passkey-secured C-addresses —
+      with every authorization verified <em class="acc">on-chain</em>.
+    </p>
+    <p class="mut" style="margin-top: 2em;">→ / ← to navigate · a technical tour for the team</p>
+  </div>
+</section>
+
+<!-- 2 · The problem -->
+<section class="slide">
+  <div class="kicker">01 · Why</div>
+  <div class="slide-body">
+    <h2>A G-address <em class="acc">is</em> its keypair — that's the problem</h2>
+    <div class="cols" style="margin-top:.5em;">
+      <div class="stack">
+        <div class="card warn">
+          <h3>Key loss is account loss</h3>
+          <p>One ed25519 seed, memorized as 24 words. Lose it and the account is gone; leak it and the funds are gone. No undo, no recourse.</p>
+        </div>
+        <div class="card warn">
+          <h3>Auth logic is fixed by the protocol</h3>
+          <p>Classic accounts give you signers + weights + thresholds — and nothing else. No spending limits, no session scopes, no time locks, no custom recovery.</p>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card warn">
+          <h3>Seed-phrase UX filters out normal users</h3>
+          <p>"Write these words on paper and never lose them" is the onboarding step where most people quit — or hand their keys to a custodian.</p>
+        </div>
+        <div class="card good">
+          <h3>What we actually want</h3>
+          <p>Login that feels like Face ID, permissions that are programmable, and recovery that doesn't depend on a company holding your keys.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 · Smart accounts on Soroban -->
+<section class="slide">
+  <div class="kicker">02 · Account abstraction</div>
+  <div class="slide-body">
+    <h2>Smart accounts: the account is a contract</h2>
+    <p class="sub big">A C-address with a custom <code>__check_auth</code> — authorization becomes code you write, not a protocol rule you inherit.</p>
+    <div class="cols" style="margin-top: .8em;">
+      <div>
+        <table>
+          <tr><th></th><th>G-address</th><th>C-address (smart account)</th></tr>
+          <tr><td>Identity</td><td>ed25519 keypair</td><td>deployed contract instance</td></tr>
+          <tr><td>Auth check</td><td>protocol signature check</td><td>your <code>__check_auth</code> code</td></tr>
+          <tr><td>Key types</td><td>ed25519 only</td><td>anything you can verify — P-256, multisig, ZK proofs</td></tr>
+          <tr><td>Policies</td><td>weights/thresholds</td><td>arbitrary: limits, scopes, timelocks, recovery</td></tr>
+        </table>
+      </div>
+      <div class="card soft">
+        <h3>How Soroban invokes it</h3>
+        <p>When a tx needs the account's authorization (<code>require_auth</code>), the host calls the account contract's <code>__check_auth</code> with the <b>signature payload hash</b>, the <b>signatures object</b>, and the <b>auth contexts</b> being authorized. Panic = deny.</p>
+        <p class="mut">Nido builds on OpenZeppelin <code>stellar-accounts</code> rather than reinventing the auth kernel.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · Why passkeys -->
+<section class="slide">
+  <div class="kicker">03 · Passkeys</div>
+  <div class="slide-body">
+    <h2>Why passkeys are the right first signer</h2>
+    <div class="cols">
+      <div class="stack">
+        <div class="card">
+          <h3>Hardware-backed P-256, no seed phrase</h3>
+          <p>WebAuthn credentials live in the platform authenticator (Secure Enclave / TPM), sync via iCloud or Google, and sign only after biometric user verification.</p>
+        </div>
+        <div class="card">
+          <h3>Phishing-resistant by construction</h3>
+          <p>The browser scopes each credential to its RP ID and embeds origin + challenge in the signed payload. A look-alike site can't request a valid signature.</p>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card accent">
+          <h3>And Soroban can verify them natively</h3>
+          <p>The <code>secp256r1_verify</code> host function checks P-256 signatures on-chain. So the chain itself — not a backend — verifies every WebAuthn assertion.</p>
+        </div>
+        <div class="card soft">
+          <h3>Formats we care about</h3>
+          <p>Public key: <b>65-byte SEC1 uncompressed</b> (<code>0x04 ‖ X ‖ Y</code>).<br>
+          Signature: DER from the browser, converted to <b>64-byte compact r‖s, low-S normalized</b> before it goes on-chain.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 · Architecture -->
+<section class="slide">
+  <div class="kicker">04 · Architecture</div>
+  <div class="slide-body">
+    <h2>The stack at a glance</h2>
+    <div class="row" style="margin-top:.4em;">
+      <div class="card">
+        <h3>Wallet app</h3>
+        <p><code>packages/frontend</code> — Astro app at nido.fyi. Each account lives at its own subdomain: <code>&lt;C-address&gt;.nido.fyi</code>.</p>
+      </div>
+      <div class="card">
+        <h3>Passkey SDK</h3>
+        <p><code>@nidohq/passkey-sdk</code> — WebAuthn parsing, auth-digest computation, signature injection, deploy, recovery, session keys.</p>
+      </div>
+      <div class="card">
+        <h3>Wallets Kit module</h3>
+        <p><code>NidoModule</code> for <code>stellar-wallets-kit</code> — Nido appears in dApp wallet selectors next to Freighter &amp; xBull.</p>
+      </div>
+    </div>
+    <div class="row" style="margin-top: 12px;">
+      <div class="card soft">
+        <h3>Soroban contracts</h3>
+        <p>Factory · Smart Account · WebAuthn Verifier · Multisig + Spending-Limit policies · ZK Recovery pool/controller · UltraHonk verifier · Name registry.</p>
+      </div>
+      <div class="card soft">
+        <h3>Infra</h3>
+        <p>OpenZeppelin Relayer (gas abstraction, <code>nido.fly.dev</code>) and a Cloudflare Worker pool indexer that mirrors the recovery Merkle tree.</p>
+      </div>
+    </div>
+    <p class="mut" style="margin-top: 10px;">Everything auth-critical is on-chain; the off-chain pieces only carry bytes or cache public state.</p>
+  </div>
+</section>
+
+<!-- 6 · Factory / onboarding -->
+<section class="slide">
+  <div class="kicker">05 · Onboarding</div>
+  <div class="slide-body">
+    <h2>Factory: deterministic C-addresses, atomic genesis</h2>
+    <div class="cols cols-32">
+      <div>
+        <pre><code><span class="cm">// contracts/factory — the address is a pure function of</span>
+<span class="cm">// (factory, salt, wasm hash). Constructor args don't affect it.</span>
+<span class="kw">pub fn</span> get_c_address(e: &amp;<span class="ty">Env</span>, salt: <span class="ty">BytesN</span>&lt;32&gt;) -&gt; <span class="ty">Address</span> {
+    e.deployer().with_current_contract(salt).deployed_address()
+}</code></pre>
+        <ul>
+          <li><b>Reserve first, deploy later</b> — the wallet computes the C-address up front, so a G-address can fund it before the contract exists.</li>
+          <li><b>One transaction</b> — <code>create_account_v2(salt, key, commitment)</code> deploys the account, installs the passkey as the first signer (<code>Signer::External(verifier, key)</code>), and inserts a recovery-pool leaf. Any failure reverts everything.</li>
+          <li><b>Embedded wasm</b> — the factory <code>include_bytes!</code>'s the smart-account wasm and hashes it at runtime; no hardcoded hash to drift.</li>
+        </ul>
+      </div>
+      <div class="card soft">
+        <h3>Trust-minimized by design</h3>
+        <p>Deterministic derivation means the factory can't swap in different code for your address — the wasm hash is part of the address math.</p>
+        <p>Shared contracts (verifier, ZK recovery) resolve through the on-chain Stellar Registry and are cached in instance storage.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 · Smart account anatomy -->
+<section class="slide">
+  <div class="kicker">06 · The account contract</div>
+  <div class="slide-body">
+    <h2>Anatomy of a Nido smart account</h2>
+    <div class="cols cols-32">
+      <div>
+        <pre><code><span class="kw">impl</span> <span class="ty">CustomAccountInterface</span> <span class="kw">for</span> <span class="ty">NidoSmartAccount</span> {
+    <span class="kw">type</span> <span class="ty">Signature</span> = <span class="ty">AuthPayload</span>;  <span class="cm">// signers + context_rule_ids</span>
+
+    <span class="kw">fn</span> __check_auth(e: <span class="ty">Env</span>, signature_payload: <span class="ty">Hash</span>&lt;32&gt;,
+                    signatures: <span class="ty">AuthPayload</span>, auth_contexts: <span class="ty">Vec</span>&lt;<span class="ty">Context</span>&gt;)
+        -&gt; <span class="kw">Result</span>&lt;(), <span class="ty">Self</span>::Error&gt; {
+        do_check_auth(&amp;e, &amp;signature_payload, &amp;signatures, &amp;auth_contexts)
+    }
+}</code></pre>
+        <p>Three OpenZeppelin traits: <code>CustomAccountInterface</code> (auth), <code>SmartAccount</code> (manage signers/rules/policies, each self-authorized), <code>ExecutionEntryPoint</code> (generic <code>execute</code>).</p>
+      </div>
+      <div class="card soft">
+        <h3>Context rules — the mental model</h3>
+        <p>An account is a list of <b>rules</b>. Each rule = <b>scope</b> (Default, or CallContract(X)) + <b>signers</b> + <b>policies</b>.</p>
+        <ul>
+          <li>Constructor installs a <code>Default</code> rule holding your passkey(s).</li>
+          <li>Policies attached to a rule <b>all</b> must pass.</li>
+          <li>A <b>zero-signer rule + one policy</b> makes the policy the sole authority — remember this for recovery.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 · WebAuthn on-chain -->
+<section class="slide">
+  <div class="kicker">07 · On-chain WebAuthn</div>
+  <div class="slide-body">
+    <h2>Verifying a passkey assertion on-chain</h2>
+    <div class="cols">
+      <div>
+        <p class="sub">The stateless verifier contract (deploy once, shared by all accounts) receives the raw assertion and replays the WebAuthn math:</p>
+        <ol>
+          <li>Parse <code>clientDataJSON</code>; require <code>type == "webauthn.get"</code></li>
+          <li>Require <code>challenge == base64url(auth digest)</code></li>
+          <li>Check <code>authenticatorData</code> flags: <b>UP</b> + <b>UV</b> bits set</li>
+          <li>Digest = <code>authData ‖ sha256(clientData)</code></li>
+          <li><code>secp256r1_verify(pubkey, sha256(digest), sig)</code> — the host function does the P-256 work</li>
+        </ol>
+      </div>
+      <div class="stack">
+        <div class="card accent">
+          <h3>The challenge is not just the tx hash</h3>
+          <p>OZ v0.7 signs one step past Soroban's <code>signature_payload</code>:</p>
+          <p style="text-align:center; margin:.6em 0;"><code>digest = sha256(payload ‖ context_rule_ids)</code></p>
+          <p>The signature is bound to the <b>specific rule</b> it authorizes — a signature collected for a scoped session rule can't be replayed against the default rule.</p>
+        </div>
+        <div class="card soft">
+          <p class="mut" style="margin:0;">Origin, rpIdHash, and sign-count checks are deliberately omitted on-chain — the browser enforces origin scoping; the chain verifies possession + intent.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 · Signing flow -->
+<section class="slide">
+  <div class="kicker">08 · Signing, end to end</div>
+  <div class="slide-body">
+    <h2>From dApp click to on-chain auth</h2>
+    <div class="flow" style="margin: .8em 0;">
+      <div class="step">dApp<small>Wallets Kit</small></div><span class="sep">→</span>
+      <div class="step"><code>&lt;acct&gt;.nido.fyi/sign</code><small>account subdomain</small></div><span class="sep">→</span>
+      <div class="step">simulate<small>find auth entry</small></div><span class="sep">→</span>
+      <div class="step">compute digest<small>payload ‖ rule ids</small></div><span class="sep">→</span>
+      <div class="step">passkey ceremony<small>challenge = digest</small></div><span class="sep">→</span>
+      <div class="step">inject <code>AuthPayload</code><small>DER → compact low-S</small></div><span class="sep">→</span>
+      <div class="step">signed XDR<small>dApp submits</small></div>
+    </div>
+    <div class="cols">
+      <div class="card soft">
+        <h3>Subdomain-per-account</h3>
+        <p>The WebAuthn RP ID is the account's own subdomain — passkeys are cryptographically scoped to one account at the DNS level. Wrong account? The module surfaces <code>ACCOUNT_SWITCH_REQUESTED</code>.</p>
+      </div>
+      <div class="card soft">
+        <h3>Scope</h3>
+        <p>Soroban-only: one <code>InvokeHostFunction</code> op per tx. A Nido C-address cannot sign classic Stellar operations. Multi-signer rules (N-of-N, M-of-N) sign the <b>same digest</b>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 · Policies & session keys -->
+<section class="slide">
+  <div class="kicker">09 · Programmable auth</div>
+  <div class="slide-body">
+    <h2>Policies &amp; session keys: auth as composable rules</h2>
+    <div class="row" style="margin-top:.4em;">
+      <div class="card">
+        <h3>Multisig policy</h3>
+        <p>M-of-N threshold over a rule's signers (<code>SimpleThresholdAccountParams</code>). Powers friend-based recovery: <code>add_multisig_recovery(name, valid_until, friends, threshold)</code>.</p>
+      </div>
+      <div class="card">
+        <h3>Spending-limit policy</h3>
+        <p>Rolling-window meter (<code>limit: i128</code> per <code>period_ledgers</code>) over SAC <code>transfer</code> calls in scoped contexts. Update preserves the current window.</p>
+      </div>
+      <div class="card">
+        <h3>Session keys</h3>
+        <p>Not a contract — a <b>scoped signer</b>: a second WebAuthn credential installed on a narrow rule (e.g. one dApp, spending-limited), default 30-day expiry.</p>
+      </div>
+    </div>
+    <div class="card accent" style="margin-top: 14px;">
+      <p style="margin:0;"><b>The composition rule that unlocks everything:</b> policies on a rule AND together, and a rule with <em class="acc">zero signers</em> and one policy makes that policy the rule's sole authority. That's the hook ZK recovery hangs on. →</p>
+    </div>
+  </div>
+</section>
+
+<!-- 11 · Recovery problem -->
+<section class="slide">
+  <div class="kicker">10 · Recovery</div>
+  <div class="slide-body">
+    <h2>Lost passkey ≠ lost account — but how, exactly?</h2>
+    <p class="sub big" style="max-width: 34em;">Platform sync fails, devices die, Apple IDs get locked. If passkeys are the only signer, we've just rebuilt the seed-phrase cliff with better UX. Recovery needs to exist — under constraints:</p>
+    <div class="row" style="margin-top: .8em;">
+      <div class="card warn"><h3>No custodian</h3><p>No company that can take the account — or be subpoenaed, hacked, or shut down into taking it.</p></div>
+      <div class="card warn"><h3>No social graph leak</h3><p>Guardian schemes publish who your friends are and require coordinating M-of-N humans at the worst possible time.</p></div>
+      <div class="card warn"><h3>Owner keeps the veto</h3><p>A thief who finds your recovery secret shouldn't be able to instantly drain the account.</p></div>
+      <div class="card warn"><h3>No linkability</h3><p>Enrolling in recovery shouldn't mark your account on-chain as "has recovery" — or link it to anything else.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 · ZK recovery concept -->
+<section class="slide">
+  <div class="kicker">11 · ZK recovery — the idea</div>
+  <div class="slide-body">
+    <h2>A coat check, cryptographically</h2>
+    <div class="cols">
+      <div>
+        <p class="big">You hold a claim ticket (a <b>secret</b>); the pool holds a stub bound to your account (a <b>commitment</b>). To recover, you prove you hold the matching ticket — <em class="acc">without showing it</em>.</p>
+        <ul>
+          <li><b>Secret</b> → seed words or a repeatable wallet signature, HKDF'd in-browser to a BN254 field element. Never stored anywhere.</li>
+          <li><b>Commitment</b> → <code>Poseidon2([DOM_LEAF, secret])</code>, wrapped <em>on-chain</em> with your account address, appended to a depth-24 Merkle tree (~16.7M leaves).</li>
+          <li><b>Proof</b> → "some leaf in this tree is bound to this account and I know its secret" — plus a <b>nullifier</b> so each secret spends once, and an <b>auth hash</b> binding every argument of the request.</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <div class="card good">
+          <h3>Uniform anonymity set</h3>
+          <p>Every account gets exactly one genesis leaf — real, or a deterministic dummy (<code>sha256("nido-zk-dummy" ‖ salt) mod r</code>). On-chain, enrolled and non-enrolled accounts are indistinguishable.</p>
+        </div>
+        <div class="card soft">
+          <h3>What the circuit does <em>not</em> know</h3>
+          <p>No guardians, no votes, no balances. Public inputs are just <code>root</code>, <code>nullifier</code>, <code>auth_hash</code> — membership, uniqueness, and request-binding. Nothing else.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 · ZK recovery mechanics -->
+<section class="slide">
+  <div class="kicker">12 · ZK recovery — the flow</div>
+  <div class="slide-body">
+    <h2>Initiate → timelock → zero-signer completion</h2>
+    <div class="flow" style="margin: .6em 0;">
+      <div class="step">enroll<small>leaf at account creation</small></div><span class="sep">→</span>
+      <div class="step"><code>initiate_recovery</code><small>permissionless + proof</small></div><span class="sep">→</span>
+      <div class="step">timelock<small>owner can cancel/burn</small></div><span class="sep">→</span>
+      <div class="step">complete<small>zero-signer rule installs new passkey</small></div>
+    </div>
+    <div class="cols">
+      <div class="stack">
+        <div class="card">
+          <h3>Initiation needs no key and no funds</h3>
+          <p>No <code>require_auth</code> — the UltraHonk proof <em>is</em> the authorization, and the OZ relayer pays the fee. Verified fully on-chain via BN254 host functions: ~159M CPU of the 400M budget. Rate-limited to 3 attempts per rolling 90 days.</p>
+        </div>
+        <div class="card">
+          <h3>The owner keeps the veto</h3>
+          <p>During the timelock (mainnet: 14-day delay, 7-day floor) the real owner can <code>cancel</code> — or <code>burn_nullifier</code> forever — each requiring their own proof, so strangers can't grief.</p>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card accent">
+          <h3>Completion is a policy gate, not a proof</h3>
+          <p>The recovery rule is <b>zero-signer</b> with the ZK controller as sole policy. Completion is a plain <code>add_context_rule</code> installing only the pending new passkey; <code>enforce</code> checks the stored record, exact call shape, and timelock. Mutating ops are blocked while a recovery is pending; the rule itself is removable only via a 7-day announce-then-execute path.</p>
+        </div>
+        <div class="card soft">
+          <p class="mut" style="margin:0;">Off-chain: a Cloudflare Worker mirrors the tree from <code>LeafInserted</code> events (RPC only retains ~7 days); clients verify against the on-chain <code>current_root</code> before proving.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 · Try it -->
+<section class="slide">
+  <div class="kicker">13 · Try it</div>
+  <div class="slide-body">
+    <h2>See it running (testnet)</h2>
+    <div class="row" style="margin-top:.5em;">
+      <div class="card">
+        <h3><a href="https://nido.fyi">nido.fyi</a></h3>
+        <p>Create an account with a passkey, send, sign, add session keys, set spending limits, enroll recovery. Testnet only — no real funds.</p>
+      </div>
+      <div class="card">
+        <h3><a href="https://nido.fyi/how-recovery-works/">/how-recovery-works</a></h3>
+        <p>The user-facing ZK recovery explainer — coat-check analogy up top, collapsible "for developers" notes citing the real function names underneath.</p>
+      </div>
+      <div class="card">
+        <h3><code>examples/status-message-dapp</code></h3>
+        <p>React + Vite dApp with the wallet selector wired up — the reference for third-party integration.</p>
+      </div>
+    </div>
+    <p class="mut" style="margin-top: 14px;">Contract addresses and deploy history: <code>DEPLOYED.md</code>. Note the testnet timelocks are e2e-tuned (delay 60s); mainnet defaults are 14d/7d/30d.</p>
+  </div>
+</section>
+
+<!-- 15 · Integrate -->
+<section class="slide">
+  <div class="kicker">14 · Integrate</div>
+  <div class="slide-body">
+    <h2>Adding Nido to a dApp is a module import</h2>
+    <div class="cols cols-32">
+      <div>
+        <pre><code><span class="kw">import</span> { StellarWalletsKit } <span class="kw">from</span> <span class="st">'@creit.tech/stellar-wallets-kit'</span>;
+<span class="kw">import</span> { NidoModule } <span class="kw">from</span> <span class="st">'@nidohq/stellar-wallets-kit-module'</span>;
+
+StellarWalletsKit.init({ modules: [
+  <span class="kw">new</span> <span class="ty">NidoModule</span>({
+    base: <span class="st">'https://nido.fyi'</span>,
+    networkPassphrase: <span class="st">'Test SDF Network ; September 2015'</span>,
+  }),
+  <span class="cm">/* Freighter, xBull, Albedo, ... */</span>
+]});</code></pre>
+      </div>
+      <div class="card soft">
+        <h3>What the module does</h3>
+        <p><code>signTransaction</code> opens the account's <code>/sign/</code> page, simulates to locate the auth entry, computes the OZ auth digest, runs the passkey ceremony, injects the signature, and hands signed XDR back.</p>
+        <p class="mut">The dApp never touches WebAuthn or auth-entry surgery. Full walkthrough: <code>docs/ADD-NIDO-TO-DAPP.md</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 · Repo map -->
+<section class="slide">
+  <div class="kicker">15 · The repo</div>
+  <div class="slide-body">
+    <h2>Where things live</h2>
+    <div class="cols">
+      <table>
+        <tr><th>Path</th><th>What</th></tr>
+        <tr><td><code>contracts/smart-account</code></td><td>the account (OZ traits + recovery guards)</td></tr>
+        <tr><td><code>contracts/webauthn-verifier</code></td><td>stateless P-256/WebAuthn verifier</td></tr>
+        <tr><td><code>contracts/factory</code></td><td>deterministic deploy + genesis insert</td></tr>
+        <tr><td><code>contracts/zk-recovery</code>, <code>zk-verifier</code></td><td>pool/controller/policy + UltraHonk</td></tr>
+        <tr><td><code>circuits/zk_recovery</code></td><td>Noir circuit (Poseidon2, depth-24)</td></tr>
+      </table>
+      <table>
+        <tr><th>Path</th><th>What</th></tr>
+        <tr><td><code>packages/passkey-sdk</code></td><td>TS auth/signing/recovery helpers</td></tr>
+        <tr><td><code>packages/frontend</code></td><td>the wallet (Astro)</td></tr>
+        <tr><td><code>packages/stellar-wallets-kit-module</code></td><td>dApp integration</td></tr>
+        <tr><td><code>crates/integration-tests</code></td><td>synthetic-WebAuthn Rust tests</td></tr>
+        <tr><td><code>infra/relayer</code>, <code>infra/pool-indexer</code></td><td>gas abstraction, tree mirror</td></tr>
+      </table>
+    </div>
+    <p class="mut" style="margin-top: 12px;"><code>just test</code> · <code>just build-contracts</code> · <code>just check</code> — integration tests build full WebAuthn assertions from synthetic P-256 keys, no browser needed.</p>
+  </div>
+</section>
+
+<!-- 17 · Status -->
+<section class="slide">
+  <div class="kicker">16 · Status</div>
+  <div class="slide-body">
+    <h2>Where we are</h2>
+    <div class="cols">
+      <div class="card good">
+        <h3>Deployed on testnet</h3>
+        <ul>
+          <li>Factory, WebAuthn verifier, multisig + spending-limit policies, name registry</li>
+          <li>ZK recovery pool/controller + UltraHonk verifier (July 2026)</li>
+          <li>Relayer + pool indexer live; e2e Playwright lanes green</li>
+        </ul>
+      </div>
+      <div class="card soft">
+        <h3>Foundations</h3>
+        <ul>
+          <li><code>soroban-sdk</code> 26 · OZ <code>stellar-accounts</code> (pinned rev) · Noir + Barretenberg toolchain</li>
+          <li>UltraHonk over BN254: universal SRS — <b>no per-circuit trusted setup</b></li>
+          <li>Headroom: full <code>initiate_recovery</code> ≈ 168M of the 400M CPU budget</li>
+        </ul>
+      </div>
+    </div>
+    <p class="big" style="margin-top: 16px;">Next: mainnet-parameter hardening, audits, and growing the dApp integrations.</p>
+  </div>
+</section>
+
+<!-- 18 · Close -->
+<section class="slide">
+  <div class="slide-body" style="align-items: flex-start;">
+    <h1 class="wordmark" style="font-size: clamp(34px, 5vw, 64px);">n<b>i</b>do</h1>
+    <p class="big sub" style="max-width: 30em; margin-top: .6em;">
+      A Stellar account that logs in like an app, sets its own rules,
+      and can be recovered without trusting anyone with your keys.
+    </p>
+    <div class="flow" style="margin-top: 1.4em;">
+      <span class="pill acc">nido.fyi</span>
+      <span class="pill">github.com/nidohq/nido</span>
+      <span class="pill">DEPLOYED.md</span>
+      <span class="pill good">questions →</span>
+    </div>
+  </div>
+  <footer class="tag">docs/presentation/smart-accounts.html · arrow keys to navigate · #/n deep-links a slide</footer>
+</section>
+
+</main>
+
+<div id="hud">1 / 1</div>
+<div id="bar"></div>
+
+<script>
+(function () {
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const hud = document.getElementById('hud');
+  const bar = document.getElementById('bar');
+  let i = 0;
+
+  function clamp(n) { return Math.max(0, Math.min(slides.length - 1, n)); }
+  function show(n) {
+    i = clamp(n);
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    hud.textContent = (i + 1) + ' / ' + slides.length;
+    bar.style.width = ((i + 1) / slides.length * 100) + '%';
+    if (location.hash !== '#/' + (i + 1)) history.replaceState(null, '', '#/' + (i + 1));
+  }
+  function fromHash() {
+    const m = location.hash.match(/^#\/(\d+)/);
+    show(m ? parseInt(m[1], 10) - 1 : 0);
+  }
+  addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (['ArrowRight', 'ArrowDown', ' ', 'PageDown', 'j', 'l'].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'k', 'h'].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+  });
+  addEventListener('hashchange', fromHash);
+  // click / tap: right two-thirds advances, left third goes back
+  addEventListener('click', (e) => {
+    if (e.target.closest('a, pre, code')) return;
+    (e.clientX < innerWidth / 3) ? show(i - 1) : show(i + 1);
+  });
+  let tx = null;
+  addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; }, { passive: true });
+  addEventListener('touchend', (e) => {
+    if (tx === null) return;
+    const dx = e.changedTouches[0].clientX - tx; tx = null;
+    if (Math.abs(dx) > 40) show(dx < 0 ? i + 1 : i - 1);
+  }, { passive: true });
+
+  fromHash();
+})();
+</script>
+</body>
+</html>
