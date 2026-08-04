@@ -450,9 +450,14 @@ still moving. Before upgrading:
 
 - **Per-IP token bucket (Caddy):** `/relay` is capped at **30 requests/min per client IP**
   (keyed on `Fly-Client-IP`, since Caddy sits behind Fly's proxy) via the `caddy-ratelimit`
-  plugin compiled into the image (`xcaddy` stage in the `Dockerfile`). This bounds any single
-  client's share of the shared daily sponsor budget. Layered under the relayer's own global
-  20 req/s ceiling (`RATE_LIMIT_REQUESTS_PER_SECOND`).
+  plugin (pinned `@v0.1.0`) compiled into the image (`xcaddy` stage in the `Dockerfile`). This
+  raises the cost of one client draining the shared daily sponsor budget. Layered under the
+  relayer's own global 20 req/s ceiling (`RATE_LIMIT_REQUESTS_PER_SECOND`).
+  - **Trust assumption:** soundness depends on fly-proxy **overwriting** `Fly-Client-IP` on
+    inbound public traffic (verify on Fly); a client-supplied header would let an attacker
+    rotate it and defeat the bucket. Even trusted, per-IP keying is evadable via an IPv6 `/64`,
+    so the **global `FEE_LIMIT` (100 XLM/24h) is the true drain backstop** — this limiter raises
+    the cost of abuse, it is not a hard per-client guarantee.
 - **Metrics:** `METRICS_ENABLED=true` runs the Prometheus server on `:8081`
   (`/debug/metrics/scrape`), scraped by Fly's managed Prometheus (`[metrics]` in `fly.toml`),
   private to the org (not on the public `:8080`). Dashboards + alerts in `grafana.fly.dev`;
