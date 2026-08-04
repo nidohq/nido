@@ -83,8 +83,12 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
   (explicit connect-src hosts + Google Fonts), identical in both places. Remaining: verify a
   clean report stream in prod, then promote Report-Only → enforced (drop `-Report-Only`) in
   both files, and separately try dropping `style-src 'unsafe-inline'`.
-- [ ] Legacy query-param sign path validates callback/return origin (no signature exfiltration).
-- [ ] `expirationOffset`/`relayerEnabled` centralized with a parity test.
+- [x] Legacy query-param sign path validates callback/return origin (no signature exfiltration) —
+  `signRequestFromParams` normalises + matches the dApp/return origin at the SignRequest source
+  (`signing/signRequest.ts`), with `signRequest.test.ts` covering the phishing case.
+- [x] `expirationOffset`/`relayerEnabled` centralized with a parity test — single
+  `signatureExpirationOffset()` (`relayerClient.ts`) threaded through walletSign/
+  primaryPasskeySigner/zkRecoveryActions; parity asserted in `relayerClient.test.ts`.
 - [ ] localStorage credential material encrypted + expiring.
 - [x] Relayer per-client fairness (per-IP token bucket in Caddy, 30/min), metrics enabled
   (Prometheus on :8081, Fly-scraped), alert definitions + incident-response playbook in
