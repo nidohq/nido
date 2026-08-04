@@ -613,15 +613,25 @@ fn completion_before_timelock_is_rejected() {
 /// harness; keeping the window far under `max_ttl` is what ensures it never
 /// triggers in the first place.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn recovery_state_survives_full_active_window() {
     // Soroban targets ~5s/ledger; used to convert the active window (seconds)
     // into ledgers for the max_ttl headroom check below.
     const SECS_PER_LEDGER: u64 = 5;
+    // Mainnet's `max_entry_ttl` network setting is SMALLER than the test-env
+    // `max_ttl` (~6.31M); pin a lower bound of the mainnet value (~3.11M ledgers
+    // at time of writing) so this premise is also checked against the number that
+    // actually governs archival on mainnet, not just the in-env constant. Confirm
+    // the live `max_entry_ttl` >= the active window at cutover (see T1 in
+    // MAINNET_READINESS.md).
+    const MAINNET_MAX_ENTRY_TTL_LEDGERS: u64 = 3_110_400;
 
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
     let setup = deploy(&env);
-    let executable_after = initiate(&env, &setup);
+    // This test drives time by `window_ledgers` below, not the timelock, so the
+    // returned executable-after timestamp is unused here.
+    let _ = initiate(&env, &setup);
 
     // Headroom premise: 44 days of ledgers must sit far under the network max
     // TTL, so the extend-to-max on every write means none of these entries can
@@ -637,6 +647,15 @@ fn recovery_state_survives_full_active_window() {
         window_ledgers < max_ttl,
         "active window ({window_ledgers} ledgers) must fit under max_ttl ({max_ttl}) \
          with headroom, else recovery state could archive mid-window"
+    );
+    // The assertion above uses the test-env `max_ttl`; also check the (smaller,
+    // pinned) mainnet `max_entry_ttl` lower bound, which is what actually governs
+    // archival in production -- this test would otherwise stay green even if the
+    // window approached the real mainnet TTL.
+    assert!(
+        window_ledgers < MAINNET_MAX_ENTRY_TTL_LEDGERS,
+        "active window ({window_ledgers} ledgers) must fit under mainnet max_entry_ttl \
+         ({MAINNET_MAX_ENTRY_TTL_LEDGERS}), else recovery state could archive mid-window on mainnet"
     );
 
     // Helpers reading the four persistent entries initiate wrote.

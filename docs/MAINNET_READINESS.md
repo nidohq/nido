@@ -86,11 +86,13 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
   (`verify_proof`) length-pre-checks against the VK and returns `ProofParseError` instead of
   letting the vendored parser's `assert_eq!` trap (invariant V3; no vendored edit, no
   drift-guard churn). Curve-point validity delegated to the host BN254 ops.
-- [x] Storage TTL/archival validated across the 44-day active window (invariant T1) —
+- [~] Storage TTL/archival validated across the 44-day active window (invariant T1) —
   `recovery_state_survives_full_active_window` proves the window (~760k ledgers) sits far under
-  `max_ttl` (~6.31M) with every write extending to max, advances the ledger timestamp+sequence
+  both the in-env `max_ttl` (~6.31M) **and a pinned lower bound of the mainnet `max_entry_ttl`
+  (~3.11M)** with every write extending to max, advances the ledger timestamp+sequence
   across the full window, and completes at its end. (Archival eviction is a Soroban protocol
   guarantee, not modelled by the test env — see the invariant's scope note.)
+  **At cutover:** confirm the live mainnet `max_entry_ttl` ≥ the active window (~760k ledgers).
 - [ ] `status-message` demo typo fixed + redeployed, or explicitly excluded from mainnet.
 
 ## F. Test coverage

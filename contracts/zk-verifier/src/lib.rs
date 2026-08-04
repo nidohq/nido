@@ -120,6 +120,16 @@ impl UltraHonkVerifierContract {
         // through and surface as `VerificationFailed` below.
         let log_n =
             usize::try_from(verifier.get_vk().log_circuit_size).map_err(|_| Error::VkParseError)?;
+        // A degenerate/corrupt (immutable) VK would make the length math below
+        // TRAP rather than reject: log_n == 0 underflows `(log_n - 1) * 2` inside
+        // `expected_proof_fields` under `overflow-checks`, and log_n >
+        // CONST_PROOF_SIZE_LOG_N (28) lets a correct-length proof OOB-index the
+        // vendored `load_proof`'s fixed `[_; 28]`/`[_; 27]` arrays. Reject such a
+        // VK legibly (same structured error as any other unparseable VK) instead
+        // of the opaque host trap this whole pre-check exists to avoid.
+        if log_n == 0 || log_n > ultrahonk_soroban_verifier::types::CONST_PROOF_SIZE_LOG_N {
+            return Err(Error::VkParseError);
+        }
         let expected_len = ultrahonk_soroban_verifier::utils::expected_proof_fields(log_n) * 32;
         if proof_bytes.len() as usize != expected_len {
             return Err(Error::ProofParseError);
