@@ -19,8 +19,9 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
   `DEPLOYED.md`.
 - [~] **A2 — setup secret off URL query params (BLOCKER).** The setup salt (derives the
   address + lets its holder claim the pre-funded account) is now carried in the URL HASH,
-  never the query: `createNido`/`nidoRowHref` emit `#salt=` (the fragment is never sent to the
-  server, so it stays out of worker/CDN access logs + cross-origin Referer). The `/new-account/`
+  never the query: `createNido`/`nidoRowHref` **and the apex→subdomain reservation redirect**
+  emit `#salt=` (the fragment is never sent to the server, so it stays out of worker/CDN access
+  logs + cross-origin Referer; `autopass`/`then` stay in the query). The `/new-account/`
   receiver reads the hash first, still accepts legacy `?salt=`/`?key=` query links but SCRUBS
   them from the URL (`history.replaceState`) on load so a leaked secret doesn't linger.
   Unit-tested (`createNido`/`accountLinks`); a `@fast` Playwright assertion checks the query

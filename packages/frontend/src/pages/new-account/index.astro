@@ -370,7 +370,10 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   // doesn't linger in history/Referer on a refresh. The `hash` copy is scrubbed
   // too — `saltHex` is captured into memory here, so nothing needs it in the URL.
   const hashParams = paramsFromHash();
-  let saltHex = hashParams.get("salt") ?? params.get("salt");
+  // `||` (not `??`): an empty `#salt=` fragment yields "" (not null), which with
+  // `??` would shadow a real `?salt=<hex>` -- leaving saltHex="" so the scrub gate
+  // below never fires and the query secret lingers. Coalesce empty as absent.
+  let saltHex = hashParams.get("salt") || params.get("salt");
   if (!saltHex && params.get("key")) {
     saltHex = buf2hex(hash(Buffer.from(params.get("key")!)));
   }
@@ -687,11 +690,17 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
           // from the query string). Absent when this isn't a claim flow → no change.
           const thenParam = params.get("then");
           const thenQuery = thenParam ? `&then=${encodeURIComponent(thenParam)}` : "";
+          // A2: carry the setup salt ONLY in the hash fragment. This is a
+          // cross-subdomain navigation (apex -> <cAddress>.nido.fyi), so the
+          // QUERY is sent to the subdomain's worker/CDN and lands in access logs
+          // + Referer -- the exact leak A2 exists to close. The receiver reads
+          // the hash first (see `saltHex` above), so a `?salt=` copy was purely
+          // redundant. `autopass`/`then` stay in the query (not secret).
           window.location.replace(
             accountUrl(
               window.location.host,
               cAddress,
-              `/new-account/?salt=${encodeURIComponent(saltHex!)}&autopass=1${thenQuery}#salt=${encodeURIComponent(saltHex!)}`,
+              `/new-account/?autopass=1${thenQuery}#salt=${encodeURIComponent(saltHex!)}`,
             ),
           );
         },
