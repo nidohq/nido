@@ -429,6 +429,9 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
       <div class="card warn"><h3>Owner keeps the veto</h3><p>A thief who finds your recovery secret shouldn't be able to instantly drain the account.</p></div>
       <div class="card warn"><h3>No linkability</h3><p>Enrolling in recovery shouldn't mark your account on-chain as "has recovery" — or link it to anything else.</p></div>
     </div>
+    <div class="card good" style="margin-top: 14px;">
+      <p style="margin:0;"><b>Social recovery exists in Nido today</b> — an M-of-N friends rule via the multisig policy (<code>add_multisig_recovery</code>). It's a solid opt-in, but friends churn, collude, and get phished — so it can't be the <em>only</em> path. For everything above, we need something trustless — that's ZK recovery, next.</p>
+    </div>
   </div>
 </section>
 
