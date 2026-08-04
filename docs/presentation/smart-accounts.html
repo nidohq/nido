@@ -40,7 +40,8 @@ a { color: var(--acc-ink); }
   flex-direction: column;
 }
 .slide.active { display: flex; }
-.slide-body { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+.slide-body { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; padding-top: clamp(24px, 7vh, 72px); min-height: 0; }
+.slide-body.center { justify-content: center; padding-top: 0; }
 
 #hud {
   position: fixed; right: 22px; bottom: 16px; z-index: 50;
@@ -144,7 +145,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 1 · Title -->
 <section class="slide">
-  <div class="slide-body">
+  <div class="slide-body center">
     <div class="kicker">nido.fyi · Stellar testnet</div>
     <h1 class="wordmark">n<b>i</b>do</h1>
     <h1 style="font-size: clamp(26px, 3.6vw, 48px); margin-top:.25em;">Passkey-native smart accounts for Stellar</h1>
@@ -159,7 +160,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 2 · The problem -->
 <section class="slide">
-  <div class="kicker">01 · Why</div>
+  <div class="kicker">Why</div>
   <div class="slide-body">
     <h2>A G-address <em class="acc">is</em> its keypair — that's the problem</h2>
     <div class="cols" style="margin-top:.5em;">
@@ -189,10 +190,10 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 3 · Smart accounts on Soroban -->
 <section class="slide">
-  <div class="kicker">02 · Account abstraction</div>
+  <div class="kicker">Account abstraction</div>
   <div class="slide-body">
     <h2>Smart accounts: the account is a contract</h2>
-    <p class="sub big">A C-address with a custom <code>__check_auth</code> — authorization becomes code you write, not a protocol rule you inherit.</p>
+    <p class="sub big" style="max-width: 36em;">A C-address with a custom <code>__check_auth</code> — authorization becomes code you write, not a protocol rule you inherit.</p>
     <div class="cols" style="margin-top: .8em;">
       <div>
         <table>
@@ -214,7 +215,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 4 · Why passkeys -->
 <section class="slide">
-  <div class="kicker">03 · Passkeys</div>
+  <div class="kicker">Passkeys</div>
   <div class="slide-body">
     <h2>Why passkeys are the right first signer</h2>
     <div class="cols">
@@ -236,7 +237,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
         <div class="card soft">
           <h3>Formats we care about</h3>
           <p>Public key: <b>65-byte SEC1 uncompressed</b> (<code>0x04 ‖ X ‖ Y</code>).<br>
-          Signature: DER from the browser, converted to <b>64-byte compact r‖s, low-S normalized</b> before it goes on-chain.</p>
+          Signature: DER from the browser, converted to <b>64-byte compact <code>r ‖ s</code>, low-S normalized</b> before it goes on-chain.</p>
         </div>
       </div>
     </div>
@@ -245,7 +246,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 5 · Architecture -->
 <section class="slide">
-  <div class="kicker">04 · Architecture</div>
+  <div class="kicker">Architecture</div>
   <div class="slide-body">
     <h2>The stack at a glance</h2>
     <div class="row" style="margin-top:.4em;">
@@ -278,7 +279,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 6 · Factory / onboarding -->
 <section class="slide">
-  <div class="kicker">05 · Onboarding</div>
+  <div class="kicker">Onboarding</div>
   <div class="slide-body">
     <h2>Factory: deterministic C-addresses, atomic genesis</h2>
     <div class="cols cols-32">
@@ -290,7 +291,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 }</code></pre>
         <ul>
           <li><b>Reserve first, deploy later</b> — the wallet computes the C-address up front, so a G-address can fund it before the contract exists.</li>
-          <li><b>One transaction</b> — <code>create_account_v2(salt, key, commitment)</code> deploys the account, installs the passkey as the first signer (<code>Signer::External(verifier, key)</code>), and inserts a recovery-pool leaf. Any failure reverts everything.</li>
+          <li><b>One transaction</b> — <code>create_account_v2(salt, key, commitment)</code> deploys the account, installs the passkey as first signer, and inserts a recovery-pool leaf. Any failure reverts everything.</li>
           <li><b>Embedded wasm</b> — the factory <code>include_bytes!</code>'s the smart-account wasm and hashes it at runtime; no hardcoded hash to drift.</li>
         </ul>
       </div>
@@ -305,7 +306,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 7 · Smart account anatomy -->
 <section class="slide">
-  <div class="kicker">06 · The account contract</div>
+  <div class="kicker">The account contract</div>
   <div class="slide-body">
     <h2>Anatomy of a Nido smart account</h2>
     <div class="cols cols-32">
@@ -336,7 +337,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 8 · WebAuthn on-chain -->
 <section class="slide">
-  <div class="kicker">07 · On-chain WebAuthn</div>
+  <div class="kicker">On-chain WebAuthn</div>
   <div class="slide-body">
     <h2>Verifying a passkey assertion on-chain</h2>
     <div class="cols">
@@ -367,14 +368,13 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 9 · Signing flow -->
 <section class="slide">
-  <div class="kicker">08 · Signing, end to end</div>
+  <div class="kicker">Signing, end to end</div>
   <div class="slide-body">
     <h2>From dApp click to on-chain auth</h2>
     <div class="flow" style="margin: .8em 0;">
       <div class="step">dApp<small>Wallets Kit</small></div><span class="sep">→</span>
       <div class="step"><code>&lt;acct&gt;.nido.fyi/sign</code><small>account subdomain</small></div><span class="sep">→</span>
-      <div class="step">simulate<small>find auth entry</small></div><span class="sep">→</span>
-      <div class="step">compute digest<small>payload ‖ rule ids</small></div><span class="sep">→</span>
+      <div class="step">simulate + digest<small>payload ‖ rule ids</small></div><span class="sep">→</span>
       <div class="step">passkey ceremony<small>challenge = digest</small></div><span class="sep">→</span>
       <div class="step">inject <code>AuthPayload</code><small>DER → compact low-S</small></div><span class="sep">→</span>
       <div class="step">signed XDR<small>dApp submits</small></div>
@@ -394,17 +394,17 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 10 · Policies & session keys -->
 <section class="slide">
-  <div class="kicker">09 · Programmable auth</div>
+  <div class="kicker">Programmable auth</div>
   <div class="slide-body">
     <h2>Policies &amp; session keys: auth as composable rules</h2>
     <div class="row" style="margin-top:.4em;">
       <div class="card">
         <h3>Multisig policy</h3>
-        <p>M-of-N threshold over a rule's signers (<code>SimpleThresholdAccountParams</code>). Powers friend-based recovery: <code>add_multisig_recovery(name, valid_until, friends, threshold)</code>.</p>
+        <p>M-of-N threshold over a rule's signers (<code>SimpleThresholdAccountParams</code>). Powers friend-based recovery via <code>add_multisig_recovery(…)</code>.</p>
       </div>
       <div class="card">
         <h3>Spending-limit policy</h3>
-        <p>Rolling-window meter (<code>limit: i128</code> per <code>period_ledgers</code>) over SAC <code>transfer</code> calls in scoped contexts. Update preserves the current window.</p>
+        <p>A rolling-window meter over SAC <code>transfer</code> calls in scoped contexts — a limit per period of ledgers. Updates preserve the current window.</p>
       </div>
       <div class="card">
         <h3>Session keys</h3>
@@ -419,7 +419,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 11 · Recovery problem -->
 <section class="slide">
-  <div class="kicker">10 · Recovery</div>
+  <div class="kicker">Recovery</div>
   <div class="slide-body">
     <h2>Lost passkey ≠ lost account — but how, exactly?</h2>
     <p class="sub big" style="max-width: 34em;">Platform sync fails, devices die, Apple IDs get locked. If passkeys are the only signer, we've just rebuilt the seed-phrase cliff with better UX. Recovery needs to exist — under constraints:</p>
@@ -434,7 +434,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 12 · ZK recovery concept -->
 <section class="slide">
-  <div class="kicker">11 · ZK recovery — the idea</div>
+  <div class="kicker">ZK recovery — the idea</div>
   <div class="slide-body">
     <h2>A coat check, cryptographically</h2>
     <div class="cols">
@@ -462,7 +462,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 13 · ZK recovery mechanics -->
 <section class="slide">
-  <div class="kicker">12 · ZK recovery — the flow</div>
+  <div class="kicker">ZK recovery — the flow</div>
   <div class="slide-body">
     <h2>Initiate → timelock → zero-signer completion</h2>
     <div class="flow" style="margin: .6em 0;">
@@ -485,7 +485,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
       <div class="stack">
         <div class="card accent">
           <h3>Completion is a policy gate, not a proof</h3>
-          <p>The recovery rule is <b>zero-signer</b> with the ZK controller as sole policy. Completion is a plain <code>add_context_rule</code> installing only the pending new passkey; <code>enforce</code> checks the stored record, exact call shape, and timelock. Mutating ops are blocked while a recovery is pending; the rule itself is removable only via a 7-day announce-then-execute path.</p>
+          <p>The recovery rule is <b>zero-signer</b> with the ZK controller as sole policy. Completion is a plain <code>add_context_rule</code> installing only the pending new passkey; <code>enforce</code> checks the stored record, exact call shape, and timelock.</p>
         </div>
         <div class="card soft">
           <p class="mut" style="margin:0;">Off-chain: a Cloudflare Worker mirrors the tree from <code>LeafInserted</code> events (RPC only retains ~7 days); clients verify against the on-chain <code>current_root</code> before proving.</p>
@@ -497,7 +497,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 14 · Try it -->
 <section class="slide">
-  <div class="kicker">13 · Try it</div>
+  <div class="kicker">Try it</div>
   <div class="slide-body">
     <h2>See it running (testnet)</h2>
     <div class="row" style="margin-top:.5em;">
@@ -520,7 +520,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
 
 <!-- 15 · Integrate -->
 <section class="slide">
-  <div class="kicker">14 · Integrate</div>
+  <div class="kicker">Integrate</div>
   <div class="slide-body">
     <h2>Adding Nido to a dApp is a module import</h2>
     <div class="cols cols-32">
@@ -547,7 +547,7 @@ StellarWalletsKit.init({ modules: [
 
 <!-- 16 · Repo map -->
 <section class="slide">
-  <div class="kicker">15 · The repo</div>
+  <div class="kicker">The repo</div>
   <div class="slide-body">
     <h2>Where things live</h2>
     <div class="cols">
@@ -574,7 +574,7 @@ StellarWalletsKit.init({ modules: [
 
 <!-- 17 · Status -->
 <section class="slide">
-  <div class="kicker">16 · Status</div>
+  <div class="kicker">Status</div>
   <div class="slide-body">
     <h2>Where we are</h2>
     <div class="cols">
@@ -601,7 +601,7 @@ StellarWalletsKit.init({ modules: [
 
 <!-- 18 · Close -->
 <section class="slide">
-  <div class="slide-body" style="align-items: flex-start;">
+  <div class="slide-body center" style="align-items: flex-start;">
     <h1 class="wordmark" style="font-size: clamp(34px, 5vw, 64px);">n<b>i</b>do</h1>
     <p class="big sub" style="max-width: 30em; margin-top: .6em;">
       A Stellar account that logs in like an app, sets its own rules,
