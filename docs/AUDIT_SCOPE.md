@@ -51,7 +51,8 @@ proof-system verification), separate from a general Soroban/Rust reviewer.
 ## Out of scope (dependencies relied upon, not authored by Nido)
 
 - **OpenZeppelin `stellar-contracts` / `stellar-accounts`** — pinned dependency at
-  an untagged main-branch rev (`637c53a`, see `Cargo.toml`). All core auth logic
+  an untagged main-branch rev (`ec749c3b`, the merge of OZ PR #816 / soroban-sdk 27;
+  see `Cargo.toml`). All core auth logic
   delegates to `do_check_auth` here. The auditor should **verify the pinned rev is
   the intended, uncompromised commit**, but the library itself is OZ's audited code,
   not part of Nido's authored surface. See [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).

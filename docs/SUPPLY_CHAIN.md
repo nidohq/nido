@@ -8,9 +8,10 @@ rebuild every deployed artifact.
 
 | Dependency | Pin | Kind | Risk |
 |---|---|---|---|
-| `soroban-sdk` | `26.0.1` | crates.io tagged | Low. |
-| `stellar-accounts` (OZ `stellar-contracts`) | **git rev `637c53a8c4928fd0c71d330bd866f482c3454578`** | git, **untagged main branch** | **Elevated** — see below. Core auth (`do_check_auth`) delegates here. |
-| `soroban-sdk-tools` (`BlaineHeffron/soroban-sdk-tools`) | git rev `cbafae3439f01a4add2411c6162885edb30e7389` | git rev | Medium — third-party, pinned by rev. |
+| `soroban-sdk` | `27.0.2` (resolves 27.0.5) | crates.io tagged | Low. |
+| `stellar-accounts` (OZ `stellar-contracts`) | **git rev `ec749c3b75971f2c35ced1bea3e2a7e536e91cda`** (merge of OZ PR #816 — first main commit on soroban-sdk 27) | git, **untagged main branch** | **Elevated** — see below. Core auth (`do_check_auth`) delegates here. |
+| `soroban-sdk-tools` | crates.io **`0.1.3`** (targets soroban-sdk 27) | crates.io | Low — published, versioned release. Previously a `BlaineHeffron` git fork (sdk-26 only); now dropped. Provides `#[contractstorage]`, compiled into factory/name-registry. |
+| `soroban-poseidon` (`stellar/rs-soroban-poseidon`) | git **tag `v27.0.0`** | git tag | Low — Stellar org, tagged. Poseidon2 parity is circuit-critical (`host_poseidon2_matches_noir_vectors`); v27.0.0 is a version-only bump over v26.0.0. |
 | `stellar-registry` | `0.0.10` | crates.io | Medium — `0.0.x`. Macros only (re-exports `stellar-scaffold-macro`); **not** the registry contract. |
 | `base64` | `0.22` | crates.io | Low. |
 
@@ -31,14 +32,17 @@ registry cannot reroute or block account creation.
 
 ### OZ pinned to an untagged commit — action
 
-Pinning to a main-branch commit means a force-push or a compromised upstream account
-could, in principle, change what `637c53a` resolves to (git protects against this via
-content-addressing, but the *practice* diverges from auditing a tagged release).
-- **Preferred:** ask OpenZeppelin to tag a `stellar-contracts` release including the
-  soroban-sdk-26 bump (which landed on main after `v0.7.1`), then repin to the tag.
-- **If not in time:** keep the rev pin, record it here, and add it to the audit scope so
-  the firm verifies the pinned tree matches audited OZ behavior. `Cargo.lock` +
-  content-addressed git already prevent silent substitution of the resolved tree.
+Pinning to a main-branch commit means the practice diverges from auditing a tagged release
+(git content-addressing prevents silent substitution of the resolved tree, and `Cargo.lock`
+records it, but a tag is preferable). The current pin `ec749c3b` is the merge of OZ PR #816
+(the soroban-sdk-27 bump); the `stellar-accounts` package there differs from the tagged
+`v0.7.x` line only by the sdk-27 adaptation.
+- **Preferred:** repin to a tagged `stellar-contracts` release once one lands on soroban-sdk 27.
+  The latest tag (`v0.7.2`) is still on soroban-sdk 26.1, so no sdk-27 tag exists yet — track
+  the OZ release that includes #816 and repin to it.
+- **Until then:** keep the rev pin, recorded here + in `AUDIT_SCOPE.md`, so the firm verifies
+  the pinned tree matches audited OZ behavior. `Cargo.lock` + content-addressed git already
+  prevent silent substitution of the resolved tree.
 
 ## Vendored code
 
