@@ -43,12 +43,14 @@ third-party UltraHonk verifier.
 
 ### Drift-guard gaps — action (C3)
 
-- The guard covers **`src/` only** — not the vendor `Cargo.toml`, `tests/`, or `circuits/`.
-  A dependency/feature change in the vendor `Cargo.toml` would go undetected. **Extend the
-  manifest to cover `Cargo.toml`** (or the whole vendor tree except build outputs).
+- The manifest now covers `src/` **and the vendor `Cargo.toml`** (done, C3), so a
+  dependency/feature-flag change can't slip past; the guard also asserts the recorded
+  upstream commit (`3b031847…`) so a bump can't silently drop provenance. (`tests/` and
+  `circuits/` are still out of the manifest — they aren't compiled into the deployed wasm.)
 - The baseline is regenerable by design, so a hand-edit "passes" once its new hash is
   committed. Keep vendor changes to reviewed, commit-referenced upstream bumps only, and
-  call them out in PR review.
+  call them out in PR review. (This is integrity + provenance recording, not an
+  authenticity attestation of upstream.)
 
 ## ZK circuit toolchain
 
@@ -66,7 +68,7 @@ Deployed VK/proof/circuit hashes are recorded in `DEPLOYED.md` and the circuit
 
 | Tool | Pin | Status |
 |---|---|---|
-| Rust | _unpinned at workspace root_ (`stable` in CI) | **Gap — add `rust-toolchain.toml` (C2).** Only `examples/` is pinned (1.95.0). |
+| Rust | `1.96.0` | **Pinned (C2):** workspace-root `rust-toolchain.toml` (channel `1.96.0`, `wasm32v1-none`) + CI `dtolnay/rust-toolchain@1.96.0`, kept in lockstep. |
 | `stellar-cli` (+ bundled `wasm-opt`) | _unpinned (`cargo install --locked stellar-cli`)_ | **Gap — pin an exact version (C2)** and record which produced each deployed wasm. |
 | `[profile.contract]` | committed (`lto`, `codegen-units=1`, `panic=abort`, `overflow-checks`, `opt-level=z`) | Good for reproducibility. |
 
@@ -79,11 +81,12 @@ downstream consumers.
 
 ## Gaps to close (tracked)
 
-- [ ] `cargo-audit` job in CI (advisory DB) — non-blocking first, then gating.
-- [ ] `npm audit` (or Dependabot alerts) across all package roots.
-- [ ] **Dependabot** config for cargo + npm + GitHub Actions.
-- [ ] Extend vendor drift check to the vendor `Cargo.toml`.
+- [x] `cargo-audit` job in CI (advisory DB) — non-blocking (`continue-on-error`); make gating pre-mainnet.
+- [x] `npm audit` across all package roots — non-blocking; make gating pre-mainnet.
+- [x] **Dependabot** config for cargo + npm + GitHub Actions (`.github/dependabot.yml`).
+- [x] Extend vendor drift check to the vendor `Cargo.toml` (+ upstream-commit provenance assertion).
+- [x] Pin Rust toolchain (C2) — `rust-toolchain.toml` @ `1.96.0`.
+- [ ] Pin `stellar-cli` to an exact version (C2) and record which produced each deployed wasm.
 - [ ] Repin OZ to a tagged release (or document the accepted risk).
-- [ ] Pin Rust toolchain + `stellar-cli` (C2).
 - [ ] Generate an **SBOM** at release; publish alongside the audit report.
 - [ ] License scan / confirm vendored-verifier effective license.

@@ -55,11 +55,15 @@ export default {
     // Attach security headers the Pages origin doesn't set. Cloudflare Response
     // headers are immutable until copied into a fresh Response.
     const response = new Response(upstream.body, upstream);
-    // Block MIME-sniffing, framing (this is a signing surface -- no clickjacking),
-    // and strip the path (account subdomain) from cross-origin referrers.
+    // Block MIME-sniffing and framing (this is a signing surface -- no clickjacking).
     response.headers.set("X-Content-Type-Options", "nosniff");
     response.headers.set("X-Frame-Options", "DENY");
-    response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    // The account C-address / name is the HOST subdomain (e.g. `Cabc...def.nido.fyi`),
+    // NOT the URL path -- so `strict-origin-when-cross-origin` would still leak the
+    // active account to every cross-origin request (fonts, price/RPC APIs) via the
+    // Origin it keeps in Referer. `no-referrer` sends no Referer at all; nothing in
+    // the app relies on it (cross-origin calls are unauthenticated and addressed by URL).
+    response.headers.set("Referrer-Policy", "no-referrer");
 
     // CSP shipped in *Report-Only* first: an enforced strict policy must be
     // browser-verified against everything the app actually loads (Stellar
