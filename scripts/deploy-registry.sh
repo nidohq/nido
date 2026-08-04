@@ -101,13 +101,21 @@ sha256_of() {
 
 command -v stellar >/dev/null 2>&1 || die "stellar CLI not found on PATH"
 
-# Mainnet guard: refuse the deployer's own key as owner on the public network.
-if [ "$NETWORK" = "mainnet" ] || [ "$NETWORK" = "public" ]; then
-    if [ "${#CTOR_ARGS[@]}" -eq 0 ]; then
-        die "mainnet: registry owner must be explicit — pass '-- --owner <MULTISIG>' or set OWNER (a multisig C-address, not the deployer)"
-    fi
-    warn "MAINNET: confirm the owner arg below is the MULTISIG, and that you rehearsed this on testnet."
-fi
+# Owner guard: registry ownership must never silently default to the deployer key
+# on a real network. Fail CLOSED -- only the known testnet-family networks skip the
+# explicit-owner requirement; anything else (mainnet, public, OR a custom alias like
+# `pubnet`/`nido-mainnet`) demands an explicit owner, so keying on the literal string
+# "mainnet"/"public" can't be evaded by a differently-named network. (Sibling
+# deploy-zk-recovery.mjs keys its guard on the network passphrase for the same reason.)
+case "$NETWORK" in
+    testnet | local | standalone | futurenet) : ;;
+    *)
+        if [ "${#CTOR_ARGS[@]}" -eq 0 ]; then
+            die "network '$NETWORK' is not a known testnet: registry owner must be explicit — pass '-- --owner <MULTISIG>' or set OWNER (a multisig C-address, not the deployer)"
+        fi
+        warn "network '$NETWORK': confirm the owner arg below is the MULTISIG, and that you rehearsed this on testnet."
+        ;;
+esac
 
 note "Fetch reference registry wasm ($SOURCE_REGISTRY @ $SOURCE_NETWORK)"
 mkdir -p "$OUT_DIR"

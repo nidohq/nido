@@ -38,9 +38,12 @@ knobs are the highest-leverage controls — a repoint silently changes the contr
 - **Change process:** GitHub issue + review → multisig proposal → timelock → execute → verify
   the new address/hash → update `DEPLOYED.md`. Every registry/admin change is monitored and
   alerts on unexpected address changes.
-- **Pinning:** with B2, the factory rejects (`RegistryMismatch`) any resolved verifier/
-  zk-recovery address other than the admin-pinned one — a repoint alone cannot redirect new
-  accounts without also updating the pin.
+- **Pinning (pin bypass):** once the factory's `verifier`/`zk-recovery` pins are set
+  (`set_registry_pins`), `resolve` returns the pinned address **directly and never consults the
+  registry** — so a registry repoint can neither redirect **nor block** new-account creation, and
+  the factory raises no error (there is **no** `RegistryMismatch`). Detection of a hostile repoint
+  therefore relies on the external registry address-change monitor (above), not a factory-level
+  revert. Pins change only via the admin multisig.
 
 ## 3. Key rotation
 

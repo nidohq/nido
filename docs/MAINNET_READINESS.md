@@ -22,7 +22,7 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
   sessionStorage) cleared after deploy. Verified: never in history/referrer/worker logs.
 - [ ] **A3 — Mainnet registry deployed + wired.** Deploy a Nido-owned `stellar-registry`
   instance on mainnet (registry-owner key under the multisig) and register
-  `factory`/`verifier`/`zk-recovery` into it (`scripts/deploy-registry.mjs` +
+  `factory`/`verifier`/`zk-recovery` into it (`scripts/deploy-registry.sh` +
   `just publish-registry`, rehearsed on testnet). Factory `REGISTRY` constant + all client
   fallbacks (`passkey-sdk/src/registry.ts`, `frontend/src/lib/policyChainFetch.ts`) point at
   its contract-id; rebuilt + tested against mainnet RPC. Registry wasm hash + id recorded in
@@ -98,7 +98,7 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 ## Cutover sequence (release day)
 
 1. Confirm B/C/D/E/F all green on the frozen, audited commit; audit findings applied.
-2. Deploy the Nido-owned `stellar-registry` instance (A3, `deploy-registry.mjs`), registry-owner
+2. Deploy the Nido-owned `stellar-registry` instance (A3, `deploy-registry.sh`), registry-owner
    key under the multisig. Deploy contracts fresh: pool via `deploy-zk-recovery.mjs --mainnet`
    (A1 params) with a multisig `--admin` (B1); factory rebuilt with the mainnet `REGISTRY`
    constant set to the just-deployed registry id (A3).
