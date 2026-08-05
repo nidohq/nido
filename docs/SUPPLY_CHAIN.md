@@ -51,7 +51,8 @@ records it, but a tag is preferable). The current pin `ec749c3b` is the merge of
 third-party UltraHonk verifier.
 - Upstream: `https://github.com/yugocabrio/rs-soroban-ultrahonk`, rev
   **`3b031847eb043856cc5bcad45bd5a6512370cd16`** (recorded in the vendor `Cargo.toml`),
-  retargeted onto the workspace `soroban-sdk = 26.0.1`.
+  retargeted onto the workspace `soroban-sdk = 27.0.2` (resolves 27.0.5) — matching the
+  workspace pin in the table above after the sdk 26→27 bump.
 - License: MIT (vendor crate); Apache-2.0 `LICENSE` file also present — **confirm the
   effective license and record it** before mainnet.
 - Its own deps: `ark-ff`/`ark-bn254`/`ark-ec` 0.5, `hex`, `once_cell`, `lazy_static`.
