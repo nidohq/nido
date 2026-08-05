@@ -12,6 +12,7 @@ rebuild every deployed artifact.
 | `stellar-accounts` (OZ `stellar-contracts`) | **git rev `ec749c3b75971f2c35ced1bea3e2a7e536e91cda`** (merge of OZ PR #816 — first main commit on soroban-sdk 27) | git, **untagged main branch** | **Elevated** — see below. Core auth (`do_check_auth`) delegates here. |
 | `soroban-sdk-tools` | crates.io **`0.1.3`** (targets soroban-sdk 27) | crates.io | Low — published, versioned release. Previously a `BlaineHeffron` git fork (sdk-26 only); now dropped. Provides `#[contractstorage]`, compiled into factory/name-registry. |
 | `soroban-poseidon` (`stellar/rs-soroban-poseidon`) | git **tag `v27.0.0`** | git tag | Low — Stellar org, tagged. Poseidon2 parity is circuit-critical (`host_poseidon2_matches_noir_vectors`); v27.0.0 is a version-only bump over v26.0.0. |
+| `admin-sep` (`theahaco/admin-sep`) | crates.io **`0.27.0`** | crates.io | **Medium — on the governance path.** Small crate (~50 LOC, 3 modules) providing the `Administratable`/`Upgradable` SEP traits (`admin`/`set_admin`/`upgrade`) that gate every upgradeable contract. Replaces per-contract inlined boilerplate. `admin()` reads infallibly (assumes the constructor set it); each contract sets `admin` in `__constructor`. Auditor should read it in full and confirm the `require_auth` gating on `set_admin`/`upgrade`. |
 | `stellar-registry` | `0.0.10` | crates.io | Medium — `0.0.x`. Macros only (re-exports `stellar-scaffold-macro`); **not** the registry contract. |
 | `base64` | `0.22` | crates.io | Low. |
 

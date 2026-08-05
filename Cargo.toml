@@ -21,6 +21,12 @@ license = "MIT"
 [workspace.dependencies]
 base64 = "0.22"
 soroban-sdk = "27.0.2"
+# admin-sep: SEP admin/upgrade contract traits (`Administratable` + `Upgradable`,
+# soroban-sdk-27 `#[contracttrait]` default methods). Replaces the hand-inlined
+# admin/set_admin/upgrade boilerplate that was duplicated across the policy,
+# verifier, name-registry, zk-recovery-pool and factory contracts. Published by
+# theahaco (https://github.com/theahaco/admin-sep); Apache-2.0.
+admin-sep = "0.27.0"
 # OZ stellar-contracts pinned to ec749c3b — the merge of PR #816
 # ("chore: bump soroban-sdk to 27.0.2", merged 2026-07-27), i.e. the first main
 # commit on soroban-sdk 27. The `stellar-accounts` package is unchanged from our
