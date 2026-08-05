@@ -1,6 +1,5 @@
-use soroban_sdk::{
-    contract, contracterror, contractimpl, symbol_short, Address, BytesN, Env, String, Symbol,
-};
+use admin_sep::{Administratable, Upgradable};
+use soroban_sdk::{contract, contractimpl, Address, Env, String};
 use soroban_sdk_tools::{contractstorage, PersistentMap};
 
 #[contractstorage]
@@ -12,19 +11,15 @@ pub struct Registry {
 #[contract]
 pub struct Contract;
 
-#[contracterror]
-#[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    /// No upgrade `admin` is stored (a pre-upgradability instance predating
-    /// this field; the deployed testnet registry has no admin and is
-    /// immutable).
-    AdminNotSet = 1,
-}
+// Governance (issue #26): admin/set_admin/upgrade come from the shared
+// `admin-sep` crate (`Administratable` + `Upgradable`), replacing the inlined
+// boilerplate. Name records are untouched by admin storage. Mainnet intent
+// (plan B1): `admin` is a multisig, ideally behind an upgrade timelock.
+#[contractimpl(contracttrait)]
+impl Administratable for Contract {}
 
-fn key_admin() -> Symbol {
-    symbol_short!("admin")
-}
+#[contractimpl(contracttrait)]
+impl Upgradable for Contract {}
 
 fn validate_name(e: &Env, name: &String) {
     let len = name.len() as usize;
@@ -49,45 +44,11 @@ fn validate_name(e: &Env, name: &String) {
 impl Contract {
     /// Record the `admin` (mainnet: multisig, ideally behind an upgrade
     /// timelock) authorized to rotate the admin or upgrade this registry
-    /// (issue #26). Name records are untouched by admin storage.
+    /// (issue #26). Name records are untouched by admin storage. `set_admin`
+    /// on first call (no admin yet) skips the auth check.
     #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(e: Env, admin: Address) {
-        e.storage().instance().set(&key_admin(), &admin);
-    }
-
-    /// The admin authorized to rotate the admin or upgrade the registry wasm.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    pub fn admin(e: &Env) -> Result<Address, Error> {
-        e.storage()
-            .instance()
-            .get(&key_admin())
-            .ok_or(Error::AdminNotSet)
-    }
-
-    /// Rotate the admin. Requires the current admin's auth.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    pub fn set_admin(e: &Env, new_admin: &Address) -> Result<(), Error> {
-        Self::admin(e)?.require_auth();
-        e.storage().instance().set(&key_admin(), new_admin);
-        Ok(())
-    }
-
-    /// Upgrade this registry's wasm to `new_wasm_hash` (an already-installed
-    /// wasm hash). Requires admin auth; all name records survive.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    pub fn upgrade(e: &Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
-        Self::admin(e)?.require_auth();
-        e.deployer().update_current_contract_wasm(new_wasm_hash);
-        Ok(())
+        Self::set_admin(&e, admin);
     }
 
     /// Register a human-readable name for a smart account.

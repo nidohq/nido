@@ -1,3 +1,4 @@
+use admin_sep::{Administratable, Upgradable};
 use soroban_sdk::{
     contract, contractimpl, deploy::DeployerWithAddress, Address, Bytes, BytesN, Env, String,
     Symbol, U256,
@@ -100,7 +101,9 @@ mod zk_recovery {
 pub struct Config {
     account: InstanceItem<BytesN<32>>,
     passkey: InstanceItem<Address>,
-    admin: InstanceItem<Address>,
+    // The upgrade `admin` is no longer stored here: admin/set_admin/upgrade
+    // come from the shared `admin-sep` crate, which owns its own `ADMIN`
+    // storage key (see the `Administratable`/`Upgradable` impls below).
     /// Admin-settable override for the recovery-pool/controller resolution
     /// (see `Contract::set_recovery_pool`/`Contract::resolve_recovery`).
     /// `None` (the default, unset state) means "no override" -- production
@@ -129,39 +132,30 @@ pub struct Config {
 #[contract]
 pub struct Contract;
 
+// Governance (issue #26): admin/set_admin/upgrade come from the shared
+// `admin-sep` crate (`Administratable` + `Upgradable`), replacing the inlined
+// boilerplate. The factory is the only contract that was already
+// upgrade-capable before this workstream; it now shares the same SEP admin
+// surface as the rest of the set. Internal admin-gated entry points
+// (`set_recovery_pool`, `set_registry_pins`) call `Self::admin(e)` /
+// `Self::require_admin(e)` from these traits. Mainnet intent (plan B1):
+// `admin` is a multisig, ideally behind an upgrade timelock.
+#[contractimpl(contracttrait)]
+impl Administratable for Contract {}
+
+#[contractimpl(contracttrait)]
+impl Upgradable for Contract {}
+
 #[contractimpl]
 impl Contract {
     // `admin: Address` is not consumed by-ref in the body, but this is a
     // `#[contractimpl]` entry point: the SDK's XDR-based ABI takes owned
     // `Address` by value, so the signature cannot change (precedent:
-    // contracts/smart-account/src/contract.rs).
+    // contracts/smart-account/src/contract.rs). `set_admin` on first call (no
+    // admin yet) skips the auth check.
     #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(e: &Env, admin: Address) {
-        Config::new(e).admin.set(&admin);
-    }
-
-    /// The factory admin — the only address allowed to rotate the admin or
-    /// upgrade the factory wasm. Set at construct time.
-    pub fn admin(e: &Env) -> Address {
-        Config::new(e)
-            .admin
-            .get()
-            .expect("factory admin not set; deploy a fresh factory (old instances predate admin)")
-    }
-
-    /// Rotate the admin. Requires the current admin's auth.
-    // `#[contractimpl]` entry point; SDK ABI requires owned `Address`.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn set_admin(e: &Env, new_admin: Address) {
-        Self::admin(e).require_auth();
-        Config::new(e).admin.set(&new_admin);
-    }
-
-    /// Upgrade the factory's own wasm to `new_wasm_hash` (an already-installed
-    /// wasm hash). Requires admin auth.
-    pub fn upgrade(e: &Env, new_wasm_hash: BytesN<32>) {
-        Self::admin(e).require_auth();
-        e.deployer().update_current_contract_wasm(new_wasm_hash);
+        Self::set_admin(e, admin);
     }
 
     /// Set (or rotate) an admin-only override for the recovery-pool/
