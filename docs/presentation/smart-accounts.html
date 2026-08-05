@@ -165,13 +165,13 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
           <tr><th></th><th>G-address</th><th>C-address (smart account)</th></tr>
           <tr><td>Identity</td><td>ed25519 keypair</td><td>deployed contract instance</td></tr>
           <tr><td>Auth check</td><td>protocol signature check</td><td>your <code>__check_auth</code> code</td></tr>
-          <tr><td>Key types</td><td>ed25519 only</td><td>anything you can verify — P-256, multisig, ZK proofs</td></tr>
+          <tr><td>Key types</td><td>ed25519 only</td><td>anything you can verify — P-256, multisig, zero-knowledge (ZK) proofs</td></tr>
           <tr><td>Policies</td><td>weights/thresholds</td><td>arbitrary: limits, scopes, timelocks, recovery</td></tr>
         </table>
       </div>
       <div>
         <h3>How Soroban invokes it</h3>
-        <p>When a tx needs the account's authorization (<code>require_auth</code>), the host calls the account contract's <code>__check_auth</code> with the <b>signature payload hash</b>, the <b>signatures object</b>, and the <b>auth contexts</b> being authorized. Panic = deny.</p>
+        <p>When a transaction needs the account's authorization (<code>require_auth</code>), the host calls the account contract's <code>__check_auth</code> with the <b>signature payload hash</b>, the <b>signatures object</b>, and the <b>auth contexts</b> being authorized. Panic = deny: if the code aborts, the auth fails.</p>
         <p class="mut">Nido builds on OpenZeppelin <code>stellar-accounts</code> rather than reinventing the auth kernel.</p>
       </div>
     </div>
@@ -194,7 +194,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
       <div>
         <h3>Formats we care about</h3>
         <p><b>Public key</b> — 65-byte SEC1 uncompressed (<code>0x04 ‖ X ‖ Y</code>).</p>
-        <p><b>Signature</b> — DER from the browser, converted to 64&#8209;byte compact <code>r ‖ s</code>, low-S normalized before it goes on-chain.</p>
+        <p><b>Signature</b> — DER from the browser, converted to 64&#8209;byte compact <code>r ‖ s</code>, low-S normalized (one canonical encoding per signature) before it goes <span style="white-space:nowrap">on-chain</span>.</p>
       </div>
     </div>
   </div>
@@ -209,7 +209,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
       <li><b>Wallet app</b> — <code>packages/frontend</code>, an Astro app at nido.fyi. Each account lives at its own subdomain: <code>&lt;C-address&gt;.nido.fyi</code>.</li>
       <li><b>Passkey SDK</b> — <code>@nidohq/passkey-sdk</code>: WebAuthn parsing, auth-digest computation, signature injection, deploy, recovery, session keys.</li>
       <li><b>Wallets Kit module</b> — <code>NidoModule</code> for <code>stellar-wallets-kit</code>; Nido appears in dApp wallet selectors next to Freighter &amp; xBull.</li>
-      <li><b>Soroban contracts</b> — Factory · Smart Account · WebAuthn Verifier · Multisig + Spending-Limit policies · ZK Recovery pool/controller · UltraHonk verifier · Name registry.</li>
+      <li><b>Soroban contracts</b> — Factory · Smart Account · WebAuthn Verifier · Multisig + Spending-Limit policies · ZK Recovery pool/controller · UltraHonk verifier · Name registry (human-readable account names).</li>
       <li><b>Infra</b> — OpenZeppelin Relayer (gas abstraction, <code>nido.fly.dev</code>) and a Cloudflare Worker pool indexer that mirrors the recovery Merkle tree.</li>
     </ul>
     <p class="mut" style="margin-top: 10px;">Everything auth-critical is on-chain; the off-chain pieces only carry bytes or cache public state.</p>
@@ -237,7 +237,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
       <div>
         <h3>Trust-minimized by design</h3>
         <p>Deterministic derivation means the factory can't swap in different code for your address — the wasm hash is part of the address math.</p>
-        <p>Shared contracts (verifier, ZK recovery) resolve through the on-chain Stellar Registry and are cached in instance storage.</p>
+        <p>Shared contracts (verifier, ZK recovery) resolve by name through the Stellar Registry — the ecosystem's on-chain contract directory, distinct from Nido's own name registry — and are cached in instance storage.</p>
       </div>
     </div>
   </div>
@@ -283,9 +283,9 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
       <div>
         <p class="sub">The stateless verifier contract (deploy once, shared by all accounts) receives the raw assertion and replays the WebAuthn math:</p>
         <ol>
-          <li>Parse <code>clientDataJSON</code>; require <code>type == "webauthn.get"</code></li>
+          <li>Parse <code>clientDataJSON</code> (the browser's record of the sign request); require <code>type == "webauthn.get"</code></li>
           <li>Require <code>challenge == base64url(auth digest)</code></li>
-          <li>Check <code>authenticatorData</code> flags: <b>UP</b> + <b>UV</b> bits set</li>
+          <li>Check the flags in <code>authenticatorData</code> (the authenticator's own bytes): <b>UP</b> + <b>UV</b> — user present, user verified</li>
           <li>Digest = <code>authData ‖ sha256(clientData)</code></li>
           <li><code>secp256r1_verify(pubkey, sha256(digest), sig)</code> — the host function does the P-256 work</li>
         </ol>
@@ -334,7 +334,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
     <h2>Policies &amp; session keys: auth as composable rules</h2>
     <ul class="spread measure" style="margin-top:.6em;">
       <li><b>Multisig policy</b> — M-of-N threshold over a rule's signers (<code>SimpleThresholdAccountParams</code>). Powers friend-based recovery via <code>add_multisig_recovery(…)</code>.</li>
-      <li><b>Spending-limit policy</b> — a rolling-window meter over SAC <code>transfer</code> calls in scoped contexts: a limit per period of ledgers. Updates preserve the current window.</li>
+      <li><b>Spending-limit policy</b> — a rolling-window meter over SAC (Stellar Asset Contract) <code>transfer</code> calls in scoped contexts: a limit per ledger period (~5-second blocks). Updates preserve the current&nbsp;window.</li>
       <li><b>Session keys</b> — not a contract, a <b>scoped signer</b>: a second WebAuthn credential installed on a narrow rule (e.g. one dApp, spending-limited), default 30-day expiry.</li>
     </ul>
     <p class="measure" style="margin-top: 1.2em;"><b class="tl-acc">The composition rule that unlocks everything:</b> policies on a rule AND together, and a rule with <em class="acc">zero signers</em> and one policy makes that policy the rule's sole authority. That's the hook ZK recovery hangs on — coming up next.</p>
@@ -366,16 +366,16 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
       <div>
         <p class="big">You hold a claim ticket (a <b>secret</b>); the pool holds a stub bound to your account (a <b>commitment</b>). To recover, you prove you hold the matching ticket — <em class="acc">without showing it</em>.</p>
         <ul>
-          <li><b>Secret</b> → seed words or a repeatable wallet signature, HKDF'd in-browser to a BN254 field element. Never stored anywhere.</li>
-          <li><b>Commitment</b> → <code>Poseidon2([DOM_LEAF, secret])</code>, wrapped <em>on-chain</em> with your account address, appended to a depth-24 Merkle tree (~16.7M leaves).</li>
+          <li><b>Secret</b> → seed words or a deterministic wallet signature (same input, same bytes), HKDF-derived in-browser into a BN254 field element — a number in the proof system's native format. Never stored anywhere.</li>
+          <li><b>Commitment</b> → <code>Poseidon2([DOM_LEAF, secret])</code> — a ZK-friendly hash of the secret plus a fixed domain tag — wrapped <em>on-chain</em> with your account address, appended to a depth-24 Merkle tree (~16.7M leaves).</li>
           <li><b>Proof</b> → "some leaf in this tree is bound to this account and I know its secret" — plus a <b>nullifier</b> so each secret spends once, and an <b>auth hash</b> binding every argument of the request.</li>
         </ul>
       </div>
       <div>
         <h3>Uniform anonymity set</h3>
-        <p>Every account gets exactly one genesis leaf — real, or a deterministic dummy (<code>sha256("nido-zk-dummy" ‖ salt) mod r</code>). On-chain, enrolled and non-enrolled accounts are indistinguishable.</p>
+        <p>Every account gets exactly one genesis leaf — real, or a deterministic dummy (<code>sha256("nido-zk-dummy" ‖ salt) mod r</code>, folded into the same field). On-chain, enrolled and non-enrolled accounts are indistinguishable.</p>
         <h3>What the circuit does <em>not</em> know</h3>
-        <p>No guardians, no votes, no balances. Public inputs are just <code>root</code>, <code>nullifier</code>, <code>auth_hash</code> — membership, uniqueness, and request-binding. Nothing else.</p>
+        <p>The circuit — the fixed program the proof attests ran correctly — sees no guardians, no votes, no balances. Public inputs are just <code>root</code>, <code>nullifier</code>, <code>auth_hash</code> — membership, uniqueness, and request-binding. Nothing else.</p>
       </div>
     </div>
   </div>
@@ -397,12 +397,12 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
         <h3>Initiation needs no key and no funds</h3>
         <p>No <code>require_auth</code> — the UltraHonk proof <em>is</em> the authorization, and the OZ relayer pays the fee. Verified fully on-chain via BN254 host functions: ~159M CPU of the 400M budget. Rate-limited to 3 attempts per rolling 90 days.</p>
         <h3>The owner keeps the veto</h3>
-        <p>During the timelock (mainnet: 14-day delay, 7-day floor) the real owner can <code>cancel</code> — or <code>burn_nullifier</code> forever — each requiring their own proof, so strangers can't grief.</p>
+        <p>During the timelock (mainnet: a 14-day delay, never configurable below the 7-day floor) the real owner can <code>cancel</code> — or <code>burn_nullifier</code> forever — each requiring their own proof, so strangers can't grief.</p>
       </div>
       <div>
         <h3>Completion is a policy gate, not a proof</h3>
         <p>The recovery rule is <b>zero-signer</b> with the ZK controller as sole policy. Completion is a plain <code>add_context_rule</code> installing only the pending new passkey; <code>enforce</code> checks the stored record, exact call shape, and timelock.</p>
-        <p class="mut" style="margin-top: 1em;">Off-chain: a Cloudflare Worker mirrors the tree from <code>LeafInserted</code> events (RPC only retains ~7 days); clients verify against the on-chain <code>current_root</code> before proving.</p>
+        <p class="mut" style="margin-top: 1em;">Off-chain: a Cloudflare Worker mirrors the tree from <code>LeafInserted</code> events (Soroban RPC nodes — the chain's query servers — keep only ~7 days of them); clients verify against the on-chain <code>current_root</code> before proving.</p>
       </div>
     </div>
   </div>
@@ -418,7 +418,7 @@ footer.tag { margin-top: auto; padding-top: 14px; color: var(--mut); font-size: 
       <li><b><a href="https://nido.fyi/how-recovery-works/">/how-recovery-works</a></b> — the user-facing ZK recovery explainer: coat-check analogy up top, collapsible "for developers" notes citing the real function names underneath.</li>
       <li><b><code>examples/status-message-dapp</code></b> — React + Vite dApp with the wallet selector wired up; the reference for third-party integration.</li>
     </ul>
-    <p class="mut measure" style="margin-top: 14px;">Contract addresses and deploy history: <code>DEPLOYED.md</code>. Note the testnet timelocks are e2e-tuned (delay 60s); mainnet defaults are 14d/7d/30d.</p>
+    <p class="mut measure" style="margin-top: 14px;">Contract addresses and deploy history: <code>DEPLOYED.md</code>. Note the testnet timelocks are tuned for the end-to-end tests (delay 60s); mainnet defaults: 14d delay / 7d floor / 30d completion window.</p>
   </div>
 </section>
 
@@ -487,14 +487,14 @@ StellarWalletsKit.init({ modules: [
         <ul>
           <li>Factory, WebAuthn verifier, multisig + spending-limit policies, name registry</li>
           <li>ZK recovery pool/controller + UltraHonk verifier (July 2026)</li>
-          <li>Relayer + pool indexer live; e2e Playwright lanes green</li>
+          <li>Relayer + pool indexer live; end-to-end browser tests (Playwright) green</li>
         </ul>
       </div>
       <div>
         <h3>Foundations</h3>
         <ul>
-          <li><code>soroban-sdk</code> 26 · OZ <code>stellar-accounts</code> (pinned rev) · Noir + Barretenberg toolchain</li>
-          <li>UltraHonk over BN254: universal SRS — <b>no per-circuit trusted&nbsp;setup</b></li>
+          <li><code>soroban-sdk</code> 26 · OZ <code>stellar-accounts</code> (pinned revision) · Noir + Barretenberg toolchain</li>
+          <li>UltraHonk over BN254: one universal SRS (structured reference string) — <b>no per-circuit trusted-setup&nbsp;ceremony</b> to compromise</li>
           <li>Headroom: full <code>initiate_recovery</code> ≈ 168M of the 400M CPU&nbsp;budget</li>
         </ul>
       </div>
