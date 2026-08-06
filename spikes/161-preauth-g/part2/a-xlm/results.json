@@ -1,0 +1,230 @@
+{
+  "experiment": "A-xlm",
+  "network": "testnet",
+  "steps": {
+    "step1": {
+      "hash": "c1648e392c77a319f5d5ac2af1c53c8dbc43754f387a84830f13d164e63d8eea",
+      "ledger": 4003966,
+      "g_balance": "0.0000000",
+      "g_num_sponsored": 2
+    },
+    "step2": {
+      "auth_credential_types": [
+        "sorobanCredentialsSourceAccount"
+      ],
+      "g_balance_at_approve": "0.0000000",
+      "expiration_ledger": 7104366,
+      "outer_hash": "7867f11b7822bec40c0d6c48ddfb2de98529d079a6676e7dfade6f9c79dbc89d",
+      "inner_hash": "06fd7170fef30187f76a8bb568dca9117fe8677524995c46e29e1abe4c8fa7c0",
+      "ledger": 4003968,
+      "succeeded_with_zero_balance_g": true
+    },
+    "step3": {
+      "hash": "310e916c67d47c797e1f29ef008975f5331e41fd68a168d555ed05b1a88aa0d6",
+      "ledger": 4003969,
+      "c_dest": "CBFZGJBHWKUZVW5HGMCVE7DAESXLGCGWI4GHFOES3SMX7EI4VUBTIUQF",
+      "salt_hex": "cac2a5c2e9550d2d30a075d4da0cf0149474853a840f9cd50253b6055d5b2ea4",
+      "p256_key_hex": "0401f365fdc466831192fb9257eddac6adf640acfe1d1a439caeedfeee7fafc217b54a208acb4a937ae740faeab8d8e6d83ac237420606d591f34340612833eb28",
+      "fallback_to_w": false
+    },
+    "step4": {
+      "t1_hash": "01b72f2f484d3d51dbcdab398d1ef5c1b2816a7e56942494a2a4b7097a31ade4",
+      "t1_seq": "17196903024295939",
+      "t1_fee": "4000200",
+      "zero_simulation": true,
+      "resources": {
+        "cpuInstrs": 4000000,
+        "diskReadBytes": 50000,
+        "writeBytes": 5000,
+        "resourceFee": 2000000
+      }
+    },
+    "step5": {
+      "t2_hash": "4b68439be274e88f1c6e163c1c7e40ba0b49d16d96edee69cb7836af0ae17c9f",
+      "t2_seq": "17196903024295940",
+      "t2_fee": "200"
+    },
+    "step6": {
+      "outer_hash": "51a47c1bd684aeb49530e38aa3e83636919d7e2814553135915c5d58b4c38e1c",
+      "inner_hash": "0c88c0e3170dd4ce1eca6bbc96e512467a960a20f17cd61b155b40ea8ab5df9e",
+      "ledger": 4003970,
+      "signers_after_config": [
+        {
+          "type": "preauth_tx",
+          "key": "TAA3OLZPJBGT2UO3ZWVTTDI66XA3FALKPZLJIJEUUKSLOCL2GGW6I5SX",
+          "weight": 1
+        },
+        {
+          "type": "preauth_tx",
+          "key": "TBFWQQ434J2ORDY4NYLDYHD6IC5AWSORNWLO33TJZN4DNLYK4F6J636S",
+          "weight": 1
+        },
+        {
+          "type": "ed25519_public_key",
+          "key": "GAP2CZE6SLIUF323UXBLOLQS6QCHRZ733GBSB473IZRYA7EDX6BP7RNK",
+          "weight": 0
+        }
+      ],
+      "g_num_sponsored": 4,
+      "g_secret_discarded": true
+    },
+    "step7": {
+      "status": "ERROR",
+      "error": "txBadAuth",
+      "hash": "c4c4260c0c67c1983de70be1ea0ab312caec3e250733ed0272895916b025bf86",
+      "g_sequence_after": "17196903024295938",
+      "sequence_consumed": false
+    },
+    "step8": {
+      "hash": "bdff2d92f10b880dfb9e26940116c7b309965862b1cdebf98867beefe6f6baec",
+      "ledger": 4003972,
+      "g_balance": "25.0000000"
+    },
+    "step9": {
+      "submitted_as": "fee-bump (bare is arithmetically impossible for an exact-amount sweep; see comment)",
+      "outer_hash": "c72669fc9f870867953a28fdae8b320c4eff56130fdf1e6904bd682ac7cc65d1",
+      "ledger": 4003974,
+      "inner_signature_count_applied": 0,
+      "g_balance_after": "0.0000000",
+      "c_dest_stroops_after": "250000000",
+      "g_signers_after": [
+        {
+          "type": "preauth_tx",
+          "key": "TBFWQQ434J2ORDY4NYLDYHD6IC5AWSORNWLO33TJZN4DNLYK4F6J636S",
+          "weight": 1
+        },
+        {
+          "type": "ed25519_public_key",
+          "key": "GAP2CZE6SLIUF323UXBLOLQS6QCHRZ733GBSB473IZRYA7EDX6BP7RNK",
+          "weight": 0
+        }
+      ]
+    },
+    "step10": {
+      "hash": "65315556f12f36794dda568b7d2e1f4893c6219778676db4a95f71f6ff2802be",
+      "ledger": 4003976
+    },
+    "step11": {
+      "hash": "099c492ca15cca17e727962a5766bdc4d6d68dd2992aeef1045247cd6e1bad17",
+      "ledger": 4003977,
+      "auth_credential_types": [
+        "sorobanCredentialsSourceAccount"
+      ],
+      "g_balance_after": "0.0000000",
+      "allowance_survived_inertness": true
+    },
+    "step12": {
+      "bare_attempt": {
+        "status": "ERROR",
+        "error": "txInsufficientBalance",
+        "hash": "4b68439be274e88f1c6e163c1c7e40ba0b49d16d96edee69cb7836af0ae17c9f"
+      },
+      "feebump": {
+        "outer_hash": "958fc3cef1e4236464753226581a3052b83a1acce0c7831d88f56371d6a4efec",
+        "ledger": 4003979
+      },
+      "merge_outcome": "SUCCESS - G deleted (horizon 404)",
+      "r_num_sponsoring_after": 0
+    }
+  },
+  "tx": {
+    "create_g": "c1648e392c77a319f5d5ac2af1c53c8dbc43754f387a84830f13d164e63d8eea",
+    "approve_outer": "7867f11b7822bec40c0d6c48ddfb2de98529d079a6676e7dfade6f9c79dbc89d",
+    "approve_inner": "06fd7170fef30187f76a8bb568dca9117fe8677524995c46e29e1abe4c8fa7c0",
+    "factory_create": "310e916c67d47c797e1f29ef008975f5331e41fd68a168d555ed05b1a88aa0d6",
+    "config_outer": "51a47c1bd684aeb49530e38aa3e83636919d7e2814553135915c5d58b4c38e1c",
+    "config_inner": "0c88c0e3170dd4ce1eca6bbc96e512467a960a20f17cd61b155b40ea8ab5df9e",
+    "deposit_25": "bdff2d92f10b880dfb9e26940116c7b309965862b1cdebf98867beefe6f6baec",
+    "t1_outer": "c72669fc9f870867953a28fdae8b320c4eff56130fdf1e6904bd682ac7cc65d1",
+    "t1_inner": "01b72f2f484d3d51dbcdab398d1ef5c1b2816a7e56942494a2a4b7097a31ade4",
+    "stray_7": "65315556f12f36794dda568b7d2e1f4893c6219778676db4a95f71f6ff2802be",
+    "sweep_transfer_from": "099c492ca15cca17e727962a5766bdc4d6d68dd2992aeef1045247cd6e1bad17",
+    "t2_outer": "958fc3cef1e4236464753226581a3052b83a1acce0c7831d88f56371d6a4efec",
+    "t2_inner": "4b68439be274e88f1c6e163c1c7e40ba0b49d16d96edee69cb7836af0ae17c9f"
+  },
+  "balances": [
+    {
+      "label": "after-create",
+      "R": "9999.9999700",
+      "R_num_sponsoring": 2,
+      "W": "10000.0000000",
+      "G": "0.0000000",
+      "G_num_sponsored": 2,
+      "G_subentries": 0,
+      "G_exists": true,
+      "C_dest_sac_stroops": null
+    },
+    {
+      "label": "after-config",
+      "R": "9999.9422332",
+      "R_num_sponsoring": 4,
+      "W": "10000.0000000",
+      "G": "0.0000000",
+      "G_num_sponsored": 4,
+      "G_subentries": 2,
+      "G_exists": true,
+      "C_dest_sac_stroops": "0"
+    },
+    {
+      "label": "after-25-deposit",
+      "R": "9974.9422232",
+      "R_num_sponsoring": 4,
+      "W": "10000.0000000",
+      "G": "25.0000000",
+      "G_num_sponsored": 4,
+      "G_subentries": 2,
+      "G_exists": true,
+      "C_dest_sac_stroops": "0"
+    },
+    {
+      "label": "after-T1",
+      "R": "9974.9272060",
+      "R_num_sponsoring": 3,
+      "W": "10000.0000000",
+      "G": "0.0000000",
+      "G_num_sponsored": 3,
+      "G_subentries": 1,
+      "G_exists": true,
+      "C_dest_sac_stroops": "250000000"
+    },
+    {
+      "label": "after-sweep",
+      "R": "9967.9271960",
+      "R_num_sponsoring": 3,
+      "W": "10006.9981818",
+      "G": "0.0000000",
+      "G_num_sponsored": 3,
+      "G_subentries": 1,
+      "G_exists": true,
+      "C_dest_sac_stroops": "250000000"
+    },
+    {
+      "label": "after-T2-merge",
+      "R": "9967.9271760",
+      "R_num_sponsoring": 0,
+      "W": "10006.9981818",
+      "G": null,
+      "G_num_sponsored": null,
+      "G_subentries": null,
+      "G_exists": false,
+      "C_dest_sac_stroops": "250000000"
+    }
+  ],
+  "accounts": {
+    "R": "GCN5FQW6VXEUQT6UNEZRISNIZXFLD47E5ZMUKZEYJE44OCYCYR63QJ32",
+    "W": "GC2P2DIAY2LYQE4OEGZXEN4KXX76EPK2V3YPCIAS5RWCBQA7R7C5LQLB",
+    "G": "GAP2CZE6SLIUF323UXBLOLQS6QCHRZ733GBSB473IZRYA7EDX6BP7RNK",
+    "C_dest": "CBFZGJBHWKUZVW5HGMCVE7DAESXLGCGWI4GHFOES3SMX7EI4VUBTIUQF"
+  },
+  "accounting": {
+    "r_start": "9999.9999700",
+    "r_end": "9967.9271760",
+    "r_net_cost_xlm": "32.0727940",
+    "of_which_transfers_out": "32.0000000",
+    "of_which_fees_xlm": "0.0727940",
+    "dust_stranded_in_g": "0 (account deleted)",
+    "w_end": "10006.9981818",
+    "c_dest_final_stroops": "250000000"
+  },
+  "outcome": "SUCCESS"
+}

@@ -1,0 +1,177 @@
+{
+  "experiment": "D-nonxlm",
+  "network": "testnet",
+  "started": "2026-08-06T18:13:41.867Z",
+  "accounts": {
+    "I": "GCI6MH3RDUQYAAZEXXD5FTKC4DXZHQYR3JKDUYGWFPMAHTG2E5XBZNL7",
+    "R": "GDNRFKSNYCQMSIORJNOXKI7CTSOKPX5JIK2B57LN2OWUXMEYHIUG5MLY",
+    "G": "GD7KTKF7PRWXELJ34EOZX2OMI4YZIZGSYDYCHWSIHQPF334OZRGLYWJ6"
+  },
+  "sac": {
+    "id": "CAHZOM3GA47BFDRMBIKDKB5HG2BMUXD4DLHK3EMWINTZTQKGT7ATN45T",
+    "matches_offline_computation": true
+  },
+  "tx_creation": {
+    "hash": "c91e51914fbfaf8c2e47d579da47b4eed99c8c5157079e7362a6ac1d9149f157",
+    "ledger": 4003926
+  },
+  "after_creation": {
+    "G": {
+      "exists": true,
+      "sequence": "17196731225604096",
+      "subentry_count": 0,
+      "num_sponsoring": 0,
+      "num_sponsored": 2,
+      "xlm": "0.0000000",
+      "nido": null,
+      "signers": [
+        {
+          "type": "ed25519_public_key",
+          "key": "GD7KTKF7PRWXELJ34EOZX2OMI4YZIZGSYDYCHWSIHQPF334OZRGLYWJ6",
+          "weight": 1
+        }
+      ]
+    },
+    "R_num_sponsoring": 2
+  },
+  "t5": {
+    "seq": "17196731225604098",
+    "fee": "2000200",
+    "hash": "1c71a1f33f4c076897c24cb20b5ca8406fa66886875a1f6815af698aaea54de0",
+    "built": "simulation-free",
+    "xdr": "AAAAAgAAAAD+qai/fG1yLTvhHZvpzEcxlGTSwPAj2kg8Hl3vjsxMvAAehUgAPRhWAAAAAgAAAAEAAAAAAAAAAAAAAABqdNz7AAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABD5czZgc+Eo4sChQ1B6c2gspcfBrOrZGWQ2eZwUafwTYAAAAIdHJhbnNmZXIAAAADAAAAEgAAAAAAAAAA/qmov3xtci074R2b6cxHMZRk0sDwI9pIPB5d747MTLwAAAASAAAAAAAAAACR5h9xHSGAAyS9x9LNQuDvk8MR2lQ6YNYr2APM2iduHAAAAAoAAAAAAAAAAAAAAAA7msoAAAAAAQAAAAAAAAAAAAAAAQ+XM2YHPhKOLAoUNQenNoLKXHwazq2RlkNnmcFGn8E2AAAACHRyYW5zZmVyAAAAAwAAABIAAAAAAAAAAP6pqL98bXItO+Edm+nMRzGUZNLA8CPaSDweXe+OzEy8AAAAEgAAAAAAAAAAkeYfcR0hgAMkvcfSzULg75PDEdpUOmDWK9gDzNonbhwAAAAKAAAAAAAAAAAAAAAAO5rKAAAAAAAAAAABAAAAAAAAAAMAAAAGAAAAAQ+XM2YHPhKOLAoUNQenNoLKXHwazq2RlkNnmcFGn8E2AAAAFAAAAAEAAAAAAAAAAJHmH3EdIYADJL3H0s1C4O+TwxHaVDpg1ivYA8zaJ24cAAAAAAAAAAD+qai/fG1yLTvhHZvpzEcxlGTSwPAj2kg8Hl3vjsxMvAAAAAEAAAABAAAAAP6pqL98bXItO+Edm+nMRzGUZNLA8CPaSDweXe+OzEy8AAAAAU5JRE8AAAAAkeYfcR0hgAMkvcfSzULg75PDEdpUOmDWK9gDzNonbhwAPQkAAADDUAAAE4gAAAAAAA9CQAAAAAA="
+  },
+  "t6": {
+    "seq": "17196731225604099",
+    "fee": "400",
+    "hash": "6130e403bdb92cc788a77013960e02ac0664125708967bc8a4d707e2dcbff4bc",
+    "xdr": "AAAAAgAAAAD+qai/fG1yLTvhHZvpzEcxlGTSwPAj2kg8Hl3vjsxMvAAAAZAAPRhWAAAAAwAAAAEAAAAAAAAAAAAAAABqdNz7AAAAAAAAAAIAAAABAAAAAP6pqL98bXItO+Edm+nMRzGUZNLA8CPaSDweXe+OzEy8AAAABgAAAAFOSURPAAAAAJHmH3EdIYADJL3H0s1C4O+TwxHaVDpg1ivYA8zaJ24cAAAAAAAAAAAAAAABAAAAAP6pqL98bXItO+Edm+nMRzGUZNLA8CPaSDweXe+OzEy8AAAACAAAAADbEqpNwKDJIdFLXXUj4pycp9+pQrQe/W3TrUuwmDoobgAAAAAAAAAA"
+  },
+  "tx_provisioning": {
+    "outer_hash": "e4152c0e65f2436ddab8bf26a6c6d0bc3d1f018f1386c359474e29dee07a6574",
+    "inner_hash": "a47bb65a2043b56e2eefa1f04da083285446a5a9f72ef9c3407cc02b4c2a0bd7",
+    "ledger": 4003927
+  },
+  "after_provisioning": {
+    "G": {
+      "exists": true,
+      "sequence": "17196731225604097",
+      "subentry_count": 3,
+      "num_sponsoring": 0,
+      "num_sponsored": 5,
+      "xlm": "0.0000000",
+      "nido": "0.0000000",
+      "signers": [
+        {
+          "type": "preauth_tx",
+          "key": "TAOHDIPTH5GAO2EXYJGLEC24VBAG7JTIQ2DVUH3ICWXWTCVOUVG6BKPO",
+          "weight": 1
+        },
+        {
+          "type": "preauth_tx",
+          "key": "TBQTBZADXW4SZR4IU5YBHFQOAKWAMZASK4EJM66IUTLQPYW4X72LY74U",
+          "weight": 1
+        },
+        {
+          "type": "ed25519_public_key",
+          "key": "GD7KTKF7PRWXELJ34EOZX2OMI4YZIZGSYDYCHWSIHQPF334OZRGLYWJ6",
+          "weight": 0
+        }
+      ]
+    },
+    "R_num_sponsoring": 5
+  },
+  "preauth_signers_decode": {
+    "on_chain": [
+      "1c71a1f33f4c076897c24cb20b5ca8406fa66886875a1f6815af698aaea54de0",
+      "6130e403bdb92cc788a77013960e02ac0664125708967bc8a4d707e2dcbff4bc"
+    ],
+    "match_t5": true,
+    "match_t6": true,
+    "master_weight": 0
+  },
+  "tx_payment": {
+    "hash": "76d5dac7cf7dd3ade5e10b3b73cd48bc949336c7da994be2d6d2a1bbeb5a3fb6",
+    "ledger": 4003928
+  },
+  "after_payment": {
+    "G_nido": "100.0000000",
+    "G_xlm": "0.0000000"
+  },
+  "t5_bare_attempt": {
+    "status": "ERROR",
+    "hash": "1c71a1f33f4c076897c24cb20b5ca8406fa66886875a1f6815af698aaea54de0",
+    "tx_code": "txInsufficientBalance",
+    "op_codes": null
+  },
+  "t5_submission": {
+    "mode": "feebump",
+    "outer_hash": "0d8290a95229cc68db183925a72f54611d83ce9657ca3b83429875436937de26",
+    "inner_hash": "1c71a1f33f4c076897c24cb20b5ca8406fa66886875a1f6815af698aaea54de0",
+    "ledger": 4003929,
+    "inner_signature_count": 0
+  },
+  "after_t5": {
+    "G": {
+      "exists": true,
+      "sequence": "17196731225604098",
+      "subentry_count": 2,
+      "num_sponsoring": 0,
+      "num_sponsored": 4,
+      "xlm": "0.0000000",
+      "nido": "0.0000000",
+      "signers": [
+        {
+          "type": "preauth_tx",
+          "key": "TBQTBZADXW4SZR4IU5YBHFQOAKWAMZASK4EJM66IUTLQPYW4X72LY74U",
+          "weight": 1
+        },
+        {
+          "type": "ed25519_public_key",
+          "key": "GD7KTKF7PRWXELJ34EOZX2OMI4YZIZGSYDYCHWSIHQPF334OZRGLYWJ6",
+          "weight": 0
+        }
+      ]
+    },
+    "R_num_sponsoring": 4
+  },
+  "asset_stats_after_t5": {
+    "amount": "0.0000000"
+  },
+  "t6_bare_attempt": {
+    "status": "ERROR",
+    "hash": "6130e403bdb92cc788a77013960e02ac0664125708967bc8a4d707e2dcbff4bc",
+    "tx_code": "txInsufficientBalance",
+    "op_codes": null
+  },
+  "t6_submission": {
+    "mode": "feebump",
+    "outer_hash": "84afe9b3aea18eddfb3d2df5cdef9d876fe973caf9cabd200d60e212ade0cc45",
+    "inner_hash": "6130e403bdb92cc788a77013960e02ac0664125708967bc8a4d707e2dcbff4bc",
+    "ledger": 4003931,
+    "inner_signature_count": 0
+  },
+  "after_t6": {
+    "G": {
+      "exists": false
+    },
+    "R": {
+      "exists": true,
+      "sequence": "17196722635669506",
+      "subentry_count": 0,
+      "num_sponsoring": 0,
+      "num_sponsored": 0,
+      "xlm": "9999.9896084",
+      "nido": null,
+      "signers": [
+        {
+          "type": "ed25519_public_key",
+          "key": "GDNRFKSNYCQMSIORJNOXKI7CTSOKPX5JIK2B57LN2OWUXMEYHIUG5MLY",
+          "weight": 1
+        }
+      ]
+    }
+  },
+  "outcome": "SUCCESS",
+  "finished": "2026-08-06T18:14:33.805Z"
+}

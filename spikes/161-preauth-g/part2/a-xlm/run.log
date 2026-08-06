@@ -1,0 +1,44 @@
+R (relayer): GCN5FQW6VXEUQT6UNEZRISNIZXFLD47E5ZMUKZEYJE44OCYCYR63QJ32
+W (watcher): GC2P2DIAY2LYQE4OEGZXEN4KXX76EPK2V3YPCIAS5RWCBQA7R7C5LQLB
+G (burner):  GAP2CZE6SLIUF323UXBLOLQS6QCHRZ733GBSB473IZRYA7EDX6BP7RNK
+funding R + W via friendbot (G is NOT friendbot-funded)...
+step1-sponsored-create sent: c1648e392c77a319f5d5ac2af1c53c8dbc43754f387a84830f13d164e63d8eea status PENDING
+step1-sponsored-create SUCCESS in ledger 4003966
+G starting sequence n = 17196903024295936
+[balances:after-create] {"label":"after-create","R":"9999.9999700","R_num_sponsoring":2,"W":"10000.0000000","G":"0.0000000","G_num_sponsored":2,"G_subentries":0,"G_exists":true,"C_dest_sac_stroops":null}
+approve expiration_ledger = 7104366 (current 4003966)
+approve auth entries: ["sorobanCredentialsSourceAccount"]
+step2-approve-feebump sent: 7867f11b7822bec40c0d6c48ddfb2de98529d079a6676e7dfade6f9c79dbc89d status PENDING
+step2-approve-feebump SUCCESS in ledger 4003968
+step3-factory-create (attempt 1) sent: 310e916c67d47c797e1f29ef008975f5331e41fd68a168d555ed05b1a88aa0d6 status PENDING
+step3-factory-create (attempt 1) SUCCESS in ledger 4003969
+C_dest = CBFZGJBHWKUZVW5HGMCVE7DAESXLGCGWI4GHFOES3SMX7EI4VUBTIUQF
+T1 built OFFLINE: seq 17196903024295939, fee 4000200, hash 01b72f2f484d3d51dbcdab398d1ef5c1b2816a7e56942494a2a4b7097a31ade4
+T2 built: seq 17196903024295940, hash 4b68439be274e88f1c6e163c1c7e40ba0b49d16d96edee69cb7836af0ae17c9f
+step6-config-feebump sent: 51a47c1bd684aeb49530e38aa3e83636919d7e2814553135915c5d58b4c38e1c status PENDING
+step6-config-feebump SUCCESS in ledger 4003970
+G signers after S: [{"type":"preauth_tx","key":"TAA3OLZPJBGT2UO3ZWVTTDI66XA3FALKPZLJIJEUUKSLOCL2GGW6I5SX","weight":1},{"type":"preauth_tx","key":"TBFWQQ434J2ORDY4NYLDYHD6IC5AWSORNWLO33TJZN4DNLYK4F6J636S","weight":1},{"type":"ed25519_public_key","key":"GAP2CZE6SLIUF323UXBLOLQS6QCHRZ733GBSB473IZRYA7EDX6BP7RNK","weight":0}]
+G secret DISCARDED (keypair variable nulled). G is now controlled only by the two preauth signers.
+[balances:after-config] {"label":"after-config","R":"9999.9422332","R_num_sponsoring":4,"W":"10000.0000000","G":"0.0000000","G_num_sponsored":4,"G_subentries":2,"G_exists":true,"C_dest_sac_stroops":"0"}
+negative test: status=ERROR error=txBadAuth
+negative test rejected, G sequence still 17196903024295938 (n+2)
+step8-deposit-25 sent: bdff2d92f10b880dfb9e26940116c7b309965862b1cdebf98867beefe6f6baec status PENDING
+step8-deposit-25 SUCCESS in ledger 4003972
+[balances:after-25-deposit] {"label":"after-25-deposit","R":"9974.9422232","R_num_sponsoring":4,"W":"10000.0000000","G":"25.0000000","G_num_sponsored":4,"G_subentries":2,"G_exists":true,"C_dest_sac_stroops":"0"}
+submitting T1 (inner signatures: 0) fee-bumped by R
+step9-T1-feebump sent: c72669fc9f870867953a28fdae8b320c4eff56130fdf1e6904bd682ac7cc65d1 status PENDING
+step9-T1-feebump SUCCESS in ledger 4003974
+[balances:after-T1] {"label":"after-T1","R":"9974.9272060","R_num_sponsoring":3,"W":"10000.0000000","G":"0.0000000","G_num_sponsored":3,"G_subentries":1,"G_exists":true,"C_dest_sac_stroops":"250000000"}
+T1 applied with 0 inner signatures; G back to 0.0000000; C_dest holds 250000000 stroops
+step10-stray-7 sent: 65315556f12f36794dda568b7d2e1f4893c6219778676db4a95f71f6ff2802be status PENDING
+step10-stray-7 SUCCESS in ledger 4003976
+step11-transfer_from-sweep sent: 099c492ca15cca17e727962a5766bdc4d6d68dd2992aeef1045247cd6e1bad17 status PENDING
+step11-transfer_from-sweep SUCCESS in ledger 4003977
+[balances:after-sweep] {"label":"after-sweep","R":"9967.9271960","R_num_sponsoring":3,"W":"10006.9981818","G":"0.0000000","G_num_sponsored":3,"G_subentries":1,"G_exists":true,"C_dest_sac_stroops":"250000000"}
+transfer_from swept 7 XLM; G balance 0.0000000
+T2 bare attempt: status=ERROR error=txInsufficientBalance
+T2 bare rejected as expected (0-balance source); resubmitting as fee-bump by R
+step12-T2-feebump sent: 958fc3cef1e4236464753226581a3052b83a1acce0c7831d88f56371d6a4efec status PENDING
+step12-T2-feebump SUCCESS in ledger 4003979
+[balances:after-T2-merge] {"label":"after-T2-merge","R":"9967.9271760","R_num_sponsoring":0,"W":"10006.9981818","G":null,"G_num_sponsored":null,"G_subentries":null,"G_exists":false,"C_dest_sac_stroops":"250000000"}
+merge outcome: SUCCESS - G deleted (horizon 404); R num_sponsoring=0

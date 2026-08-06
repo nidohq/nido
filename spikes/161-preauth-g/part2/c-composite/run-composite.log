@@ -1,0 +1,26 @@
+G (burner): GD2A2YJPU4RGBTVWWM4ECRY2YDGVEFZN2I73DICBQZHAQOUYF6CEKTI7
+G sequence n = 17196714045734912
+predicted C address: CDTLVXJBBXTQWOZLGGJAZJS76XHSMU756P5BL6Z5IXSRC53BO52QI2RQ
+sim auth entries (1):
+[
+  {
+    "credentials": "sorobanCredentialsSourceAccount",
+    "rootInvocation": {
+      "type": "contractFn",
+      "contract": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "function": "transfer",
+      "args": [
+        "GD2A2YJPU4RGBTVWWM4ECRY2YDGVEFZN2I73DICBQZHAQOUYF6CEKTI7",
+        "CDTLVXJBBXTQWOZLGGJAZJS76XHSMU756P5BL6Z5IXSRC53BO52QI2RQ",
+        "50000000"
+      ],
+      "subInvocations": []
+    }
+  }
+]
+T built: seq 17196714045734914, fee 1302325, hash ad1390853ea588df88fe2cf8bfe473d063073695a578e85d8de21d9990ea05c9
+S sent: 66940fef72f954ad47bc4c1e4558fd7d979a014b9f598af14ee8b9fcddfa6c43 status PENDING
+S confirmed: preauth signer installed, master weight 0
+bare T sent: ad1390853ea588df88fe2cf8bfe473d063073695a578e85d8de21d9990ea05c9 status PENDING
+T SUCCESS in ledger 4003924; applied signature count 0
+C deployed: true, C balance: 50000000 stroops

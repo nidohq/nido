@@ -1,0 +1,24 @@
+G (burner): GDG76CYFLVXPR7MXDADCZPWSZAWZOYP4RNPT4YPNXM72X5R4S6IX7CCG
+G sequence n = 17196683980963840
+sim auth entries (1):
+[
+  {
+    "credentials": "sorobanCredentialsSourceAccount",
+    "rootInvocation": {
+      "type": "contractFn",
+      "contract": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "function": "transfer",
+      "args": [
+        "GDG76CYFLVXPR7MXDADCZPWSZAWZOYP4RNPT4YPNXM72X5R4S6IX7CCG",
+        "GDPSIACF7TRPWJEDLDEJSUGYUQHD3J6XCV2I53N5RDHERIWEZ7BLU7I6",
+        "50000000"
+      ],
+      "subInvocations": []
+    }
+  }
+]
+T built: seq 17196683980963842, fee 1024313, hash bf862b2525c1a0b0e8b33819171ecf06dadf45664d2276c8986910fada7d513e
+S sent: 463d44538fe09d790d27c91066679fddd515d4287e16aad2ffd9e2cb0f78f802 status PENDING
+S confirmed: preauth signer installed, master weight 0
+bare T sent: bf862b2525c1a0b0e8b33819171ecf06dadf45664d2276c8986910fada7d513e status PENDING
+T SUCCESS in ledger 4003917; applied signature count 0
