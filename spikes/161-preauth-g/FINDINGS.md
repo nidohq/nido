@@ -96,6 +96,39 @@ needed.
     entirely; if routed through `infra/relayer`, the native SAC `transfer`
     host function needs allowlisting.
 
+## Extension: unlimited allowance so C can acquire later deposits to G
+
+The fixed-amount constraint can be relaxed with the SAC's SEP-41 allowance
+surface: `approve(G, C, i128::MAX, expiration_ledger)` + C pulling via
+`transfer_from(C, G, C, amount)` (authorized by the passkey, or by a
+policy signer for watcher-driven auto-sweep). `approve` requires
+`require_auth(G)` but **no balance**, so it can run either during the
+provisioning window with the live `G` secret (before discard) or inside the
+composite pre-auth `T` (SourceAccount credentials cover both `require_auth(G)`
+calls in one invocation tree). Result: the user can send any amount, multiple
+times, and C sweeps at leisure — no exact-amount matching.
+
+Bounds and caveats:
+
+- **Not eternal.** `expiration_ledger` is mandatory; the allowance is a
+  temporary storage entry capped by the network `max_entry_ttl`
+  (~6 months on mainnet, ~3.1M ledgers — verify exact value in part two).
+  Once `G` is inert, `require_auth(G)` is gone forever → no re-approve.
+  A deposit after expiry is stranded permanently, so this is a
+  *time-boxed deposit address*, not a forever-address.
+- **Pre-auth ladder extends the window.** An account can hold up to 20
+  signers: install multiple pre-auth signers at consecutive sequences, each
+  the hash of a frozen re-`approve` tx submitted later (bearer; watcher fires
+  one every ~5 months). Each frozen `expiration_ledger` must satisfy
+  `exp − submit_ledger ≤ max_entry_ttl` at submission time, and sequences
+  consume in order — timebound/seq choreography to validate. Years, not
+  forever.
+- **XLM floor.** `transfer_from` cannot sweep `G` below its minimum balance
+  (1 XLM base + 0.5/subentry). Non-XLM trustline balances sweep to 0 but the
+  trustline must exist from provisioning.
+- **Trust surface unchanged.** Allowance runs only to C — the user's own
+  passkey account; a leaked `G` secret remains inert.
+
 ## Deviations / open items vs. issue #161
 
 - Spike used friendbot funding, not sponsored reserves. Sponsorship
