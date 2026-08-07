@@ -21,6 +21,9 @@ pub const MULTISIG_POLICY_WASM: &[u8] =
 pub const SPENDING_LIMIT_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_spending_limit_policy.wasm");
 
+pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/nido_preauth_sweep_policy.wasm");
+
 /// M2 Task 5's factory contract wasm — embeds the same smart-account wasm
 /// bytes as [`SMART_ACCOUNT_WASM`] internally (see
 /// `contracts/factory/src/contract.rs`'s `smart_account` module doc
