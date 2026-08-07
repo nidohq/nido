@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 8,
+    "address": 7,
     "nonce": 0,
     "mux_id": 0
   },
@@ -54,7 +54,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "043b71bbf0ecbbd7594551828960b749e232fe71e2fc92c2093ff314f720e58a0d617a179235560ead853a7647af9edd01650e5a760db75ef2ab10e42b2edbbe9f"
+                          "bytes": "041bad9bf1f7e8c4ddf229a332ea5c0d533c43f5198d07c7ab28239624a7a285a78fd3c5c67a868461eee2ce8990f492f7219b27aaaefa84b0064f532d6ee5c175"
                         }
                       ]
                     }
@@ -93,13 +93,13 @@
     ],
     [
       [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM",
         {
           "function": {
             "create_contract_v2_host_fn": {
               "contract_id_preimage": {
                 "address": {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM",
                   "salt": "0000000000000000000000000000000000000000000000000000000000000000"
                 }
               },
@@ -141,10 +141,13 @@
                     {
                       "vec": [
                         {
-                          "symbol": "Delegated"
+                          "symbol": "External"
                         },
                         {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                          "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
+                        },
+                        {
+                          "bytes": "040419e0274609ce27ba9e68d4982d4e7a3073bf86e248864cebbd90e4ecf6f45ca6b4f62889f085d0fa831d5b9f974584011f1a38d0019de79906ef3871cb0228"
                         }
                       ]
                     }
@@ -154,7 +157,7 @@
                   "map": [
                     {
                       "key": {
-                        "address": "CC6YSLPYSKOZZFQSYO3UWY6VG5ZFKBXYOVDLAO7CVS26QZAFFR6AWO5K"
+                        "address": "CDXKQTPLDDF4RBMJCCTGV2XQ44DCJOY7XZZKPEDJFKQTECSTYHBOI42O"
                       },
                       "val": {
                         "map": [
@@ -276,7 +279,7 @@
           "data": {
             "contract_data": {
               "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM",
               "key": {
                 "ledger_key_nonce": {
                   "nonce": "4837995959683129791"
@@ -501,7 +504,7 @@
                       "symbol": "policy"
                     },
                     "val": {
-                      "address": "CC6YSLPYSKOZZFQSYO3UWY6VG5ZFKBXYOVDLAO7CVS26QZAFFR6AWO5K"
+                      "address": "CDXKQTPLDDF4RBMJCCTGV2XQ44DCJOY7XZZKPEDJFKQTECSTYHBOI42O"
                     }
                   }
                 ]
@@ -525,7 +528,7 @@
                     "symbol": "PolicyLookup"
                   },
                   {
-                    "address": "CC6YSLPYSKOZZFQSYO3UWY6VG5ZFKBXYOVDLAO7CVS26QZAFFR6AWO5K"
+                    "address": "CDXKQTPLDDF4RBMJCCTGV2XQ44DCJOY7XZZKPEDJFKQTECSTYHBOI42O"
                   }
                 ]
               },
@@ -580,7 +583,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "043b71bbf0ecbbd7594551828960b749e232fe71e2fc92c2093ff314f720e58a0d617a179235560ead853a7647af9edd01650e5a760db75ef2ab10e42b2edbbe9f"
+                          "bytes": "041bad9bf1f7e8c4ddf229a332ea5c0d533c43f5198d07c7ab28239624a7a285a78fd3c5c67a868461eee2ce8990f492f7219b27aaaefa84b0064f532d6ee5c175"
                         }
                       ]
                     }
@@ -628,10 +631,13 @@
                     "val": {
                       "vec": [
                         {
-                          "symbol": "Delegated"
+                          "symbol": "External"
                         },
                         {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                          "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
+                        },
+                        {
+                          "bytes": "040419e0274609ce27ba9e68d4982d4e7a3073bf86e248864cebbd90e4ecf6f45ca6b4f62889f085d0fa831d5b9f974584011f1a38d0019de79906ef3871cb0228"
                         }
                       ]
                     }
@@ -657,13 +663,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "a75694623868a3cd1edf36224da00a4d63456b6d1ecf4d342c4a274b21dee34e"
+                    "bytes": "0ab55058a4c23422926e48f37f4c3c08fdf70343bf614912e1944bae16034523"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 0
+                "u32": 1
               }
             }
           },
@@ -684,13 +690,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "ff51b9fc365fbfbf4d2fece0489d253a49d145cbbffb6979c98d7a21da2b4012"
+                    "bytes": "5beaccb525d2db8c2435b6eab7ae75d54358b47f1c9391c892fcf1163beae859"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 1
+                "u32": 0
               }
             }
           },
@@ -899,7 +905,7 @@
           "data": {
             "contract_data": {
               "ext": "v0",
-              "contract": "CC6YSLPYSKOZZFQSYO3UWY6VG5ZFKBXYOVDLAO7CVS26QZAFFR6AWO5K",
+              "contract": "CDXKQTPLDDF4RBMJCCTGV2XQ44DCJOY7XZZKPEDJFKQTECSTYHBOI42O",
               "key": {
                 "vec": [
                   {
@@ -929,7 +935,7 @@
           "data": {
             "contract_data": {
               "ext": "v0",
-              "contract": "CC6YSLPYSKOZZFQSYO3UWY6VG5ZFKBXYOVDLAO7CVS26QZAFFR6AWO5K",
+              "contract": "CDXKQTPLDDF4RBMJCCTGV2XQ44DCJOY7XZZKPEDJFKQTECSTYHBOI42O",
               "key": "ledger_key_contract_instance",
               "durability": "persistent",
               "val": {

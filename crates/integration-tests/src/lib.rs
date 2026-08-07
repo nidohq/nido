@@ -288,3 +288,62 @@ pub fn compute_auth_digest(
     preimage.append(&context_rule_ids.clone().to_xdr(env));
     env.crypto().sha256(&preimage).to_array()
 }
+
+/// Build a real External (`WebAuthn`) session signer backed by the deterministic
+/// P-256 key [`test_key`]`(seed)`, verified on-chain by the `verifier` contract.
+///
+/// Returns the signing key (to produce real signatures with [`one_sig`]) and the
+/// matching `Signer::External`. Unlike a `Signer::Delegated` (whose auth is a
+/// `require_auth_for_args` that `mock_all_auths` satisfies with no real
+/// signature), an External signer is authenticated by the verifier contract's
+/// actual P-256 check inside `do_check_auth` — which `mock_all_auths` does NOT
+/// bypass — so tests using this exercise real signature verification.
+#[must_use]
+pub fn session_signer(
+    env: &soroban_sdk::Env,
+    verifier: &soroban_sdk::Address,
+    seed: u64,
+) -> (SigningKey, Signer) {
+    let key = test_key(seed);
+    let pubkey = key.verifying_key().to_sec1_bytes();
+    (
+        key,
+        Signer::External(
+            verifier.clone(),
+            soroban_sdk::Bytes::from_slice(env, &pubkey),
+        ),
+    )
+}
+
+/// Produce a real single-signer `AuthPayload` for rule `rule_id`: sign the auth
+/// digest (`sha256(payload || [rule_id].to_xdr())`, see [`compute_auth_digest`])
+/// with `key`, wrap it as `WebAuthnSigData`, and map it under `signer`.
+///
+/// Passing a `key` whose public key does NOT match `signer`'s registered pubkey
+/// (or whose digest was signed for a different rule) yields a *forged* payload
+/// the `WebAuthn` verifier rejects — the basis of the signature-verification
+/// negative tests. All callers here use a single rule id per authorization.
+#[must_use]
+pub fn one_sig(
+    env: &soroban_sdk::Env,
+    signer: &Signer,
+    key: &SigningKey,
+    payload: &soroban_sdk::crypto::Hash<32>,
+    rule_id: u32,
+) -> stellar_accounts::smart_account::AuthPayload {
+    use soroban_sdk::xdr::ToXdr;
+    let context_rule_ids = soroban_sdk::vec![env, rule_id];
+    let auth_digest = compute_auth_digest(env, payload, &context_rule_ids);
+    let assertion = build_contract_assertion(key, env, &auth_digest);
+    let sig_data = stellar_accounts::verifiers::webauthn::WebAuthnSigData {
+        signature: assertion.signature,
+        authenticator_data: assertion.authenticator_data,
+        client_data: assertion.client_data,
+    };
+    let mut signers: soroban_sdk::Map<Signer, soroban_sdk::Bytes> = soroban_sdk::Map::new(env);
+    signers.set(signer.clone(), sig_data.to_xdr(env));
+    stellar_accounts::smart_account::AuthPayload {
+        signers,
+        context_rule_ids,
+    }
+}
