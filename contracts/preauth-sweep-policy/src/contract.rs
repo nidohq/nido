@@ -1,37 +1,46 @@
-//! # Preauthorized-sweep policy
+//! # Preauthorized-sweep policy (permissionless)
 //!
-//! A minimal `OpenZeppelin` `Policy` that grants a dedicated "sweep signer" on a
-//! Nido smart account **C** the authority to authorize *exactly one thing* and
-//! nothing else: pulling a recorded onboarding account **G**'s balance into C
-//! via a Stellar Asset Contract (SAC)
+//! A minimal `OpenZeppelin` `Policy` that authorizes *exactly one thing* on a
+//! Nido smart account **C** and nothing else: pulling a recorded onboarding
+//! account **G**'s balance into C via a Stellar Asset Contract (SAC)
 //! `transfer_from(spender = C, from = G, to = C, amount)`.
+//!
+//! ## Intentionally permissionless — the bound IS the security argument
+//!
+//! The sweep rule is installed with **NO signers**. The policy authorizes the
+//! sweep with an empty signer set, so **anyone** (typically an off-chain
+//! watcher/relayer) may invoke it with **zero signatures**. This is deliberate
+//! and maximizes liveness: no sweep key exists to lose, leak, or wire wrong.
+//!
+//! Permissionlessness is safe because the call is *provably bounded* to
+//! `G -> C`. Whoever triggers the sweep, funds can only ever move FROM the one
+//! recorded G INTO C — no other source, destination, spender, or function is
+//! reachable. The security guarantee is the bound below, not a signature.
 //!
 //! ## Why a policy rather than a native account method
 //!
-//! OZ's context-rule machinery scopes a signer to a whole *contract*
+//! OZ's context-rule machinery scopes a rule to a whole *contract*
 //! (`ContextRuleType::CallContract(sac)`), never to a single *function*. A bare
-//! `CallContract(sac)` rule would therefore let the sweep signer call ANY SAC
-//! method (`transfer`, `approve`, `burn`, or `transfer_from` with any `to`).
-//! Function- and argument-level narrowing is only achievable inside a policy's
-//! `enforce`, which DOES receive the invocation `Context` (contract, `fn_name`,
-//! `args`). This contract reads `transfer_from`'s `(spender, from, to, amount)`
-//! arguments straight out of that Context and panics unless
+//! `CallContract(sac)` rule would therefore permit ANY SAC method (`transfer`,
+//! `approve`, `burn`, or `transfer_from` with any `to`). Function- and
+//! argument-level narrowing is only achievable inside a policy's `enforce`,
+//! which DOES receive the invocation `Context` (contract, `fn_name`, `args`).
+//! This contract reads `transfer_from`'s `(spender, from, to, amount)` arguments
+//! straight out of that Context and panics unless
 //! `spender == C && from == recorded G && to == C`. It leaves the core
 //! smart-account and factory contracts completely untouched, and is
 //! independently deployable.
 //!
 //! ## The bound (the entire security claim)
 //!
-//! The sweep signer is a member of ONLY this one rule, and this rule is
-//! `CallContract(sac)`. Three independent layers combine so the sweep signer
-//! alone can authorize exactly the sweep and nothing else:
+//! The rule is created with no signers and one policy (this one), scoped to
+//! `CallContract(sac)`. Two independent layers combine so the *only* thing this
+//! rule can authorize — for anyone, with no signature — is exactly the sweep:
 //!
-//! 1. **Signer membership** — `do_check_auth` rejects the sweep signer for any
-//!    other rule (`UnauthorizedSigner`).
-//! 2. **Rule scope** — the rule is `CallContract(sac)`, so `do_check_auth`
+//! 1. **Rule scope** — the rule is `CallContract(sac)`, so `do_check_auth`
 //!    rejects any other contract *before* this policy runs
 //!    (`UnvalidatedContext`).
-//! 3. **Policy `enforce`** — panics unless the call is precisely
+//! 2. **Policy `enforce`** — panics unless the call is precisely
 //!    `transfer_from(spender = C, from = stored G, to = C)`:
 //!    - wrong spender (`spender != C`)  -> [`SweepError::WrongSpender`]
 //!    - wrong source  (`from != G`)     -> [`SweepError::WrongSource`]
@@ -40,16 +49,16 @@
 //!
 //! ## Deployer wiring invariants (NOT enforced on-chain here)
 //!
-//! These are the caller's responsibility when constructing the context rule and
-//! wiring the sweep signer; the policy cannot verify them from inside `enforce`:
+//! These are the caller's responsibility when constructing the context rule; the
+//! policy cannot verify them from inside `enforce`:
 //!
-//! - The sweep signer MUST be a member of *exactly one* rule and MUST NEVER be
-//!   added to the passkey/Default rule or any `CallContract(self)` rule. A
-//!   signer that also sits in another rule inherits that rule's authority.
 //! - The context rule MUST be `CallContract(sac)` for the specific token being
 //!   swept (`install` refuses any other rule type — see
 //!   [`SweepError::OnlyCallContract`]). Use one rule per SAC, each with its own
 //!   recorded source.
+//! - The rule SHOULD carry no signers (the permissionless posture). The empty
+//!   signer set is what makes the sweep triggerable by any party; it is safe
+//!   only because the bound above pins every degree of freedom.
 //! - `context_rule.valid_until` SHOULD be set by the caller to the allowance's
 //!   expiry ledger so a stale sweep capability cannot outlive the allowance
 //!   window. This is a rule-construction responsibility; `enforce` does not
@@ -99,7 +108,10 @@ pub enum SweepError {
     NotInstalled = 1,
     /// A sweep policy is already installed for this (account, rule).
     AlreadyInstalled = 2,
-    /// No signer authenticated — the sweep key must actually sign.
+    /// Reserved. Formerly signalled "no signer authenticated". The sweep is now
+    /// intentionally permissionless (authorized with an empty signer set), so no
+    /// code path emits this. Kept to freeze the error-code space (`= 3`) so the
+    /// remaining discriminants below never renumber.
     NoSigner = 3,
     /// `from` argument != the recorded source G.
     WrongSource = 4,
@@ -140,6 +152,24 @@ impl PreauthSweepPolicy {
 impl Policy for PreauthSweepPolicy {
     type AccountParams = PreauthSweepParams;
 
+    /// Enforce the sweep bound. **Permissionless**: this runs with an empty
+    /// `authenticated_signers` set (the rule carries no signers) and MUST still
+    /// authorize a correctly-bounded `transfer_from(C, G, C, amount)`. Anyone may
+    /// trigger it; the security argument is the bound checked below, not a
+    /// signature.
+    ///
+    /// `authenticated_signers` is intentionally ignored: the sweep requires none.
+    /// It stays in the signature because the OZ `Policy` trait fixes it.
+    ///
+    /// No `smart_account.require_auth()` here — deliberately. Requiring C to
+    /// authorize would defeat the permissionless posture (it demands C's own
+    /// passkey signature, exactly what this design removes). Unlike a stateful
+    /// policy (e.g. spending-limit, which needs `require_auth` to gate a mutable
+    /// counter), this `enforce` mutates NO state — it only reads the recorded
+    /// source and the invocation args — so dropping the guard is safe: there is
+    /// nothing to protect from an unauthorized caller, and the bound alone
+    /// constrains the outcome to `G -> C`.
+    #[allow(clippy::needless_pass_by_value)]
     fn enforce(
         e: &Env,
         context: Context,
@@ -147,16 +177,9 @@ impl Policy for PreauthSweepPolicy {
         context_rule: ContextRule,
         smart_account: Address,
     ) {
-        // Same auth model as the OZ building blocks: the enforce path is
-        // authorized by the smart account itself.
-        smart_account.require_auth();
-
-        // Load-bearing: with a policy attached, OZ defers signer-matching to
-        // enforce. Without this guard the rule could be satisfied with zero
-        // sweep-key signatures.
-        if authenticated_signers.is_empty() {
-            panic_with_error!(e, SweepError::NoSigner);
-        }
+        // Permissionless: the rule carries no signers, so this is expected to be
+        // empty. We neither require nor inspect it — the bound is the barrier.
+        let _ = authenticated_signers;
 
         let source: Address = e
             .storage()
