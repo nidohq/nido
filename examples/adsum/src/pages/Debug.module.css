@@ -1,0 +1,44 @@
+/**
+ * Debug: a bare utility page (not part of the petition/trust reading
+ * experience), so it borrows the intro treatment from the other pages but
+ * keeps the explorer itself in a plain bordered panel rather than dressing
+ * it up further.
+ */
+
+.page {
+	display: grid;
+	gap: var(--space-6);
+}
+
+/* ---- intro --------------------------------------------------------------- */
+
+.intro {
+	display: grid;
+	gap: var(--space-3);
+	max-width: 42rem;
+}
+
+.kicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--seal);
+}
+
+.heading {
+	font-size: var(--text-display);
+}
+
+.lede {
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+	line-height: var(--leading-body);
+}
+
+/* ---- panel ----------------------------------------------------------------- */
+
+.panel {
+	border: 1px solid var(--rule);
+	padding: var(--space-5);
+}

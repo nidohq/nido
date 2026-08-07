@@ -1,0 +1,178 @@
+/**
+ * Home: the poster wall. An intro strip over a two-column layout — the wall
+ * (posted broadsides, newest first) beside the submission slot, which stays
+ * put (sticky) while the wall scrolls, so posting is never more than a
+ * glance away. Below the fold on narrow screens, the two stack.
+ */
+
+.page {
+	display: grid;
+	gap: var(--space-7);
+}
+
+/* ---- intro --------------------------------------------------------------- */
+
+.intro {
+	display: grid;
+	gap: var(--space-3);
+	max-width: 42rem;
+}
+
+.kicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--seal);
+}
+
+.heading {
+	font-size: var(--text-display);
+}
+
+.lede {
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+	line-height: var(--leading-body);
+}
+
+/* ---- layout --------------------------------------------------------------- */
+
+.layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 22rem;
+	gap: var(--space-6);
+	align-items: start;
+}
+
+.composeRail {
+	position: sticky;
+	top: var(--space-5);
+	scroll-margin-top: var(--space-6);
+}
+
+@media (max-width: 900px) {
+	.layout {
+		grid-template-columns: 1fr;
+	}
+
+	.composeRail {
+		position: static;
+	}
+}
+
+/* ---- wall head ------------------------------------------------------------- */
+
+.wallHead {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--space-3);
+	padding-bottom: var(--space-3);
+	margin-bottom: var(--space-5);
+	border-bottom: 1px solid var(--rule);
+}
+
+.wallTitle {
+	font-size: var(--text-xl);
+}
+
+.wallCount {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+	white-space: nowrap;
+}
+
+.stateNote {
+	padding: var(--space-6) 0;
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+	text-align: center;
+}
+
+/* ---- empty state ------------------------------------------------------------ */
+
+.empty {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	padding: var(--space-7) var(--space-5);
+	background: var(--paper-low);
+	border: 1.5px dashed var(--rule);
+	text-align: center;
+}
+
+.emptyKicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+.emptyBody {
+	max-width: 28rem;
+	font-family: var(--font-display);
+	font-size: var(--text-md);
+	font-style: italic;
+	color: var(--ink-soft);
+	line-height: var(--leading-document);
+}
+
+.emptyCta {
+	margin-top: var(--space-2);
+	padding: var(--space-3) var(--space-5);
+	border: 1.5px solid var(--ink);
+	color: var(--ink);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	text-decoration: none;
+	transition:
+		background var(--time-quick) ease,
+		color var(--time-quick) ease,
+		border-color var(--time-quick) ease;
+}
+
+.emptyCta:hover {
+	background: var(--seal);
+	border-color: var(--seal-strong);
+	color: var(--paper-high);
+	text-decoration: none;
+}
+
+/* ---- grid of broadsides ------------------------------------------------------ */
+
+.grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+	gap: var(--space-5);
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.cardFooter {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--space-3);
+	flex-wrap: wrap;
+}
+
+.deadline,
+.byline {
+	font-size: var(--text-xs);
+	letter-spacing: 0.04em;
+	color: var(--ink-faint);
+}
+
+.byline {
+	font-variant-numeric: tabular-nums;
+}

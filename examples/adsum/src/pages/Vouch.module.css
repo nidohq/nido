@@ -1,0 +1,249 @@
+/**
+ * Vouch: the far end of someone's "My QR" or a shared link. A single
+ * calling card — the bearer's on-chain identity resolved fresh (never
+ * trusted from the link itself) — with the vouch press beneath it. The
+ * card settles into place on arrival, the same quiet paper-lift as a
+ * Broadside; once the vouch lands, a small seal-wash breath (borrowed from
+ * the ADSUM stamp) marks the moment without moving anything else on the
+ * page.
+ */
+
+.page {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-4);
+	max-width: 30rem;
+	margin-inline: auto;
+	padding-block: var(--space-4);
+}
+
+.card {
+	position: relative;
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	width: 100%;
+	padding: var(--space-7) var(--space-6) var(--space-6);
+	background: var(--paper-high);
+	border: 1.5px solid var(--ink);
+	box-shadow: var(--shadow-sheet);
+	text-align: center;
+}
+
+.card::before {
+	content: "";
+	position: absolute;
+	inset: 6px;
+	border: 1px solid var(--rule);
+	pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.card {
+		animation: settle var(--time-settle) var(--ease-settle) both;
+	}
+}
+
+@keyframes settle {
+	from {
+		opacity: 0;
+		transform: translateY(10px) scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+.kicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--seal);
+}
+
+.heading {
+	font-size: var(--text-2xl);
+	max-width: 22ch;
+	overflow-wrap: anywhere;
+}
+
+.address {
+	font-size: var(--text-sm);
+	letter-spacing: 0.03em;
+	color: var(--ink-soft);
+	overflow-wrap: anywhere;
+}
+
+.note {
+	max-width: 30ch;
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-sm);
+	color: var(--ink-faint);
+}
+
+.actionBlock {
+	position: relative;
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	width: 100%;
+	padding-top: var(--space-4);
+	margin-top: var(--space-2);
+	border-top: 1px solid var(--rule-faint);
+}
+
+/* The press bloom: when the vouch lands, seal-wash spreads once behind the
+   action block — the same ink-meets-paper cue as the petition stamp. */
+@media (prefers-reduced-motion: no-preference) {
+	.card[data-settled] .actionBlock::before {
+		content: "";
+		position: absolute;
+		inset: -10% -30%;
+		z-index: -1;
+		border-radius: var(--radius-round);
+		background: radial-gradient(circle, var(--seal-wash) 0%, transparent 68%);
+		animation: pressBloom 900ms var(--ease-settle) both;
+		pointer-events: none;
+	}
+}
+
+@keyframes pressBloom {
+	0% {
+		opacity: 0;
+		transform: scale(0.35);
+	}
+	35% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+		transform: scale(1.6);
+	}
+}
+
+.reason {
+	font-size: var(--text-sm);
+	color: var(--ink-soft);
+	max-width: 32ch;
+}
+
+.affirm {
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--seal);
+	max-width: 30ch;
+}
+
+.cta {
+	padding: var(--space-2) var(--space-6);
+	border: 1.5px solid var(--ink);
+	background: transparent;
+	color: var(--ink);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	text-decoration: none;
+	cursor: pointer;
+	transition:
+		background var(--time-quick) ease,
+		border-color var(--time-quick) ease,
+		color var(--time-quick) ease;
+}
+
+.cta:hover:not(:disabled) {
+	background: var(--seal);
+	border-color: var(--seal-strong);
+	color: var(--paper-high);
+}
+
+.cta:disabled {
+	border-color: var(--rule);
+	color: var(--ink-faint);
+	cursor: not-allowed;
+}
+
+.error {
+	font-size: var(--text-sm);
+	color: var(--seal-strong);
+	font-weight: 600;
+}
+
+.dismiss {
+	padding: var(--space-1) var(--space-2);
+	border: none;
+	background: none;
+	font-size: var(--text-xs);
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+	cursor: pointer;
+}
+
+.dismiss:hover {
+	color: var(--seal);
+}
+
+/* ---- missing param ------------------------------------------------------- */
+
+.missing {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	max-width: 34rem;
+	margin-inline: auto;
+	padding: var(--space-8) var(--space-5);
+	background: var(--paper-low);
+	border: 1.5px dashed var(--rule);
+	text-align: center;
+}
+
+.missingKicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+.missingBody {
+	max-width: 30rem;
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+	line-height: var(--leading-document);
+}
+
+.missingLink {
+	margin-top: var(--space-2);
+	padding: var(--space-2) var(--space-5);
+	border: 1.5px solid var(--ink);
+	color: var(--ink);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	text-decoration: none;
+	transition:
+		background var(--time-quick) ease,
+		color var(--time-quick) ease,
+		border-color var(--time-quick) ease;
+}
+
+.missingLink:hover {
+	background: var(--seal);
+	border-color: var(--seal-strong);
+	color: var(--paper-high);
+	text-decoration: none;
+}
+
+@media (max-width: 480px) {
+	.card {
+		padding: var(--space-5) var(--space-4) var(--space-4);
+	}
+}

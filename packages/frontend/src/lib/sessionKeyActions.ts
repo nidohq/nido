@@ -5,7 +5,7 @@ import {
 import { fetchVerifierAddress, simulateView, isRuleNotFound } from './policyChainFetch.js';
 import { signAndSubmit } from './primaryPasskeySigner.js';
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+import { RPC_URL } from './network';
 
 export async function delegateSessionKey(args: {
   account: string;

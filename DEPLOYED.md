@@ -12,6 +12,19 @@ Current set of contracts the frontend talks to.
 | Name registry | `CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX` | Human-readable account names. Independent of the policy-builder set. |
 | Status Message demo | `CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV` | Hardcoded in `packages/frontend/src/pages/status-message/index.astro`. Predates the policy-builder work. |
 
+## Adsum (petition dapp) — deployed 2026-07-10
+
+Deployed by `GA6ADTV2NMXQYBF2CNSN7SK4AR2FH4WVIYBUOFTLXYAEO6EY376GVES6` via
+`DEPLOY_SECRET=… just publish-adsum` (`scripts/deploy-adsum.mjs`, JS-SDK path —
+see "Re-deploying" for why not stellar-cli). Both contracts are admin-less:
+re-deploy = fresh deploy + registry repoint. Spec:
+`docs/superpowers/specs/2026-07-08-petition-dapp-design.md`.
+
+| Name | Address | Notes |
+|---|---|---|
+| Petitions | `CAUPKCFWVRFRMZXKVMSSZPN6OURTTDS6TDKS6JGXR5XE3D2BEYGT2QJH` | Registered as `unverified/adsum-petitions`. wasm sha256 `c92a7b6b2ff4eb3aadd92f84b6fb1f99716824d7fe8e9b6405a31651593816fe`. |
+| Web of Trust | `CDI5YRC4K54QHJW63ONUQPZ6GOAU254GP43OWGCPK3QVPUKPIQIQGIFS` | Registered as `unverified/adsum-web-of-trust`. wasm sha256 `cbc920004d071b18a8d5c2f1b6223ccc2f4092c3d7d6ea55870d0881e5b16914`. |
+
 ## ZK Recovery (M1 — not yet deployed)
 
 Passkey-secretless recovery via a depth-24 Merkle pool + UltraHonk proof

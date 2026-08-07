@@ -3,7 +3,15 @@ import { Asset, Networks } from "@stellar/stellar-sdk";
 /** Single source of truth for the network this build targets (currently testnet). */
 export const NETWORK_NAME = "testnet" as const;
 export const NETWORK_PASSPHRASE = Networks.TESTNET;
-export const RPC_URL = "https://soroban-testnet.stellar.org";
+
+/** Soroban RPC endpoint. Defaults to testnet clearnet; override with
+ *  PUBLIC_RPC_URL at build time. On the onion deployment this points at the
+ *  same-onion-service backhaul vhost (https://rpc.<addr>.onion) so the browser
+ *  never makes a cross-origin RPC call over a Tor exit — those hit Cloudflare
+ *  in front of soroban-testnet and get a cached `Access-Control-Allow-Origin:
+ *  null`, breaking CORS. Caddy backhauls to soroban-testnet server-side. */
+export const RPC_URL: string =
+  import.meta.env.PUBLIC_RPC_URL || "https://soroban-testnet.stellar.org";
 
 /** Stellar Expert human-explorer base (used to link each row to its tx). */
 export const EXPLORER_BASE = `https://stellar.expert/explorer/${NETWORK_NAME}`;

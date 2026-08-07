@@ -53,7 +53,7 @@ import {
   waitForConfirmation,
 } from './relayerClient.js';
 import * as relayClient from './relayClient.js';
-import { RELAYER_SIM_SOURCE } from './network.js';
+import { RELAYER_SIM_SOURCE, RPC_URL } from './network.js';
 
 export const RELAY_BASE_URL =
   (import.meta.env.PUBLIC_RECOVERY_RELAY_URL as string | undefined) ??
@@ -69,7 +69,6 @@ export function mintRelayKey(): string {
     .replace(/=+$/, '');
 }
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
 const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 const SUBMITTER_KEY = 'nido:name-keypair';
 /** Ledgers the canonical parent auth-digest stays valid for (~14h on testnet

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebAuthn onion spike</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+  button { font-size: 1rem; padding: .5rem 1rem; margin-right: .5rem; }
+  pre { background: #0002; padding: .75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  .ok { color: #0a0; } .bad { color: #c00; }
+  table { border-collapse: collapse; } td { padding: .1rem .6rem .1rem 0; vertical-align: top; }
+</style>
+</head>
+<body>
+<h1>WebAuthn onion spike</h1>
+<p>nido onion epic phase 0 (#139). Ceremony uses <code>rpId = location.hostname</code>.</p>
+
+<h2>Environment</h2>
+<table id="env"></table>
+
+<h2>Ceremonies</h2>
+<p>
+  <button id="create">1. Create (register)</button>
+  <button id="assert">2. Assert (authenticate)</button>
+</p>
+<p id="subnav"></p>
+
+<h2>Log</h2>
+<pre id="log"></pre>
+
+<script>
+"use strict";
+const log = (msg, cls) => {
+  const line = `[${new Date().toISOString().slice(11, 19)}] ${msg}\n`;
+  const el = document.getElementById("log");
+  if (cls) {
+    const span = document.createElement("span");
+    span.className = cls;
+    span.textContent = line;
+    el.appendChild(span);
+  } else {
+    el.appendChild(document.createTextNode(line));
+  }
+};
+
+const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const rpId = location.hostname;
+const storeKey = `spike-cred-${rpId}`;
+
+// --- environment readout -------------------------------------------------
+const env = [
+  ["origin", location.origin],
+  ["rpId (hostname)", rpId],
+  ["isSecureContext", String(window.isSecureContext)],
+  ["PublicKeyCredential", typeof window.PublicKeyCredential],
+  ["userAgent", navigator.userAgent],
+];
+fetch("/whoami").then((r) => r.json()).then((j) => {
+  env.push(["Host header at server", `${j.host_header} (scheme ${j.scheme})`]);
+  render();
+}).catch((e) => { env.push(["Host header at server", `fetch failed: ${e}`]); render(); });
+
+function render() {
+  document.getElementById("env").innerHTML = env
+    .map(([k, v]) => `<tr><td><b>${k}</b></td><td><code></code></td></tr>`)
+    .join("");
+  document.querySelectorAll("#env code").forEach((c, i) => (c.textContent = env[i][1]));
+}
+render();
+
+// subdomain cross-link: bare address <-> test.<addr>
+const parts = location.hostname.split(".");
+const bare = parts.slice(-2).join(".");
+const target = location.hostname === bare ? `test.${bare}` : bare;
+document.getElementById("subnav").innerHTML =
+  `Also run both ceremonies on the other origin: <a></a> (distinct RP ID)`;
+document.querySelector("#subnav a").href = `${location.protocol}//${target}${location.port ? ":" + location.port : ""}/`;
+document.querySelector("#subnav a").textContent = target;
+
+// --- create ---------------------------------------------------------------
+document.getElementById("create").onclick = async () => {
+  log(`create() with rpId=${rpId} …`);
+  try {
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { id: rpId, name: "webauthn-onion-spike" },
+        user: {
+          id: crypto.getRandomValues(new Uint8Array(16)),
+          name: "spike@" + rpId,
+          displayName: "Onion Spike",
+        },
+        pubKeyCredParams: [
+          { type: "public-key", alg: -7 },   // ES256
+          { type: "public-key", alg: -257 }, // RS256
+        ],
+        timeout: 120000,
+        attestation: "none",
+      },
+    });
+    localStorage.setItem(storeKey, b64(cred.rawId));
+    log(`CREATE OK  id=${cred.id}  type=${cred.type}`, "ok");
+    log(`authenticatorAttachment=${cred.authenticatorAttachment}  transports=${cred.response.getTransports?.().join(",") ?? "n/a"}`, "ok");
+  } catch (e) {
+    log(`CREATE FAILED  ${e.name}: ${e.message}`, "bad");
+  }
+};
+
+// --- assert ---------------------------------------------------------------
+document.getElementById("assert").onclick = async () => {
+  const stored = localStorage.getItem(storeKey);
+  log(`get() with rpId=${rpId} ${stored ? "(allowCredentials from storage)" : "(discoverable — nothing stored)"} …`);
+  try {
+    const cred = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rpId,
+        allowCredentials: stored
+          ? [{ type: "public-key", id: unb64(stored) }]
+          : [],
+        userVerification: "preferred",
+        timeout: 120000,
+      },
+    });
+    log(`ASSERT OK  id=${cred.id}`, "ok");
+    log(`userHandle=${cred.response.userHandle ? b64(cred.response.userHandle) : "null"}  sig=${b64(cred.response.signature).slice(0, 24)}…`, "ok");
+  } catch (e) {
+    log(`ASSERT FAILED  ${e.name}: ${e.message}`, "bad");
+  }
+};
+
+if (!window.PublicKeyCredential) {
+  log("PublicKeyCredential is undefined — WebAuthn API not exposed in this browser (expected for stock Tor Browser).", "bad");
+} else {
+  log("WebAuthn API present.");
+  PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.().then((v) =>
+    log(`isUserVerifyingPlatformAuthenticatorAvailable: ${v}`)
+  );
+}
+</script>
+</body>
+</html>

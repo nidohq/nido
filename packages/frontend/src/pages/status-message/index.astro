@@ -215,7 +215,7 @@ import Icon from "../../components/Icon.astro";
   import { defineNidoWalletButton, WALLET_CHANGED_EVENT } from "../../components/nido-wallet-button.js";
   import { signTransaction as kitSignTransaction, isNidoWallet, type WalletSession } from "../../lib/walletConnect.js";
 
-  const RPC_URL = "https://soroban-testnet.stellar.org";
+  import { RPC_URL } from "../../lib/network";
   // Resolved by name via the on-chain registry (with a single hardcoded
   // fallback inside `fetchRegistryAddress` for registry outages). Previously
   // hardcoded here so bindings could be regenerated without --contract-id;

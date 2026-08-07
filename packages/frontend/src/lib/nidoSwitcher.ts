@@ -22,7 +22,7 @@ import { formatXlm } from "./money";
 import { createNido } from "./createNido";
 import { syncNidoStorageViaBridge } from "./nidoSharedStorage";
 
-const RPC_URL = "https://soroban-testnet.stellar.org";
+import { RPC_URL } from "./network";
 export const NAME_NETWORK = "Test SDF Network ; September 2015";
 
 // Resolve the name-registry contract id once per page load (memoized promise),

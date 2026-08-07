@@ -1,0 +1,9 @@
+# Throwaway onion for the WebAuthn spike. Run via ./run.sh (paths are relative
+# to this directory). NOT the production config — no single-hop mode, no PoW.
+DataDirectory data/tor
+SocksPort 127.0.0.1:9052
+Log notice stdout
+
+HiddenServiceDir data/onion
+HiddenServicePort 80 127.0.0.1:18080
+HiddenServicePort 443 127.0.0.1:18443

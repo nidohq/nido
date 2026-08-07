@@ -1,7 +1,6 @@
 import { Address, Asset, Networks, rpc } from "@stellar/stellar-sdk";
 import { simulateRead } from "./simulateRead.js";
-
-const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
+import { RPC_URL as DEFAULT_RPC_URL } from "./network.js";
 
 /**
  * Read a Soroban account's native-XLM balance via a read-only simulate of the

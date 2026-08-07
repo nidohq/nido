@@ -1,0 +1,63 @@
+# stellar-scaffold environment configuration.
+#
+# The active environment is chosen by STELLAR_SCAFFOLD_ENV in `.env`
+# (`development` by default). For each `client = true` contract, scaffold
+# builds the contract from source under `contracts/`, deploys it to the
+# selected network, generates a TS client NPM package under `packages/`, and
+# imports it for the frontend in `src/contracts/`.
+#
+# `petitions` and `web-of-trust` have no `__constructor`, so no
+# `constructor_args` are needed.
+
+### Development — local network (auto-started container)
+[development.network]
+rpc-url = "http://localhost:8000/rpc"
+network-passphrase = "Standalone Network ; February 2017"
+run-locally = true
+
+[[development.accounts]]
+name = "me"
+default = true
+
+[development.contracts]
+petitions = { client = true }
+web_of_trust = { client = true }
+
+### Testing — Stellar testnet. Builds & deploys the contract from source.
+[testing.network]
+rpc-url = "https://soroban-testnet.stellar.org"
+network-passphrase = "Test SDF Network ; September 2015"
+
+[[testing.accounts]]
+name = "testnet-user"
+default = true
+
+[testing.contracts]
+petitions = { client = true }
+web_of_trust = { client = true }
+
+### Staging — bind an already-deployed testnet contract by id.
+[staging.network]
+rpc-url = "https://soroban-testnet.stellar.org"
+network-passphrase = "Test SDF Network ; September 2015"
+
+[[staging.accounts]]
+name = "testnet-user"
+default = true
+
+[staging.contracts]
+petitions = { id = "CAUPKCFWVRFRMZXKVMSSZPN6OURTTDS6TDKS6JGXR5XE3D2BEYGT2QJH" }
+web_of_trust = { id = "CDI5YRC4K54QHJW63ONUQPZ6GOAU254GP43OWGCPK3QVPUKPIQIQGIFS" }
+
+### Production — mainnet, bind by id.
+[production.network]
+rpc-url = "https://mainnet.sorobanrpc.com"
+network-passphrase = "Public Global Stellar Network ; September 2015"
+
+[[production.accounts]]
+name = "official-team-account"
+default = true
+
+[production.contracts]
+# petitions = { id = "C..." }
+# web_of_trust = { id = "C..." }

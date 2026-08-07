@@ -1,0 +1,307 @@
+/**
+ * The proclamation page. One full broadside, centered and generous: docket
+ * (number, title, imprint line), the body at a document measure with a
+ * drop cap, then the signing block — reason or affirmation beside the
+ * ADSUM stamp — the ink line, and the signature wall beneath an asterism.
+ * When a fresh stamp lands, a bloom of seal-wash spreads under the stamp:
+ * the ink hitting the paper. All motion sits behind prefers-reduced-motion.
+ */
+
+.page {
+	display: grid;
+	gap: var(--space-4);
+	max-width: 54rem;
+	margin-inline: auto;
+}
+
+.crumb {
+	justify-self: start;
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+	text-decoration: none;
+}
+
+.crumb:hover {
+	color: var(--seal);
+}
+
+/* ---- the sheet (double frame, as Broadside) ------------------------------- */
+
+.sheet {
+	position: relative;
+	display: grid;
+	gap: var(--space-6);
+	padding: clamp(var(--space-5), 6vw, var(--space-8));
+	background: var(--paper-high);
+	border: 1.5px solid var(--ink);
+	border-radius: var(--radius-none);
+	box-shadow: var(--shadow-sheet);
+}
+
+.sheet::before {
+	content: "";
+	position: absolute;
+	inset: 6px;
+	border: 1px solid var(--rule);
+	pointer-events: none;
+}
+
+/* ---- docket ----------------------------------------------------------------- */
+
+.docket {
+	display: grid;
+	gap: var(--space-3);
+	padding-bottom: var(--space-5);
+	border-bottom: 1px solid var(--rule);
+}
+
+.kicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--seal);
+}
+
+.title {
+	font-size: var(--text-display);
+	max-width: 24ch;
+}
+
+.meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--space-2);
+	font-size: var(--text-xs);
+	font-weight: 600;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+.metaItem {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.3em;
+	white-space: nowrap;
+}
+
+.metaName {
+	text-transform: none;
+	letter-spacing: 0.04em;
+	font-variant-numeric: tabular-nums;
+	color: var(--ink-soft);
+}
+
+.metaDot {
+	color: var(--rule);
+}
+
+/* ---- the proclamation body --------------------------------------------------- */
+
+.body {
+	max-width: 62ch;
+	font-family: var(--font-display);
+	font-size: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+	font-weight: 400;
+	line-height: var(--leading-document);
+	white-space: pre-line;
+}
+
+.body::first-letter {
+	float: left;
+	font-size: 3.1em;
+	line-height: 0.82;
+	padding: 0.04em 0.12em 0 0;
+	font-weight: 600;
+}
+
+/* ---- the signing block --------------------------------------------------------- */
+
+.signing {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-5) var(--space-6);
+	padding-block: var(--space-5);
+	border-top: 1px solid var(--rule-faint);
+}
+
+.signingText {
+	flex: 1 1 16rem;
+	display: grid;
+	justify-items: start;
+	gap: var(--space-3);
+}
+
+.reason {
+	font-size: var(--text-sm);
+	color: var(--ink-soft);
+	max-width: 34ch;
+}
+
+.affirm {
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--seal);
+	max-width: 30ch;
+}
+
+.stampError {
+	font-size: var(--text-sm);
+	font-weight: 600;
+	color: var(--seal-strong);
+	max-width: 40ch;
+}
+
+.connect {
+	padding: var(--space-2) var(--space-5);
+	background: none;
+	border: 1.5px solid var(--ink);
+	color: var(--ink);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	cursor: pointer;
+	transition:
+		background var(--time-quick) ease,
+		border-color var(--time-quick) ease,
+		color var(--time-quick) ease;
+}
+
+.connect:hover {
+	background: var(--seal);
+	border-color: var(--seal-strong);
+	color: var(--paper-high);
+}
+
+.stampSlot {
+	position: relative;
+	isolation: isolate;
+	flex: none;
+	margin-inline: auto;
+	padding: var(--space-3);
+}
+
+/* The press bloom: when a fresh stamp lands, seal-wash spreads under it
+   once — the ink meeting the paper — then dries away. */
+@media (prefers-reduced-motion: no-preference) {
+	.signing[data-fresh] .stampSlot::after {
+		content: "";
+		position: absolute;
+		inset: -18%;
+		z-index: -1;
+		border-radius: var(--radius-round);
+		background: radial-gradient(circle, var(--seal-wash) 0%, transparent 68%);
+		animation: pressBloom 900ms var(--ease-settle) both;
+		pointer-events: none;
+	}
+}
+
+@keyframes pressBloom {
+	0% {
+		opacity: 0;
+		transform: scale(0.35);
+	}
+	35% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+		transform: scale(1.5);
+	}
+}
+
+/* ---- asterism divider --------------------------------------------------------- */
+
+.asterism {
+	text-align: center;
+	font-size: var(--text-md);
+	color: var(--ink-faint);
+	user-select: none;
+}
+
+/* ---- page-level states ----------------------------------------------------------- */
+
+.stateNote {
+	padding: var(--space-8) 0;
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+	text-align: center;
+}
+
+.missing {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-3);
+	max-width: 34rem;
+	margin-inline: auto;
+	padding: var(--space-8) var(--space-5);
+	background: var(--paper-low);
+	border: 1.5px dashed var(--rule);
+	text-align: center;
+}
+
+.missingKicker {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+.missingBody {
+	font-family: var(--font-display);
+	font-style: italic;
+	font-size: var(--text-md);
+	color: var(--ink-soft);
+}
+
+.missingLink {
+	margin-top: var(--space-2);
+	padding: var(--space-2) var(--space-5);
+	border: 1.5px solid var(--ink);
+	color: var(--ink);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: var(--tracking-caps);
+	text-transform: uppercase;
+	text-decoration: none;
+	transition:
+		background var(--time-quick) ease,
+		color var(--time-quick) ease,
+		border-color var(--time-quick) ease;
+}
+
+.missingLink:hover {
+	background: var(--seal);
+	border-color: var(--seal-strong);
+	color: var(--paper-high);
+	text-decoration: none;
+}
+
+/* ---- small screens ------------------------------------------------------------ */
+
+@media (max-width: 640px) {
+	.signing {
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	/* In the column direction the row basis would become height — reset it. */
+	.signingText {
+		flex: 0 0 auto;
+	}
+
+	.title {
+		max-width: none;
+	}
+}

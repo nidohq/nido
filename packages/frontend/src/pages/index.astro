@@ -155,7 +155,7 @@ const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : 
     fetchRegistryAddress,
   } from "@nidohq/passkey-sdk";
 
-  const RPC_URL = "https://soroban-testnet.stellar.org";
+  import { RPC_URL } from "../lib/network";
 
   if (location.pathname === '/') {
     // --- Reserved dApp subdomain redirect ---

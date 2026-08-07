@@ -1036,6 +1036,7 @@ name = "nido-integration-tests"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "ed25519-dalek",
  "nido-smart-account",
  "nido-zk-recovery",
  "p256",
@@ -1056,6 +1057,14 @@ dependencies = [
 
 [[package]]
 name = "nido-name-registry"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "soroban-sdk-tools",
+]
+
+[[package]]
+name = "nido-petitions"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
@@ -1085,6 +1094,15 @@ dependencies = [
  "soroban-sdk",
  "soroban-sdk-tools",
  "stellar-accounts",
+]
+
+[[package]]
+name = "nido-web-of-trust"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "soroban-sdk",
+ "soroban-sdk-tools",
 ]
 
 [[package]]

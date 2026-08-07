@@ -105,7 +105,7 @@ import Icon from '../../../components/Icon.astro';
   } from '../../../lib/spendingLimitParams.js';
   import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest';
 
-  const RPC_URL = 'https://soroban-testnet.stellar.org';
+  import { RPC_URL } from '../../../lib/network';
   const DURATIONS: Record<string, number | null> = {
     '24h': 17280,
     '7d': 17280 * 7,

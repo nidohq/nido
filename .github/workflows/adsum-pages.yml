@@ -1,0 +1,99 @@
+name: Deploy Adsum (Cloudflare Pages)
+
+# Path-filtered to examples/adsum/** so unrelated pushes to main don't
+# redeploy this example, plus workflow_dispatch for a manual re-deploy (e.g.
+# after the one-time CF Pages project is created — see the deploy step below).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/adsum/**'
+  workflow_dispatch:
+
+# ONE-TIME OPERATOR STEP: this workflow deploys to the Cloudflare Pages
+# project named "adsum" (PAGES_PROJECT below). `wrangler pages deploy` does
+# NOT create a Pages project on the fly -- it must already exist in the
+# Cloudflare account CLOUDFLARE_API_TOKEN/CLOUDFLARE_ACCOUNT_ID point at
+# before this workflow's first run, created once via the CF dashboard or
+# `npx wrangler pages project create adsum`. Until then this workflow's
+# deploy step fails with a "project not found" error.
+env:
+  PAGES_PROJECT: adsum
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Root install: examples/adsum is an npm workspace member (root
+      # package.json's `workspaces`) and consumes the local @nidohq/*
+      # packages -- mirrors test.yml's unit/e2e jobs' setup steps.
+      - name: Install dependencies
+        run: npm install
+
+      # examples/adsum/src/contracts/{petitions,web_of_trust}.ts import the
+      # generated contract-client packages `petitions` / `web_of_trust`
+      # (examples/adsum/packages/*) by their npm workspace name. Those
+      # packages' `dist/` is gitignored-but-uncommitted (only `src/` ships)
+      # and, unlike the packages listed in the root package.json's
+      # `postinstall` -> `build:packages` script, are NOT built automatically
+      # by `npm install` -- confirmed by reproducing a fresh-checkout build
+      # locally (removing both dist/ dirs made `examples/adsum`'s own
+      # `npm run build` fail with "Cannot find module 'petitions'" /
+      # "'web_of_trust'"; `npm run build -w petitions -w web_of_trust` is
+      # what actually fixes it). Build them explicitly here so this
+      # workflow's build step below doesn't depend on a stale local dist
+      # left over from an earlier checkout.
+      - name: Build adsum's generated contract-client packages
+        run: npm run build -w petitions -w web_of_trust
+
+      # Staging clients are committed (this repo's convention for every
+      # GitHub-Pages/CF-Pages example — see status-message-dapp's README):
+      # `src/contracts/{petitions,web_of_trust}.ts` bind the already-deployed
+      # testnet contract ids from environments.toml's [staging.contracts], so
+      # this build needs no Rust / stellar-scaffold / live deploy. The TESTNET
+      # env block below is copied VERBATIM from test.yml's e2e job's "Build
+      # adsum example" step (commit 547a0db): those committed clients
+      # construct a `Client` at module scope, and the default (LOCAL) env's
+      # http:// RPC url trips the stellar SDK's `allowHttp` guard, crashing
+      # the whole bundle before anything renders.
+      - name: Build examples/adsum
+        run: npm run build
+        working-directory: examples/adsum
+        env:
+          PUBLIC_STELLAR_NETWORK: TESTNET
+          PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+          PUBLIC_STELLAR_RPC_URL: https://soroban-testnet.stellar.org
+          PUBLIC_STELLAR_HORIZON_URL: https://horizon-testnet.stellar.org
+
+      # Gates before deploy: a red typecheck/test/lint should block the
+      # Pages deploy, not just get noticed after the fact.
+      - name: Typecheck examples/adsum
+        run: npm run typecheck
+        working-directory: examples/adsum
+
+      - name: Unit tests (vitest) examples/adsum
+        run: npm test
+        working-directory: examples/adsum
+
+      - name: Lint examples/adsum
+        run: npm run lint
+        working-directory: examples/adsum
+
+      # Same wrangler invocation pattern .github/workflows/deploy.yml already
+      # uses for the main frontend's Cloudflare Pages deploy (plain
+      # `npx wrangler pages deploy`, not the cloudflare/wrangler-action) and
+      # the SAME two secret names.
+      - name: Deploy to Cloudflare Pages
+        run: |
+          npx wrangler pages deploy examples/adsum/dist/ \
+            --project-name "$PAGES_PROJECT" \
+            --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -199,6 +199,11 @@ dev: build-ts
 publish-policy-builder-v1 alias network="testnet":
     ./scripts/deploy-policy-builder-v1.sh {{alias}} {{network}}
 
+# Deploy adsum contracts (petitions + web-of-trust) and register names.
+# Usage: DEPLOY_SECRET=S... just publish-adsum
+publish-adsum:
+    node scripts/deploy-adsum.mjs
+
 # Regenerate one binding from a fresh .wasm and apply post-gen fixes.
 # Usage: just bindings smart-account
 # Run after `just build-contracts`. See scripts/fix-bindings.sh for what
@@ -243,3 +248,43 @@ test-e2e-testnet: build-astro
     set -euo pipefail
     if [ -f tests/.env.testnet ]; then set -a; source tests/.env.testnet; set +a; fi
     npx playwright test --project=testnet-chromium --project=testnet-webkit
+
+# Quarantined real-testnet e2e tier for the Adsum example dApp (create
+# petition -> vouch -> sign petition). Sources tests/.env.testnet the same
+# way test-e2e-testnet does, but scoped to just
+# tests/e2e/testnet/adsum.testnet.spec.ts.
+#
+# Builds the wallet frontend WITH the relayer env deploy.yml's frontend build
+# step uses (PUBLIC_RELAYER_URL + PUBLIC_RELAYER_SIM_SOURCE) -- unlike
+# build-astro/test-e2e-testnet, which omit it (see
+# tests/support/recovery.ts's createAndDeployAs doc comment: account creation
+# needs the relayer baked in). The Adsum spec's writes
+# (create_petition/vouch/sign) round-trip through the wallet's dApp raw-xdr
+# sign path (Model A, relayerSubmitAndConfirm in
+# packages/frontend/src/lib/signing/submit.ts), which has NO fallback for an
+# empty PUBLIC_RELAYER_URL -- it would hit a relative "/relay" on the
+# wallet's own static server (404) instead of the hosted relayer.
+#
+# Builds examples/adsum with the SAME TESTNET env block test.yml's e2e job
+# uses to build it (commit 547a0db), plus PUBLIC_NIDO_BASE pointed at this
+# tier's LOCAL wallet server (E2E_PORT, default 4399) rather than the hosted
+# nido.fyi, so the sign popup ceremony round-trips to the wallet under test
+# (mirrors example-dapp.testnet.spec.ts's RUN comment's "Build the example
+# for LOCAL" step).
+test-e2e-adsum-testnet:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -f tests/.env.testnet ]; then set -a; source tests/.env.testnet; set +a; fi
+    E2E_PORT="${E2E_PORT:-4399}"
+    PUBLIC_RELAYER_URL=https://nido.fly.dev \
+    PUBLIC_RELAYER_SIM_SOURCE=GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2 \
+    npx astro build --root ./packages/frontend
+    ( cd examples/adsum && \
+      PUBLIC_STELLAR_NETWORK=TESTNET \
+      PUBLIC_STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015" \
+      PUBLIC_STELLAR_RPC_URL=https://soroban-testnet.stellar.org \
+      PUBLIC_STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org \
+      PUBLIC_NIDO_BASE="http://localhost:${E2E_PORT}" \
+      npm run build )
+    npx playwright test tests/e2e/testnet/adsum.testnet.spec.ts \
+      --project=testnet-chromium --project=testnet-webkit

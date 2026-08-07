@@ -1,0 +1,5 @@
+# Never commit: onion identity keys, tor state, downloaded bundle, local CA keys
+data/
+bin/
+certs/
+node_modules/
