@@ -38,9 +38,11 @@ flowchart TD
     Done --> T1["Teardown: AccountMerge(G to R) reclaims the sponsored reserves"]
 ```
 
+[In addition to the permissionless sweep policy on C, or as part of it, can we also transfer from G to R? Rationale: sybil-resistence; recover cost of R provisioning G in a CAP-72 world where G is not torn down; help cover costs of R facilitating C's costs over the long-run (maybe this "C pays R for service" thing is even a reasonable way to recover costs or incentivize us to keep running R over the long-run).]
+
 ### Phase 1 — Provisioning (G's key is live for a few seconds)
 
-The relayer creates G as a **sponsored account with zero balance** (R covers every reserve, so nothing is stranded later). Then, while G's secret exists in relayer memory only:
+The relayer creates G as a **sponsored account with zero balance** (R covers every reserve, so nothing is stranded later). [BUT: DOSing the Relayer, and with it all Nido wallets, seems really easy! As a human or as a bot/botnet, run Nido's onboarding flow repeatedly, never completing the "fund G" step, until R is drained.] Then, while G's secret exists in relayer memory only:
 
 - **Deploy C** at its deterministic address (authless; R submits and pays).
 - **Install the sweep capability on C** — a context rule carrying the sweep policy with **no signer**, bound to `transfer_from(from = G, to = C)`. Authorized by the user's passkey (the account is its own admin). Being signer-free is what makes the later sweep permissionless.
@@ -51,6 +53,8 @@ The relayer creates G as a **sponsored account with zero balance** (R covers eve
 
 The user withdraws from their exchange to G. **Any amount** — there is no pre-committed figure to match, and no memo is required (each G is single-use, so the address alone identifies the deposit). Partial or repeated deposits simply accumulate.
 
+[BUT: what happens if deposits are made to this account after it is discarded?]
+
 ### Phase 3 — Sweep
 
 `C.transfer_from(C, G, C, balance)` moves the delivered balance into C. The sweep rule carries no signer, so it is **permissionless** — anyone can submit it, and it can still only move G's balance into C. Two common paths:
@@ -60,9 +64,15 @@ The user withdraws from their exchange to G. **Any amount** — there is no pre-
 
 Either way the sweep is a normal, retryable transaction, repeatable for any later deposits within the allowance window.
 
+[Is it possible to also add a pre-approved transfer to R (`transfer_from(C, G, R, 10XLM)`) as part of the sweep, to potentially turn R into a profit center rather than a cost center for operators, or to at least offset its costs?]
+
 ### Phase 4 — Teardown
 
 When the window closes, `AccountMerge(G → R)` reclaims every reserve R sponsored (a pre-signed, bearer transaction R fee-bumps). G is deleted; zero dust remains. A teardown failure only forfeits R's reserve reclaim — it can never touch user funds.
+
+[After CAP-72 lands and we switch to persistent G accounts, we need to reconsider how to protect R from DOS draining, since at that point R _permanently_ loses the reserve funds (~2XLM?) for every G created. Maybe the "two pre-approved `transfer_from` calls, one to G and one to R, as part of the sweep" idea mentioned above.]
+
+[This system leaves in place the long-term need for R to "facilitate" (stuff & sign the Transaction Envelope for) all transactions from account C. Post CAP-72 with persistent G, can G act as the facilitator for C? (This would not mitigate the risk of R being drained via DOS attack.)]
 
 ```mermaid
 sequenceDiagram
@@ -134,7 +144,7 @@ Because the sweep is permissionless, the argument bound is the sole guarantee �
 
 - **The `spender == C`, `from == G`, `to == C`, `fn == transfer_from` checks fail closed on every path** — validated, with no skip or early-return. This is the whole security perimeter, and it is what the audit must scrutinize hardest.
 - **The sweep policy's admin is a governance key.** An admin can upgrade the policy; that authority must sit with governance, never exposed to onboarding automation.
-- **Set the rule's `valid_until` to the allowance expiry** so a stale sweep rule cannot outlive the window (a provisioning-layer responsibility; the policy does not enforce it).
+- **Set the rule's `valid_until` to the allowance expiry** so a stale sweep rule cannot outlive the window (a provisioning-layer responsibility; the policy does not enforce it). [What are the risks if these mismatch? What is the provisioning layer?]
 - **The recorded source G is immutable** once installed (no mutator; changeable only via account-authorized uninstall/reinstall).
 
 ### Irreducible trust and bounds
@@ -159,6 +169,8 @@ The same primitive — *C holds an allowance over G, then C pulls* — covers:
 - **One-time transfer:** identical; neutralization optional.
 - **User-controlled wallet:** the user's own wallet holds G and signs `approve` (as the transaction source, so any standard wallet works); G is **not** neutralized — it stays the user's account, optionally kept as a recovery signer on C. The user pulls with their passkey (the permissionless sweep policy is only needed for the hands-off ephemeral flow).
 
+[BUT: why do an `approve` or a sweep at all, if I control the G address? If I'm using Freighter (or whatever) to onboard to Nido, I probably don't *want* it to sweep my full G balance. I want to use the Freighter interface to send a specific amount to my new C address.]
+
 ## Forward compatibility: CAP-0072
 
 [CAP-0072](https://github.com/stellar/stellar-protocol/blob/master/core/cap-0072.md) ("Contract signers for Stellar accounts", currently Draft) adds a delegated-signer type that lets a classic G-account delegate its authentication to a smart contract's `__check_auth`. When it lands, **G no longer needs to be ephemeral**: set G's master weight to 0 and add a delegated signer = C, and the passkey controls G directly. Moving funds becomes a direct passkey-authorized `transfer(G → C)` — no allowance, no `transfer_from`, no neutralize-and-discard, no 180-day expiry, no per-onboarding teardown. G becomes a persistent, reusable deposit address, and the security model gets cleaner (G is controlled by the same passkey as C).
@@ -167,15 +179,15 @@ We are **not** building on it yet (Draft; not on testnet/mainnet). But because i
 
 - **Keep a stable seam.** The onboarding interface — "user gets a deposit address G; funds land in C, non-custodially" — is invariant. The funding-source mechanism (allowance + bounded sweep now; delegated signer later) sits behind it as a swappable module.
 - **Not over-invest in the ephemeral machinery.** Build the minimum that works on today's protocol.
-- **Keep the bounded-sweep policy.** The scoped hands-off sweep is useful in both worlds; its predicate adapts from `transfer_from` to the delegated `transfer(G → C)`.
+- **Keep the bounded-sweep policy.** The scoped hands-off sweep is useful in both worlds; its predicate adapts from `transfer_from` to the delegated `transfer(G → C)`. [BUT in a CAP-72 world where C signs for G, do we need the `transfer(G → C)` at all?] 
 
-Migration caveats: exchanges still withdraw to classic G-addresses (G stays the landing zone); a one-time G-key signature is still needed to install the delegated signer; delegated signers cannot authorize classic operations (closing G later routes through the G-account contract to re-add a key, then merge — or G is left open); and per CAP-0072 the delegated signer's base reserve cannot be sponsored, so a persistent G is an ongoing per-user reserve cost rather than reclaimed at teardown.
+Migration caveats: exchanges still withdraw to classic G-addresses (G stays the landing zone); a one-time G-key signature is still needed to install the delegated signer; delegated signers cannot authorize classic operations (closing G later routes through the G-account contract to re-add a key, then merge — or G is left open [G-account contract? do you mean "C-account contract"?]); and per CAP-0072 the delegated signer's base reserve cannot be sponsored [BUT it's not?? C is the "delegated signer" for G; G is the one with the base reserve], so a persistent G is an ongoing per-user reserve cost rather than reclaimed at teardown.
 
 ## Validation status
 
 - **Sweep capability bound** — implemented and validated (`PreauthSweepPolicy`, PR #166): permissionless (zero-signer) authorization proven on the real `do_check_auth` path; `spender == C` hardening added; composite + self-source attack tests pass; adversarial review found no escape. Remaining: wire the rule's `valid_until` to the allowance expiry, and an on-chain testnet run.
 - **Account neutralization + allowance mechanics** — validated on testnet (sponsored 0-balance G, `approve` before funding, `transfer_from` after neutralization, zero-dust teardown).
-- **Wiring invariants** — must be enforced and tested at the provisioning layer (not expressible in a contract unit test).
+- **Wiring invariants** — must be enforced and tested at the provisioning layer (not expressible in a contract unit test). [Huh?]
 
 ## Milestones
 
@@ -183,8 +195,8 @@ Migration caveats: exchanges still withdraw to classic G-addresses (G stays the 
 2. **On-chain validation** — deploy the policy to testnet, wire it onto a factory-deployed C, drive one real permissionless sweep from a neutralized, sponsored G.
 3. **Relayer provisioning endpoint** — create sponsored G; deploy C; install the sweep rule; `approve`; neutralize; discard secret; persist state; fee-bump submissions. Enforces the wiring invariants.
 4. **Deposit watcher** — detect the deposit on G (Horizon), trigger the bounded sweep, schedule teardown. Holds no key that can move funds anywhere but into C.
-5. **Onboarding UX** — passkey creation, deposit address + "send any amount", pending-deposit claim, allowance-expiry countdown, retired-address messaging.
-6. **Teardown + reserve reclaim** — scheduled `AccountMerge(G → R)`; bearer escrow of the teardown transaction so reclaim never depends solely on Nido.
+5. **Onboarding UX** — passkey creation, deposit address + "send any amount", pending-deposit claim, allowance-expiry countdown, retired-address messaging [Is this "retired-address messaging" our protection against the question I asked earlier, "what happens when user re-sends to torn-down G address"?].
+6. **Teardown + reserve reclaim** — scheduled `AccountMerge(G → R)`; bearer escrow of the teardown transaction so reclaim never depends solely on Nido. [What?]
 7. **Non-XLM** — per-token allowance + sweep (one sweep rule per token) and a sponsored trustline on G. The policy is already per-token scoped.
 8. **Docs + tests** — the security model above, the wiring invariants as enforced checks, and the negative-case scoping tests as an automated lane.
 
