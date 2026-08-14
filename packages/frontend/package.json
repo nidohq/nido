@@ -23,7 +23,7 @@
     "@nidohq/status-message": "*",
     "@nidohq/stellar-wallets-kit-module": "*",
     "@stellar/stellar-sdk": "^15.1.0",
-    "astro": "^5.3.0",
+    "astro": "^7.2.1",
     "buffer": "^6.0.3"
   },
   "devDependencies": {
