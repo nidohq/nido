@@ -28,9 +28,20 @@ whole set with `just test`; cost gates with `just bench-zk`, `just bench-zk-init
   `create_account_and_create_account_v2_are_uniform_except_commitment`.
 - **F4 — Cross-crate param shape parity.** `ZkRecoveryInstallParams` (smart-account copy)
   round-trips against the real controller struct. Evidence: `drift.rs`.
-- **F5 (planned, B2) — Registry pinning.** Factory reverts (`RegistryMismatch`) if the
-  registry resolves `verifier`/`zk-recovery` to anything other than the admin-pinned
-  address. _Test to be added with B2._
+- **F5 — Registry pinning (pin bypass).** Once the admin pins the expected addresses
+  (`set_registry_pins(verifier, zk_recovery)`), the factory resolves `verifier`/`zk-recovery`
+  DIRECTLY from the pin and never consults the registry — on EVERY
+  `create_account`/`create_account_v2`. This takes the registry off the runtime critical path
+  for pinned names: a compromised, repointed, broken, or unreachable registry can neither
+  route new accounts to attacker contracts NOR block their creation. Unpinned (the default)
+  preserves the pre-B2 behavior (resolve from the registry, trust the result). The
+  `set_recovery_pool` override is checked before the `zk-recovery` pin and is a separate,
+  explicit admin path. Evidence: `create_account_v2_uses_pins_when_registry_repointed`
+  (a registry repointed to garbage is ignored), `pinned_resolve_never_consults_registry` (a
+  registry that panics on any lookup is never called), `create_account_v2_succeeds_when_pins_match_registry`,
+  `set_registry_pins_requires_admin_auth` (`contracts/factory/src/contract.rs`). The mainnet
+  registry is a Nido-owned `stellar-registry` instance (blocker A3, deploy-time); the pins
+  make the factory safe against a wrong/hostile registry regardless.
 
 ## Smart account & guard
 
