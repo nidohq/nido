@@ -22,7 +22,7 @@ jobs:
       # `wasm32v1-none` is the target `just build-contracts`/`cargo build
       # --target wasm32v1-none` compiles the contract wasms for.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.96.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: wasm32v1-none
 
