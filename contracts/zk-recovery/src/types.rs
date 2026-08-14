@@ -103,11 +103,11 @@ pub enum RecoveryKey {
     // ledger timestamp of an account's most recent successful cancel, for
     // the 24h cooldown check (spec §2.4).
     LastCancel(Address),
-    // Upgradability (issue #26): the multisig authorized to rotate the admin
-    // and upgrade this shared pool's wasm (`pool::ZkRecovery::upgrade`).
-    // Appended so existing variants keep their XDR ordinals. Stored
-    // separately from `Config` because it is an operational governance key,
-    // not one of the immutable recovery spec parameters.
+    // Upgradability (issue #26). RETAINED FOR XDR-ORDINAL STABILITY ONLY: the
+    // admin/upgrade governance key is now owned by the `admin-sep` crate, which
+    // stores the admin under its own `ADMIN` symbol key -- this variant is no
+    // longer read or written. Kept (not deleted) so every later variant keeps
+    // its XDR ordinal.
     Admin,
 }
 
@@ -159,8 +159,10 @@ pub enum RecoveryError {
     // never renumbered/reassigned.
     NullifierReservedElsewhere = 22,
 
-    // pool.rs upgradability (issue #26): no upgrade `admin` is stored (a
-    // pre-upgradability instance predating this field).
+    // pool.rs upgradability (issue #26). RETAINED FOR ERROR-CODE STABILITY
+    // ONLY: admin/upgrade now come from `admin-sep`, which reads the admin
+    // infallibly, so no code path returns this anymore. Kept (not deleted) so
+    // the explicit discriminant is never renumbered/reassigned.
     AdminNotSet = 23,
 }
 

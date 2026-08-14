@@ -4,10 +4,9 @@
 //! persistent storage as managed by the library. Meters SAC `transfer`
 //! calls within `CallContract` contexts only.
 
+use admin_sep::{Administratable, Upgradable};
 use soroban_sdk::auth::Context;
-use soroban_sdk::{
-    contract, contracterror, contractimpl, symbol_short, Address, BytesN, Env, Symbol, Vec,
-};
+use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
 use stellar_accounts::policies::spending_limit::{
     self, SpendingLimitAccountParams, SpendingLimitData, SpendingLimitStorageKey,
 };
@@ -17,66 +16,25 @@ use stellar_accounts::smart_account::{ContextRule, Signer};
 #[contract]
 pub struct SpendingLimitPolicy;
 
-#[contracterror]
-#[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    /// No upgrade `admin` is stored (a pre-upgradability instance predating
-    /// this field; the deployed testnet policy has no admin and is immutable).
-    AdminNotSet = 1,
-}
+// Governance (issue #26): admin/set_admin/upgrade come from the shared
+// `admin-sep` crate (`Administratable` + `Upgradable`), replacing the inlined
+// boilerplate. The `enforce`/`install`/`uninstall` paths never read admin, so
+// per-account limit state and gas are unaffected. Mainnet intent (plan B1):
+// `admin` is a multisig, ideally behind an upgrade timelock.
+#[contractimpl(contracttrait)]
+impl Administratable for SpendingLimitPolicy {}
+
+#[contractimpl(contracttrait)]
+impl Upgradable for SpendingLimitPolicy {}
 
 #[contractimpl]
 impl SpendingLimitPolicy {
-    fn key_admin() -> Symbol {
-        symbol_short!("admin")
-    }
-
     /// Record the `admin` (mainnet: multisig, ideally behind an upgrade
     /// timelock) authorized to rotate the admin or upgrade this policy (issue
-    /// #26). The `enforce`/`install`/`uninstall` paths never read admin, so
-    /// per-account limit state and gas are unaffected.
+    /// #26). `set_admin` on first call (no admin yet) skips the auth check.
     #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(e: Env, admin: Address) {
-        e.storage().instance().set(&Self::key_admin(), &admin);
-    }
-
-    /// The admin authorized to rotate the admin or upgrade the policy wasm.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn admin(e: Env) -> Result<Address, Error> {
-        e.storage()
-            .instance()
-            .get(&Self::key_admin())
-            .ok_or(Error::AdminNotSet)
-    }
-
-    /// Rotate the admin. Requires the current admin's auth.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn set_admin(e: Env, new_admin: Address) -> Result<(), Error> {
-        Self::admin(e.clone())?.require_auth();
-        e.storage().instance().set(&Self::key_admin(), &new_admin);
-        Ok(())
-    }
-
-    /// Upgrade this policy's wasm to `new_wasm_hash` (an already-installed
-    /// wasm hash). Requires admin auth; per-account limit/window state survives.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
-        Self::admin(e.clone())?.require_auth();
-        e.deployer().update_current_contract_wasm(new_wasm_hash);
-        Ok(())
+        Self::set_admin(&e, admin);
     }
 
     /// Read the installed params for a given account + rule. Returns None if

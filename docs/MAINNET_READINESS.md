@@ -47,7 +47,10 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
   (VK stays immutable), `zk-recovery`, `webauthn-verifier`, `multisig-policy`,
   `spending-limit-policy`, `name-registry` — each with `admin`/`set_admin`/`upgrade`, the admin
   set via `__constructor(admin: Address)`. Fresh deploys pass `--admin` (see
-  `scripts/deploy-policy-builder-v1.sh`, `scripts/deploy-zk-recovery.mjs`).
+  `scripts/deploy-policy-builder-v1.sh`, `scripts/deploy-zk-recovery.mjs`). All contracts except
+  `smart-account` (which keeps its bespoke recovery-timelocked upgrade) now source
+  `admin`/`set_admin`/`upgrade` from the shared **`admin-sep`** crate (`Administratable` +
+  `Upgradable`) rather than per-contract inlined code — see [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).
 - [ ] **B1 (governance) — admin behind a multisig, `upgrade` behind a timelock.** The mainnet
   `--admin` must be a multisig C-address (not the deploying key). The `smart-account` self-upgrade
   is already timelocked in-code (above); the **singleton** contracts (`zk-verifier`, policies,

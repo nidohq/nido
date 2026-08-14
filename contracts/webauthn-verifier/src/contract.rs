@@ -1,7 +1,5 @@
-use soroban_sdk::{
-    contract, contracterror, contractimpl, symbol_short, xdr::FromXdr, Address, Bytes, BytesN, Env,
-    Symbol, Vec,
-};
+use admin_sep::{Administratable, Upgradable};
+use soroban_sdk::{contract, contractimpl, xdr::FromXdr, Address, Bytes, BytesN, Env, Vec};
 use stellar_accounts::verifiers::{
     utils::extract_from_bytes,
     webauthn::{self, WebAuthnSigData},
@@ -11,70 +9,26 @@ use stellar_accounts::verifiers::{
 #[contract]
 pub struct WebAuthnVerifier;
 
-#[contracterror]
-#[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    /// No upgrade `admin` is stored (a pre-upgradability instance predating
-    /// this field; the deployed testnet verifier has no admin and is
-    /// immutable).
-    AdminNotSet = 1,
-}
-
-// Governance (issue #26): admin-gated `upgrade()` for this shared, stateless
-// verifier. The `verify` hot path (called from every account's
+// Governance (issue #26): admin/set_admin/upgrade come from the shared
+// `admin-sep` crate (`Administratable` + `Upgradable`), replacing the inlined
+// boilerplate. The `verify` hot path (called from every account's
 // `__check_auth`) never reads admin storage, so this adds no per-auth cost.
 // The verifier holds no VK or other state, so an upgrade replaces code only.
+// Mainnet intent (plan B1): `admin` is a multisig, ideally behind a timelock.
+#[contractimpl(contracttrait)]
+impl Administratable for WebAuthnVerifier {}
+
+#[contractimpl(contracttrait)]
+impl Upgradable for WebAuthnVerifier {}
+
 #[contractimpl]
 impl WebAuthnVerifier {
-    fn key_admin() -> Symbol {
-        symbol_short!("admin")
-    }
-
     /// Record the `admin` (mainnet: multisig, ideally behind an upgrade
     /// timelock) authorized to rotate the admin or upgrade this verifier.
+    /// `set_admin` on first call (no admin yet) skips the auth check.
     #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(env: Env, admin: Address) {
-        env.storage().instance().set(&Self::key_admin(), &admin);
-    }
-
-    /// The admin authorized to rotate the admin or upgrade the verifier wasm.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn admin(env: Env) -> Result<Address, Error> {
-        env.storage()
-            .instance()
-            .get(&Self::key_admin())
-            .ok_or(Error::AdminNotSet)
-    }
-
-    /// Rotate the admin. Requires the current admin's auth.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
-        Self::admin(env.clone())?.require_auth();
-        env.storage().instance().set(&Self::key_admin(), &new_admin);
-        Ok(())
-    }
-
-    /// Upgrade this verifier's wasm to `new_wasm_hash` (an already-installed
-    /// wasm hash). Requires admin auth. The verifier is stateless, so only
-    /// code is replaced.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::AdminNotSet` if no admin is stored.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
-        Self::admin(env.clone())?.require_auth();
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
-        Ok(())
+        Self::set_admin(&env, admin);
     }
 }
 

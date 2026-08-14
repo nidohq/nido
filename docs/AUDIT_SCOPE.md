@@ -51,11 +51,16 @@ proof-system verification), separate from a general Soroban/Rust reviewer.
 ## Out of scope (dependencies relied upon, not authored by Nido)
 
 - **OpenZeppelin `stellar-contracts` / `stellar-accounts`** — pinned dependency at
-  an untagged main-branch rev (`637c53a`, see `Cargo.toml`). All core auth logic
+  an untagged main-branch rev (`ec749c3b`, the merge of OZ PR #816 / soroban-sdk 27;
+  see `Cargo.toml`). All core auth logic
   delegates to `do_check_auth` here. The auditor should **verify the pinned rev is
   the intended, uncompromised commit**, but the library itself is OZ's audited code,
   not part of Nido's authored surface. See [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).
-- **`soroban-sdk` 26.0.1**, `soroban-sdk-tools`, `stellar-registry` — pinned deps.
+- **`soroban-sdk` 27.0.2**, `soroban-sdk-tools`, `stellar-registry` — pinned deps.
+- **`admin-sep` 0.27.0** (`theahaco/admin-sep`) — pinned crates.io dep providing the
+  `Administratable`/`Upgradable` SEP traits (`admin`/`set_admin`/`upgrade`) shared by every
+  upgradeable contract. Not Nido-authored, but it is on the governance/upgrade auth path, so
+  the auditor should read it in full (it is ~50 LOC) — see [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).
 - **Stellar Registry contract (AhaLabs smart-deploy)** — an external on-chain contract, not
   authored by Nido. On mainnet Nido runs its **own instance** (owner under the multisig,
   deployed by `scripts/deploy-registry.sh` from the reference registry's exact wasm, hash

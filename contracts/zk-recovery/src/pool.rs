@@ -23,6 +23,7 @@
 use crate::hash::wrap_leaf;
 use crate::merkle;
 use crate::types::{LeafInserted, RecoveryConfig, RecoveryError, RecoveryKey};
+use admin_sep::{Administratable, Upgradable};
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Bytes, BytesN, Env, U256};
 
 // `controller.rs` (M1 Task 5) is declared as a *submodule of `pool`* (not a
@@ -100,6 +101,26 @@ fn insert_bound(env: &Env, account: &Address, commitment: &BytesN<32>) -> u32 {
 #[contract]
 pub struct ZkRecovery;
 
+// Governance (issue #26): admin/set_admin/upgrade come from the shared
+// `admin-sep` crate (`Administratable` + `Upgradable`), replacing the inlined
+// boilerplate.
+//
+// Unlike the per-account `smart-account::upgrade` -- which is blocked while
+// that account's own recovery is pending, because the account is its own admin
+// and a stolen passkey could otherwise upgrade-to-neuter its in-flight recovery
+// -- this pool has a SEPARATE governance admin (the multisig), distinct from
+// any recovering account's authority. A per-account "pending" guard is
+// therefore neither meaningful nor sufficient here (the pool holds many
+// accounts' pending records at once); the trust boundary is the admin multisig
+// + upgrade timelock (plan B1), reviewed as such by the auditor. The immutable
+// `RecoveryConfig` and all Merkle/nullifier/pending state survive the upgrade
+// untouched -- only the code is replaced.
+#[contractimpl(contracttrait)]
+impl Administratable for ZkRecovery {}
+
+#[contractimpl(contracttrait)]
+impl Upgradable for ZkRecovery {}
+
 #[contractimpl]
 impl ZkRecovery {
     /// Stores the immutable `RecoveryConfig` (spec §3.3 "Defaults") and the
@@ -107,11 +128,12 @@ impl ZkRecovery {
     /// Must run once, at deploy time, before any other entry point.
     ///
     /// `admin` is appended after the spec config args so existing positional
-    /// callers/deploy tooling keep their argument ordinals. It is stored under
-    /// `RecoveryKey::Admin` rather than inside `RecoveryConfig`: the config is
-    /// the immutable recovery *policy* (timelock, rate limit, verifier
-    /// addresses -- none of it ever changes), whereas `admin` is a rotatable
-    /// governance key (`set_admin`). Mainnet intent (plan B1): `admin` is a
+    /// callers/deploy tooling keep their argument ordinals. It is stored via
+    /// `admin-sep` (a governance key) rather than inside `RecoveryConfig`: the
+    /// config is the immutable recovery *policy* (timelock, rate limit,
+    /// verifier addresses -- none of it ever changes), whereas `admin` is a
+    /// rotatable governance key (`set_admin`). `set_admin` on first call (no
+    /// admin yet) skips the auth check. Mainnet intent (plan B1): `admin` is a
     /// multisig, ideally behind an upgrade timelock, so no single stolen key
     /// can silently repoint the pool.
     #[allow(clippy::too_many_arguments)]
@@ -140,66 +162,7 @@ impl ZkRecovery {
             webauthn_verifier,
         };
         env.storage().instance().set(&RecoveryKey::Config, &cfg);
-        env.storage().instance().set(&RecoveryKey::Admin, &admin);
-    }
-
-    /// The admin (mainnet: multisig) authorized to rotate the admin or
-    /// upgrade this pool's wasm.
-    ///
-    /// # Errors
-    ///
-    /// Returns `RecoveryError::AdminNotSet` if no admin is stored (a
-    /// pre-upgradability instance predating this field).
-    // `env` is conventionally by-value for `#[contractimpl]` entry points.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn admin(env: Env) -> Result<Address, RecoveryError> {
-        env.storage()
-            .instance()
-            .get(&RecoveryKey::Admin)
-            .ok_or(RecoveryError::AdminNotSet)
-    }
-
-    /// Rotate the admin. Requires the current admin's auth.
-    ///
-    /// # Errors
-    ///
-    /// Returns `RecoveryError::AdminNotSet` if no admin is stored.
-    // `env`/`new_admin` are conventionally by-value for `#[contractimpl]`
-    // entry points.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), RecoveryError> {
-        Self::admin(env.clone())?.require_auth();
-        env.storage()
-            .instance()
-            .set(&RecoveryKey::Admin, &new_admin);
-        Ok(())
-    }
-
-    /// Upgrade this pool's wasm to `new_wasm_hash` (an already-installed wasm
-    /// hash). Requires admin auth.
-    ///
-    /// Unlike the per-account `smart-account::upgrade` -- which is blocked
-    /// while that account's own recovery is pending, because the account is
-    /// its own admin and a stolen passkey could otherwise upgrade-to-neuter
-    /// its in-flight recovery -- this pool has a SEPARATE governance admin
-    /// (the multisig), distinct from any recovering account's authority. A
-    /// per-account "pending" guard is therefore neither meaningful nor
-    /// sufficient here (the pool holds many accounts' pending records at
-    /// once); the trust boundary is the admin multisig + upgrade timelock
-    /// (plan B1), reviewed as such by the auditor. The immutable
-    /// `RecoveryConfig` and all Merkle/nullifier/pending state survive the
-    /// upgrade untouched -- only the code is replaced.
-    ///
-    /// # Errors
-    ///
-    /// Returns `RecoveryError::AdminNotSet` if no admin is stored.
-    // `env`/`new_wasm_hash` are conventionally by-value for `#[contractimpl]`
-    // entry points.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), RecoveryError> {
-        Self::admin(env.clone())?.require_auth();
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
-        Ok(())
+        Self::set_admin(&env, admin);
     }
 
     /// GENESIS insert: the factory creates `account` and, in the same
