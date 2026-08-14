@@ -3,11 +3,14 @@ import { Account, Operation, StrKey } from "@stellar/stellar-sdk";
 
 // Shared, hoisted state the module mocks read. `simSource` is a getter-backed
 // value so each test can vary PUBLIC_RELAYER_SIM_SOURCE.
+// Typed as `any` so the fields are both callable (inside the vi.mock factories)
+// and assignable to vi.fn() spies + usable with toHaveBeenCalled matchers; a
+// Mock type would satisfy the assertions but tsc rejects calling it.
 const h = vi.hoisted(() => ({
   relayer: false,
   simSource: "",
-  getAccount: null as unknown as ReturnType<typeof vi.fn>,
-  getSubmitter: null as unknown as ReturnType<typeof vi.fn>,
+  getAccount: null as any,
+  getSubmitter: null as any,
 }));
 
 vi.mock("../network.js", () => ({
