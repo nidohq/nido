@@ -43,7 +43,7 @@ jobs:
       # re-installing these.
       - name: Cache Stellar CLI + stellar-scaffold binaries
         id: stellar-tools-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/stellar
