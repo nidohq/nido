@@ -50,6 +50,44 @@ export default {
       }
     }
 
-    return fetch(url.toString(), { headers: request.headers });
+    const upstream = await fetch(url.toString(), { headers: request.headers });
+
+    // Attach security headers the Pages origin doesn't set. Cloudflare Response
+    // headers are immutable until copied into a fresh Response.
+    const response = new Response(upstream.body, upstream);
+    // Block MIME-sniffing and framing (this is a signing surface -- no clickjacking).
+    response.headers.set("X-Content-Type-Options", "nosniff");
+    response.headers.set("X-Frame-Options", "DENY");
+    // The account C-address / name is the HOST subdomain (e.g. `Cabc...def.nido.fyi`),
+    // NOT the URL path -- so `strict-origin-when-cross-origin` would still leak the
+    // active account to every cross-origin request (fonts, price/RPC APIs) via the
+    // Origin it keeps in Referer. `no-referrer` sends no Referer at all; nothing in
+    // the app relies on it (cross-origin calls are unauthenticated and addressed by URL).
+    response.headers.set("Referrer-Policy", "no-referrer");
+
+    // CSP shipped in *Report-Only* first: an enforced strict policy must be
+    // browser-verified against everything the app actually loads (Stellar
+    // RPC/Horizon, Friendbot, fonts, the WebAuthn ceremony) or it will break
+    // onboarding/signing. Report-Only never blocks -- it surfaces what a future
+    // enforced policy would reject. Promote to `Content-Security-Policy` (drop
+    // `-Report-Only`) once the console/report stream is clean.
+    // TODO(audit E): tighten (esp. connect-src to explicit RPC hosts, remove
+    // style 'unsafe-inline' if Astro allows) + enforce. See docs/MAINNET_READINESS.md.
+    response.headers.set(
+      "Content-Security-Policy-Report-Only",
+      [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "connect-src 'self' https:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+      ].join("; "),
+    );
+    return response;
   },
 };
