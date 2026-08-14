@@ -1,0 +1,38 @@
+# Standalone spike workspace — detached from the parent nido workspace so it
+# doesn't perturb the shipping contracts. Pins mirror the parent workspace
+# (soroban-sdk 27, stellar-accounts @ ec749c3, admin-sep 0.27) so the wasm we
+# build here is compiled against the REAL deployed dependency revisions.
+[package]
+name = "preauth-sweep-policy"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "27.0.2"
+admin-sep = "0.27.0"
+stellar-accounts = { git = "https://github.com/OpenZeppelin/stellar-contracts.git", rev = "ec749c3b75971f2c35ced1bea3e2a7e536e91cda", package = "stellar-accounts" }
+
+[dev-dependencies]
+soroban-sdk = { version = "27.0.2", features = ["testutils"] }
+
+[profile.release]
+overflow-checks = true
+
+[profile.contract]
+overflow-checks = true
+inherits = "release"
+opt-level = "z"
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

@@ -1,0 +1,52 @@
+{
+  "phase": "composite",
+  "network": "testnet",
+  "wrapper": "CBO5O4JZCQPOREOH2Z6USCXR32M4SQVDFSRP2SGSYLYKM246OVSB757X",
+  "native_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "g_pubkey": "GD2A2YJPU4RGBTVWWM4ECRY2YDGVEFZN2I73DICBQZHAQOUYF6CEKTI7",
+  "salt_hex": "7b3dc2315cd37496970e92e9af0724c8ac88f267c7b84df2c4746e41c0a0c966",
+  "p256_key_hex": "04af9d439e674c9cff184d84285624080c4e112e9e75654c4c3331bfb859df62d23682fcdccedcb046be59b4fe8f4f1748801af8ba78c274f2fa3aa039d39fc7e8",
+  "c_address": "CDTLVXJBBXTQWOZLGGJAZJS76XHSMU756P5BL6Z5IXSRC53BO52QI2RQ",
+  "c_existed_before": false,
+  "sim_auth_mode": "record_allow_nonroot",
+  "auth_entry_count": 1,
+  "auth_entries": [
+    {
+      "credentials": "sorobanCredentialsSourceAccount",
+      "rootInvocation": {
+        "type": "contractFn",
+        "contract": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+        "function": "transfer",
+        "args": [
+          "GD2A2YJPU4RGBTVWWM4ECRY2YDGVEFZN2I73DICBQZHAQOUYF6CEKTI7",
+          "CDTLVXJBBXTQWOZLGGJAZJS76XHSMU756P5BL6Z5IXSRC53BO52QI2RQ",
+          "50000000"
+        ],
+        "subInvocations": []
+      },
+      "xdr_base64": "AAAAAAAAAAAAAAAB15KLcsJwPM/q9+uf9O9NUEpVqLl5/JtFDqLIQrTRzmEAAAAIdHJhbnNmZXIAAAADAAAAEgAAAAAAAAAA9A1hL6ciYM62szhBRxrAzVIXLdI/saBBhk4IOpgvhEUAAAASAAAAAea63SEN5ws7KzGSDKZf9c8mU/3z+hX7PUXlEXdhd3UEAAAACgAAAAAAAAAAAAAAAAL68IAAAAAA"
+    }
+  ],
+  "all_source_account_credentials": true,
+  "t_hash": "ad1390853ea588df88fe2cf8bfe473d063073695a578e85d8de21d9990ea05c9",
+  "t_seq": "17196714045734914",
+  "t_fee": "1302325",
+  "t_resource_fee": "302325",
+  "setup_tx_hash": "66940fef72f954ad47bc4c1e4558fd7d979a014b9f598af14ee8b9fcddfa6c43",
+  "t_tx_hash": "ad1390853ea588df88fe2cf8bfe473d063073695a578e85d8de21d9990ea05c9",
+  "t_ledger": 4003924,
+  "t_inner_signature_count": 0,
+  "g_signers_after_t": [
+    {
+      "type": "ed25519_public_key",
+      "key": "GD2A2YJPU4RGBTVWWM4ECRY2YDGVEFZN2I73DICBQZHAQOUYF6CEKTI7",
+      "weight": 0
+    }
+  ],
+  "preauth_signer_removed": true,
+  "g_master_weight_after_t": 0,
+  "c_exists_after": true,
+  "c_sac_balance": "50000000",
+  "outcome": "SUCCESS",
+  "explorer": "https://stellar.expert/explorer/testnet/tx/ad1390853ea588df88fe2cf8bfe473d063073695a578e85d8de21d9990ea05c9"
+}

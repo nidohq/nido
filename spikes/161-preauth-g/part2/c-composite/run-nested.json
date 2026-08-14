@@ -1,0 +1,50 @@
+{
+  "phase": "nested",
+  "network": "testnet",
+  "wrapper": "CBO5O4JZCQPOREOH2Z6USCXR32M4SQVDFSRP2SGSYLYKM246OVSB757X",
+  "native_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "g_pubkey": "GDG76CYFLVXPR7MXDADCZPWSZAWZOYP4RNPT4YPNXM72X5R4S6IX7CCG",
+  "dest": "GDPSIACF7TRPWJEDLDEJSUGYUQHD3J6XCV2I53N5RDHERIWEZ7BLU7I6",
+  "dest_balance_before": "9999.7934729",
+  "sim_auth_mode": "record_allow_nonroot",
+  "auth_entry_count": 1,
+  "auth_entries": [
+    {
+      "credentials": "sorobanCredentialsSourceAccount",
+      "rootInvocation": {
+        "type": "contractFn",
+        "contract": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+        "function": "transfer",
+        "args": [
+          "GDG76CYFLVXPR7MXDADCZPWSZAWZOYP4RNPT4YPNXM72X5R4S6IX7CCG",
+          "GDPSIACF7TRPWJEDLDEJSUGYUQHD3J6XCV2I53N5RDHERIWEZ7BLU7I6",
+          "50000000"
+        ],
+        "subInvocations": []
+      },
+      "xdr_base64": "AAAAAAAAAAAAAAAB15KLcsJwPM/q9+uf9O9NUEpVqLl5/JtFDqLIQrTRzmEAAAAIdHJhbnNmZXIAAAADAAAAEgAAAAAAAAAAzf8LBV1u+P2XGAYsvtLILZdh/ItfPmHtuz+r9jyXkX8AAAASAAAAAAAAAADfJABF/OL7JINYyJlQ2KQOPafXFXSO7b2IzkiixM/CugAAAAoAAAAAAAAAAAAAAAAC+vCAAAAAAA=="
+    }
+  ],
+  "all_source_account_credentials": true,
+  "t_hash": "bf862b2525c1a0b0e8b33819171ecf06dadf45664d2276c8986910fada7d513e",
+  "t_seq": "17196683980963842",
+  "t_fee": "1024313",
+  "t_resource_fee": "24313",
+  "setup_tx_hash": "463d44538fe09d790d27c91066679fddd515d4287e16aad2ffd9e2cb0f78f802",
+  "t_tx_hash": "bf862b2525c1a0b0e8b33819171ecf06dadf45664d2276c8986910fada7d513e",
+  "t_ledger": 4003917,
+  "t_inner_signature_count": 0,
+  "g_signers_after_t": [
+    {
+      "type": "ed25519_public_key",
+      "key": "GDG76CYFLVXPR7MXDADCZPWSZAWZOYP4RNPT4YPNXM72X5R4S6IX7CCG",
+      "weight": 0
+    }
+  ],
+  "preauth_signer_removed": true,
+  "g_master_weight_after_t": 0,
+  "dest_balance_after": "10004.7934729",
+  "dest_delta_stroops": "50000000",
+  "outcome": "SUCCESS",
+  "explorer": "https://stellar.expert/explorer/testnet/tx/bf862b2525c1a0b0e8b33819171ecf06dadf45664d2276c8986910fada7d513e"
+}

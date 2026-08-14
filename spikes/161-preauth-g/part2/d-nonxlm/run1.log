@@ -1,0 +1,28 @@
+I (issuer):  GCI6MH3RDUQYAAZEXXD5FTKC4DXZHQYR3JKDUYGWFPMAHTG2E5XBZNL7
+R (relayer): GDNRFKSNYCQMSIORJNOXKI7CTSOKPX5JIK2B57LN2OWUXMEYHIUG5MLY
+G (burner):  GD7KTKF7PRWXELJ34EOZX2OMI4YZIZGSYDYCHWSIHQPF334OZRGLYWJ6
+funding I + R via friendbot...
+offline-computed SAC id: CAHZOM3GA47BFDRMBIKDKB5HG2BMUXD4DLHK3EMWINTZTQKGT7ATN45T
+CLI-deployed SAC id:     CAHZOM3GA47BFDRMBIKDKB5HG2BMUXD4DLHK3EMWINTZTQKGT7ATN45T
+creation sent: c91e51914fbfaf8c2e47d579da47b4eed99c8c5157079e7362a6ac1d9149f157 status PENDING
+creation SUCCESS in ledger 4003926
+G after create: xlm=0.0000000 subentries=0 num_sponsored=2; R num_sponsoring=2
+G sequence n = 17196731225604096
+T5 built simulation-free: seq 17196731225604098, hash 1c71a1f33f4c076897c24cb20b5ca8406fa66886875a1f6815af698aaea54de0
+T6 built: seq 17196731225604099, hash 6130e403bdb92cc788a77013960e02ac0664125708967bc8a4d707e2dcbff4bc
+provisioning S sent: e4152c0e65f2436ddab8bf26a6c6d0bc3d1f018f1386c359474e29dee07a6574 status PENDING
+provisioning S SUCCESS in ledger 4003927
+G secret discarded (keypair replaced with public-only)
+after S: G subentries=3 num_sponsored=5 xlm=0.0000000 nido=0.0000000; R num_sponsoring=5
+preauth decode: {"on_chain":["1c71a1f33f4c076897c24cb20b5ca8406fa66886875a1f6815af698aaea54de0","6130e403bdb92cc788a77013960e02ac0664125708967bc8a4d707e2dcbff4bc"],"match_t5":true,"match_t6":true,"master_weight":0}
+issuer payment sent: 76d5dac7cf7dd3ade5e10b3b73cd48bc949336c7da994be2d6d2a1bbeb5a3fb6 status PENDING
+issuer payment SUCCESS in ledger 4003928
+G after payment: nido=100.0000000 xlm=0.0000000
+T5 bare submit: {"status":"ERROR","hash":"1c71a1f33f4c076897c24cb20b5ca8406fa66886875a1f6815af698aaea54de0","tx_code":"txInsufficientBalance","op_codes":null}
+T5 (fee-bump) sent: 0d8290a95229cc68db183925a72f54611d83ce9657ca3b83429875436937de26 status PENDING
+T5 (fee-bump) SUCCESS in ledger 4003929
+after T5: G nido=0.0000000 xlm=0.0000000 subentries=2 num_sponsored=4 signers=[{"type":"preauth_tx","key":"TBQTBZADXW4SZR4IU5YBHFQOAKWAMZASK4EJM66IUTLQPYW4X72LY74U","weight":1},{"type":"ed25519_public_key","key":"GD7KTKF7PRWXELJ34EOZX2OMI4YZIZGSYDYCHWSIHQPF334OZRGLYWJ6","weight":0}]; R num_sponsoring=4
+T6 bare submit: {"status":"ERROR","hash":"6130e403bdb92cc788a77013960e02ac0664125708967bc8a4d707e2dcbff4bc","tx_code":"txInsufficientBalance","op_codes":null}
+T6 (fee-bump) sent: 84afe9b3aea18eddfb3d2df5cdef9d876fe973caf9cabd200d60e212ade0cc45 status PENDING
+T6 (fee-bump) SUCCESS in ledger 4003931
+after T6: G exists=false; R num_sponsoring=0 xlm=9999.9896084

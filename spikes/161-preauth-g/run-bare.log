@@ -1,0 +1,18 @@
+G (burner):  GBNUN4RYKFZOQWGHMSFSYWRE5IAZJTCAEXXZDOVJK7T5I2MCBJT66DMA
+R (dest/fee):GA7EMOL4RIT26D7X6IYNV4U2NXJMJVZDNBD3LAMJDA4UONYVOM6WWPAH
+funding via friendbot...
+G sequence n = 17188184240685056
+native SAC: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+sim auth entries: ["sorobanCredentialsSourceAccount"]
+T built: seq 17188184240685058, fee 1023479, hash 44d0ade0a3e73b7b5f0e7f41e0003cc58260ce2000d85e5565ddb602c7089bed
+S sent: afc55b85160e107ab224d0a1fd00589b72727a1fa6568971e893154507362c24 status PENDING
+S confirmed: preauth signer installed, master weight 0
+signers after S: [{"type":"preauth_tx","key":"TBCNBLPAUPTTW627BZ7UDYAAHTCYEYGOEAANQXSVMXO3MAWHBCN62TUZ","weight":1},{"type":"ed25519_public_key","key":"GBNUN4RYKFZOQWGHMSFSYWRE5IAZJTCAEXXZDOVJK7T5I2MCBJT66DMA","weight":0}]
+negative test: status=ERROR error=txBadAuth
+submitting T (mode=bare); inner signatures at submit: 0
+bare T sent: 44d0ade0a3e73b7b5f0e7f41e0003cc58260ce2000d85e5565ddb602c7089bed status PENDING
+T SUCCESS in ledger 4001939
+applied inner signature count: 0
+G signers after T: [{"type":"ed25519_public_key","key":"GBNUN4RYKFZOQWGHMSFSYWRE5IAZJTCAEXXZDOVJK7T5I2MCBJT66DMA","weight":0}]
+G balance 9994.9986388, R balance 10005.0000000
+preauth signer removed: true

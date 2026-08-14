@@ -1,0 +1,105 @@
+{
+  "claim": "G with master weight 0 + single preAuthTx signer executes an unsigned Soroban SAC transfer (require_auth(G) clears via SourceAccount credentials + preauth match)",
+  "status": "validated",
+  "date_utc": "2026-08-06T15:28:20.537Z",
+  "runs": [
+    {
+      "mode": "feebump",
+      "network": "testnet",
+      "g_pubkey": "GDZK37QFN5JJ7INR2DWN5WV5ORQLRD7Z4SPQJSIMK6WCHNKPNECLHY2R",
+      "r_pubkey": "GAHRZ5A6PQOCEAT46FGFNM7Q4XGEGQIV3DRTWTSA23SIPGGP7PH2WMRV",
+      "auth_entry_count": 1,
+      "auth_credential_types": [
+        "sorobanCredentialsSourceAccount"
+      ],
+      "t_inner_hash": "66ef791571ffe690e50972616a0ea7f6bb421a307217fe372deb0cf3b7d033cb",
+      "t_seq": "17188158470881282",
+      "t_fee": "1023479",
+      "setup_tx_hash": "68a2f4a1b902cb37ee9624b7f1f1d765f516e955db982822ab7281b57284f345",
+      "signers_after_setup": [
+        {
+          "type": "preauth_tx",
+          "key": "TBTO66IVOH76NEHFBFZGC2QOU73LWQQ2GBZBP7RXFXVQZ45X2AZ4XOBO",
+          "weight": 1
+        },
+        {
+          "type": "ed25519_public_key",
+          "key": "GDZK37QFN5JJ7INR2DWN5WV5ORQLRD7Z4SPQJSIMK6WCHNKPNECLHY2R",
+          "weight": 0
+        }
+      ],
+      "negative_test": {
+        "status": "ERROR",
+        "error": "txBadAuth",
+        "hash": "6aab03a9ecf3f5ae19016a4683a3128d6692fe5f8d17d6ae8bdd236780d3a085"
+      },
+      "outer_feebump_hash": "6eebe738f1516cb2f04185ec4022c2a65cd8915a705bef5eddf0e05079035db9",
+      "onboard_tx_hash": "6eebe738f1516cb2f04185ec4022c2a65cd8915a705bef5eddf0e05079035db9",
+      "t_ledger": 4001933,
+      "outer_signature_count": 1,
+      "inner_signature_count": 0,
+      "g_signers_after_t": [
+        {
+          "type": "ed25519_public_key",
+          "key": "GDZK37QFN5JJ7INR2DWN5WV5ORQLRD7Z4SPQJSIMK6WCHNKPNECLHY2R",
+          "weight": 0
+        }
+      ],
+      "g_master_weight_after_t": 0,
+      "g_balance_after": "9994.9999900",
+      "r_balance_after": "10004.9986388",
+      "g_seq_after": "17188158470881282",
+      "preauth_signer_removed": true,
+      "outcome": "SUCCESS",
+      "explorer": "https://stellar.expert/explorer/testnet/tx/6eebe738f1516cb2f04185ec4022c2a65cd8915a705bef5eddf0e05079035db9"
+    },
+    {
+      "mode": "bare",
+      "network": "testnet",
+      "g_pubkey": "GBNUN4RYKFZOQWGHMSFSYWRE5IAZJTCAEXXZDOVJK7T5I2MCBJT66DMA",
+      "r_pubkey": "GA7EMOL4RIT26D7X6IYNV4U2NXJMJVZDNBD3LAMJDA4UONYVOM6WWPAH",
+      "auth_entry_count": 1,
+      "auth_credential_types": [
+        "sorobanCredentialsSourceAccount"
+      ],
+      "t_inner_hash": "44d0ade0a3e73b7b5f0e7f41e0003cc58260ce2000d85e5565ddb602c7089bed",
+      "t_seq": "17188184240685058",
+      "t_fee": "1023479",
+      "setup_tx_hash": "afc55b85160e107ab224d0a1fd00589b72727a1fa6568971e893154507362c24",
+      "signers_after_setup": [
+        {
+          "type": "preauth_tx",
+          "key": "TBCNBLPAUPTTW627BZ7UDYAAHTCYEYGOEAANQXSVMXO3MAWHBCN62TUZ",
+          "weight": 1
+        },
+        {
+          "type": "ed25519_public_key",
+          "key": "GBNUN4RYKFZOQWGHMSFSYWRE5IAZJTCAEXXZDOVJK7T5I2MCBJT66DMA",
+          "weight": 0
+        }
+      ],
+      "negative_test": {
+        "status": "ERROR",
+        "error": "txBadAuth",
+        "hash": "9407e02950e799337f32b74ddf206c71e89e87b3b69af9380ae0599beac654be"
+      },
+      "onboard_tx_hash": "44d0ade0a3e73b7b5f0e7f41e0003cc58260ce2000d85e5565ddb602c7089bed",
+      "t_ledger": 4001939,
+      "inner_signature_count": 0,
+      "g_signers_after_t": [
+        {
+          "type": "ed25519_public_key",
+          "key": "GBNUN4RYKFZOQWGHMSFSYWRE5IAZJTCAEXXZDOVJK7T5I2MCBJT66DMA",
+          "weight": 0
+        }
+      ],
+      "g_master_weight_after_t": 0,
+      "g_balance_after": "9994.9986388",
+      "r_balance_after": "10005.0000000",
+      "g_seq_after": "17188184240685058",
+      "preauth_signer_removed": true,
+      "outcome": "SUCCESS",
+      "explorer": "https://stellar.expert/explorer/testnet/tx/44d0ade0a3e73b7b5f0e7f41e0003cc58260ce2000d85e5565ddb602c7089bed"
+    }
+  ]
+}
