@@ -517,9 +517,14 @@ fn malformed_proof_never_initiates_recovery() {
             &nullifier,
             &bad_proof,
         );
-        assert!(
-            res.is_err(),
-            "a malformed proof must never succeed at initiate_recovery"
+        // Assert the SPECIFIC error, not just "some error": zk-recovery maps any
+        // verifier failure -- including the zk-verifier's structured
+        // ProofParseError on a bad-length proof -- to VerificationFailed, so a
+        // malformed proof is rejected exactly like a well-formed-but-invalid one.
+        assert_eq!(
+            contract_error(&res),
+            RecoveryError::VerificationFailed,
+            "a malformed proof must be rejected as VerificationFailed"
         );
 
         // Fail-closed: no pending record and no nullifier reservation may

@@ -98,7 +98,18 @@ trait RecoveryController {
 }
 
 /// Cross-calls `controller`'s `has_pending` view for this account. Pure
-/// passthrough -- callers decide what to do with the result.
+/// passthrough of the boolean -- callers decide what to do with `true`/`false`.
+///
+/// FAIL-SECURE (invariant S2): this uses the NON-`try_` client, so it only ever
+/// returns on a clean `bool`. If the controller cross-call itself fails -- the
+/// controller address is wrong/uninstalled, the contract traps, or `has_pending`
+/// errors -- the call does NOT return `false`; it TRAPS, unwinding the entire
+/// enclosing mutation (`remove_signer`/`remove_context_rule`/`remove_policy`/
+/// `update_context_rule_valid_until`, or `execute_recovery_rule_removal`) and
+/// reverting the transaction atomically. So an unreachable or misbehaving
+/// controller BLOCKS eviction rather than silently permitting it -- the guard
+/// fails closed. (A `try_`-based variant that mapped errors to `false` would be
+/// the opposite: it would let a controller outage disable the recovery guard.)
 fn has_live_pending(e: &Env, controller: &Address) -> bool {
     RecoveryControllerClient::new(e, controller).has_pending(&e.current_contract_address())
 }
