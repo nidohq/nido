@@ -7,7 +7,7 @@
 //! `contracts/zk-verifier/tests/fixtures/` so this test is self-contained
 //! within nido (no dependency on the sibling `zk` repo at test time).
 
-use soroban_sdk::{Bytes, Env};
+use soroban_sdk::{testutils::Address as _, Address, Bytes, Env};
 
 mod zk_verifier_contract {
     // Path is relative to CARGO_MANIFEST_DIR (this crate's directory); the
@@ -18,7 +18,10 @@ mod zk_verifier_contract {
 }
 
 fn register_client<'a>(env: &'a Env, vk_bytes: &Bytes) -> zk_verifier_contract::Client<'a> {
-    let contract_id = env.register(zk_verifier_contract::WASM, (vk_bytes.clone(),));
+    let contract_id = env.register(
+        zk_verifier_contract::WASM,
+        (Address::generate(env), vk_bytes.clone()),
+    );
     zk_verifier_contract::Client::new(env, &contract_id)
 }
 
@@ -38,6 +41,26 @@ fn verify_simple_circuit_proof_succeeds() {
 
     let client = register_client(&env, &vk_bytes);
     client.verify_proof(&public_inputs, &proof_bytes);
+}
+
+/// The constructor stores the upgrade `admin`, and `set_admin` rotates it
+/// (auth enforced the same way the factory's proven `upgrade`/`set_admin`
+/// pattern is). Upgrading the wasm itself needs a second installed module, so
+/// that path is exercised at the integration level, not here.
+#[test]
+fn admin_is_stored_and_rotatable() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let vk_bytes = Bytes::from_slice(&env, include_bytes!("fixtures/vk"));
+
+    let admin = Address::generate(&env);
+    let id = env.register(zk_verifier_contract::WASM, (admin.clone(), vk_bytes));
+    let client = zk_verifier_contract::Client::new(&env, &id);
+    assert_eq!(client.admin(), admin);
+
+    let new_admin = Address::generate(&env);
+    client.set_admin(&new_admin);
+    assert_eq!(client.admin(), new_admin);
 }
 
 #[test]

@@ -69,7 +69,10 @@ fn deploy(env: &Env) -> (ZkRecoveryClient<'_>, Address, LifecycleFixture) {
     let fixture = zk_fixture::lifecycle_fixture(env);
 
     let vk_bytes = Bytes::from_slice(env, include_bytes!("../../fixtures/zk/vk"));
-    let verifier_id = env.register(zk_verifier_contract::WASM, (vk_bytes,));
+    let verifier_id = env.register(
+        zk_verifier_contract::WASM,
+        (Address::generate(env), vk_bytes),
+    );
 
     let controller_addr = addr_from(env, &fixture.controller);
     let factory = Address::generate(env);
@@ -91,6 +94,7 @@ fn deploy(env: &Env) -> (ZkRecoveryClient<'_>, Address, LifecycleFixture) {
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier,
+            Address::generate(env), // upgrade admin (unused by this file's coverage)
         ),
     );
     let client = ZkRecoveryClient::new(env, &contract_id);

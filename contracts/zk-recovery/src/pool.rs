@@ -102,8 +102,18 @@ pub struct ZkRecovery;
 
 #[contractimpl]
 impl ZkRecovery {
-    /// Stores the immutable `RecoveryConfig` (spec §3.3 "Defaults"). Must
-    /// run once, at deploy time, before any other entry point.
+    /// Stores the immutable `RecoveryConfig` (spec §3.3 "Defaults") and the
+    /// `admin` authorized to upgrade this shared pool's wasm (issue #26).
+    /// Must run once, at deploy time, before any other entry point.
+    ///
+    /// `admin` is appended after the spec config args so existing positional
+    /// callers/deploy tooling keep their argument ordinals. It is stored under
+    /// `RecoveryKey::Admin` rather than inside `RecoveryConfig`: the config is
+    /// the immutable recovery *policy* (timelock, rate limit, verifier
+    /// addresses -- none of it ever changes), whereas `admin` is a rotatable
+    /// governance key (`set_admin`). Mainnet intent (plan B1): `admin` is a
+    /// multisig, ideally behind an upgrade timelock, so no single stolen key
+    /// can silently repoint the pool.
     #[allow(clippy::too_many_arguments)]
     // `env` is conventionally by-value for `#[contractimpl]` entry points.
     #[allow(clippy::needless_pass_by_value)]
@@ -117,6 +127,7 @@ impl ZkRecovery {
         timelock_floor_secs: u64,
         network_passphrase: Bytes,
         webauthn_verifier: Address,
+        admin: Address,
     ) {
         let cfg = RecoveryConfig {
             factory,
@@ -129,6 +140,66 @@ impl ZkRecovery {
             webauthn_verifier,
         };
         env.storage().instance().set(&RecoveryKey::Config, &cfg);
+        env.storage().instance().set(&RecoveryKey::Admin, &admin);
+    }
+
+    /// The admin (mainnet: multisig) authorized to rotate the admin or
+    /// upgrade this pool's wasm.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RecoveryError::AdminNotSet` if no admin is stored (a
+    /// pre-upgradability instance predating this field).
+    // `env` is conventionally by-value for `#[contractimpl]` entry points.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn admin(env: Env) -> Result<Address, RecoveryError> {
+        env.storage()
+            .instance()
+            .get(&RecoveryKey::Admin)
+            .ok_or(RecoveryError::AdminNotSet)
+    }
+
+    /// Rotate the admin. Requires the current admin's auth.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RecoveryError::AdminNotSet` if no admin is stored.
+    // `env`/`new_admin` are conventionally by-value for `#[contractimpl]`
+    // entry points.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), RecoveryError> {
+        Self::admin(env.clone())?.require_auth();
+        env.storage()
+            .instance()
+            .set(&RecoveryKey::Admin, &new_admin);
+        Ok(())
+    }
+
+    /// Upgrade this pool's wasm to `new_wasm_hash` (an already-installed wasm
+    /// hash). Requires admin auth.
+    ///
+    /// Unlike the per-account `smart-account::upgrade` -- which is blocked
+    /// while that account's own recovery is pending, because the account is
+    /// its own admin and a stolen passkey could otherwise upgrade-to-neuter
+    /// its in-flight recovery -- this pool has a SEPARATE governance admin
+    /// (the multisig), distinct from any recovering account's authority. A
+    /// per-account "pending" guard is therefore neither meaningful nor
+    /// sufficient here (the pool holds many accounts' pending records at
+    /// once); the trust boundary is the admin multisig + upgrade timelock
+    /// (plan B1), reviewed as such by the auditor. The immutable
+    /// `RecoveryConfig` and all Merkle/nullifier/pending state survive the
+    /// upgrade untouched -- only the code is replaced.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RecoveryError::AdminNotSet` if no admin is stored.
+    // `env`/`new_wasm_hash` are conventionally by-value for `#[contractimpl]`
+    // entry points.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), RecoveryError> {
+        Self::admin(env.clone())?.require_auth();
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        Ok(())
     }
 
     /// GENESIS insert: the factory creates `account` and, in the same
@@ -204,9 +275,15 @@ mod tests {
     impl RefContract {}
 
     fn setup(env: &Env) -> (Address, RecoveryConfig) {
+        let (id, cfg, _admin) = setup_with_admin(env);
+        (id, cfg)
+    }
+
+    fn setup_with_admin(env: &Env) -> (Address, RecoveryConfig, Address) {
         let factory = Address::generate(env);
         let verifier = Address::generate(env);
         let webauthn_verifier = Address::generate(env);
+        let admin = Address::generate(env);
         let cfg = RecoveryConfig {
             factory: factory.clone(),
             verifier,
@@ -228,9 +305,10 @@ mod tests {
                 cfg.timelock_floor_secs,
                 cfg.network_passphrase.clone(),
                 cfg.webauthn_verifier.clone(),
+                admin.clone(),
             ),
         );
-        (id, cfg)
+        (id, cfg, admin)
     }
 
     fn commitment_from_u64(env: &Env, x: u64) -> BytesN<32> {
@@ -430,6 +508,24 @@ mod tests {
             res.is_ok(),
             "insert_for authorized by the account must succeed"
         );
+    }
+
+    /// Upgradability (issue #26): the constructor stores the `admin`, and
+    /// `set_admin` rotates it under the current admin's auth. The wasm-swap
+    /// path (`upgrade`) needs a second installed module, so it is exercised
+    /// at the integration level, not here.
+    #[test]
+    fn admin_is_stored_and_rotatable() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (id, _cfg, admin) = setup_with_admin(&env);
+        let client = ZkRecoveryClient::new(&env, &id);
+
+        assert_eq!(client.admin(), admin);
+
+        let new_admin = Address::generate(&env);
+        client.set_admin(&new_admin);
+        assert_eq!(client.admin(), new_admin);
     }
 
     /// Task 11 (M2 residual): cross-crate constant drift guard, the half of

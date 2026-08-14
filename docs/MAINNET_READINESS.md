@@ -25,8 +25,22 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 
 ## B. Architecture freeze (before audit)
 
-- [ ] **B1 — admin + upgrade() across contracts**, admin behind a **multisig**, `upgrade`
-  behind a **timelock**. `zk-verifier` VK intentionally immutable.
+- [x] **B1 (code) — admin + upgrade() implemented across the contract set** (issue #26):
+  `smart-account` (self-authed; **blocked while a recovery is pending**, and — for a
+  recovery-enabled account — the immediate `upgrade` is **refused** (`UpgradeRequiresTimelock`)
+  in favour of a 7-day announce-then-execute path (`initiate_upgrade` → `execute_upgrade`), so a
+  stolen passkey can't instantly strip the protected recovery rule), `factory`, `zk-verifier`
+  (VK stays immutable), `zk-recovery`, `webauthn-verifier`, `multisig-policy`,
+  `spending-limit-policy`, `name-registry` — each with `admin`/`set_admin`/`upgrade`, the admin
+  set via `__constructor(admin: Address)`. Fresh deploys pass `--admin` (see
+  `scripts/deploy-policy-builder-v1.sh`, `scripts/deploy-zk-recovery.mjs`).
+- [ ] **B1 (governance) — admin behind a multisig, `upgrade` behind a timelock.** The mainnet
+  `--admin` must be a multisig C-address (not the deploying key). The `smart-account` self-upgrade
+  is already timelocked in-code (above); the **singleton** contracts (`zk-verifier`, policies,
+  `name-registry`, `factory`) upgrade immediately once admin-authed, so the multisig — ideally
+  with its own upgrade timelock so users can exit before an upgrade lands — is the mitigation
+  there. `zk-verifier` VK intentionally immutable (a circuit change still means a fresh verifier
+  deploy + re-register, never an in-place VK swap).
 - [ ] **B2 — Registry address pinning.** Factory reverts `RegistryMismatch` if the registry
   resolves to a non-pinned verifier/zk-recovery address; registry + `set_recovery_pool`
   keys under multisig; change-monitoring/alerts in place.

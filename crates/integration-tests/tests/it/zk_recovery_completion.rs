@@ -103,7 +103,7 @@ fn deploy(env: &Env) -> CompletionSetup<'_> {
     let fixture = zk_fixture::lifecycle_fixture(env);
 
     // --- WebAuthn verifier + smart account, pinned at ACCOUNT. ---
-    let webauthn_verifier = env.register(WEBAUTHN_VERIFIER_WASM, ());
+    let webauthn_verifier = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(env),));
     let orig_key = test_key(0xACC0);
     let orig_pubkey = orig_key.verifying_key().to_sec1_bytes();
     let orig_signer = Signer::External(
@@ -126,7 +126,10 @@ fn deploy(env: &Env) -> CompletionSetup<'_> {
 
     // --- M0 zk-verifier + ZkRecovery controller, pinned at CONTROLLER. ---
     let vk_bytes = Bytes::from_slice(env, include_bytes!("../../fixtures/zk/vk"));
-    let verifier_id = env.register(zk_verifier_contract::WASM, (vk_bytes,));
+    let verifier_id = env.register(
+        zk_verifier_contract::WASM,
+        (Address::generate(env), vk_bytes),
+    );
     let controller_addr = addr_from(env, &fixture.controller);
     let factory = Address::generate(env);
     let network_passphrase = Bytes::from_slice(env, fixture.network_passphrase.as_bytes());
@@ -142,6 +145,7 @@ fn deploy(env: &Env) -> CompletionSetup<'_> {
             TIMELOCK_FLOOR_SECS,
             network_passphrase,
             webauthn_verifier.clone(),
+            Address::generate(env), // upgrade admin (unused by this file's coverage)
         ),
     );
     let zk = ZkRecoveryClient::new(env, &controller_addr);
