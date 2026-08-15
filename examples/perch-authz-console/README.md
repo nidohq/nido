@@ -42,13 +42,17 @@ npm run test:e2e -w perch-authz-console   # drives the full flow, writes artifac
 ## Deploy
 
 - `npm run build` — local/apex build (base `/`).
-- `npm run build:pages` — GitHub Pages project build (`--base=/<repo>/`).
-- `npm run build:preview` — relative base (`./`), for per-PR subpath previews.
+- `npm run build:preview` — relative base (`./`), used when nested under a subpath.
 
-A per-PR GitHub Pages preview workflow is at
-`.github/workflows/perch-authz-preview.yml`. It deploys to the `gh-pages` branch
-under `pr-preview/pr-<N>/`; enabling it requires the repo's Pages source to
-serve that branch (see the workflow header).
+This example is hosted **alongside** `status-message-dapp` by the shared example
+workflows — no per-example workflow:
+
+- `.github/workflows/pages.yml` — the GitHub Pages home; this example lives at
+  `/<repo>/perch-authz-console/` (status-message stays at the root).
+- `.github/workflows/example-preview.yml` — the per-PR Cloudflare preview, which
+  deploys both examples and comments both URLs.
+
+Add another example by nesting its build in those two workflows the same way.
 
 ## Roadmap
 
