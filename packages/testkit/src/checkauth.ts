@@ -74,18 +74,17 @@ function argSatisfies(pred: ArgPred, arg: SimArg | undefined, account: LocalAcco
   }
 }
 
-export function simulateCheckAuth(account: LocalAccount, ctx: SimContext, signedBy: string[]): SimResult {
-  const ledger = ctx.ledger ?? 0;
+/** Evaluate one rule (at index `idx`) against the call: digest → authenticate
+ *  signers → expiry / function / args / signer-floor. */
+function evalRule(
+  account: LocalAccount,
+  ctx: SimContext,
+  ledger: number,
+  rule: Rule,
+  idx: number,
+  signedBy: string[],
+): SimResult {
   const reasons: string[] = [];
-
-  // 1. Find the rule whose scope this call falls under.
-  const idx = account.policy.rules.findIndex((r) => scopeMatches(r, account, ctx));
-  if (idx < 0) {
-    return { verdict: 'abstain', authDigest: '', reasons: ['no rule applies to this call'], signerChecks: [] };
-  }
-  const rule = account.policy.rules[idx]!;
-
-  // 2. Digest bound to this rule; authenticate the signers that signed it.
   const payload = sha256(new TextEncoder().encode(stableContext(ctx)));
   const digest = computeAuthDigest(payload, [idx]);
   const signerChecks = signedBy.map((id) => {
@@ -94,7 +93,6 @@ export function simulateCheckAuth(account: LocalAccount, ctx: SimContext, signed
     return { id, verifier: s.verifier, ok: verifySignature(s.algorithm, digest, s.publicKey, s.signAuth(digest)) };
   });
   const authenticated = new Set(signerChecks.filter((c) => c.ok).map((c) => c.id));
-
   const base: Omit<SimResult, 'verdict'> = {
     authDigest: bytesToHex(digest),
     matchedRule: rule.name,
@@ -106,35 +104,49 @@ export function simulateCheckAuth(account: LocalAccount, ctx: SimContext, signed
     return { verdict: 'deny', ...base };
   };
 
-  // 3. Expiry (perch "dead at or after"; OZ valid_until is inclusive one below).
+  // Expiry (perch "dead at or after").
   const notAfter = rule['not-after-ledger'];
   if (notAfter !== undefined && ledger >= notAfter) return deny(`rule expired (ledger ${ledger} ≥ ${notAfter})`);
-
-  // 4. Function allowlist.
+  // Function allowlist.
   if (rule.functions && !rule.functions.includes(ctx.fn)) {
     return deny(`function ${ctx.fn}() not in [${rule.functions.join(', ')}]`);
   }
-
-  // 5. Argument predicates.
+  // Argument predicates.
   for (const c of rule.args ?? []) {
-    if (!argSatisfies(c.pred, ctx.args?.[c.index], account)) {
-      return deny(`arg[${c.index}] fails ${c.pred.type}`);
-    }
+    if (!argSatisfies(c.pred, ctx.args?.[c.index], account)) return deny(`arg[${c.index}] fails ${c.pred.type}`);
   }
-
-  // 6. Signer sufficiency: perch injects MinSigners(n) = every referenced signer
-  //    (N-of-N), the on-chain floor when a policy is attached.
+  // Signer sufficiency: perch injects MinSigners(n) = every referenced signer.
   if (rule.principals.type === 'all') {
     const missing = rule.principals.signers.filter((id) => !authenticated.has(id));
     if (missing.length) return deny(`missing signature from [${missing.join(', ')}]`);
   }
-
-  // 7. Cumulative cap is a stateful sibling policy — not evaluable from a single
-  //    call. Surface it rather than silently ignore.
+  // Cumulative cap is a stateful sibling policy — surface it, not per-call.
   if (rule.cap) {
     reasons.push(`cap ≤ ${rule.cap.limit} / ${rule.cap['period-ledgers']} ledgers applies (stateful; not checked per-call)`);
   }
-
   reasons.push('authorized');
   return { verdict: 'allow', ...base };
+}
+
+export function simulateCheckAuth(account: LocalAccount, ctx: SimContext, signedBy: string[]): SimResult {
+  const ledger = ctx.ledger ?? 0;
+
+  // Every rule this call could fall under (OZ lets the caller nominate a rule
+  // via context_rule_ids; the sim tries them all and authorizes if any rule
+  // does — matching "can these signers authorize this call?").
+  const matching: Array<[Rule, number]> = [];
+  account.policy.rules.forEach((r, i) => {
+    if (scopeMatches(r, account, ctx)) matching.push([r, i]);
+  });
+  if (matching.length === 0) {
+    return { verdict: 'abstain', authDigest: '', reasons: ['no rule applies to this call'], signerChecks: [] };
+  }
+
+  let firstDeny: SimResult | null = null;
+  for (const [rule, idx] of matching) {
+    const res = evalRule(account, ctx, ledger, rule, idx, signedBy);
+    if (res.verdict === 'allow') return res;
+    if (!firstDeny) firstDeny = res;
+  }
+  return firstDeny as SimResult;
 }

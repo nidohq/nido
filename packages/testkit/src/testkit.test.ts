@@ -88,6 +88,31 @@ describe('simulateCheckAuth — the ci-publish policy', () => {
   });
 });
 
+describe('simulateCheckAuth — tries every matching rule', () => {
+  const admin = localSigner({ id: 'admin', algorithm: 'secp256r1' });
+  const pq = localSigner({ id: 'pq', algorithm: 'ml-dsa-65' });
+  const acct = createLocalAccount({
+    signers: [admin, pq],
+    rules: [
+      rule({ name: 'admin-root', scope: { type: 'self-admin' }, signedBy: ['admin'] }),
+      rule({ name: 'pq-admin', scope: { type: 'self-admin' }, signedBy: ['pq'] }),
+    ],
+  });
+
+  it('authorizes a self-admin call via a non-first rule (the ML-DSA signer)', () => {
+    // set_admin on self-admin, signed only by pq → admin-root denies (missing
+    // admin) but pq-admin authorizes. Must not stop at the first matching rule.
+    const res = simulateCheckAuth(acct, { contract: acct.address, fn: 'set_admin' }, ['pq']);
+    expect(res.verdict).toBe('allow');
+    expect(res.matchedRule).toBe('pq-admin');
+  });
+
+  it('denies when no matching rule is satisfied', () => {
+    const res = simulateCheckAuth(acct, { contract: acct.address, fn: 'set_admin' }, []);
+    expect(res.verdict).toBe('deny');
+  });
+});
+
 describe('perch analysis — reachable + attenuation', () => {
   const acct = createLocalAccount({
     signers: [localSigner({ id: 'ci', algorithm: 'ed25519' })],
