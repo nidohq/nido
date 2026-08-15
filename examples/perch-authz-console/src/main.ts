@@ -220,6 +220,8 @@ function reachPanel(a: LocalAccount): HTMLElement {
 function simulatePanel(a: LocalAccount): HTMLElement {
   return panel('Try it — simulate __check_auth', (body) => {
     const controls = el('div', 'controls');
+    const targetSel = el('select'); targetSel.id = 'sim-target';
+    ([['registry', 'registry contract'], ['self', 'self-admin (this account)']] as const).forEach(([v, t]) => { const o = el('option'); o.value = v; o.textContent = t; targetSel.append(o); });
     const fnSel = el('select'); fnSel.id = 'sim-fn';
     ['publish_hash', 'publish', 'set_admin'].forEach((f) => { const o = el('option'); o.value = f; o.textContent = `${f}()`; fnSel.append(o); });
     const authorSel = el('select'); authorSel.id = 'sim-author';
@@ -231,7 +233,7 @@ function simulatePanel(a: LocalAccount): HTMLElement {
       lab.append(cb, document.createTextNode(s.id));
       signerWrap.append(lab);
     }
-    controls.append(mkFld('function', fnSel), mkFld('author', authorSel), mkFld('signed by', signerWrap));
+    controls.append(mkFld('target', targetSel), mkFld('function', fnSel), mkFld('author', authorSel), mkFld('signed by', signerWrap));
     const run = el('button', 'act', 'Simulate'); run.type = 'button'; run.id = 'sim-run';
     controls.append(run);
     body.append(controls);
@@ -250,9 +252,14 @@ function runSimulation(a: LocalAccount): void {
   const fn = (document.getElementById('sim-fn') as HTMLSelectElement).value;
   const author = (document.getElementById('sim-author') as HTMLSelectElement).value;
   const signedBy = Array.from(document.querySelectorAll<HTMLInputElement>('.sim-signer:checked')).map((c) => c.value);
+  const target = (document.getElementById('sim-target') as HTMLSelectElement).value;
   const authorAddr = author === 'self' ? a.address : otherAddress();
   const args: SimArg[] = [{ type: 'u32', value: 0 }, { type: 'address', value: authorAddr }];
-  const res = simulateCheckAuth(a, { contract: REGISTRY, fn, args, ledger }, signedBy);
+  const ctx =
+    target === 'self'
+      ? { contract: a.address, fn, ledger } // self-admin scope
+      : { contract: REGISTRY, fn, args, ledger };
+  const res = simulateCheckAuth(a, ctx, signedBy);
   const v = document.getElementById('sim-verdict')!;
   const kind = res.verdict === 'allow' ? 'ok' : res.verdict === 'deny' ? 'bad' : 'info';
   v.className = `verdict ${kind}`;

@@ -34,6 +34,15 @@ test('connect → visualize → simulate → attenuate', async ({ page }) => {
   await expect(page.locator('#sim-verdict')).toHaveClass(/verdict bad/);
   await page.screenshot({ path: 'artifacts/03-simulate.png', fullPage: true });
 
+  // ...but set_admin on the *self-admin* scope, signed by admin, is authorized
+  // by the account's own admin rule → allow. (And pq alone authorizes it via
+  // the ML-DSA pq-admin rule — the simulator tries every matching rule.)
+  await page.locator('#sim-target').selectOption('self');
+  await page.locator('.sim-signer[value="admin"]').check();
+  await page.locator('#sim-run').click();
+  await expect(page.locator('#sim-verdict')).toHaveClass(/verdict ok/);
+  await page.screenshot({ path: 'artifacts/03b-self-admin.png', fullPage: true });
+
   // 4. Build a more complex policy: add a rule; doc_hash changes.
   const before = await hash.textContent();
   await page.locator('#b-add').click();
