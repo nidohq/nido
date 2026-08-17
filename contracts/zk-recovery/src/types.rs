@@ -164,7 +164,23 @@ pub enum RecoveryError {
     // infallibly, so no code path returns this anymore. Kept (not deleted) so
     // the explicit discriminant is never renumbered/reassigned.
     AdminNotSet = 23,
+
+    /// `__constructor` was given a duration (`delay_secs`,
+    /// `completion_window_secs`, or `timelock_floor_secs`) above
+    /// [`MAX_CONFIG_DURATION_SECS`]. Rejecting at deploy time keeps the
+    /// timestamp arithmetic in `initiate_recovery` (`now + delay_secs +
+    /// completion_window_secs`) provably free of u64 overflow — an absurd
+    /// window like `u64::MAX` would otherwise make every
+    /// `initiate_recovery` trap, permanently bricking recovery for the
+    /// whole pool (found by the Flux overflow check).
+    InvalidConfig = 24,
 }
+
+/// Upper bound on every configurable duration in [`RecoveryConfig`]:
+/// 100 years in seconds. Far above any sane recovery timelock, low enough
+/// that `ledger.timestamp() + delay_secs + completion_window_secs` can
+/// never overflow a `u64`.
+pub const MAX_CONFIG_DURATION_SECS: u64 = 100 * 365 * 24 * 3600;
 
 /// `insert`/`insert_for` (pool.rs, later task): a new leaf entered the tree.
 /// `leaf` is the on-chain-wrapped `stored` value, not the client-supplied

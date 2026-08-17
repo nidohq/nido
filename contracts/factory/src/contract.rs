@@ -381,19 +381,6 @@ impl Contract {
         account
     }
 
-    /// The BN254 scalar field order `r`, identical to
-    /// `contracts/zk-recovery/src/pool.rs::FIELD_ORDER_BE` -- duplicated
-    /// here (rather than imported) for the same reason
-    /// `zk_recovery::ZkRecoveryInterface` above is a local stub trait rather
-    /// than a real dependency on `nido-zk-recovery`: this crate must not
-    /// link that crate's `#[contract]` exports into its own cdylib. Value:
-    /// `21888242871839275222246405745257275088548364400416034343698204186575808495617`.
-    const DUMMY_FIELD_ORDER_BE: [u8; 32] = [
-        0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58,
-        0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00,
-        0x00, 0x01,
-    ];
-
     /// Deterministic dummy commitment for the legacy `create_account` path
     /// (M2 Task 5): `sha256("nido-zk-dummy" || salt) mod r`. Reducing mod
     /// `r` (rather than rejecting like the pool's own `require_canonical`
@@ -401,18 +388,15 @@ impl Contract {
     /// canonical `< r` value the pool accepts, without ever needing the
     /// caller to retry -- there is no security property riding on this
     /// value's exact bits, only that it is present, canonical, and
-    /// indistinguishable in shape from a real commitment.
+    /// indistinguishable in shape from a real commitment. The field order
+    /// comes from `soroban_flux::bn254` — the same single source the pool
+    /// uses — retiring the duplicated `DUMMY_FIELD_ORDER_BE` constant and
+    /// its cross-crate drift-guard test.
     fn dummy_commitment(e: &Env, salt: &BytesN<32>) -> BytesN<32> {
         let mut preimage = Bytes::from_slice(e, b"nido-zk-dummy");
         preimage.extend_from_array(&salt.to_array());
         let digest = e.crypto().sha256(&preimage).to_bytes();
-        let value = U256::from_be_bytes(e, &Bytes::from_array(e, &digest.to_array()));
-        let field_order =
-            U256::from_be_bytes(e, &Bytes::from_array(e, &Self::DUMMY_FIELD_ORDER_BE));
-        let reduced = value.rem_euclid(&field_order);
-        let mut out = [0u8; 32];
-        reduced.to_be_bytes().copy_into_slice(&mut out);
-        BytesN::from_array(e, &out)
+        soroban_flux::bn254::reduce_be(e, &digest)
     }
 
     /// SHA-256 of the embedded smart-account wasm — equal to the installed
@@ -1172,10 +1156,7 @@ mod test {
         assert_eq!(pool_client.next_index(), 1);
 
         let dummy = Contract::dummy_commitment(&env, &salt);
-        let field_order = U256::from_be_bytes(
-            &env,
-            &Bytes::from_array(&env, &Contract::DUMMY_FIELD_ORDER_BE),
-        );
+        let field_order = soroban_flux::bn254::field_order(&env);
         let dummy_value = U256::from_be_bytes(&env, &Bytes::from_array(&env, &dummy.to_array()));
         assert!(
             dummy_value < field_order,
@@ -1216,10 +1197,7 @@ mod test {
             "dummy_commitment must differ across salts (salt is part of the sha256 preimage)"
         );
 
-        let field_order = U256::from_be_bytes(
-            &env,
-            &Bytes::from_array(&env, &Contract::DUMMY_FIELD_ORDER_BE),
-        );
+        let field_order = soroban_flux::bn254::field_order(&env);
         for d in [&a1, &b] {
             let value = U256::from_be_bytes(&env, &Bytes::from_array(&env, &d.to_array()));
             assert!(
@@ -1284,31 +1262,24 @@ mod test {
         );
     }
 
-    /// Task 11 (M2 residual): literal-pinning half of the cross-crate
-    /// drift guard. `DUMMY_FIELD_ORDER_BE` cannot be compared directly
-    /// against `nido_zk_recovery::pool`'s `FIELD_ORDER_BE` (private to that
-    /// module, unreachable even via the real dev-dependency this crate
-    /// already has) -- so this pins it against the SAME literal bytes that
-    /// `nido_zk_recovery::pool::tests::field_order_and_merkle_depth_match_canonical`
-    /// pins its own copy against. If either copy's bytes drift, whichever
-    /// test still embeds the old literal is the one that keeps passing, but
-    /// the other one -- guarding the crate whose constant actually moved --
-    /// fails. See `dummy_field_order_matches_pool_behavior` below for a
-    /// second, behavioral check that doesn't rely on keeping two literals
-    /// in sync by hand.
+    /// Dependency-pin guard: the shared `soroban_flux::bn254::BN254_R_BE`
+    /// this crate now derives dummy commitments from must stay the canonical
+    /// BN254 scalar order. (The old cross-crate literal drift guard between
+    /// the factory's and the pool's private copies is retired — both crates
+    /// import the same constant from soroban-flux, so there is nothing left
+    /// to drift. See `dummy_field_order_matches_pool_behavior` for the
+    /// behavioral check against the real pool.)
     #[test]
     fn dummy_field_order_matches_canonical() {
-        // Same 32 bytes as `nido_zk_recovery::pool`'s
-        // `CANONICAL_FIELD_ORDER_BE` -- keep both literals identical.
         const CANONICAL_FIELD_ORDER_BE: [u8; 32] = [
             0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81,
             0x58, 0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93,
             0xf0, 0x00, 0x00, 0x01,
         ];
         assert_eq!(
-            Contract::DUMMY_FIELD_ORDER_BE,
+            soroban_flux::bn254::BN254_R_BE,
             CANONICAL_FIELD_ORDER_BE,
-            "factory's DUMMY_FIELD_ORDER_BE drifted from the canonical BN254 scalar order r"
+            "soroban-flux's BN254_R_BE drifted from the canonical BN254 scalar order r"
         );
     }
 
@@ -1317,11 +1288,10 @@ mod test {
     /// doesn't just re-check a hand-copied constant, it exercises the REAL
     /// `nido-zk-recovery` pool's `require_canonical` check (this crate's
     /// existing dev-dependency, see `setup_factory_and_pool`) against
-    /// boundary values derived from `Contract::DUMMY_FIELD_ORDER_BE`. If the
-    /// factory's copy of `r` has drifted from the pool's real `r`, one of
-    /// the two assertions below flips: either `r - 1` (factory's) is no
-    /// longer canonical per the real pool, or `r` (factory's) has become
-    /// canonical per the real pool (i.e. `< real_r`).
+    /// boundary values derived from the shared `soroban_flux::bn254::BN254_R_BE`.
+    /// If the shared `r` ever drifted from the pool's behavior, one of the
+    /// two assertions below flips: either `r - 1` is no longer canonical per
+    /// the real pool, or `r` itself has become canonical (i.e. `< real_r`).
     #[test]
     fn dummy_field_order_matches_pool_behavior() {
         let env = Env::default();
@@ -1330,7 +1300,7 @@ mod test {
         let pool_client = nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &pool_addr);
         let account = Address::generate(&env);
 
-        let r = Contract::DUMMY_FIELD_ORDER_BE;
+        let r = soroban_flux::bn254::BN254_R_BE;
         let mut r_minus_1 = r;
         r_minus_1[31] = r_minus_1[31].wrapping_sub(1);
 
@@ -1341,13 +1311,13 @@ mod test {
             pool_client
                 .try_insert_for(&account, &r_minus_1_bytes)
                 .is_ok(),
-            "factory's DUMMY_FIELD_ORDER_BE - 1 must be canonical (< r) per the REAL pool's \
-             FIELD_ORDER_BE -- if this fails, the two crates' field orders have drifted apart"
+            "shared BN254_R_BE - 1 must be canonical (< r) per the REAL pool's \
+             FIELD_ORDER_BE -- if this fails, the shared constant and the pool have drifted apart"
         );
         assert!(
             pool_client.try_insert_for(&account, &r_bytes).is_err(),
-            "factory's DUMMY_FIELD_ORDER_BE itself must be rejected (== r, non-canonical) by \
-             the REAL pool -- if this fails, the two crates' field orders have drifted apart"
+            "shared BN254_R_BE itself must be rejected (== r, non-canonical) by \
+             the REAL pool -- if this fails, the shared constant and the pool have drifted apart"
         );
     }
 

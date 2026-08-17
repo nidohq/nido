@@ -264,3 +264,10 @@ test-e2e-testnet: build-astro
     set -euo pipefail
     if [ -f tests/.env.testnet ]; then set -a; source tests/.env.testnet; set +a; fi
     npx playwright test --project=testnet-chromium --project=testnet-webkit
+
+# Flux refinement verification of nido-zk-recovery (nidohq/soroban-flux).
+# Runs under flux's pinned nightly; the repo's toolchain pin is untouched —
+# flux attributes are no-ops in normal builds. Toolchain setup:
+# `just flux-setup` in the soroban-flux repo.
+flux:
+    PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-05 FLUXFLAGS="-Fpointer-width=32 -Fcheck-overflow=strict -Fcache=target/flux-cache" cargo flux -p nido-zk-recovery

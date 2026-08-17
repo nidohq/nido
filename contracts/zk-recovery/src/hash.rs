@@ -108,8 +108,12 @@ fn hex32(hex: &str) -> [u8; 32] {
         "zk-recovery: expected a 32-byte (64 hex digit) constant"
     );
     let mut out = [0u8; 32];
-    for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap();
+    // Index loop (not iter_mut().enumerate()) so flux can bound `i` and
+    // discharge the `i * 2 + 2` overflow/slice obligations.
+    let mut i: usize = 0;
+    while i < 32 {
+        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap();
+        i += 1;
     }
     out
 }

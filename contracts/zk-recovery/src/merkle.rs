@@ -22,6 +22,7 @@
 
 use crate::hash::p2;
 use crate::types::{RecoveryError, RecoveryKey};
+use soroban_flux::prelude::*;
 use soroban_sdk::{panic_with_error, Bytes, BytesN, Env, Vec as SorobanVec, U256};
 
 /// Tree depth (spec §3.4: every account burns one leaf at creation, plus
@@ -97,6 +98,13 @@ pub fn next_index(env: &Env) -> u32 {
         .unwrap_or(0)
 }
 
+/// TRUST: `RingHead` is written exactly once per successful `insert_leaf`,
+/// which the `TreeFull` guard caps at [`MAX_LEAVES`] = 2^24 inserts — so the
+/// stored head can never exceed 2^24 and downstream `head + 1`/`head - 1`
+/// arithmetic cannot wrap. Flux cannot see through storage, so the bound is
+/// asserted here (and exercised by this module's tests) rather than proven.
+#[trusted]
+#[sig(fn(env: &Env) -> u32{v: v <= 16777216})]
 fn ring_head(env: &Env) -> u32 {
     env.storage()
         .instance()
@@ -127,12 +135,16 @@ pub fn is_known_root(env: &Env, root: &BytesN<32>) -> bool {
         return *root == zero_chain(env).get_unchecked(DEPTH);
     }
     let ring = load_ring(env);
-    let count = core::cmp::min(head, RING_SIZE);
-    for i in 0..count {
+    // Branch-based min + index loop so flux derives `i < count <= head` and
+    // proves `head - 1 - i` can never wrap (head >= 1 from the guard above).
+    let count = if head < RING_SIZE { head } else { RING_SIZE };
+    let mut i: u32 = 0;
+    while i < count {
         let slot = (head - 1 - i) % RING_SIZE;
         if ring.get_unchecked(slot) == *root {
             return true;
         }
+        i += 1;
     }
     false
 }
@@ -154,7 +166,8 @@ pub fn insert_leaf(env: &Env, stored: &BytesN<32>) -> u32 {
     let mut frontier = load_frontier(env, &zeroes);
 
     let mut cur = stored.clone();
-    for level in 0..DEPTH {
+    let mut level: u32 = 0;
+    while level < DEPTH {
         let bit = (idx >> level) & 1;
         if bit == 0 {
             // `cur` becomes the left sibling future inserts at this level
@@ -167,6 +180,7 @@ pub fn insert_leaf(env: &Env, stored: &BytesN<32>) -> u32 {
             let left = frontier.get_unchecked(level);
             cur = hash2(env, &left, &cur);
         }
+        level += 1;
     }
     let root = cur;
 

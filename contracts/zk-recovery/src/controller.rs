@@ -28,9 +28,10 @@ use crate::merkle::is_known_root;
 // directly by name in this file's source.
 use crate::pool::{config, ZkRecovery, ZkRecoveryArgs, ZkRecoveryClient};
 use crate::types::{
-    NullifierBurned, NullifierState, PendingRecovery, RecoveryCanceled, RecoveryError,
-    RecoveryInitiated, RecoveryKey,
+    NullifierBurned, NullifierState, PendingRecovery, RecoveryCanceled, RecoveryConfig,
+    RecoveryError, RecoveryInitiated, RecoveryKey,
 };
+use soroban_flux::prelude::*;
 use soroban_sdk::{
     contractimpl, panic_with_error, Address, Bytes, BytesN, Env, IntoVal, InvokeError, Symbol, Val,
     Vec as SorobanVec,
@@ -80,11 +81,36 @@ fn extend_persistent_max(env: &Env, key: &RecoveryKey) {
     env.storage().persistent().extend_ttl(key, max, max);
 }
 
+/// TRUST: the stored nonce advances by exactly one per successful recovery
+/// action (`bump_nonce` is only ever called with `stored + 1`), so reaching
+/// `u64::MAX` would take ~2^64 on-chain transactions — physically
+/// unreachable. Flux cannot see through storage; this bound is what lets it
+/// prove the `stored_nonce(..) + 1` sites can never wrap.
+#[trusted]
+#[sig(fn(env: &Env, account: &Address) -> u64{v: v < 18446744073709551615})]
 fn stored_nonce(env: &Env, account: &Address) -> u64 {
     env.storage()
         .persistent()
         .get(&RecoveryKey::Nonce(account.clone()))
         .unwrap_or(0)
+}
+
+/// TRUST: ledger timestamps are unix seconds; 2^63 seconds is ~292 billion
+/// years, so real ledgers sit far below this bound. Lets flux prove the
+/// pending-recovery timestamp arithmetic free of u64 overflow.
+#[trusted]
+#[sig(fn(env: &Env) -> u64{v: v < 9223372036854775808})]
+fn ledger_now(env: &Env) -> u64 {
+    env.ledger().timestamp()
+}
+
+/// TRUST: `__constructor` rejects configs with `completion_window_secs >
+/// MAX_CONFIG_DURATION_SECS` (`RecoveryError::InvalidConfig`) and the config
+/// is immutable thereafter, so the loaded value always satisfies the bound.
+#[trusted]
+#[sig(fn(cfg: &RecoveryConfig) -> u64{v: v <= 3153600000})]
+fn completion_window(cfg: &RecoveryConfig) -> u64 {
+    cfg.completion_window_secs
 }
 
 fn bump_nonce(env: &Env, account: &Address, nonce: u64) {
@@ -131,10 +157,15 @@ fn check_rate_limit(env: &Env, account: &Address, now: u64) {
 
     let cutoff = now.saturating_sub(RATE_WINDOW_SECS);
     let mut pruned: SorobanVec<u64> = SorobanVec::new(env);
-    for ts in window.iter() {
+    // Index loop: soroban Vec iteration ICEs flux (projections.rs:720).
+    let n = window.len();
+    let mut i: u32 = 0;
+    while i < n {
+        let ts = window.get_unchecked(i);
         if ts >= cutoff {
             pruned.push_back(ts);
         }
+        i += 1;
     }
     if pruned.len() >= RATE_LIMIT_MAX {
         panic_with_error!(env, RecoveryError::RateLimited);
@@ -200,7 +231,7 @@ impl ZkRecovery {
         proof: Bytes,
     ) -> u64 {
         let cfg = config(&env);
-        let now = env.ledger().timestamp();
+        let now = ledger_now(&env);
 
         // 1. No live pending -- a pending past its `expires_at` is
         // stale/supersedable, not blocking. Superseding a stale pending must
@@ -290,8 +321,14 @@ impl ZkRecovery {
             .set(&nullifier_key, &NullifierState::Reserved(account.clone()));
         extend_persistent_max(&env, &nullifier_key);
 
-        let executable_after = now + cfg.delay_secs;
-        let expires_at = executable_after + cfg.completion_window_secs;
+        // `timelock_secs as u64` == `cfg.delay_secs` (checked in step 5). The
+        // `as` widening is a MIR cast flux tracks exactly (<= 2^32 - 1), which
+        // — with `ledger_now`'s and `completion_window`'s bounds — discharges
+        // the overflow obligations on these sums. `u64::from` would be an
+        // unspec'd trait call flux can't see through.
+        #[allow(clippy::cast_lossless)]
+        let executable_after = now + timelock_secs as u64;
+        let expires_at = executable_after + completion_window(&cfg);
         let pending = PendingRecovery {
             new_pubkey: new_pubkey.clone(),
             nullifier,
@@ -345,7 +382,7 @@ impl ZkRecovery {
     // `env` is conventionally by-value for `#[contractimpl]` entry points.
     #[allow(clippy::needless_pass_by_value)]
     pub fn has_pending(env: Env, account: Address) -> bool {
-        let now = env.ledger().timestamp();
+        let now = ledger_now(&env);
         env.storage()
             .persistent()
             .get::<_, PendingRecovery>(&RecoveryKey::Pending(account))
@@ -402,7 +439,7 @@ impl ZkRecovery {
         account.require_auth();
 
         let cfg = config(&env);
-        let now = env.ledger().timestamp();
+        let now = ledger_now(&env);
 
         // 1. A live pending must exist -- a stale one (now >= expires_at) is
         // nothing left to cancel.
@@ -661,7 +698,7 @@ mod has_pending_tests {
     }
 
     fn store_pending(env: &Env, id: &Address, account: &Address, expires_at: u64) {
-        let now = env.ledger().timestamp();
+        let now = ledger_now(&env);
         let pending = PendingRecovery {
             new_pubkey: BytesN::from_array(env, &[0u8; 65]),
             nullifier: BytesN::from_array(env, &[0u8; 32]),
@@ -695,7 +732,7 @@ mod has_pending_tests {
         let account = Address::generate(&env);
         let client = ZkRecoveryClient::new(&env, &id);
 
-        let now = env.ledger().timestamp();
+        let now = ledger_now(&env);
         store_pending(&env, &id, &account, now + 1_000);
 
         assert!(client.has_pending(&account));
@@ -712,7 +749,7 @@ mod has_pending_tests {
         let account = Address::generate(&env);
         let client = ZkRecoveryClient::new(&env, &id);
 
-        let now = env.ledger().timestamp();
+        let now = ledger_now(&env);
         store_pending(&env, &id, &account, now + 1_000);
         assert!(client.has_pending(&account), "sanity: starts live");
 
