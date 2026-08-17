@@ -10,6 +10,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least-privilege GITHUB_TOKEN: the jobs only check out code and upload
+# artifacts, neither of which needs write access to anything.
+permissions:
+  contents: read
+
 jobs:
   scout:
     name: Scout (${{ matrix.contract }})
@@ -34,7 +39,7 @@ jobs:
           - zk-recovery
           - zk-verifier
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # The action builds a Docker image with the Scout toolchain, mounts the
       # whole workspace into it, and runs `cargo scout-audit` from
@@ -45,7 +50,7 @@ jobs:
       # README's `target:` example is stale and silently ignored.
       - name: Run Scout
         id: scout
-        uses: coinfabrik/scout-actions@v3.2
+        uses: coinfabrik/scout-actions@6f5e53f890c1fe20c9b08369aec4f183a5b710b2 # v3.2
         with:
           working_directory: contracts/${{ matrix.contract }}
 
@@ -55,7 +60,7 @@ jobs:
       # when the step failed -- that's when someone needs to read it.
       - name: Upload Scout report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: scout-report-${{ matrix.contract }}
           path: scout-report/
