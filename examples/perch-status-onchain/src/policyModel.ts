@@ -1,0 +1,70 @@
+// The account the tour visualizes: signers across every verifier (secp256r1,
+// post-quantum ML-DSA-65, and a Delegated "another account"), and its full
+// policy as several rules — showing how perch composes with OZ-native policies.
+// The CI key's rule is the one actually enforced on-chain in Act 5.
+import { contract, isSelf, rule, secp256r1Keypair, mlDsa65Keypair, TESTNET_PASSPHRASE, type PolicyDoc } from '@nidohq/testkit';
+import { CONTRACTS } from './config.js';
+import { poster } from './perchOnchain.js';
+
+const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+const short = (s: string) => (s.length > 18 ? `${s.slice(0, 9)}…${s.slice(-6)}` : s);
+
+export const POSTER_KEY_HEX = hex(poster.publicKey);
+// Distinct, deterministic keys so the account is stable/reproducible.
+const owner = secp256r1Keypair(new Uint8Array(32).fill(3));
+const pq = mlDsa65Keypair(new Uint8Array(32).fill(9));
+// A real testnet G-account, used illustratively as a delegated co-signer.
+export const TREASURY_G = 'GA327GGWT6747B57DRWJJ3SWBVIQ354TTDRHR76CVAWO6OBPZ4Z57YGA';
+
+export type VerifierKind = 'secp256r1' | 'ml-dsa-65' | 'delegated';
+export interface SignerView {
+  id: string;
+  label: string;
+  verifier: VerifierKind;
+  kind: 'External' | 'Delegated';
+  detail: string;
+  status: 'live' | 'sim';
+  note?: string;
+}
+
+/** Every signer type a Nido account can hold. */
+export const SIGNERS: SignerView[] = [
+  { id: 'owner', label: 'Owner passkey', verifier: 'secp256r1', kind: 'External', detail: `key ${short(hex(owner.publicKey))}`, status: 'live', note: 'WebAuthn / passkey — the human owner' },
+  { id: 'ci', label: 'CI key', verifier: 'secp256r1', kind: 'External', detail: `key ${short(POSTER_KEY_HEX)}`, status: 'live', note: 'scoped by perch → enforced on-chain in Act 5' },
+  { id: 'pq', label: 'Post-quantum key', verifier: 'ml-dsa-65', kind: 'External', detail: `key ${short(hex(pq.publicKey))} (${pq.publicKey.length} B)`, status: 'sim', note: 'ML-DSA-65 — quantum-safe; verifier groundwork #143' },
+  { id: 'treasury', label: 'Treasury account', verifier: 'delegated', kind: 'Delegated', detail: `account ${short(TREASURY_G)}`, status: 'live', note: 'Delegated → another G-account authorizes on the account’s behalf' },
+];
+
+export type PolicyKind = 'policy-free' | 'perch' | 'spending-limit';
+export interface RuleView {
+  name: string;
+  signers: string[];
+  scope: string;
+  policy: PolicyKind;
+  reach: string;
+  status: 'live' | 'sim';
+  onchain?: boolean;
+}
+
+/** The account's full policy: perch composed with OZ-native policies. */
+export const RULES: RuleView[] = [
+  { name: 'owner-root', signers: ['owner'], scope: 'self-admin', policy: 'policy-free', reach: 'any admin op — rides OZ’s audited signer check (INV-2)', status: 'live' },
+  { name: 'ci-can-publish', signers: ['ci'], scope: 'status board', policy: 'perch', reach: 'post() · author = self', status: 'live', onchain: true },
+  { name: 'pq-cosign-admin', signers: ['pq'], scope: 'self-admin', policy: 'policy-free', reach: 'admin, post-quantum signature', status: 'sim' },
+  { name: 'treasury-cap', signers: ['treasury'], scope: 'XLM token', policy: 'spending-limit', reach: 'transfer() ≤ 100 XLM / day', status: 'sim' },
+];
+
+/** The CI key's perch policy as a PolicyDoc (Act 5 describe/attenuate). */
+export function ciDoc(functions: string[]): PolicyDoc {
+  return {
+    version: 1,
+    network: TESTNET_PASSPHRASE,
+    signers: [{ id: 'ci', verifier: CONTRACTS.verifier, key: POSTER_KEY_HEX }],
+    rules: [
+      rule({ name: 'ci-can-publish', scope: contract(CONTRACTS.board), signedBy: ['ci'], functions, args: [{ index: 1, pred: isSelf() }] }),
+    ],
+  };
+}
+
+export const OVERBROAD = ['post', 'clear'];
+export const SCOPED = ['post'];
