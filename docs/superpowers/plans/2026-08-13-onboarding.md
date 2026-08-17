@@ -230,3 +230,69 @@ Migration caveats: exchanges still withdraw to classic G-addresses (G stays the 
 - [ ] UX for any-amount funding, pending-deposit claim, and expiry.
 - [ ] Scheduled teardown with bearer escrow; zero dust.
 - [ ] Security model documented; wiring invariants enforced in code; scoping negative-cases in CI.
+
+----------------------------------------
+# EE Notes
+
+## Additional topics to research
+- allowance
+- bounded sweep
+- approve & transfer_from
+- CAP-0072 ✅ (below)
+- webauthn
+- how is c address derived
+- c address can't sign transaction envelopes? why is this bad
+
+## CAP-0072
+- g addresses have access to more of the ecosystem than c addresses
+- but c accounts allow for customization in auth, like passkeys
+- however, as it currently stands, to do this would mean giving up a lot of the functionality that g-accounts off <what functionality specificially?>
+- this cap is hoping to bridge the gap between c and g accounts, and reducing the complexity of it by: creating new G account signers that are only useable within a smart contract - **delgated signers**
+- it will not allow c accounts pay fees
+
+- delegated signers - can't sign the tx directly, but can sign a soroban auth entry
+- so this is about being able to sign the inner transaction from a g address
+
+- a delegated signer can be a contract <but a contract is a c address i think im missing something here>
+    - i think it is that if the delegated signer is a c address, it will call __check_auth auth of the source maybe thats calling the tx?
+
+- if the delegated signer is a g account, the __check_auth that already exists just does its thing
+
+- delegated signers can only be used for auth in the smart contract env - this is required so that customizable auth can be used
+<need to understand how passkeys fit in with a contract account a bit more to fully get this>
+- the g address (is it every g address? just ones that are delegated signers?) will be treated as a built-in smart contract <how? - ah, kind of like the SAC wraps a smart contract, maybe a contract will wrap any delegated signers? a DSC? delegated signer contract > that allows for account management like recovery
+- yes, i think its like the SAC, except every account will be automaticaly instantied as a contract <this is interesting... like is this contract the smart account?>
+- there are sponsorship implications - need to read more about that
+
+stellar G accoutn contract interface
+- this introduces a callable smart contract interface for Stellar Accounts
+<so this kind of adds an interface for smart accounts>
+- add/remove ed25519 signer - would this end up being the "primary signer"? like what is the relationship between this signer and the delegated signer?
+and since this is a contract, it wont be able to sign soroban txn based on the original issue this is trying solve? so why have an ed25519 signer? i think this is the master key - but still dont fully understand how / where it would be used
+
+ah "The 'master' key is the public ed25519 key that identifies the account itself. Setting the weight to 0 effectively removes the master key from the account."
+
+but why would you want to do that?
+
+- delegated signers get __check_auth instead of sig validation 
+<i think this meanst aht delegated signers get the built in __check_auth called on instead of the normal auth entry sig check?>
+
+Classic txs
+- new delegated signer is added, its a g address
+- will be supported in most places that expect a signer
+- not supported in extraSigners tx precondition - delegated signers ignored during the tx signature verification <this part is fuzzy>
+
+Smart contract txns
+- G account ath
+- algo for verifying detached (non source account) smart contract auth is updated to include delegated accoutn support
+<is this the signing of auth entries?>
+
+- g-accoutn contract GAC
+- every g account on chain gets an instance  - when a contract call is performed on a g address the GAC built into the host will handle it - similar to SAC
+
+<will every g account need to be a GAC?>
+
+**<did not fully read the `AccountEntry` piece - go back to that>**
+
+
+
