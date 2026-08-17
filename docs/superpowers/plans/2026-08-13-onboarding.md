@@ -239,7 +239,7 @@ Migration caveats: exchanges still withdraw to classic G-addresses (G stays the 
 - bounded sweep
 - approve & transfer_from
 - CAP-0072 ✅ (below)
-- webauthn
+- passkeys / webauthn ✅ (below)
 - how is c address derived
 - c address can't sign transaction envelopes? why is this bad
 
@@ -296,3 +296,41 @@ Smart contract txns
 
 
 
+
+## FIDO Alliance Passkeys
+- https://fidoalliance.org/passkeys/
+- passkeys are password replacement technology
+- password - something that can be remembered and typed
+- passkey - a secret stored on one's devices, unlocked by the user via biometrics, security key, etc
+- passkeys better than password + 2fa because both of these are still phishable
+- provider - responsible for creation & management of passkeys -> could be iCloud keychain for example
+- FIDO = **Fast Identity Online**
+    - an open standard
+    - phone (or other device) creates a key pair
+    - the private key stays on device
+    - the public key registers with the app 
+- FIDO2 is WebAuthn + CTAP
+    - WebAuthn is the browser API part, i think WebAuthn itself is the definition for public key-based credentials in web apps - doesnt necessarily need to be passkeys
+
+## Webauthn
+- https://www.webauthn.me/passkeys
+- phishing-resistant passwordless approach to authentication - because passkeys don't rely on a shared secret 
+- entities:
+    - user
+    - user agent
+    - authenticator
+    - relying party
+
+- passkeys use the same infra as webauthn - webauthn is for public key auth from a browser, passkeys use this + other stuff to be passkeys
+    - it provides the interface to create & manage passkeys
+- CTAP - client to authenticator protocol
+    - how a user's client device communicates locally with an external authenticator
+    - this comes into play for external security keys (not the deivce that the browser is running on, so this doesn't apply to phones necessarily?)
+
+- two types of passkeys:
+    - device-bound: single-device, private keys cant's leave the device, typically for sercurity keys
+    - synced: multi-device, iCloud, etc
+
+- passkeys vs webauth:
+    - passkeys are the credentials that auth users 
+    - webauthn is the spec that allows devs to implement passkey support in web apps
