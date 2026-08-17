@@ -157,7 +157,13 @@ fn check_rate_limit(env: &Env, account: &Address, now: u64) {
 
     let cutoff = now.saturating_sub(RATE_WINDOW_SECS);
     let mut pruned: SorobanVec<u64> = SorobanVec::new(env);
-    // Index loop: soroban Vec iteration ICEs flux (projections.rs:720).
+    // Index loop, not `window.iter()`/`.filter(..)`: soroban `Vec` iterators
+    // (and closures over them, so filter is the same class, worse) put
+    // `<u64 as TryFromVal<Env, Val>>::Error` projections into this fn's MIR
+    // and crash flux's checker outright (ICE, flux-infer/projections.rs:720).
+    // The index walk keeps this fn *checkable* — the alternative was
+    // `#[trusted]`, i.e. not verifying the pruning arithmetic at all.
+    // Semantics identical; same per-element host reads.
     let n = window.len();
     let mut i: u32 = 0;
     while i < n {
