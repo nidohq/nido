@@ -704,7 +704,7 @@ mod has_pending_tests {
     }
 
     fn store_pending(env: &Env, id: &Address, account: &Address, expires_at: u64) {
-        let now = ledger_now(&env);
+        let now = ledger_now(env);
         let pending = PendingRecovery {
             new_pubkey: BytesN::from_array(env, &[0u8; 65]),
             nullifier: BytesN::from_array(env, &[0u8; 32]),

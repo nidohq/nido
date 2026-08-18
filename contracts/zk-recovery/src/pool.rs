@@ -26,7 +26,7 @@ use crate::types::{
     LeafInserted, RecoveryConfig, RecoveryError, RecoveryKey, MAX_CONFIG_DURATION_SECS,
 };
 use admin_sep::{Administratable, Upgradable};
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Bytes, BytesN, Env, U256};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Bytes, BytesN, Env};
 
 // `controller.rs` (M1 Task 5) is declared as a *submodule of `pool`* (not a
 // sibling top-level module in `lib.rs`) even though it physically lives at
@@ -296,6 +296,60 @@ mod tests {
         let mut bytes = [0u8; 32];
         bytes[24..32].copy_from_slice(&x.to_be_bytes());
         BytesN::from_array(env, &bytes)
+    }
+
+    fn register_with_durations(env: &Env, delay: u64, window: u64, floor: u64) -> Address {
+        env.register(
+            ZkRecovery,
+            (
+                Address::generate(env),
+                Address::generate(env),
+                delay,
+                window,
+                3u32,
+                floor,
+                Bytes::from_slice(env, b"Test SDF Network ; September 2015"),
+                Address::generate(env),
+                Address::generate(env),
+            ),
+        )
+    }
+
+    // Guards invariant R11: durations at the bound deploy; one past it is
+    // rejected at construction, keeping `now + delay + window` in
+    // `initiate_recovery` overflow-free for the pool's whole life.
+    #[test]
+    fn constructor_accepts_durations_at_the_bound() {
+        let env = Env::default();
+        let id = register_with_durations(
+            &env,
+            MAX_CONFIG_DURATION_SECS,
+            MAX_CONFIG_DURATION_SECS,
+            MAX_CONFIG_DURATION_SECS,
+        );
+        let cfg = ZkRecoveryClient::new(&env, &id).config();
+        assert_eq!(cfg.delay_secs, MAX_CONFIG_DURATION_SECS);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #24)")]
+    fn constructor_rejects_oversized_delay() {
+        let env = Env::default();
+        register_with_durations(&env, MAX_CONFIG_DURATION_SECS + 1, 0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #24)")]
+    fn constructor_rejects_oversized_completion_window() {
+        let env = Env::default();
+        register_with_durations(&env, 0, MAX_CONFIG_DURATION_SECS + 1, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #24)")]
+    fn constructor_rejects_oversized_timelock_floor() {
+        let env = Env::default();
+        register_with_durations(&env, 0, 0, MAX_CONFIG_DURATION_SECS + 1);
     }
 
     /// `insert_for(account, commitment)` (with the account's own auth

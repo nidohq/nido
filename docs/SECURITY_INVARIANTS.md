@@ -102,20 +102,20 @@ whole set with `just test`; cost gates with `just bench-zk`, `just bench-zk-init
   `zk_recovery_lifecycle.rs`.
 - **R11 — Recovery arithmetic cannot trap.** All arithmetic in
   `contracts/zk-recovery` is proven overflow-free by the Flux refinement checker
-  under `-Fcheck-overflow=strict` (256 of 260 functions, including the
-  `#[contractimpl]`-generated code): Merkle ring index math (`(head-1-i) % 128`
-  never wraps), frontier walk bounds, `hex32` slice arithmetic, rate-window
-  pruning, and pending-recovery timestamp sums. The four `#[trusted]` axioms
-  each carry a `TRUST` comment stating the storage invariant flux cannot see
-  (monotone nonce/ring-head counters, ledger time, constructor-bounded
-  `completion_window`). The checker's one real find is itself an invariant:
-  `__constructor` rejects `delay`/`completion_window` above
+  under `-Fcheck-overflow=strict` (every function, including the
+  `#[contractimpl]`-generated code, except the four `#[trusted]` axioms):
+  Merkle ring index math (`(head-1-i) % 128` never wraps), frontier walk
+  bounds, `hex32` slice arithmetic, rate-window pruning, and pending-recovery
+  timestamp sums. Each `#[trusted]` axiom carries a `TRUST` comment stating the
+  storage invariant flux cannot see (monotone nonce/ring-head counters, ledger
+  time, constructor-bounded `completion_window`). The checker's one real find
+  is itself an invariant: `__constructor` rejects durations above
   `MAX_CONFIG_DURATION_SECS` (`RecoveryError::InvalidConfig`), so
   `now + delay + completion_window` in `initiate_recovery` cannot trap and
   permanently brick the pool's recovery path. Evidence: `just flux` (CI job
-  `flux` in `.github/workflows/test.yml`); the guard itself in `__constructor`
-  (`contracts/zk-recovery/src/pool.rs`). No test exercises the `InvalidConfig`
-  rejection yet — the proof is the flux check.
+  `flux` in `.github/workflows/test.yml`); `constructor_rejects_oversized_*` +
+  `constructor_accepts_durations_at_the_bound`
+  (`contracts/zk-recovery/src/pool.rs`).
 
 ## Circuit & cryptography
 
