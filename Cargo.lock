@@ -24,15 +24,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aho-corasick"
-version = "1.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1408,35 +1399,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "regex"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
-]
-
-[[package]]
-name = "regex-automata"
-version = "0.4.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-syntax",
-]
-
-[[package]]
-name = "regex-syntax"
-version = "0.8.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
 name = "rfc6979"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1688,7 +1650,7 @@ dependencies = [
  "soroban-env-macros",
  "soroban-wasmi",
  "static_assertions",
- "stellar-xdr 27.0.0",
+ "stellar-xdr",
  "wasmparser",
 ]
 
@@ -1750,7 +1712,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "stellar-xdr 27.0.0",
+ "stellar-xdr",
  "syn 2.0.119",
 ]
 
@@ -1816,7 +1778,7 @@ dependencies = [
  "soroban-env-common",
  "soroban-spec",
  "soroban-spec-rust",
- "stellar-xdr 27.0.0",
+ "stellar-xdr",
  "syn 2.0.119",
 ]
 
@@ -1843,7 +1805,7 @@ dependencies = [
  "sha2",
  "soroban-spec",
  "soroban-spec-rust",
- "stellar-xdr 27.0.0",
+ "stellar-xdr",
  "syn 2.0.119",
 ]
 
@@ -1855,7 +1817,7 @@ checksum = "f1340fc8ececace5546892ee6ce4d38555448b32fd0ce4b5f1fb0aa62aff93be"
 dependencies = [
  "base64",
  "sha2",
- "stellar-xdr 27.0.0",
+ "stellar-xdr",
  "thiserror 1.0.69",
  "wasmparser",
 ]
@@ -1871,7 +1833,7 @@ dependencies = [
  "quote",
  "sha2",
  "soroban-spec",
- "stellar-xdr 27.0.0",
+ "stellar-xdr",
  "syn 2.0.119",
  "thiserror 1.0.69",
 ]
@@ -1929,9 +1891,9 @@ dependencies = [
 
 [[package]]
 name = "stellar-build"
-version = "0.0.7"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca65fe40f758802cff4bab7715e2e65b013cb196d715eda2180c5e3e9614f206"
+checksum = "97fd5e3be902a9658fb9f642d4eef7837ab1d51e52dde9be1d9b218326499d97"
 dependencies = [
  "cargo_metadata",
  "sha2",
@@ -1941,27 +1903,37 @@ dependencies = [
 
 [[package]]
 name = "stellar-registry"
-version = "0.0.10"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f54702fcc66a8c3f2b019169000c6a1343c282f9a108133aef460422173c8ea1"
+checksum = "a4c06f04c0def302fee4e5156464675ca0a8b5ab672e3a3b6671be7d39efb7fd"
 dependencies = [
- "stellar-scaffold-macro",
+ "stellar-registry-macro",
 ]
 
 [[package]]
-name = "stellar-scaffold-macro"
-version = "0.8.15"
+name = "stellar-registry-macro"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41923f65b80378bfcec4124df5f560105e9e4d298872b2f03e2c7ba4eed26d48"
+checksum = "a9d2749c79201e5a23dab61fc3b5b477fec734befad9f642cda5b5475ef84dbc"
 dependencies = [
  "proc-macro2",
  "quote",
- "regex",
  "sha2",
  "stellar-build",
- "stellar-strkey 0.0.13",
- "stellar-xdr 23.0.0",
+ "stellar-registry-name",
+ "stellar-strkey 0.0.16",
+ "stellar-xdr",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "stellar-registry-name"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb45025b1f475b3246651ecf4afef9e64c26c0adf27cc8a6d748e7a9c1f95169"
+dependencies = [
+ "semver",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -1983,21 +1955,6 @@ dependencies = [
  "crate-git-revision 0.0.6",
  "data-encoding",
  "heapless",
-]
-
-[[package]]
-name = "stellar-xdr"
-version = "23.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89d2848e1694b0c8db81fd812bfab5ea71ee28073e09ccc45620ef3cf7a75a9b"
-dependencies = [
- "cfg_eval",
- "crate-git-revision 0.0.6",
- "escape-bytes",
- "ethnum",
- "hex",
- "sha2",
- "stellar-strkey 0.0.13",
 ]
 
 [[package]]
