@@ -442,4 +442,16 @@ Currently, Nido gets around the fact that a C-address cannot sign it's own trans
 2. sending funds from CEX - this happens outside of nido, by the user in the CEX
 3. C pulls the funds into itself with `transfer_from` - this will be a Policy that we create and is the bounded sweep. I _think_ that either the user can kick this off and use their pass key. OR, a watcher can kick this off without a key, since the sweep is set up such that it only works for funds from G to C
 
+## EE Diagrams
 
+### phase 1
+![](./phase-1-diagram-1.jpg)
+![](./phase-1-diagram-2.jpg)
+
+outstanding questions:
+- is the relayer conceptually part of the backend service? if so, we should make sure to write it so that its easy to remove/section off later once CAP-72 is a think
+- does the relayer create the transactions? yes, the relayer is creating & submitting the txns, but not necessarily always the one to authorize them
+- based on the one diagram it is unclear if the tx to create the sweep policy on C goes through the relayer. it says it should be signed with the passkey - but does this mean that the sweep will be signed by the passkey, not the creating the policy tx?
+    - C's auth is the passkey, and it will need to auth the addition of a policy
+    - the client builds the tx contract call payload and signs it and passes it to the relayer
+    - but then the relayer is what sends & pays for the tx - this is kind of the whole point, c can't do this on it's own
