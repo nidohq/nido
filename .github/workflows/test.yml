@@ -273,9 +273,14 @@ jobs:
           rustup toolchain install "$FLUX_NIGHTLY" \
             --component rust-src --component rustc-dev --component llvm-tools \
             --profile minimal
-      - name: Cache flux toolchain
+      # restore/save split (not actions/cache): the post-job save of the combined
+      # action caches whatever exists even when the install step died midway,
+      # poisoning the immutable key with a partial toolchain. Save is now an
+      # explicit step that only runs after a successful install, and the presence
+      # check re-installs if a restored cache is missing any binary.
+      - name: Restore flux toolchain cache
         id: flux-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.flux
@@ -284,8 +289,17 @@ jobs:
             ~/.cargo/bin/fixpoint
             ~/.cargo/bin/z3
           key: flux-${{ runner.os }}-${{ env.FLUX_REV }}
+      - name: Check flux toolchain presence
+        id: flux-bins
+        run: |
+          present=true
+          for b in z3 fixpoint cargo-flux flux; do
+            command -v "$b" >/dev/null || { echo "missing: $b"; present=false; }
+          done
+          [ -d "$HOME/.flux" ] || { echo "missing: ~/.flux"; present=false; }
+          echo "present=$present" >> "$GITHUB_OUTPUT"
       - name: Install z3 + liquid-fixpoint + flux
-        if: steps.flux-cache.outputs.cache-hit != 'true'
+        if: steps.flux-bins.outputs.present != 'true'
         run: |
           set -euo pipefail
           BIN="$HOME/.cargo/bin"; mkdir -p "$BIN"
@@ -300,6 +314,17 @@ jobs:
           git clone https://github.com/flux-rs/flux "$tmp/flux"
           git -C "$tmp/flux" checkout "$FLUX_REV"
           (cd "$tmp/flux" && cargo xtask install)
+      - name: Save flux toolchain cache
+        if: steps.flux-bins.outputs.present != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.flux
+            ~/.cargo/bin/flux
+            ~/.cargo/bin/cargo-flux
+            ~/.cargo/bin/fixpoint
+            ~/.cargo/bin/z3
+          key: flux-${{ runner.os }}-${{ env.FLUX_REV }}
       - uses: Swatinem/rust-cache@v2
         with:
           cache-directories: target/flux-cache
