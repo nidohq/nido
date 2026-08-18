@@ -38,6 +38,10 @@ stellar-registry = "0.1.0"
 # BlaineHeffron git fork rev (which existed only to get a soroban-sdk 26 build). We
 # now depend on a published, versioned, immutable release rather than an untagged fork.
 soroban-sdk-tools = "0.1.3"
+# Flux refinement-type bridge (attrs erase to no-ops on stable; verification
+# runs via `just flux` under flux's pinned nightly). Rev tracks
+# nidohq/soroban-flux; its COMPATIBILITY.md pins the flux toolchain rev.
+soroban-flux = { git = "https://github.com/nidohq/soroban-flux.git", rev = "dfb1b19" }
 
 [profile.contract]
 overflow-checks = true

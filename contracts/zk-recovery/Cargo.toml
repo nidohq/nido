@@ -26,6 +26,15 @@ soroban-poseidon = { git = "https://github.com/stellar/rs-soroban-poseidon", tag
 stellar-accounts = { workspace = true }
 # admin/set_admin/upgrade for the shared pool come from the SEP admin traits.
 admin-sep = { workspace = true }
+soroban-flux = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils", "hazmat-address"] }
+
+# Verified by the Flux refinement checker (`just flux`). Attributes erase to
+# no-ops under normal builds; wasm artifacts are unaffected.
+[package.metadata.flux]
+enabled = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(flux_sysroot)"] }

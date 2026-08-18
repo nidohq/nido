@@ -22,9 +22,11 @@
 
 use crate::hash::wrap_leaf;
 use crate::merkle;
-use crate::types::{LeafInserted, RecoveryConfig, RecoveryError, RecoveryKey};
+use crate::types::{
+    LeafInserted, RecoveryConfig, RecoveryError, RecoveryKey, MAX_CONFIG_DURATION_SECS,
+};
 use admin_sep::{Administratable, Upgradable};
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Bytes, BytesN, Env, U256};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Bytes, BytesN, Env};
 
 // `controller.rs` (M1 Task 5) is declared as a *submodule of `pool`* (not a
 // sibling top-level module in `lib.rs`) even though it physically lives at
@@ -48,28 +50,16 @@ pub mod controller;
 #[path = "policy.rs"]
 pub mod policy;
 
-/// The BN254 scalar field order `r` (spec §2.2): every real `inner` leaf is
-/// a Poseidon2 output, hence already `< r` by construction; `r` itself and
-/// anything above it can never be produced by the circuit and is rejected
-/// as a non-canonical/malformed leaf rather than silently reduced mod `r`
-/// (which would let a caller collide two different-looking commitments onto
-/// the same wrapped leaf). Big-endian bytes of
-/// `21888242871839275222246405745257275088548364400416034343698204186575808495617`.
-const FIELD_ORDER_BE: [u8; 32] = [
-    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
-    0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00, 0x00, 0x01,
-];
-
-fn field_order(env: &Env) -> U256 {
-    U256::from_be_bytes(env, &Bytes::from_array(env, &FIELD_ORDER_BE))
-}
-
 /// Panics with `RecoveryError::NonCanonicalCommitment` if `commitment`,
-/// interpreted as a big-endian `U256`, is `>= r`. Rejects rather than
-/// `rem_euclid`s (spec §2.2) -- see `FIELD_ORDER_BE`'s doc comment.
+/// interpreted as a big-endian `U256`, is `>= r` (spec §2.2): every real
+/// `inner` leaf is a Poseidon2 output, hence already `< r` by construction;
+/// `r` itself and anything above it can never be produced by the circuit and
+/// is rejected rather than silently reduced mod `r` (which would let a
+/// caller collide two different-looking commitments onto the same wrapped
+/// leaf). The field order lives in `soroban_flux::bn254` — the same single
+/// source the factory's dummy-commitment path uses.
 fn require_canonical(env: &Env, commitment: &BytesN<32>) {
-    let value = U256::from_be_bytes(env, &Bytes::from_array(env, &commitment.to_array()));
-    if value >= field_order(env) {
+    if !soroban_flux::bn254::is_canonical_be(env, commitment) {
         panic_with_error!(env, RecoveryError::NonCanonicalCommitment);
     }
 }
@@ -151,6 +141,15 @@ impl ZkRecovery {
         webauthn_verifier: Address,
         admin: Address,
     ) {
+        // Bound every configured duration (spec: sane timelocks; also keeps
+        // initiate_recovery's `now + delay + window` provably overflow-free —
+        // an absurd window would make every initiate trap and brick recovery).
+        if delay_secs > MAX_CONFIG_DURATION_SECS
+            || completion_window_secs > MAX_CONFIG_DURATION_SECS
+            || timelock_floor_secs > MAX_CONFIG_DURATION_SECS
+        {
+            panic_with_error!(&env, RecoveryError::InvalidConfig);
+        }
         let cfg = RecoveryConfig {
             factory,
             verifier,
@@ -299,6 +298,60 @@ mod tests {
         BytesN::from_array(env, &bytes)
     }
 
+    fn register_with_durations(env: &Env, delay: u64, window: u64, floor: u64) -> Address {
+        env.register(
+            ZkRecovery,
+            (
+                Address::generate(env),
+                Address::generate(env),
+                delay,
+                window,
+                3u32,
+                floor,
+                Bytes::from_slice(env, b"Test SDF Network ; September 2015"),
+                Address::generate(env),
+                Address::generate(env),
+            ),
+        )
+    }
+
+    // Guards invariant R11: durations at the bound deploy; one past it is
+    // rejected at construction, keeping `now + delay + window` in
+    // `initiate_recovery` overflow-free for the pool's whole life.
+    #[test]
+    fn constructor_accepts_durations_at_the_bound() {
+        let env = Env::default();
+        let id = register_with_durations(
+            &env,
+            MAX_CONFIG_DURATION_SECS,
+            MAX_CONFIG_DURATION_SECS,
+            MAX_CONFIG_DURATION_SECS,
+        );
+        let cfg = ZkRecoveryClient::new(&env, &id).config();
+        assert_eq!(cfg.delay_secs, MAX_CONFIG_DURATION_SECS);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #24)")]
+    fn constructor_rejects_oversized_delay() {
+        let env = Env::default();
+        register_with_durations(&env, MAX_CONFIG_DURATION_SECS + 1, 0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #24)")]
+    fn constructor_rejects_oversized_completion_window() {
+        let env = Env::default();
+        register_with_durations(&env, 0, MAX_CONFIG_DURATION_SECS + 1, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #24)")]
+    fn constructor_rejects_oversized_timelock_floor() {
+        let env = Env::default();
+        register_with_durations(&env, 0, 0, MAX_CONFIG_DURATION_SECS + 1);
+    }
+
     /// `insert_for(account, commitment)` (with the account's own auth
     /// satisfied): the tree advances, `current_root` is known, and --
     /// crucially -- both the published `LeafInserted` event and the
@@ -379,12 +432,12 @@ mod tests {
         let (id, _cfg) = setup(&env);
         let account = Address::generate(&env);
 
-        let r = BytesN::from_array(&env, &FIELD_ORDER_BE);
-        let mut r_plus_1_bytes = FIELD_ORDER_BE;
-        // FIELD_ORDER_BE ends in ..._f0_00_00_01; +1 -> ..._f0_00_00_02.
+        let r = BytesN::from_array(&env, &soroban_flux::bn254::BN254_R_BE);
+        let mut r_plus_1_bytes = soroban_flux::bn254::BN254_R_BE;
+        // BN254_R_BE ends in ..._f0_00_00_01; +1 -> ..._f0_00_00_02.
         r_plus_1_bytes[31] = r_plus_1_bytes[31].wrapping_add(1);
         let r_plus_1 = BytesN::from_array(&env, &r_plus_1_bytes);
-        let mut r_minus_1_bytes = FIELD_ORDER_BE;
+        let mut r_minus_1_bytes = soroban_flux::bn254::BN254_R_BE;
         r_minus_1_bytes[31] = r_minus_1_bytes[31].wrapping_sub(1);
         let r_minus_1 = BytesN::from_array(&env, &r_minus_1_bytes);
 
@@ -526,32 +579,30 @@ mod tests {
         assert_eq!(client.admin(), new_admin);
     }
 
-    /// Task 11 (M2 residual): cross-crate constant drift guard, the half of
-    /// it that can only live here -- `FIELD_ORDER_BE` is private to this
-    /// module, so this is the ONLY place a compiled test can compare it
-    /// directly. `CANONICAL_FIELD_ORDER_BE` below is the single literal
-    /// source of truth; `contracts/factory/src/contract.rs`'s
-    /// `DUMMY_FIELD_ORDER_BE` is guarded separately (it cannot see this
-    /// private const either) both against the identical literal AND,
-    /// behaviorally, against this real pool's `require_canonical` --  see
-    /// `factory::contract::test::dummy_field_order_matches_canonical` and
-    /// `dummy_field_order_matches_pool_behavior`.
+    /// Dependency-pin guard (successor to the Task 11 cross-crate drift
+    /// guard): both this pool and the factory now read the field order from
+    /// the single shared `soroban_flux::bn254::BN254_R_BE`, so there are no
+    /// per-crate copies left to drift apart — this test pins the shared
+    /// constant itself against the canonical literal, guarding against a
+    /// bad soroban-flux upgrade. The factory keeps the behavioral half
+    /// (`dummy_field_order_matches_pool_behavior`) exercising this pool's
+    /// real `require_canonical` at the r-1/r boundary.
     ///
     /// Also pins `merkle::DEPTH == 24` (spec §3.4's depth-24 pool).
     #[test]
     fn field_order_and_merkle_depth_match_canonical() {
         // BN254 scalar field order r =
         // 21888242871839275222246405745257275088548364400416034343698204186575808495617,
-        // big-endian. Must byte-match `contracts/zk-recovery/src/pool.rs`'s
-        // `FIELD_ORDER_BE` doc comment and the plan's Global Constraints.
+        // big-endian (the plan's Global Constraints).
         const CANONICAL_FIELD_ORDER_BE: [u8; 32] = [
             0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81,
             0x58, 0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93,
             0xf0, 0x00, 0x00, 0x01,
         ];
         assert_eq!(
-            FIELD_ORDER_BE, CANONICAL_FIELD_ORDER_BE,
-            "pool.rs FIELD_ORDER_BE drifted from the canonical BN254 scalar order r"
+            soroban_flux::bn254::BN254_R_BE,
+            CANONICAL_FIELD_ORDER_BE,
+            "soroban-flux's BN254_R_BE drifted from the canonical BN254 scalar order r"
         );
         assert_eq!(
             merkle::DEPTH,

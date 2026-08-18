@@ -112,6 +112,7 @@ just build-contracts  # Build and optimize Soroban contracts
 just test             # Run Rust workspace tests
 just check            # cargo fmt --check + clippy
 just fmt              # Format Rust code
+just flux             # Flux refinement verification of the ZK recovery contract
 ```
 
 Package-level checks are also available through npm workspaces:
@@ -149,6 +150,10 @@ for local network, testnet, and GitHub Pages deployment details.
   deploy the smart account, then discarded.
 - **Policy enforcement:** Context rules, recovery policies, session keys, and
   spending limits are enforced by the smart account and policy contracts.
+- **Verified arithmetic:** The ZK recovery contract's arithmetic (Merkle ring
+  indices, nonces, timestamp sums) is proven overflow-free by the
+  [Flux](https://github.com/flux-rs/flux) refinement checker (`just flux`,
+  enforced in CI).
 
 For deeper implementation details, read [ARCHITECTURE.md](./ARCHITECTURE.md).
 

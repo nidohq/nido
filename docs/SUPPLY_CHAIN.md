@@ -15,6 +15,7 @@ rebuild every deployed artifact.
 | `admin-sep` (`theahaco/admin-sep`) | crates.io **`0.27.0`** | crates.io | **Medium — on the governance path.** Small crate (~50 LOC, 3 modules) providing the `Administratable`/`Upgradable` SEP traits (`admin`/`set_admin`/`upgrade`) that gate every upgradeable contract. Replaces per-contract inlined boilerplate. `admin()` reads infallibly (assumes the constructor set it); each contract sets `admin` in `__constructor`. Auditor should read it in full and confirm the `require_auth` gating on `set_admin`/`upgrade`. |
 | `stellar-registry` | `0.0.10` | crates.io | Medium — `0.0.x`. Macros only (re-exports `stellar-scaffold-macro`); **not** the registry contract. |
 | `base64` | `0.22` | crates.io | Low. |
+| `soroban-flux` (`nidohq/soroban-flux`) | git **rev `dfb1b19`** | git, Nido-org | Low — flux attribute macros + shared BN254 field-order constant. Attributes erase to no-ops in normal builds, so the crate's runtime surface in the wasm is the one constant (pinned against the canonical literal in-crate and behaviorally at the r-1/r boundary). |
 
 `Cargo.lock` is committed, so transitive versions are reproducible. `cargo-audit`
 is **not yet run in CI** (see gaps).
@@ -89,6 +90,18 @@ Deployed VK/proof/circuit hashes are recorded in `DEPLOYED.md` and the circuit
 | Rust | `1.96.0` | **Pinned (C2):** workspace-root `rust-toolchain.toml` (channel `1.96.0`, `wasm32v1-none`) + CI `dtolnay/rust-toolchain@1.96.0`, kept in lockstep. |
 | `stellar-cli` (+ bundled `wasm-opt`) | _unpinned (`cargo install --locked stellar-cli`)_ | **Gap — pin an exact version (C2)** and record which produced each deployed wasm. |
 | `[profile.contract]` | committed (`lto`, `codegen-units=1`, `panic=abort`, `overflow-checks`, `opt-level=z`) | Good for reproducibility. |
+
+## Flux verification toolchain (not on the build path)
+
+Verification-only — flux never touches the shipped wasm (its attributes erase to
+no-ops outside `cargo flux`). A compromised flux toolchain could at worst report
+a false "verified", never alter artifacts.
+
+| Tool | Pin | Where |
+|---|---|---|
+| `flux` (flux-rs/flux) | git rev `283ad737569f80951973747ef16f1a89d64d9728` | CI `FLUX_REV` in `test.yml`; matches `soroban-flux` COMPATIBILITY.md |
+| flux nightly | `nightly-2026-02-05` | CI `FLUX_NIGHTLY` + `just flux`; separate from the pinned `1.96.0` build toolchain |
+| `z3`, `liquid-fixpoint` | z3 latest release; fixpoint `nightly` tag | CI install step — **unpinned (gap, low risk: verification-only)** |
 
 ## npm packages
 

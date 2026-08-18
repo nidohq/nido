@@ -112,6 +112,7 @@ The cross-app signing protocol uses URL redirects with query parameters:
 - **Passkey Recovery:** SmartAccount supports multiple admin signers via context rules. Users should register a backup device after onboarding.
 - **Replay Protection:** SmartAccount nonce tracking (via OZ stellar-accounts) prevents replay. Each WebAuthn assertion challenge is bound to the specific transaction payload.
 - **Scoped Sessions:** Context rules can restrict session signers to specific contracts, functions, spending limits, and time windows — enforced on-chain by the SmartAccount.
+- **Verified Arithmetic:** The ZK recovery contract (`contracts/zk-recovery`) is checked by the [Flux](https://github.com/flux-rs/flux) refinement type checker with strict overflow checking (`just flux`, run in CI) — Merkle ring indices, nonce/timestamp sums, and rate-window pruning are proven unable to trap. Flux attributes erase to no-ops in normal builds; the shipped wasm is unaffected.
 
 ## 6. Architecture Diagrams
 
