@@ -100,6 +100,22 @@ whole set with `just test`; cost gates with `just bench-zk`, `just bench-zk-init
   computed on-chain at insert (after auth), so a client cannot pre-wrap a leaf binding a
   victim account. Evidence: pool tests (`contracts/zk-recovery/src/pool.rs`),
   `zk_recovery_lifecycle.rs`.
+- **R11 — Recovery arithmetic cannot trap.** All arithmetic in
+  `contracts/zk-recovery` is proven overflow-free by the Flux refinement checker
+  under `-Fcheck-overflow=strict` (256 of 260 functions, including the
+  `#[contractimpl]`-generated code): Merkle ring index math (`(head-1-i) % 128`
+  never wraps), frontier walk bounds, `hex32` slice arithmetic, rate-window
+  pruning, and pending-recovery timestamp sums. The four `#[trusted]` axioms
+  each carry a `TRUST` comment stating the storage invariant flux cannot see
+  (monotone nonce/ring-head counters, ledger time, constructor-bounded
+  `completion_window`). The checker's one real find is itself an invariant:
+  `__constructor` rejects `delay`/`completion_window` above
+  `MAX_CONFIG_DURATION_SECS` (`RecoveryError::InvalidConfig`), so
+  `now + delay + completion_window` in `initiate_recovery` cannot trap and
+  permanently brick the pool's recovery path. Evidence: `just flux` (CI job
+  `flux` in `.github/workflows/test.yml`); the guard itself in `__constructor`
+  (`contracts/zk-recovery/src/pool.rs`). No test exercises the `InvalidConfig`
+  rejection yet — the proof is the flux check.
 
 ## Circuit & cryptography
 

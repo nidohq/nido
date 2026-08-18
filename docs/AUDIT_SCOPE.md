@@ -80,6 +80,9 @@ out of scope. They must not be deployed to mainnet.
 
 - [THREAT_MODEL.md](./THREAT_MODEL.md) — assets, adversaries, trust assumptions.
 - [SECURITY_INVARIANTS.md](./SECURITY_INVARIANTS.md) — the properties that must hold, with test evidence.
+  Includes R11: `contracts/zk-recovery` arithmetic is proven overflow-free by the Flux
+  refinement checker (`just flux`, CI-enforced); the four `#[trusted]` axioms and their
+  `TRUST` comments are the assumptions an auditor should challenge.
 - [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md) — dependency + toolchain provenance.
 - `ARCHITECTURE.md`, `DEPLOYED.md` — system design + deployed addresses/params.
 - The design spec under `docs/` (`2026-07-02-zk-recovery-design.md`) for the ZK protocol.

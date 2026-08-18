@@ -14,9 +14,32 @@ just build             # cargo build --workspace (native)
 just build-contracts   # stellar contract build --optimize (Soroban wasm)
 just check             # cargo fmt --check + cargo clippy -D warnings
 just fmt               # cargo fmt --all
+just flux              # Flux refinement verification of nido-zk-recovery
 ```
 
 Run a single test by name: `cargo test -p nido-integration-tests smart_account_check_auth_with_passkey`
+
+## Flux Refinement Verification
+
+`contracts/zk-recovery` is checked by the [Flux](https://github.com/flux-rs/flux)
+refinement type checker via the `soroban-flux` bridge (nidohq/soroban-flux),
+under `-Fcheck-overflow=strict` — every arithmetic op in the crate must be
+proven overflow-free or explicitly trusted. Rules that keep this working:
+
+- Flux runs under its own pinned nightly (see the `flux` recipe in the
+  `justfile`); the repo's `rust-toolchain.toml` pin is untouched. Flux
+  attributes erase to no-ops in normal builds — wasm artifacts are unaffected.
+- Every `#[trusted]` function is an axiom flux takes on faith and MUST carry a
+  `/// TRUST:` comment stating why the bound holds (see `controller.rs`,
+  `merkle.rs` for the pattern). Do not add `#[trusted]` without one.
+- Iterate with index loops, not soroban `Vec` iterators, in flux-checked code —
+  the iterator desugaring ICEs flux (`projections.rs:720`). Behaviorally
+  identical.
+- The `BN254` field-order constant comes from `soroban_flux::bn254`; do not
+  reintroduce a local copy of the literal.
+- CI runs `cargo flux -p nido-zk-recovery` as a burn-in job
+  (`continue-on-error: true` in `.github/workflows/test.yml`) — flip to
+  required once stable.
 
 ## Workspace Architecture
 
