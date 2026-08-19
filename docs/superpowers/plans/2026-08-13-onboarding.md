@@ -8,19 +8,10 @@ Let a user end up with funds in a passkey-controlled smart account (**C**, a Sor
 The mechanism is an **allowance plus a bounded sweep**:
 
 1. During a short setup step, **C is granted an allowance over G** (`approve`), and G is neutralized so its own key can never spend.
-<How is the allowance granted over G? - the `approve` function. How is the amount determined if we don't know how much the user is going to want to send from the exchange?>
-<How is G neutralized? Is this via setOptions?>
-
-<initially i was wondering if the contract would not be deployed until the transfer of XLM to G, but now I am realizing that is not the case. G would be created on chain, and C would be deployed before G receives the funds>
-
-<we could use nido-funds as sponsored reserves to create G on chain, and nido-funds for deploying C>
-<could the funds be brought back into nido once G is --neutralized-- account merged back to nido?>
  
 2. Funds are sent to G — any amount, any number of times.
 
 3. **C pulls the funds into itself** with `transfer_from`. The pull is authorized by the user's passkey, or — for a hands-off flow — **permissionlessly by anyone (typically a watcher)**, because the sweep is provably bounded to "move G's balance into C and nothing else" and so needs no key.
-
-<The sweep is an action that only lets G move funds to C - how is this done? I think via the allowance & transfer_from. How is it provably bound?>
 
 From the moment funds arrive on G they are already effectively C's: they sit under C's allowance and no one but C can move them. The only residual risks are liveness (a sweep may be delayed) and reserve reclaim (the relayer's own money) — never user custody.
 
@@ -29,12 +20,8 @@ From the moment funds arrive on G they are already effectively C's: they sit und
 | Symbol | What it is |
 |---|---|
 | **G** | A classic Stellar account — the deposit address an exchange or wallet sends to. |
-<Do any exchanges set a user up with an existing G address? this would not work. we would still need a G address that we create in order to control it and neutralize it>
-
 | **C** | The user's passkey smart account (a Soroban contract). Deterministic address, known before deployment. |
-<how is the c address known before deployment? also, why does this matter?>
 | **R** | The relayer: sponsors reserves and pays fees. Can never spend user funds. |
-<is the watcher a smart contract? just another account? - probably an offchain process>
 | **watcher** | Submits the permissionless sweep on the user's behalf. Holds no key that can move funds — the passkey or anyone can submit it too. |
 
 ## The flow end to end
@@ -54,33 +41,18 @@ flowchart TD
     Done --> T1["Teardown: AccountMerge(G to R) reclaims the sponsored reserves"]
 ```
 
-<user creates passkey, C address is known - how is this known or derived?>
-
 ### Phase 1 — Provisioning (G's key is live for a few seconds)
 
 The relayer creates G as a **sponsored account with zero balance** (R covers every reserve, so nothing is stranded later). Then, while G's secret exists in relayer memory only:
 
 - **Deploy C** at its deterministic address (authless; R submits and pays).
 - **Install the sweep capability on C** — a context rule carrying the sweep policy with **no signer**, bound to `transfer_from(from = G, to = C)`. Authorized by the user's passkey (the account is its own admin). Being signer-free is what makes the later sweep permissionless.
-
-<sweep capability is a rule (or method on the contract account?) that allows G to transfer to C. This makes sense from C's perspective, but how does G not sign this? G has signed the `approve` transaction and has allowed the allowance for C>
-
 - **G grants the allowance:** `approve(G, C, i128::MAX, expiry)`. Needs no balance; `expiry` is derived from the live network state-archival config (currently ~180 days).
-<is what is the approve method on? >*
-<this is part of the CAP-46 standard? so its like an erc-20?>*
-<ah, its part of this standard, which is presumably built into the SAC? the protocol itself for XLM?
-and it works in tandem with transfer_from>
-
-
-
 - **G is neutralized:** set master key weight to 0, then discard the secret. G can now do nothing on its own.
-<will G stay around forever? is it worth merging it with another address at some point?>
-<merging is in phase 4>
 
 ### Phase 2 — Funding
 
 The user withdraws from their exchange to G. **Any amount** — there is no pre-committed figure to match, and no memo is required (each G is single-use, so the address alone identifies the deposit). Partial or repeated deposits simply accumulate.
-<partial or repeated deposits accumulate - as in multiple G addresses? no, one G address that can receive multiple deposits over time. this could expire - what then?>
 
 ### Phase 3 — Sweep
 
@@ -89,22 +61,11 @@ The user withdraws from their exchange to G. **Any amount** — there is no pre-
 - **Passkey sweep:** the user taps their passkey when they return.
 - **Hands-off sweep:** a watcher detects the deposit and submits the sweep with **no signature** — no user present, no key to hold. This is what the permissionless policy exists for, and its safety is the subject of the security model below.
 
-<watcher watches for deposits - where/how? like deposits that come from our relayer? indexing all Gs created in nido>>
-
-<once the user sends their funds from the CEX to their G address, does this trigger the sweep? or is all of this done on transfer from CEX? 
-my concern is if it is set up before the transfer from the CEX, then what if we have a issue on our server, and the key is lost, since we're only storing it in memory>
-
-
-
 Either way the sweep is a normal, retryable transaction, repeatable for any later deposits within the allowance window.
 
 ### Phase 4 — Teardown
 
 When the window closes, `AccountMerge(G → R)` reclaims every reserve R sponsored (a pre-signed, bearer transaction R fee-bumps). G is deleted; zero dust remains. A teardown failure only forfeits R's reserve reclaim — it can never touch user funds.
-
-<reclaims every reserve R sponsored  -- cool!>
-
-<i think that once the window closes, then it would be a new g address? is that correct? like what if i have 10xlm and only transfer 5 today, and then another 5 tomorrow>
 
 ```mermaid
 sequenceDiagram
@@ -331,9 +292,6 @@ https://developers.stellar.org/docs/build/guides/transactions/send-and-receive-p
 https://developers.stellar.org/docs/build/guides/transactions/send-and-receive-c-accounts
 
 
-
-
-
 ## CAP-0072
 - g addresses have access to more of the ecosystem than c addresses
 - but c accounts allow for customization in auth, like passkeys
@@ -529,7 +487,7 @@ sequenceDiagram
     W->>R: Watcher service detects deposit to G and requests sweep 
     R->>R: Create `C.transfer_from` transaction & sign with Relayer key
     R->>S: Send tx to network
-    S->>R: `transfer_from` tx OK
+    S->>R:  `transfer_from` tx OK
 ```
  
  ## Teardown
@@ -556,3 +514,22 @@ outstanding questions:
     - C's auth is the passkey, and it will need to auth the addition of a policy
     - the client builds the tx contract call payload and signs it and passes it to the relayer
     - but then the relayer is what sends & pays for the tx - this is kind of the whole point, c can't do this on it's own
+
+
+questions:
+- How is G neutralized? Is this via setOptions?
+- How can we get nido-funds used for fees back once CAP-72 is in place, and G is no longer ephemeral? Can we bake this into a policy?
+- Do any exchanges set a user up with an existing G address?  This wouldn't work for nido because we need access to G's private key in order to control it and neutralize it. At least not in a pre-CAP-72 world. what about post-CAP-72?
+- how is the c address known before deployment? also, why does this matter?
+- watcher watches for deposits - where/how? like deposits that come from our relayer? indexing all Gs created in nido?
+- how do we handle the the risk of our server failing in the middle of the setup phase? we'll lose G's secret
+
+old questions:
+- How is the allowance granted over G? - the `approve` function. How is the amount determined if we don't know how much the user is going to want to send from the exchange? It's just the MAX that i128 can be, so just setting it really high 
+- initially i was wondering if the contract would not be deployed until the transfer of XLM to G, but now I am realizing that is not the case. G would be created on chain, and C would be deployed before G receives the funds
+- we could use nido-funds as sponsored reserves to create G on chain, and nido-funds for deploying C. could the funds be brought back into nido once G is --neutralized-- account merged back to nido? yes, this would be fairly straightforward with sponsored reserves but how would we do this post-CAP-72
+- The sweep is an action that only lets G move funds to C - how is this done? I think via the allowance & transfer_from. How is it provably bound - because the thing that is signed is that C can only take funds from G.
+- is the watcher a smart contract? just another account? - no its an offchain process
+- the sweep capability is a rule (or method on the contract account?) that allows G to transfer to C. This makes sense from C's perspective, but how does G not sign this? G has signed the `approve` transaction and has created the allowance for C to take fund from G
+- partial or repeated deposits accumulate - one G address that can receive multiple deposits over time. this could expire - what then? a new ephemeral G account will need to be created
+- once the user sends their funds from the CEX to their G address, does this trigger the sweep? or is all of this done on transfer from CEX? No, this is 1. either something that the user can trigger the next time they log in OR the watcher watches it and kicks the sweep off 
