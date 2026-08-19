@@ -448,6 +448,88 @@ Currently, Nido gets around the fact that a C-address cannot sign it's own trans
 ![](./phase-1-diagram-1.jpg)
 ![](./phase-1-diagram-2.jpg)
 
+```mermaid
+sequenceDiagram
+    actor U as User/User Device
+    participant C as Nido Client
+    participant R as Nido Backend/Relayer
+    participant S as Stellar Network
+
+
+    U->>C: User request to create a new Nido in the client
+    C->>C: Generate a keypair
+    C-->>U: Store private key on device
+    C->>R: send public key to backend to register passkey
+
+
+    R->>R: Create G keypair & save secret in memory
+    R->>R: Create `createAccount` tx with sponsored reserves & sign with Relayer key
+    R->>S: Send tx to network
+    S->>R: `createAccount` tx OK
+    R->>R: Create deploy C tx with passkey public key set as owner & sign with Relayer key
+    R->>S: Send tx
+    S->>R: Deploy tx OK
+
+    R->>C: Contract deploy OK
+    C->>C: Build contract invocation payload to add sweep policy to C 
+    C->>U: Have the user sign the contract invocation with passkey
+    U->>C:
+    C->>R: Send signed auth entry to Relayer
+
+    R->>R: Stuff authEntry into a tx envelope and sign with Relayer key
+    R->>S: Cover fees & send to Stellar network
+    S->>R: Sweep Policy tx OK
+
+    R->>R: Create tx to set key weight to 0 & sign with in-memory G key
+    R->>S: Cover fees & send to Stellar network
+    S->>R: `setOptions` tx OK
+    R->>R: Discard G's secret
+
+    R->>C: Contract Account ready to receive funds!
+```
+
+### Phase 2
+```mermaid
+sequenceDiagram
+    actor U as User/User Device
+    participant C as Nido Client
+    participant R as Nido Backend/Relayer
+    participant S as Stellar Network
+
+
+    U->>C: User request to create a new Nido in the client
+    C->>C: Generate a keypair
+    C-->>U: Store private key on device
+    C->>R: send public key to backend to register passkey
+
+
+    R->>R: Create G keypair & save secret in memory
+    R->>R: Create `createAccount` tx with sponsored reserves & sign with Relayer key
+    R->>S: Send tx to network
+    S->>R: `createAccount` tx OK
+    R->>R: Create deploy C tx with passkey public key set as owner & sign with Relayer key
+    R->>S: Send tx
+    S->>R: Deploy tx OK
+
+    R->>C: Contract deploy OK
+    C->>C: Build contract invocation payload to add sweep policy to C 
+    C->>U: Have the user sign the contract invocation with passkey
+    U->>C:
+    C->>R: Send signed auth entry to Relayer
+
+    R->>R: Stuff authEntry into a tx envelope and sign with Relayer key
+    R->>S: Cover fees & send to Stellar network
+    S->>R: Sweep Policy tx OK
+
+    R->>R: Create tx to set key weight to 0 & sign with in-memory G key
+    R->>S: Cover fees & send to Stellar network
+    S->>R: `setOptions` tx OK
+    R->>R: Discard G's secret
+
+    R->>C: Contract Account ready to receive funds!
+```
+
+
 outstanding questions:
 - is the relayer conceptually part of the backend service? if so, we should make sure to write it so that its easy to remove/section off later once CAP-72 is a think
 - does the relayer create the transactions? yes, the relayer is creating & submitting the txns, but not necessarily always the one to authorize them
