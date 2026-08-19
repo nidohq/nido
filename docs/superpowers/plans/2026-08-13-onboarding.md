@@ -444,7 +444,7 @@ Currently, Nido gets around the fact that a C-address cannot sign it's own trans
 
 ## EE Diagrams
 
-### phase 1
+### Phase 1: Provisioning
 ![](./phase-1-diagram-1.jpg)
 ![](./phase-1-diagram-2.jpg)
 
@@ -488,7 +488,21 @@ sequenceDiagram
     R->>C: Contract Account ready to receive funds!
 ```
 
-### Phase 2
+### Phase 2: Funding
+```mermaid
+sequenceDiagram
+    actor U as User/User Device
+    participant E as Exchange
+    participant C as Nido Client
+    participant R as Nido Backend/Relayer
+    participant S as Stellar Network
+
+    U->>E: User requests to withdraw funds from Exchange to G
+    E->>S: Exchange sends funds to G
+```
+
+## Phase 3: Sweep
+### User Sweep
 ```mermaid
 sequenceDiagram
     actor U as User/User Device
@@ -497,36 +511,41 @@ sequenceDiagram
     participant S as Stellar Network
 
 
-    U->>C: User request to create a new Nido in the client
-    C->>C: Generate a keypair
-    C-->>U: Store private key on device
-    C->>R: send public key to backend to register passkey
-
-
-    R->>R: Create G keypair & save secret in memory
-    R->>R: Create `createAccount` tx with sponsored reserves & sign with Relayer key
+    U->>C: User comes back to Nido to request the sweep action
+    C->>R: Create `C.transfer_from` transaction & sign with Relayer key
     R->>S: Send tx to network
-    S->>R: `createAccount` tx OK
-    R->>R: Create deploy C tx with passkey public key set as owner & sign with Relayer key
-    R->>S: Send tx
-    S->>R: Deploy tx OK
+    S->>R: `transfer_from` tx OK
+```
 
-    R->>C: Contract deploy OK
-    C->>C: Build contract invocation payload to add sweep policy to C 
-    C->>U: Have the user sign the contract invocation with passkey
-    U->>C:
-    C->>R: Send signed auth entry to Relayer
+### Hands-off Sweep
+```mermaid
+sequenceDiagram
+    actor U as User/User Device
+    participant W as Watcher
+    participant C as Nido Client
+    participant R as Nido Backend/Relayer
+    participant S as Stellar Network
 
-    R->>R: Stuff authEntry into a tx envelope and sign with Relayer key
-    R->>S: Cover fees & send to Stellar network
-    S->>R: Sweep Policy tx OK
+    W->>R: Watcher service detects deposit to G and requests sweep 
+    R->>R: Create `C.transfer_from` transaction & sign with Relayer key
+    R->>S: Send tx to network
+    S->>R: `transfer_from` tx OK
+```
+ 
+ ## Teardown
+ _When the expiry window closes_
+```mermaid
+sequenceDiagram
+    actor U as User/User Device
+    participant W as Watcher
+    participant C as Nido Client
+    participant R as Nido Backend/Relayer
+    participant S as Stellar Network
 
-    R->>R: Create tx to set key weight to 0 & sign with in-memory G key
-    R->>S: Cover fees & send to Stellar network
-    S->>R: `setOptions` tx OK
-    R->>R: Discard G's secret
-
-    R->>C: Contract Account ready to receive funds!
+    W->>R: Watcher service detects expiry window is closed and requests teardown of G 
+    R->>R: Create `accountMerge` transaction to merge G to R & sign with Relayer key(?)
+    R->>S: Send tx to network
+    S->>R: `accountMerge` tx OK
 ```
 
 
