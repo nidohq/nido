@@ -162,6 +162,11 @@ The same primitive — *C holds an allowance over G, then C pulls* — covers:
 - **One-time transfer:** identical; neutralization optional.
 - **User-controlled wallet:** the user's own wallet holds G and signs `approve` (as the transaction source, so any standard wallet works); G is **not** neutralized — it stays the user's account, optionally kept as a recovery signer on C. The user pulls with their passkey (the permissionless sweep policy is only needed for the hands-off ephemeral flow).
 
+<is this necessary? if you have a freighter wallet, couldnt you just skip the whole sweep setup thing?>
+would we need to make sure that the watcher doesn't do this for us?
+only do the transfer_from that is in the last transaction?
+eject from nido's onboarding which assumed you are new to stellar - so do not create a new G account
+
 ## Forward compatibility: CAP-0072
 
 [CAP-0072](https://github.com/stellar/stellar-protocol/blob/master/core/cap-0072.md) ("Contract signers for Stellar accounts", currently Draft) adds a delegated-signer type that lets a classic G-account delegate its authentication to a smart contract's `__check_auth`. When it lands, **G no longer needs to be ephemeral**: set G's master weight to 0 and add a delegated signer = C, and the passkey controls G directly. Moving funds becomes a direct passkey-authorized `transfer(G → C)` — no allowance, no `transfer_from`, no neutralize-and-discard, no 180-day expiry, no per-onboarding teardown. G becomes a persistent, reusable deposit address, and the security model gets cleaner (G is controlled by the same passkey as C).
@@ -415,8 +420,9 @@ sequenceDiagram
 
 
     U->>C: User request to create a new Nido in the client
-    C->>C: Generate a keypair
-    C-->>U: Store private key on device
+    C->>U: Request user device to generate a keypair
+    U->>U: Generate and store keypair
+    U->>C: Provide Client with passkey identifier
     C->>R: send public key to backend to register passkey
 
 
@@ -424,7 +430,12 @@ sequenceDiagram
     R->>R: Create `createAccount` tx with sponsored reserves & sign with Relayer key
     R->>S: Send tx to network
     S->>R: `createAccount` tx OK
+
     R->>R: Create deploy C tx with passkey public key set as owner & sign with Relayer key
+    R->>S: Send tx
+    S->>R: Deploy tx OK
+
+    R->>R: Create `approve` C tx & sign with G's key
     R->>S: Send tx
     S->>R: Deploy tx OK
 
@@ -445,6 +456,8 @@ sequenceDiagram
 
     R->>C: Contract Account ready to receive funds!
 ```
+
+should we do all the g stuff and then install the sweep policy on C? could this be simpler?
 
 ### Phase 2: Funding
 ```mermaid
@@ -484,10 +497,9 @@ sequenceDiagram
     participant R as Nido Backend/Relayer
     participant S as Stellar Network
 
-    W->>R: Watcher service detects deposit to G and requests sweep 
-    R->>R: Create `C.transfer_from` transaction & sign with Relayer key
+    W->>S: Watcher service detects deposit to G and <br>Creates `C.transfer_from` transaction. Envelope signed with its own key
     R->>S: Send tx to network
-    S->>R:  `transfer_from` tx OK
+    S->>R: `transfer_from` tx OK
 ```
  
  ## Teardown
@@ -507,22 +519,17 @@ sequenceDiagram
 ```
 
 
-outstanding questions:
-- is the relayer conceptually part of the backend service? if so, we should make sure to write it so that its easy to remove/section off later once CAP-72 is a think
-- does the relayer create the transactions? yes, the relayer is creating & submitting the txns, but not necessarily always the one to authorize them
-- based on the one diagram it is unclear if the tx to create the sweep policy on C goes through the relayer. it says it should be signed with the passkey - but does this mean that the sweep will be signed by the passkey, not the creating the policy tx?
-    - C's auth is the passkey, and it will need to auth the addition of a policy
-    - the client builds the tx contract call payload and signs it and passes it to the relayer
-    - but then the relayer is what sends & pays for the tx - this is kind of the whole point, c can't do this on it's own
-
-
 questions:
+- is the relayer conceptually part of the backend service? if so, we should make sure to write it so that its easy to remove/section off later once CAP-72 is a think
 - How is G neutralized? Is this via setOptions?
 - How can we get nido-funds used for fees back once CAP-72 is in place, and G is no longer ephemeral? Can we bake this into a policy?
-- Do any exchanges set a user up with an existing G address?  This wouldn't work for nido because we need access to G's private key in order to control it and neutralize it. At least not in a pre-CAP-72 world. what about post-CAP-72?
 - how is the c address known before deployment? also, why does this matter?
-- watcher watches for deposits - where/how? like deposits that come from our relayer? indexing all Gs created in nido?
-- how do we handle the the risk of our server failing in the middle of the setup phase? we'll lose G's secret
+- how do we handle the the risk of our server failing in the middle of the setup phase? we'll lose G's secret? will we even need to handle this? maybe just error handle/retry scenario. could require a cleanup 
+- what happens if the user sends fund to a G that has been merged with R, they lose the funds? Or a G for which we've already called transfer_from? i.e. can we call transfer_from multiple times?
+- could the watcher be part of backend, and not a goldsky piece? could we know all nido addresses?
+    - query for C policies for G addresses 
+- why is R able to request merging with G? because its a sponsored account?
+- is the watcher required? or can the relayer do this itself?>
 
 old questions:
 - How is the allowance granted over G? - the `approve` function. How is the amount determined if we don't know how much the user is going to want to send from the exchange? It's just the MAX that i128 can be, so just setting it really high 
@@ -533,3 +540,13 @@ old questions:
 - the sweep capability is a rule (or method on the contract account?) that allows G to transfer to C. This makes sense from C's perspective, but how does G not sign this? G has signed the `approve` transaction and has created the allowance for C to take fund from G
 - partial or repeated deposits accumulate - one G address that can receive multiple deposits over time. this could expire - what then? a new ephemeral G account will need to be created
 - once the user sends their funds from the CEX to their G address, does this trigger the sweep? or is all of this done on transfer from CEX? No, this is 1. either something that the user can trigger the next time they log in OR the watcher watches it and kicks the sweep off 
+- Do any exchanges set a user up with an existing G address?  This wouldn't work for nido because we need access to G's private key in order to control it and neutralize it. At least not in a pre-CAP-72 world. what about post-CAP-72?
+This isn't really an issue because Nido would still set up an account to send exchange funds to 
+- watcher watches for deposits - where/how? like deposits that come from our relayer? indexing all Gs created in nido?
+something similar to registry - goldsky pipeline dynamic table
+- does the relayer create the transactions? yes, the relayer is creating & submitting the txns, but not necessarily always the one to authorize them
+- based on the one diagram it is unclear if the tx to create the sweep policy on C goes through the relayer. it says it should be signed with the passkey  but does this mean that the sweep will be signed by the passkey, not the creating the policy tx?
+    - C's auth is the passkey, and it will need to auth the addition of a policy
+    - the client builds the tx contract call payload and signs it and passes it to the relayer
+    - but then the relayer is what sends & pays for the tx - this is kind of the whole point, c can't do this on it's own
+    - the passkey signs the tx to install the policy, but not to call the sweep itself
