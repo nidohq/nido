@@ -12,7 +12,7 @@ Nido helps users move from traditional Stellar accounts ("G-addresses") to Sorob
 
 ### A. Web App (Astro + Cloudflare)
 
-A static Astro site deployed to Cloudflare Pages at `mysoroban.xyz`, using a **subdomain-per-account** pattern where each Smart Account lives at `<contractId>.mysoroban.xyz`. A Cloudflare Worker proxies wildcard subdomain requests to the main site. The frontend extracts the contract ID from the hostname.
+A static Astro site deployed to Cloudflare Pages at `nido.fyi`, using a **subdomain-per-account** pattern where each Smart Account lives at `<contractId>.nido.fyi`. A Cloudflare Worker proxies wildcard subdomain requests to the main site. The frontend extracts the contract ID from the hostname.
 
 All Stellar interaction happens client-side via `@stellar/stellar-sdk`. There are no server-side API routes.
 
@@ -25,7 +25,7 @@ All Stellar interaction happens client-side via `@stellar/stellar-sdk`. There ar
 | `/account/` | Account home + signing endpoint. **Home mode:** register passkeys and sign arbitrary hashes. **Signing mode** (via `?sign=<hash>&callback=<url>`): displays signature request, user approves with passkey, redirects back to callback with `authenticatorData`, `clientDataJSON`, `signature`, and `publicKey` as query params. |
 | `/dapp/` | Demo dApp page. Generates a random transaction hash, redirects to the target account's `/account/` signing endpoint, and displays the returned signature. |
 
-**Subdomain isolation:** The WebAuthn RP ID is the full hostname (e.g., `CABC123.mysoroban.xyz`), so passkeys are cryptographically scoped per-account at the DNS level. A passkey registered for one account cannot sign for another.
+**Subdomain isolation:** The WebAuthn RP ID is the full hostname (e.g., `CABC123.nido.fyi`), so passkeys are cryptographically scoped per-account at the DNS level. A passkey registered for one account cannot sign for another.
 
 ### B. Passkey SDK (`@nidohq/passkey-sdk`)
 
@@ -60,25 +60,25 @@ Cross-contract integration tests using synthetic P-256 keypairs (`p256::ecdsa::S
 
 ### Flow 1: Onboarding (G → C Migration)
 
-1. **User** opens the Nido wallet at `mysoroban.xyz`.
+1. **User** opens the Nido wallet at `nido.fyi`.
 2. **Wallet** generates a random Stellar keypair (`G_temp`) and displays the G-address for funding.
 3. **User** funds `G_temp` (Friendbot on testnet; CEX withdrawal, another wallet, or fiat on-ramp on mainnet).
 4. **Wallet** calls `Factory.get_c_address(G_temp)` to compute the deterministic C-address.
-5. **Wallet** links the user to `<C-address>.mysoroban.xyz/new-account/?key=<G_temp_secret>`.
-6. **User** creates a passkey via `navigator.credentials.create()` with RP ID = `<C-address>.mysoroban.xyz`.
+5. **Wallet** links the user to `<C-address>.nido.fyi/new-account/?key=<G_temp_secret>`.
+6. **User** creates a passkey via `navigator.credentials.create()` with RP ID = `<C-address>.nido.fyi`.
 7. **Wallet** extracts the 65-byte uncompressed P-256 public key from the registration response.
 8. **Wallet** constructs a transaction invoking `Factory.create_account(G_temp, pubkey)`:
    - Factory lazy-deploys the shared WebAuthn verifier (if not yet deployed).
    - Factory deploys a new SmartAccount with the passkey as the initial `External` signer.
 9. **Wallet** simulates, assembles, signs with `G_temp`, and submits to the Stellar network.
-10. **Result:** SmartAccount is live at the deterministic C-address, passkey is the owner. User is redirected to `<C-address>.mysoroban.xyz/account/`.
+10. **Result:** SmartAccount is live at the deterministic C-address, passkey is the owner. User is redirected to `<C-address>.nido.fyi/account/`.
 
 ### Flow 2: dApp Signature Request
 
 The cross-app signing protocol uses URL redirects with query parameters:
 
 1. **dApp** constructs a transaction hash to sign and the callback URL.
-2. **dApp** redirects user to `<contractId>.mysoroban.xyz/account/?sign=<hash>&callback=<dapp-url>`.
+2. **dApp** redirects user to `<contractId>.nido.fyi/account/?sign=<hash>&callback=<dapp-url>`.
 3. **Wallet** displays the signature request for user review.
 4. **User** approves and signs with their passkey (`navigator.credentials.get()` with the hash as challenge).
 5. **Wallet** redirects back to the callback URL with query params: `authenticatorData`, `clientDataJSON`, `signature` (compact 64-byte), `publicKey`.
@@ -100,13 +100,13 @@ The cross-app signing protocol uses URL redirects with query parameters:
 | Component | Platform | Details |
 |-----------|----------|---------|
 | Web App | Cloudflare Pages | Static Astro build. Deploy via `just cloudflare-deploy`. |
-| Subdomain Proxy | Cloudflare Worker | Route `*.mysoroban.xyz/*` proxied to the Pages site. Enables subdomain-per-account. |
+| Subdomain Proxy | Cloudflare Worker | Route `*.nido.fyi/*` proxied to the Pages site. Enables subdomain-per-account. |
 | Contracts | Stellar Testnet | Factory deployed at `CBE3XJK5CLGHPHD46LQSSLHO5R5TIUWBODETEHOLLTMBKK33P3XSJLTZ`. WASM hashes hardcoded in factory. |
 | Contract Builds | `just build-contracts` | `stellar contract build --optimize --profile contract` producing wasm32 artifacts. |
 
 ## 5. Security Considerations
 
-- **Subdomain Passkey Isolation:** Each account's passkey is bound to its subdomain RP ID (`<contractId>.mysoroban.xyz`), preventing cross-account signature reuse at the WebAuthn protocol level.
+- **Subdomain Passkey Isolation:** Each account's passkey is bound to its subdomain RP ID (`<contractId>.nido.fyi`), preventing cross-account signature reuse at the WebAuthn protocol level.
 - **On-Chain Verification:** All passkey signature verification happens on-chain via the WebAuthn verifier contract. There is no off-chain validation step that could be bypassed.
 - **G-Key Ephemerality:** The `G_temp` private key is used only for the deployment transaction and should be discarded afterward. On testnet, the secret is passed via URL query parameter (acceptable for development; must change for mainnet).
 - **Passkey Recovery:** SmartAccount supports multiple admin signers via context rules. Users should register a backup device after onboarding.
@@ -120,7 +120,7 @@ The cross-app signing protocol uses URL redirects with query parameters:
 ```mermaid
 graph TB
     subgraph "Cloudflare"
-        Worker["Cloudflare Worker<br/>*.mysoroban.xyz proxy"]
+        Worker["Cloudflare Worker<br/>*.nido.fyi proxy"]
         Pages["Cloudflare Pages<br/>Astro Static Site"]
         Worker --> Pages
     end
@@ -155,7 +155,7 @@ graph TB
 ```mermaid
 sequenceDiagram
     actor User
-    participant Wallet as mysoroban.xyz
+    participant Wallet as nido.fyi
     participant WebAuthn as WebAuthn API
     participant Stellar as Stellar Network
     participant Factory as nido-factory
@@ -171,9 +171,9 @@ sequenceDiagram
     Wallet->>Factory: get_c_address(G_temp)
     Factory-->>Wallet: Deterministic C-address
 
-    Wallet-->>User: Redirect to <C-addr>.mysoroban.xyz/new-account/
+    Wallet-->>User: Redirect to <C-addr>.nido.fyi/new-account/
 
-    User->>WebAuthn: navigator.credentials.create()<br/>RP ID = <C-addr>.mysoroban.xyz
+    User->>WebAuthn: navigator.credentials.create()<br/>RP ID = <C-addr>.nido.fyi
     WebAuthn-->>Wallet: Registration response (P-256 public key)
 
     Wallet->>Wallet: Extract 65-byte uncompressed pubkey
@@ -185,7 +185,7 @@ sequenceDiagram
     Factory->>SA: Deploy with passkey as External signer
 
     Stellar-->>Wallet: TX confirmed
-    Wallet-->>User: Redirect to <C-addr>.mysoroban.xyz/account/
+    Wallet-->>User: Redirect to <C-addr>.nido.fyi/account/
 ```
 
 ### Flow 2: dApp Signature Request
@@ -194,7 +194,7 @@ sequenceDiagram
 sequenceDiagram
     actor User
     participant dApp as dApp (any origin)
-    participant Wallet as <C-addr>.mysoroban.xyz/account/
+    participant Wallet as <C-addr>.nido.fyi/account/
     participant WebAuthn as WebAuthn API
 
     dApp->>dApp: Construct transaction hash
