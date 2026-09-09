@@ -93,6 +93,8 @@ export { extractXdrOperations } from './assembledTx.js';
 
 export * from './policyBlocks/index.js';
 
+export * from './policyDoc/index.js';
+
 export * from './resolveFriendInput.js';
 
 export * from './sessionKey.js';
