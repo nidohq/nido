@@ -12,6 +12,25 @@ Current set of contracts the frontend talks to.
 | Name registry | `CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX` | Human-readable account names. Independent of the policy-builder set. |
 | Status Message demo | `CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV` | Hardcoded in `packages/frontend/src/pages/status-message/index.astro`. Predates the policy-builder work. |
 
+## Perch canonical deployment (testnet)
+
+Contracts of the perch policy layer (<https://github.com/stellar-registry/perch>).
+These are **not nido-owned deploys**: they come from perch's content-addressed
+"stateless" subregistry, which deploys each contract with
+`salt = sha256(wasm)`. Every address below is therefore derivable offline from
+the registry id plus the pinned wasm hash — the SDK does exactly that
+(`perchTestnetAddresses()` in `packages/passkey-sdk/src/policyDoc/deployment.ts`,
+pins asserted in `deployment.test.ts`) instead of hardcoding addresses at call
+sites. Mirrors perch's CI-guarded `crates/integration-tests/tests/testnet_pins.rs`
+(perch rev `f5676a6`, perch-interpreter 0.1.2).
+
+| Name | Address | Notes |
+|---|---|---|
+| Perch stateless subregistry | `CC6ELNH6YVRRO4WIETIURY3PZLD7NHSDXHRMTJQUT7D733SYVQFYB26O` | The deployer; content-addresses every instance below. |
+| Perch interpreter | `CBYWKTO6IALDRI7LQM2IBHK7SDKXKO5JTMJCVQVKEI4XMJ724ZVJI2YM` | OZ `Policy` evaluating perch constraint programs; attached by `lowerDoc` for rules stock policies can't express. Wasm `f8320d30…`. Bindings: `@nidohq/perch-interpreter` (`just bindings-perch-interpreter`). |
+| Perch doc-compiler | `CCUU7RYG23ZBZZCKS2PPSZ2GJIBTBYXF47GZCYG5PUBN54Z7AKQBF2SY` | On-chain doc→rules compiler (perch's `apply_doc` path — unused by nido v1, pinned for completeness). Wasm `3645bd0d…`. |
+| Perch ed25519 verifier | `CBVCTXCSF4HJJCQLLIM543CH5MJW3A2MMZ2T35GSCSN6QSC6BGSDJNNY` | Verifier for perch External ed25519 signers (unused by nido v1 — nido delegates G-addresses via CAP-0071). Wasm `6ddf7cad…`. |
+
 ## ZK Recovery (M1 — not yet deployed)
 
 Passkey-secretless recovery via a depth-24 Merkle pool + UltraHonk proof

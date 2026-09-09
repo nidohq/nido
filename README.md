@@ -64,6 +64,7 @@ limited-scope signing.
 | Wallet frontend | `packages/frontend/` | Astro app for Nido account creation, signing, sending, security, and activity views |
 | Passkey SDK | `packages/passkey-sdk/` | WebAuthn, Soroban auth, deployment, storage, policy, recovery, and session-key helpers |
 | Wallets Kit module | `packages/stellar-wallets-kit-module/` | `@creit.tech/stellar-wallets-kit` module for dApp wallet selectors |
+| Perch (vendored) | `packages/perch/` | Pinned copy of `@stellar-registry/perch` — perch PolicyDoc schema, canonical JSON + doc_hash, builder (see its `VENDORED.md`) |
 | Contract bindings | `packages/contract-bindings/` | Generated TypeScript clients for the Soroban contracts |
 | Smart contracts | `contracts/` | Factory, smart account, WebAuthn verifier, name registry, status message, and policy contracts |
 | Integration tests | `crates/integration-tests/` | Cross-contract Rust tests with synthetic WebAuthn assertions |

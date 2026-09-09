@@ -1,0 +1,7 @@
+[
+  { "name": "rpn_ci_publish", "kind": "rpn", "hex_file": "rpn_ci_publish.xdr", "describe": "All(MinSigners(1), FnIn([publish, publish_hash]), ArgAddrIsSelf(0)); version 1" },
+  { "name": "rpn_all_ops", "kind": "rpn", "hex_file": "rpn_all_ops.xdr", "describe": "All(6) over Any(3) and leaves covering every Op variant; version 1" },
+  { "name": "oz_simple_threshold", "kind": "oz-param", "hex_file": "oz_simple_threshold.xdr", "describe": "SimpleThresholdAccountParams { threshold: 2 }" },
+  { "name": "oz_spending_limit", "kind": "oz-param", "hex_file": "oz_spending_limit.xdr", "describe": "SpendingLimitAccountParams { spending_limit: 1000000000, period_ledgers: 17280 }" },
+  { "name": "oz_weighted_threshold", "kind": "oz-param", "hex_file": "oz_weighted_threshold.xdr", "describe": "WeightedThresholdAccountParams { threshold: 3, signer_weights: 3 mixed signers } (map sort-order case)" }
+]
