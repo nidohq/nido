@@ -28,8 +28,6 @@ sites. Mirrors perch's CI-guarded `crates/integration-tests/tests/testnet_pins.r
 |---|---|---|
 | Perch stateless subregistry | `CC6ELNH6YVRRO4WIETIURY3PZLD7NHSDXHRMTJQUT7D733SYVQFYB26O` | The deployer; content-addresses every instance below. |
 | Perch interpreter | `CBYWKTO6IALDRI7LQM2IBHK7SDKXKO5JTMJCVQVKEI4XMJ724ZVJI2YM` | OZ `Policy` evaluating perch constraint programs; attached by `lowerDoc` for rules stock policies can't express. Wasm `f8320d30…`. Bindings: `@nidohq/perch-interpreter` (`just bindings-perch-interpreter`). |
-| Perch doc-compiler | `CCUU7RYG23ZBZZCKS2PPSZ2GJIBTBYXF47GZCYG5PUBN54Z7AKQBF2SY` | On-chain doc→rules compiler (perch's `apply_doc` path — unused by nido v1, pinned for completeness). Wasm `3645bd0d…`. |
-| Perch ed25519 verifier | `CBVCTXCSF4HJJCQLLIM543CH5MJW3A2MMZ2T35GSCSN6QSC6BGSDJNNY` | Verifier for perch External ed25519 signers (unused by nido v1 — nido delegates G-addresses via CAP-0071). Wasm `6ddf7cad…`. |
 
 ## ZK Recovery (M1 — not yet deployed)
 

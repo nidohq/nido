@@ -33,6 +33,7 @@ jobs:
           npm publish --workspace @nidohq/smart-account --access public
           npm publish --workspace @nidohq/multisig-policy --access public
           npm publish --workspace @nidohq/spending-limit-policy --access public
+          npm publish --workspace @nidohq/perch-interpreter --access public
           npm publish --workspace @nidohq/webauthn-verifier --access public
           npm publish --workspace @nidohq/factory --access public
           npm publish --workspace @nidohq/status-message --access public

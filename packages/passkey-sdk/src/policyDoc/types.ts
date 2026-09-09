@@ -61,6 +61,9 @@ export interface LoweredDoc {
   /** Lowercase-hex sha256 of the document's canonical JSON — the identity a
    *  reviewer approves and every interpreter install param commits to. */
   docHash: string;
+  /** The network passphrase the doc binds itself to, when it declares one.
+   *  `buildDocInstallTxs` refuses to build for any other network. */
+  network?: string;
   rules: LoweredRule[];
   /** True iff any rule attaches the interpreter. */
   usesInterpreter: boolean;

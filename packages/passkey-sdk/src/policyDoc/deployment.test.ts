@@ -7,8 +7,6 @@ import { derivePerchContractId, perchTestnetAddresses, PERCH_STATELESS_REGISTRY_
 // deployment (and DEPLOYED.md) in the same change.
 const PINNED = {
   interpreter: 'CBYWKTO6IALDRI7LQM2IBHK7SDKXKO5JTMJCVQVKEI4XMJ724ZVJI2YM',
-  docCompiler: 'CCUU7RYG23ZBZZCKS2PPSZ2GJIBTBYXF47GZCYG5PUBN54Z7AKQBF2SY',
-  ed25519Verifier: 'CBVCTXCSF4HJJCQLLIM543CH5MJW3A2MMZ2T35GSCSN6QSC6BGSDJNNY',
 };
 
 describe('perch canonical deployment', () => {

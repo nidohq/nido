@@ -55,10 +55,16 @@ export async function buildDocInstallTxs(
   if (lowered.usesSpendingLimit && !args.spendingLimitAddress) {
     throw new Error('policyDoc: plan carries a cap but no spendingLimitAddress given');
   }
+  const networkPassphrase = args.networkPassphrase ?? TESTNET_PASSPHRASE;
+  if (lowered.network !== undefined && lowered.network !== networkPassphrase) {
+    throw new Error(
+      `policyDoc: doc is bound to network "${lowered.network}" but the install targets "${networkPassphrase}"`,
+    );
+  }
 
   const client = new SmartAccountClient({
     contractId: args.account,
-    networkPassphrase: args.networkPassphrase ?? TESTNET_PASSPHRASE,
+    networkPassphrase,
     rpcUrl: args.rpcUrl,
   });
 

@@ -147,6 +147,10 @@ describe('decompileRules: raw fallbacks', () => {
     expect(reasonOf(bare({ signers: [] }))).toMatch(/zero-signer/);
   });
 
+  it('valid_until of u32::MAX falls back to raw instead of overflowing not-after-ledger', () => {
+    expect(reasonOf(bare({ validUntil: 0xffffffff }))).toMatch(/u32/);
+  });
+
   it('multisig (threshold) rules fall back to raw with a clear reason', () => {
     expect(reasonOf(bare({ policies: [MULTISIG] }))).toMatch(/threshold/);
   });

@@ -28,12 +28,11 @@ export const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 export const PERCH_STATELESS_REGISTRY_TESTNET =
   'CC6ELNH6YVRRO4WIETIURY3PZLD7NHSDXHRMTJQUT7D733SYVQFYB26O';
 
-/** Pinned wasm hashes of the canonical perch deployment (perch-interpreter
- *  0.1.2 era, perch rev f5676a6cfb7ae02e9ae487be18cf6247653124b0). */
+/** Pinned wasm hashes of the canonical perch contracts nido v1 uses
+ *  (perch-interpreter 0.1.2 era, perch rev
+ *  f5676a6cfb7ae02e9ae487be18cf6247653124b0). */
 export const PERCH_WASM_HASHES = {
   interpreter: 'f8320d3031e7dffe51fac14177c5353b8818f8e6df3bda6c4c1b714f5ce1d858',
-  docCompiler: '3645bd0de34f4896c5e6fd8ca141713eb9f8658728bf16d82026418d4ab0b27f',
-  ed25519Verifier: '6ddf7cadcb85059cffa5b127f994490ee560f8a46b2bb437975fbe5bd0cc7de4',
 } as const;
 
 /** Derive a content-addressed perch contract id from its deployer registry
@@ -63,8 +62,6 @@ export function derivePerchContractId(
 
 export interface PerchAddresses {
   interpreter: string;
-  docCompiler: string;
-  ed25519Verifier: string;
 }
 
 let testnetAddresses: PerchAddresses | undefined;
@@ -77,16 +74,6 @@ export function perchTestnetAddresses(): PerchAddresses {
       TESTNET_PASSPHRASE,
       PERCH_STATELESS_REGISTRY_TESTNET,
       PERCH_WASM_HASHES.interpreter,
-    ),
-    docCompiler: derivePerchContractId(
-      TESTNET_PASSPHRASE,
-      PERCH_STATELESS_REGISTRY_TESTNET,
-      PERCH_WASM_HASHES.docCompiler,
-    ),
-    ed25519Verifier: derivePerchContractId(
-      TESTNET_PASSPHRASE,
-      PERCH_STATELESS_REGISTRY_TESTNET,
-      PERCH_WASM_HASHES.ed25519Verifier,
     ),
   });
 }

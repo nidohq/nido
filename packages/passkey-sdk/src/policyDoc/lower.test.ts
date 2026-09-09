@@ -85,6 +85,16 @@ describe('lowerDoc: v1 scoped-session-key template', () => {
     expect(rule.cap).toEqual({ limitStroops: 50_000_000n, periodLedgers: 17_280 });
     expect(lowered.usesSpendingLimit).toBe(true);
   });
+
+  it('carries the doc network binding through lowering', () => {
+    expect(lowerDoc(doc, { account: ACCOUNT }).network).toBeUndefined();
+    const bound = scopedSessionKeyDoc({
+      sessionAddress: SESSION_G,
+      targetContract: TARGET,
+      network: 'Test SDF Network ; September 2015',
+    });
+    expect(lowerDoc(bound, { account: ACCOUNT }).network).toBe('Test SDF Network ; September 2015');
+  });
 });
 
 describe('lowerDoc: fail-closed errors', () => {

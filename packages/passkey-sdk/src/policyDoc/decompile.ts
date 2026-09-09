@@ -100,6 +100,9 @@ function mapRule(chainRule: ChainRule, ctx: DecompileContext): MappedRule | stri
   if (chainRule.signers.length === 0) {
     return 'zero-signer rule (policy-only rules such as ZK recovery have no doc equivalent)';
   }
+  if (chainRule.validUntil === 0xffffffff) {
+    return 'valid_until u32::MAX has no doc equivalent (the exclusive not-after-ledger would overflow u32)';
+  }
 
   const mapped: MappedRule = { contract: chainRule.contextType.contract };
 

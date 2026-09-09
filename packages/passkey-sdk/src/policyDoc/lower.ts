@@ -75,6 +75,7 @@ export function lowerDoc(doc: PolicyDoc, opts: LowerOptions): LoweredDoc {
   });
   return {
     docHash: docHash(doc),
+    ...(doc.network !== undefined ? { network: doc.network } : {}),
     rules,
     usesInterpreter: rules.some((r) => r.program !== undefined),
     usesSpendingLimit: rules.some((r) => r.cap !== undefined),
