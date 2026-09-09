@@ -4,14 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { canonicalJson, docHash, parsePolicyDoc } from './index.js';
 
-// doc_hash parity against perch's frozen golden vectors (CANON v1), vendored
-// at packages/perch/testdata (see packages/perch/VENDORED.md for provenance).
+// doc_hash parity against perch's frozen golden vectors (CANON v1), copied
+// into ./testdata (see its README.md for provenance — the published npm
+// package ships only dist/, not the vectors).
 // Mirrors upstream's packages/perch-js/test/parity.test.ts: the hash a
 // reviewer approves off-chain must match what the Rust compiler and on-chain
 // state commit to, byte for byte.
 
 const here = dirname(fileURLToPath(import.meta.url));
-const td = (n: string) => resolve(here, '../../../perch/testdata', n);
+const td = (n: string) => resolve(here, './testdata', n);
 
 describe('perch golden parity: ci-publish fixture', () => {
   const doc = parsePolicyDoc(JSON.parse(readFileSync(td('ci-publish.json'), 'utf8')));

@@ -27,7 +27,7 @@ sites. Mirrors perch's CI-guarded `crates/integration-tests/tests/testnet_pins.r
 | Name | Address | Notes |
 |---|---|---|
 | Perch stateless subregistry | `CC6ELNH6YVRRO4WIETIURY3PZLD7NHSDXHRMTJQUT7D733SYVQFYB26O` | The deployer; content-addresses every instance below. |
-| Perch interpreter | `CBYWKTO6IALDRI7LQM2IBHK7SDKXKO5JTMJCVQVKEI4XMJ724ZVJI2YM` | OZ `Policy` evaluating perch constraint programs; attached by `lowerDoc` for rules stock policies can't express. Wasm `f8320d30…`. Bindings: `@nidohq/perch-interpreter` (`just bindings-perch-interpreter`). |
+| Perch interpreter | `CBYWKTO6IALDRI7LQM2IBHK7SDKXKO5JTMJCVQVKEI4XMJ724ZVJI2YM` | OZ `Policy` evaluating perch constraint programs; attached by `lowerDoc` for rules stock policies can't express. Wasm `f8320d30…`. Bindings: `@stellar-registry/perch-interpreter` (npm, upstream-published). |
 
 ## ZK Recovery (M1 — not yet deployed)
 

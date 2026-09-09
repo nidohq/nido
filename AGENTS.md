@@ -36,11 +36,13 @@ The perch PolicyDoc is nido's policy source of truth at the doc layer:
 `packages/passkey-sdk/src/policyDoc/` builds docs, lowers them onto OZ context
 rules (stock policies where the shape fits, the perch interpreter otherwise),
 and decompiles chain rules back to a doc view — its module docs are the
-authoritative reference. `packages/perch/` is a VENDORED pin of
-`@stellar-registry/perch` (see its `VENDORED.md` for the swap-to-npm TODO);
-never edit its `src/`. Perch contract addresses are derived, not deployed by
-nido — see DEPLOYED.md "Perch canonical deployment" and
-`src/policyDoc/deployment.ts`.
+authoritative reference. Perch comes from npm (`@stellar-registry/perch`,
+`@stellar-registry/perch-interpreter`; a root `overrides` entry keeps the
+interpreter bindings on the workspace's single `@stellar/stellar-sdk` copy —
+the #72 dual-SDK hazard). Perch contract addresses are derived, not deployed
+by nido — see DEPLOYED.md "Perch canonical deployment" and
+`src/policyDoc/deployment.ts`; frozen golden vectors live in
+`src/policyDoc/testdata/`.
 
 ## Frontend Design Export
 

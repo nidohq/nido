@@ -18,7 +18,7 @@
 import { docHash, parsePolicyDoc } from '@stellar-registry/perch';
 import type { ArgConstraint, Rule, SignerDecl } from '@stellar-registry/perch';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import type { Op, RpnProgram } from '@nidohq/perch-interpreter';
+import type { Op, RpnProgram } from '@stellar-registry/perch-interpreter';
 import type { ChainRule, ChainSigner } from '../policyBlocks/types.js';
 import { PROGRAM_VERSION } from './lower.js';
 import type { DecompileContext, DecompiledRule, DecompileResult } from './types.js';
@@ -125,7 +125,7 @@ function mapRule(chainRule: ChainRule, ctx: DecompileContext): MappedRule | stri
       }
       mapped.cap = { limit: cap.limitStroops.toString(), 'period-ledgers': cap.periodLedgers };
     } else if (ctx.multisigPolicyAddress !== undefined && policy === ctx.multisigPolicyAddress) {
-      return 'M-of-N threshold rules are not expressible in doc v1 (the TS schema has no threshold principals yet)';
+      return 'M-of-N threshold policy rules are not mapped by the doc-view decompiler (v1 maps only all-signer rules)';
     } else {
       return `unrecognized policy contract ${policy}`;
     }
@@ -158,7 +158,7 @@ function decodeCanonicalProgram(
     return 'non-canonical interpreter program (does not end with All over every leaf)';
   }
   if (head.values[0] !== signerCount) {
-    return `MinSigners(${head.values[0]}) over ${signerCount} signers is an M-of-N quorum, not expressible in doc v1 (the TS schema has no threshold principals yet)`;
+    return `MinSigners(${head.values[0]}) over ${signerCount} signers is an M-of-N quorum, not mapped by the doc-view decompiler (v1 maps only all-signer rules)`;
   }
 
   const decoded: DecodedProgram = {};

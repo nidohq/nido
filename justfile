@@ -243,19 +243,6 @@ bindings-all:
     done
     ./scripts/fix-bindings.sh
 
-# Regenerate the perch-interpreter binding from the canonical testnet
-# deployment (perch contracts are NOT nido-owned deploys — see DEPLOYED.md
-# "Perch canonical deployment"). After regenerating, restore the nido-side
-# package.json fields the generator clobbers (name @nidohq/perch-interpreter,
-# version, publishConfig) — `git diff` shows them.
-bindings-perch-interpreter:
-    stellar contract bindings typescript \
-        --overwrite \
-        --output-dir packages/contract-bindings/perch-interpreter \
-        --contract-id CBYWKTO6IALDRI7LQM2IBHK7SDKXKO5JTMJCVQVKEI4XMJ724ZVJI2YM \
-        --network testnet
-    ./scripts/fix-bindings.sh
-
 # Run TestAuthenticator unit tests (vitest, node)
 test-support:
     npx vitest run --config vitest.support.config.ts

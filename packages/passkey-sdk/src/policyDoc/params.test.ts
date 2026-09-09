@@ -3,12 +3,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { scValToNative, xdr } from '@stellar/stellar-sdk';
-import { Client as PerchInterpreterClient } from '@nidohq/perch-interpreter';
-import type { RpnProgram } from '@nidohq/perch-interpreter';
+import { Client as PerchInterpreterClient } from '@stellar-registry/perch-interpreter';
+import type { RpnProgram } from '@stellar-registry/perch-interpreter';
 import { interpreterInstallParamsScVal, spendingLimitInstallParamsScVal } from './params.js';
 
 // Wire-format parity against perch's golden byte vectors
-// (packages/perch/testdata/golden/, vendored — see manifest.json there). The
+// (./testdata/golden/, frozen copies — see ../testdata/README.md). The
 // interpreter stores `#[contracttype]` values on chain; this TS encoder must
 // reproduce those bytes exactly, so each golden fixture is rebuilt here and
 // compared as hex. (ArgStrIn/ArgStrPrefix/ArgBytesEq/ArgI128Eq/ArgCount have
@@ -16,7 +16,7 @@ import { interpreterInstallParamsScVal, spendingLimitInstallParamsScVal } from '
 // decode round-trip below and the decompile tests.)
 
 const here = dirname(fileURLToPath(import.meta.url));
-const golden = (n: string) => readFileSync(resolve(here, '../../../perch/testdata/golden', n), 'utf8').trim();
+const golden = (n: string) => readFileSync(resolve(here, './testdata/golden', n), 'utf8').trim();
 
 // Fixed strkeys from perch-golden's fixtures.
 const CONTRACT_C = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';

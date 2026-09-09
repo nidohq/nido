@@ -14,9 +14,9 @@ import type { PolicyDoc, Rule, SignerDecl } from '@stellar-registry/perch';
 import type { ChainRule, ChainSigner, TxBuild } from '../policyBlocks/types.js';
 
 /** Ops of the interpreter's postfix constraint program, in the generated
- *  bindings' `{tag, values}` union shape (see `@nidohq/perch-interpreter`). */
-export type { Op as RpnOp, RpnProgram, InstallParams as InterpreterInstallParams } from '@nidohq/perch-interpreter';
-import type { RpnProgram } from '@nidohq/perch-interpreter';
+ *  bindings' `{tag, values}` union shape (see `@stellar-registry/perch-interpreter`). */
+export type { Op as RpnOp, RpnProgram, InstallParams as InterpreterInstallParams } from '@stellar-registry/perch-interpreter';
+import type { RpnProgram } from '@stellar-registry/perch-interpreter';
 
 /** A cumulative spending cap, lowered onto nido's stock spending-limit
  *  policy (OZ `SpendingLimitAccountParams`). Perch constraints are stateless
@@ -119,7 +119,7 @@ export interface DecompileContext {
   multisigPolicyAddress?: string;
   /** Interpreter install params per rule id, fetched by the caller via the
    *  interpreter's public `get_program(smart_account, context_rule_id)` view
-   *  (see `@nidohq/perch-interpreter`). Rules that carry the interpreter but
+   *  (see `@stellar-registry/perch-interpreter`). Rules that carry the interpreter but
    *  have no entry here fall back to raw. */
   programs?: Record<number, { program: RpnProgram; docHash: Uint8Array | string }>;
   /** Spending-limit params per rule id, fetched by the caller (the frontend

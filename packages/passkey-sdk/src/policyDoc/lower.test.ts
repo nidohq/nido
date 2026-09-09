@@ -7,7 +7,7 @@ import { lowerDoc, parsePolicyDoc, scopedSessionKeyDoc, validateProgram, buildPo
 import type { PolicyDoc } from './index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const td = (n: string) => resolve(here, '../../../perch/testdata', n);
+const td = (n: string) => resolve(here, './testdata', n);
 
 const ACCOUNT = StrKey.encodeContract(new Uint8Array(32).fill(0x54));
 const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
@@ -245,5 +245,44 @@ describe('validateProgram', () => {
         ],
       }),
     ).toMatch(/leaves 2 results/);
+  });
+});
+
+describe('lowerDoc: threshold principals (perch 0.2.0)', () => {
+  const SESSION_G2 = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
+  const thresholdDoc = (m: number): PolicyDoc =>
+    parsePolicyDoc({
+      version: 1,
+      signers: [
+        { id: 'a', address: SESSION_G },
+        { id: 'b', address: SESSION_G2 },
+      ],
+      rules: [
+        {
+          name: 'quorum',
+          scope: { type: 'contract', address: TARGET },
+          principals: { type: 'threshold', signers: ['a', 'b'], m },
+        },
+      ],
+    });
+
+  it('a bare threshold rule is never policy-free: MinSigners(m) is the quorum', () => {
+    const lowered = lowerDoc(thresholdDoc(1), { account: ACCOUNT });
+    const rule = lowered.rules[0];
+    expect(rule.signers).toHaveLength(2);
+    // Were this lowered policy-free, OZ would silently enforce N-of-N
+    // instead of M-of-N (perch-compile INV-2).
+    expect(rule.program).toEqual({
+      version: 1,
+      ops: [
+        { tag: 'MinSigners', values: [1] },
+        { tag: 'All', values: [1] },
+      ],
+    });
+  });
+
+  it('rejects a quorum outside 1..signers.length', () => {
+    expect(() => lowerDoc(thresholdDoc(0), { account: ACCOUNT })).toThrow(/1\.\.2/);
+    expect(() => lowerDoc(thresholdDoc(3), { account: ACCOUNT })).toThrow(/1\.\.2/);
   });
 });

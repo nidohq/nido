@@ -27,7 +27,7 @@
 import { docHash } from '@stellar-registry/perch';
 import type { ArgConstraint, PolicyDoc, Rule, SignerDecl } from '@stellar-registry/perch';
 import { hexToBytes } from '@noble/hashes/utils.js';
-import type { Op, RpnProgram } from '@nidohq/perch-interpreter';
+import type { Op, RpnProgram } from '@stellar-registry/perch-interpreter';
 import type { ChainSigner } from '../policyBlocks/types.js';
 import type { LoweredCap, LoweredDoc, LoweredRule } from './types.js';
 
@@ -96,13 +96,28 @@ function lowerRule(doc: PolicyDoc, rule: Rule, account: string): LoweredRule {
     throw new LowerErr(rule.name, 'principals list must be non-empty');
   }
   const signers = signerIds.map((id) => resolveSigner(doc, rule.name, id));
-  const minSigners = signerIds.length; // `all` is N-of-N (the TS doc schema has no threshold shape yet)
+  // The interpreter's signer floor: N-of-N for `all`, the quorum M for
+  // `threshold` (perch-compile's min_signers).
+  let minSigners = signerIds.length;
+  if (rule.principals.type === 'threshold') {
+    const m = rule.principals.m;
+    if (!Number.isInteger(m) || m < 1 || m > signerIds.length) {
+      throw new LowerErr(rule.name, `threshold m=${m} must be an integer in 1..${signerIds.length}`);
+    }
+    minSigners = m;
+  }
 
   const cap = lowerCap(rule);
 
-  // INV-2: only a bare `all` rule lowers policy-free.
+  // INV-2: only a bare `all` (N-of-N) rule lowers policy-free, riding OZ's
+  // native all-signers check. A `threshold` rule is never constraint-free:
+  // it must attach the interpreter so `MinSigners(m)` — not OZ's N-of-N —
+  // is the quorum, otherwise a bare threshold would silently enforce N-of-N.
   const constraintFree =
-    rule.functions === undefined && rule.args === undefined && cap === undefined;
+    rule.principals.type === 'all' &&
+    rule.functions === undefined &&
+    rule.args === undefined &&
+    cap === undefined;
 
   const notAfter = rule['not-after-ledger'];
   if (notAfter !== undefined && notAfter < 1) {

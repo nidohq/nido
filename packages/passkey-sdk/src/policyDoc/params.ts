@@ -23,8 +23,8 @@
 import type { Spec } from '@stellar/stellar-sdk/contract';
 import type { xdr } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
-import { Client as PerchInterpreterClient } from '@nidohq/perch-interpreter';
-import type { RpnProgram } from '@nidohq/perch-interpreter';
+import { Client as PerchInterpreterClient } from '@stellar-registry/perch-interpreter';
+import type { RpnProgram } from '@stellar-registry/perch-interpreter';
 import { Client as SpendingLimitPolicyClient } from '@nidohq/spending-limit-policy';
 
 const PLACEHOLDER_OPTIONS = {

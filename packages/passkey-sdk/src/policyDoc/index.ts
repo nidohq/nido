@@ -4,12 +4,12 @@
  *
  * Re-exports perch's own document surface (schema, canonical JSON + doc_hash,
  * builder, request mapping) so consumers need only `@nidohq/passkey-sdk`.
- * NOT re-exported: the `@nidohq/perch-interpreter` bindings client (import it
+ * NOT re-exported: the `@stellar-registry/perch-interpreter` bindings client (import it
  * directly to call `get_program`) — the generated package re-exports the
  * whole stellar-sdk, which must not leak through this barrel.
  */
 
-// perch's document surface, verbatim (vendored pin — see packages/perch/VENDORED.md).
+// perch's document surface, verbatim (@stellar-registry/perch from npm).
 export {
   ACK_SENTINEL,
   CANON_VERSION,
@@ -33,6 +33,7 @@ export type {
   ArgConstraint,
   ArgPred,
   CapConstraint,
+  CapSpec,
   Permission,
   PermissionScope,
   PolicyDoc,
