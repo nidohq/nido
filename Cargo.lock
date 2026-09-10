@@ -1123,8 +1123,6 @@ dependencies = [
  "nido-smart-account",
  "nido-zk-recovery",
  "p256",
- "perch-doc-compiler",
- "perch-interpreter",
  "perch-ir",
  "serde_json",
  "sha2",
@@ -1163,7 +1161,6 @@ dependencies = [
 name = "nido-smart-account"
 version = "0.1.0"
 dependencies = [
- "perch-doc-compiler",
  "soroban-sdk",
  "stellar-accounts",
 ]
@@ -1300,39 +1297,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "perch-compile"
-version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch.git?rev=f5676a6cfb7ae02e9ae487be18cf6247653124b0#f5676a6cfb7ae02e9ae487be18cf6247653124b0"
-dependencies = [
- "perch-ir",
- "perch-program",
- "soroban-sdk",
-]
-
-[[package]]
-name = "perch-doc-compiler"
-version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch.git?rev=f5676a6cfb7ae02e9ae487be18cf6247653124b0#f5676a6cfb7ae02e9ae487be18cf6247653124b0"
-dependencies = [
- "perch-compile",
- "perch-ir",
- "perch-program",
- "soroban-sdk",
- "soroban-sdk-tools",
- "stellar-accounts",
-]
-
-[[package]]
-name = "perch-interpreter"
-version = "0.1.2"
-source = "git+https://github.com/stellar-registry/perch.git?rev=f5676a6cfb7ae02e9ae487be18cf6247653124b0#f5676a6cfb7ae02e9ae487be18cf6247653124b0"
-dependencies = [
- "perch-program",
- "soroban-sdk",
- "stellar-accounts",
-]
-
-[[package]]
 name = "perch-ir"
 version = "0.1.1"
 source = "git+https://github.com/stellar-registry/perch.git?rev=f5676a6cfb7ae02e9ae487be18cf6247653124b0#f5676a6cfb7ae02e9ae487be18cf6247653124b0"
@@ -1340,15 +1304,6 @@ dependencies = [
  "hex",
  "hifijson",
  "sha2",
-]
-
-[[package]]
-name = "perch-program"
-version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch.git?rev=f5676a6cfb7ae02e9ae487be18cf6247653124b0#f5676a6cfb7ae02e9ae487be18cf6247653124b0"
-dependencies = [
- "soroban-flux",
- "soroban-sdk",
 ]
 
 [[package]]
@@ -1785,45 +1740,6 @@ dependencies = [
  "serde_json",
  "stellar-xdr",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "soroban-flux"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9273167cce4d4005c4eca46c3bb271ba4e681867b180bdc3f403ceb90170a731"
-dependencies = [
- "soroban-flux-rs",
- "soroban-sdk",
-]
-
-[[package]]
-name = "soroban-flux-attrs"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4df45e0f79a81e49575d06735b62cad640416707a861857c37f3296525f8b8f"
-dependencies = [
- "soroban-flux-attrs-impl",
-]
-
-[[package]]
-name = "soroban-flux-attrs-impl"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d97635fd8b4f88b15f93402c2b329d02997fe905a7c186d4e4f0d4bc9ccdef16"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "soroban-flux-rs"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0aa1ac5938cc3889555907b666e70e612ce32c65744ef6dbea8121b54458ce00"
-dependencies = [
- "soroban-flux-attrs",
 ]
 
 [[package]]

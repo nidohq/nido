@@ -58,7 +58,7 @@ fn install_two_of_three_recovery(
     // so this rule shape has NO doc route today (noted in the PR).
     let _ = install_rule_direct(
         env,
-        &account_addr,
+        account_addr,
         &ContextRuleType::CallContract(account_addr.clone()),
         "recovery",
         None,

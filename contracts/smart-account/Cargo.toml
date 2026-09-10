@@ -18,11 +18,10 @@ contract = true
 [dependencies]
 soroban-sdk = { workspace = true }
 stellar-accounts = { workspace = true }
-# SPIKE (apply_doc): client + wire types of perch's stateless doc compiler
-# (`default-features = false` at the workspace pin — no parser/compiler code
-# links into the account wasm; `compile_doc` runs in the shared deployed
-# compiler contract, cross-called from `doc.rs`).
-perch-doc-compiler = { workspace = true }
+# SPIKE (apply_doc): no perch crate dependency — the compiler wire types are
+# mirrored from the DEPLOYED artifact's spec in `doc.rs` (see the note
+# there), and `compile_doc` runs in the shared deployed compiler contract,
+# cross-called at its pinned derived address.
 # NOTE: deliberately NOT depending on `nido-zk-recovery` here, even though
 # there's no Cargo *dependency* cycle (confirmed via `grep smart-account
 # contracts/zk-recovery/Cargo.toml`). `nido-zk-recovery` is itself a

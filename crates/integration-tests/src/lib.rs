@@ -35,6 +35,19 @@ pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
 pub const FACTORY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
 
+/// SPIKE (`apply_doc`): the CANONICAL perch doc-compiler + interpreter as
+/// deployed on testnet — fetched from chain (`stellar contract fetch`) and
+/// committed, so the e2e exercises the exact builds live accounts talk to.
+/// `apply_doc.rs`'s pin tests assert sha256 of these bytes equals the
+/// account's derived-address pins: a pin bump without refetching (or vice
+/// versa) fails fast. This replaces registering perch's NATIVE source-rev
+/// contracts, which masked a live wire-type skew (the deployed compiler
+/// returns 5-field rules; the source rev had grown a 6th).
+pub const PERCH_DOC_COMPILER_WASM: &[u8] =
+    include_bytes!("../fixtures/perch/perch-doc-compiler.wasm");
+pub const PERCH_INTERPRETER_WASM: &[u8] =
+    include_bytes!("../fixtures/perch/perch-interpreter.wasm");
+
 #[allow(dead_code)]
 #[soroban_sdk::contractclient(name = "SmartAccountClient")]
 trait SmartAccountInterface {

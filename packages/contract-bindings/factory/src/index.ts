@@ -33,6 +33,79 @@ if (typeof window !== "undefined") {
 
 
 
+/**
+ * Context of a single authorized call performed by an address.
+ * 
+ * Custom account contracts that implement `__check_auth` special function
+ * receive a list of `Context` values corresponding to all the calls that
+ * need to be authorized.
+ */
+export type Context = {tag: "Contract", values: readonly [ContractContext]} | {tag: "CreateContractHostFn", values: readonly [CreateContractHostFnContext]} | {tag: "CreateContractWithCtorHostFn", values: readonly [CreateContractWithConstructorHostFnContext]};
+
+
+/**
+ * Authorization context of a single contract call.
+ * 
+ * This struct corresponds to a `require_auth_for_args` call for an address
+ * from `contract` function with `fn_name` name and `args` arguments.
+ */
+export interface ContractContext {
+  args: Array<any>;
+  contract: string;
+  fn_name: string;
+}
+
+/**
+ * Contract executable used for creating a new contract and used in
+ * `CreateContractHostFnContext`.
+ */
+export type ContractExecutable = {tag: "Wasm", values: readonly [Buffer]};
+
+
+/**
+ * Value of contract node in InvokerContractAuthEntry tree.
+ */
+export interface SubContractInvocation {
+  context: ContractContext;
+  sub_invocations: Array<InvokerContractAuthEntry>;
+}
+
+/**
+ * A node in the tree of authorizations performed on behalf of the current
+ * contract as invoker of the contracts deeper in the call stack.
+ * 
+ * This is used as an argument of `authorize_as_current_contract` host function.
+ * 
+ * This tree corresponds `require_auth[_for_args]` calls on behalf of the
+ * current contract.
+ */
+export type InvokerContractAuthEntry = {tag: "Contract", values: readonly [SubContractInvocation]} | {tag: "CreateContractHostFn", values: readonly [CreateContractHostFnContext]} | {tag: "CreateContractWithCtorHostFn", values: readonly [CreateContractWithConstructorHostFnContext]};
+
+
+/**
+ * Authorization context for `create_contract` host function that creates a
+ * new contract on behalf of authorizer address.
+ */
+export interface CreateContractHostFnContext {
+  executable: ContractExecutable;
+  salt: Buffer;
+}
+
+
+/**
+ * Authorization context for `create_contract` host function that creates a
+ * new contract on behalf of authorizer address.
+ * This is the same as `CreateContractHostFnContext`, but also has
+ * contract constructor arguments.
+ */
+export interface CreateContractWithConstructorHostFnContext {
+  constructor_args: Array<any>;
+  executable: ContractExecutable;
+  salt: Buffer;
+}
+
+export type Executable = {tag: "Wasm", values: readonly [Buffer]} | {tag: "StellarAsset", values: void} | {tag: "Account", values: void};
+
 
 
 
@@ -124,22 +197,22 @@ export type Signer = {tag: "Delegated", values: readonly [string]} | {tag: "Exte
 /**
  * The authorization payload passed to `__check_auth`, bundling cryptographic
  * proofs with context rule selection.
- *
+ * 
  * This struct carries two distinct pieces of information that are both
  * required for authorization but cannot be derived from each other:
- *
+ * 
  * - `signers` maps each [`Signer`] to its raw signature bytes, providing
  * cryptographic proof that the signer actually signed the transaction
  * payload. A context rule stores which signer *identities* are authorized
  * (via `signer_ids`), but the rule does not contain the signatures
  * themselves — those must be supplied here.
- *
+ * 
  * - `context_rule_ids` tells the system which rule to validate for each auth
  * context. Because multiple rules can exist for the same context type, the
  * caller must explicitly select one per context rather than relying on
  * auto-discovery. Each entry is aligned by index with the `auth_contexts`
  * passed to `__check_auth`.
- *
+ * 
  * The length of `context_rule_ids` must equal the number of auth contexts;
  * a mismatch is rejected with
  * [`SmartAccountError::ContextRuleIdsLen
@@ -508,7 +581,7 @@ export const WebAuthnError = {
 /**
  * WebAuthn signature data structure containing all components needed for
  * verification.
- *
+ * 
  * This structure encapsulates the signature and associated data generated
  * during a WebAuthn authentication ceremony.
  */
@@ -530,21 +603,25 @@ signature: Buffer;
 export interface Client {
   /**
    * Construct and simulate a admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * The factory admin — the only address allowed to rotate the admin or
-   * upgrade the factory wasm. Set at construct time.
    */
   admin: (options?: MethodOptions) => Promise<AssembledTransaction<string>>
 
   /**
    * Construct and simulate a upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Upgrade the factory's own wasm to `new_wasm_hash` (an already-installed
-   * wasm hash). Requires admin auth.
+   * admin-sep's default, plus one load-bearing line: CLEAR the cached
+   * account-wasm hash. `account_wasm_hash` caches `sha256(embedded
+   * wasm)` in instance storage after the first `create_account`; an
+   * in-place upgrade swaps the embedded bytes but — without this — the
+   * STALE cached hash survives and every subsequent `create_account`
+   * deploys the OLD account wasm. (Found upgrading the testnet factory
+   * in the apply_doc spike. A factory upgraded from a build that
+   * predates this override must call `refresh_account_wasm_hash` once
+   * after the upgrade — the upgrade call itself still runs the old code.)
    */
   upgrade: ({new_wasm_hash}: {new_wasm_hash: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
    * Construct and simulate a set_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Rotate the admin. Requires the current admin's auth.
    */
   set_admin: ({new_admin}: {new_admin: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
@@ -554,10 +631,101 @@ export interface Client {
   get_c_address: ({salt}: {salt: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
 
   /**
+   * Construct and simulate a recovery_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * The current recovery-pool override, or `None` if unset. `None` is the
+   * default and production state: with no override, `resolve_recovery`
+   * resolves `"zk-recovery"` from the registry exactly as before this
+   * override existed.
+   */
+  recovery_pool: (options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>
+
+  /**
    * Construct and simulate a create_account transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Deploy an account contract and add its initial passkey signer.
+   * Deploy an account contract and add its initial passkey signer. Legacy
+   * entry point, kept for existing callers -- routes through the exact
+   * same deploy+genesis-insert path as `create_account_v2`, using a
+   * DETERMINISTIC DUMMY commitment (`dummy_commitment`) instead of a real
+   * one. This is the anonymity-set property (M2 Task 5): every account
+   * this factory creates gets exactly one genesis leaf inserted into the
+   * recovery pool, atomically with its own deployment, whether or not its
+   * owner actually enrolled in ZK recovery -- so an observer of the pool
+   * (or of the factory's transaction shapes) cannot distinguish an
+   * enrolled account from a non-enrolled one.
    */
   create_account: ({salt, key}: {salt: Buffer, key: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
+
+  /**
+   * Construct and simulate a pinned_verifier transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * The pinned `verifier` address, or `None` if unpinned. `None` is the
+   * default (pre-B2 / testnet) state: `resolve("verifier")` resolves from
+   * the registry. When `Some`, the registry is bypassed for that name.
+   */
+  pinned_verifier: (options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>
+
+  /**
+   * Construct and simulate a create_account_v2 transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Deploy an account contract, add its initial passkey signer, AND
+   * insert `commitment` as its genesis leaf in the recovery pool --
+   * atomically with the deploy, in the same transaction (M2 Task 5). If
+   * the insert fails (pool unresolvable, tree full, wrong `commitment`,
+   * ...) the whole call reverts, so there is never an account without a
+   * leaf, nor a leaf without an account. Returns the deployed account's
+   * address, which is always `get_c_address(salt)` -- the deterministic
+   * address depends only on the deployer (this factory) and `salt`, never
+   * on the constructor args or the genesis insert added here.
+   */
+  create_account_v2: ({salt, key, commitment}: {salt: Buffer, key: Buffer, commitment: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
+
+  /**
+   * Construct and simulate a set_recovery_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Set (or rotate) an admin-only override for the recovery-pool/
+   * controller address, bypassing the registry's `"zk-recovery"`
+   * resolution (see `resolve_recovery`). Intended for a preview/staging
+   * factory instance that needs to point at an isolated preview pool
+   * without touching the production registry mapping every other factory
+   * instance shares. Requires the current admin's auth -- this is a
+   * powerful knob: it changes which contract becomes every newly-created
+   * account's recovery controller, and which contract receives the
+   * genesis `insert` cross-call in `deploy_and_insert`.
+   */
+  set_recovery_pool: ({pool}: {pool: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a set_registry_pins transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Pin the `verifier` and `zk-recovery` addresses (plan B2). After this,
+   * every `resolve("verifier")` / `resolve("zk-recovery")` (i.e. every
+   * `create_account`/`create_account_v2`) returns exactly these addresses
+   * DIRECTLY, without consulting the registry at all -- taking the registry
+   * off the runtime critical path and closing the "compromised/repointed
+   * registry silently routes new accounts to attacker contracts" hole
+   * (`resolve` trusted the registry unconditionally before this). Because
+   * the registry is bypassed, a later repoint cannot reroute NOR block new
+   * accounts; the registry remains authoritative only for unpinned names
+   * and for off-chain discovery. Both are set together because a cutover
+   * pins both at once from `DEPLOYED.md`; call again to re-pin after a
+   * deliberate verifier/controller upgrade. Requires the current admin's
+   * auth. NOTE: the `zk-recovery` pin is superseded by the admin-set
+   * `set_recovery_pool` override, which is checked first (an explicit,
+   * separately-audited admin choice -- see `resolve_recovery`).
+   */
+  set_registry_pins: ({verifier, zk_recovery}: {verifier: string, zk_recovery: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a pinned_zk_recovery transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * The pinned expected `zk-recovery` address, or `None` if unpinned.
+   */
+  pinned_zk_recovery: (options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>
+
+  /**
+   * Construct and simulate a refresh_account_wasm_hash transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Recompute and store the embedded account-wasm hash, returning it.
+   * Admin-gated companion to the `upgrade` override above: after
+   * in-place-upgrading a factory whose OLD code predates that override,
+   * the stale cache survives (the upgrade transaction runs the old
+   * code); calling this once afterwards repairs it. Harmless any other
+   * time — it just refreshes the cache with the freshly computed value.
+   */
+  refresh_account_wasm_hash: (options?: MethodOptions) => Promise<AssembledTransaction<Buffer>>
 
 }
 export class Client extends ContractClient {
@@ -579,12 +747,27 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAAAAAAAHZUaGUgZmFjdG9yeSBhZG1pbiDigJQgdGhlIG9ubHkgYWRkcmVzcyBhbGxvd2VkIHRvIHJvdGF0ZSB0aGUgYWRtaW4gb3IKdXBncmFkZSB0aGUgZmFjdG9yeSB3YXNtLiBTZXQgYXQgY29uc3RydWN0IHRpbWUuAAAAAAAFYWRtaW4AAAAAAAAAAAAAAQAAABM=",
-        "AAAAAAAAAGhVcGdyYWRlIHRoZSBmYWN0b3J5J3Mgb3duIHdhc20gdG8gYG5ld193YXNtX2hhc2hgIChhbiBhbHJlYWR5LWluc3RhbGxlZAp3YXNtIGhhc2gpLiBSZXF1aXJlcyBhZG1pbiBhdXRoLgAAAAd1cGdyYWRlAAAAAAEAAAAAAAAADW5ld193YXNtX2hhc2gAAAAAAAPuAAAAIAAAAAA=",
-        "AAAAAAAAADRSb3RhdGUgdGhlIGFkbWluLiBSZXF1aXJlcyB0aGUgY3VycmVudCBhZG1pbidzIGF1dGguAAAACXNldF9hZG1pbgAAAAAAAAEAAAAAAAAACW5ld19hZG1pbgAAAAAAABMAAAAA",
+      new ContractSpec([ "AAAAAAAAAAAAAAAFYWRtaW4AAAAAAAAAAAAAAQAAABM=",
+        "AAAAAAAAAlJhZG1pbi1zZXAncyBkZWZhdWx0LCBwbHVzIG9uZSBsb2FkLWJlYXJpbmcgbGluZTogQ0xFQVIgdGhlIGNhY2hlZAphY2NvdW50LXdhc20gaGFzaC4gYGFjY291bnRfd2FzbV9oYXNoYCBjYWNoZXMgYHNoYTI1NihlbWJlZGRlZAp3YXNtKWAgaW4gaW5zdGFuY2Ugc3RvcmFnZSBhZnRlciB0aGUgZmlyc3QgYGNyZWF0ZV9hY2NvdW50YDsgYW4KaW4tcGxhY2UgdXBncmFkZSBzd2FwcyB0aGUgZW1iZWRkZWQgYnl0ZXMgYnV0IOKAlCB3aXRob3V0IHRoaXMg4oCUIHRoZQpTVEFMRSBjYWNoZWQgaGFzaCBzdXJ2aXZlcyBhbmQgZXZlcnkgc3Vic2VxdWVudCBgY3JlYXRlX2FjY291bnRgCmRlcGxveXMgdGhlIE9MRCBhY2NvdW50IHdhc20uIChGb3VuZCB1cGdyYWRpbmcgdGhlIHRlc3RuZXQgZmFjdG9yeQppbiB0aGUgYXBwbHlfZG9jIHNwaWtlLiBBIGZhY3RvcnkgdXBncmFkZWQgZnJvbSBhIGJ1aWxkIHRoYXQKcHJlZGF0ZXMgdGhpcyBvdmVycmlkZSBtdXN0IGNhbGwgYHJlZnJlc2hfYWNjb3VudF93YXNtX2hhc2hgIG9uY2UKYWZ0ZXIgdGhlIHVwZ3JhZGUg4oCUIHRoZSB1cGdyYWRlIGNhbGwgaXRzZWxmIHN0aWxsIHJ1bnMgdGhlIG9sZCBjb2RlLikAAAAAAAd1cGdyYWRlAAAAAAEAAAAAAAAADW5ld193YXNtX2hhc2gAAAAAAAPuAAAAIAAAAAA=",
+        "AAAAAAAAAAAAAAAJc2V0X2FkbWluAAAAAAAAAQAAAAAAAAAJbmV3X2FkbWluAAAAAAAAEwAAAAA=",
         "AAAAAAAAAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAEAAAAAAAAABWFkbWluAAAAAAAAEwAAAAA=",
         "AAAAAAAAAAAAAAANZ2V0X2NfYWRkcmVzcwAAAAAAAAEAAAAAAAAABHNhbHQAAAPuAAAAIAAAAAEAAAAT",
-        "AAAAAAAAAD5EZXBsb3kgYW4gYWNjb3VudCBjb250cmFjdCBhbmQgYWRkIGl0cyBpbml0aWFsIHBhc3NrZXkgc2lnbmVyLgAAAAAADmNyZWF0ZV9hY2NvdW50AAAAAAACAAAAAAAAAARzYWx0AAAD7gAAACAAAAAAAAAAA2tleQAAAAPuAAAAQQAAAAEAAAAT",
+        "AAAAAAAAANxUaGUgY3VycmVudCByZWNvdmVyeS1wb29sIG92ZXJyaWRlLCBvciBgTm9uZWAgaWYgdW5zZXQuIGBOb25lYCBpcyB0aGUKZGVmYXVsdCBhbmQgcHJvZHVjdGlvbiBzdGF0ZTogd2l0aCBubyBvdmVycmlkZSwgYHJlc29sdmVfcmVjb3ZlcnlgCnJlc29sdmVzIGAiemstcmVjb3ZlcnkiYCBmcm9tIHRoZSByZWdpc3RyeSBleGFjdGx5IGFzIGJlZm9yZSB0aGlzCm92ZXJyaWRlIGV4aXN0ZWQuAAAADXJlY292ZXJ5X3Bvb2wAAAAAAAAAAAAAAQAAA+gAAAAT",
+        "AAAAAAAAAopEZXBsb3kgYW4gYWNjb3VudCBjb250cmFjdCBhbmQgYWRkIGl0cyBpbml0aWFsIHBhc3NrZXkgc2lnbmVyLiBMZWdhY3kKZW50cnkgcG9pbnQsIGtlcHQgZm9yIGV4aXN0aW5nIGNhbGxlcnMgLS0gcm91dGVzIHRocm91Z2ggdGhlIGV4YWN0CnNhbWUgZGVwbG95K2dlbmVzaXMtaW5zZXJ0IHBhdGggYXMgYGNyZWF0ZV9hY2NvdW50X3YyYCwgdXNpbmcgYQpERVRFUk1JTklTVElDIERVTU1ZIGNvbW1pdG1lbnQgKGBkdW1teV9jb21taXRtZW50YCkgaW5zdGVhZCBvZiBhIHJlYWwKb25lLiBUaGlzIGlzIHRoZSBhbm9ueW1pdHktc2V0IHByb3BlcnR5IChNMiBUYXNrIDUpOiBldmVyeSBhY2NvdW50CnRoaXMgZmFjdG9yeSBjcmVhdGVzIGdldHMgZXhhY3RseSBvbmUgZ2VuZXNpcyBsZWFmIGluc2VydGVkIGludG8gdGhlCnJlY292ZXJ5IHBvb2wsIGF0b21pY2FsbHkgd2l0aCBpdHMgb3duIGRlcGxveW1lbnQsIHdoZXRoZXIgb3Igbm90IGl0cwpvd25lciBhY3R1YWxseSBlbnJvbGxlZCBpbiBaSyByZWNvdmVyeSAtLSBzbyBhbiBvYnNlcnZlciBvZiB0aGUgcG9vbAoob3Igb2YgdGhlIGZhY3RvcnkncyB0cmFuc2FjdGlvbiBzaGFwZXMpIGNhbm5vdCBkaXN0aW5ndWlzaCBhbgplbnJvbGxlZCBhY2NvdW50IGZyb20gYSBub24tZW5yb2xsZWQgb25lLgAAAAAADmNyZWF0ZV9hY2NvdW50AAAAAAACAAAAAAAAAARzYWx0AAAD7gAAACAAAAAAAAAAA2tleQAAAAPuAAAAQQAAAAEAAAAT",
+        "AAAAAAAAAMxUaGUgcGlubmVkIGB2ZXJpZmllcmAgYWRkcmVzcywgb3IgYE5vbmVgIGlmIHVucGlubmVkLiBgTm9uZWAgaXMgdGhlCmRlZmF1bHQgKHByZS1CMiAvIHRlc3RuZXQpIHN0YXRlOiBgcmVzb2x2ZSgidmVyaWZpZXIiKWAgcmVzb2x2ZXMgZnJvbQp0aGUgcmVnaXN0cnkuIFdoZW4gYFNvbWVgLCB0aGUgcmVnaXN0cnkgaXMgYnlwYXNzZWQgZm9yIHRoYXQgbmFtZS4AAAAPcGlubmVkX3ZlcmlmaWVyAAAAAAAAAAABAAAD6AAAABM=",
+        "AAAAAAAAAlNEZXBsb3kgYW4gYWNjb3VudCBjb250cmFjdCwgYWRkIGl0cyBpbml0aWFsIHBhc3NrZXkgc2lnbmVyLCBBTkQKaW5zZXJ0IGBjb21taXRtZW50YCBhcyBpdHMgZ2VuZXNpcyBsZWFmIGluIHRoZSByZWNvdmVyeSBwb29sIC0tCmF0b21pY2FsbHkgd2l0aCB0aGUgZGVwbG95LCBpbiB0aGUgc2FtZSB0cmFuc2FjdGlvbiAoTTIgVGFzayA1KS4gSWYKdGhlIGluc2VydCBmYWlscyAocG9vbCB1bnJlc29sdmFibGUsIHRyZWUgZnVsbCwgd3JvbmcgYGNvbW1pdG1lbnRgLAouLi4pIHRoZSB3aG9sZSBjYWxsIHJldmVydHMsIHNvIHRoZXJlIGlzIG5ldmVyIGFuIGFjY291bnQgd2l0aG91dCBhCmxlYWYsIG5vciBhIGxlYWYgd2l0aG91dCBhbiBhY2NvdW50LiBSZXR1cm5zIHRoZSBkZXBsb3llZCBhY2NvdW50J3MKYWRkcmVzcywgd2hpY2ggaXMgYWx3YXlzIGBnZXRfY19hZGRyZXNzKHNhbHQpYCAtLSB0aGUgZGV0ZXJtaW5pc3RpYwphZGRyZXNzIGRlcGVuZHMgb25seSBvbiB0aGUgZGVwbG95ZXIgKHRoaXMgZmFjdG9yeSkgYW5kIGBzYWx0YCwgbmV2ZXIKb24gdGhlIGNvbnN0cnVjdG9yIGFyZ3Mgb3IgdGhlIGdlbmVzaXMgaW5zZXJ0IGFkZGVkIGhlcmUuAAAAABFjcmVhdGVfYWNjb3VudF92MgAAAAAAAAMAAAAAAAAABHNhbHQAAAPuAAAAIAAAAAAAAAADa2V5AAAAA+4AAABBAAAAAAAAAApjb21taXRtZW50AAAAAAPuAAAAIAAAAAEAAAAT",
+        "AAAAAAAAAjxTZXQgKG9yIHJvdGF0ZSkgYW4gYWRtaW4tb25seSBvdmVycmlkZSBmb3IgdGhlIHJlY292ZXJ5LXBvb2wvCmNvbnRyb2xsZXIgYWRkcmVzcywgYnlwYXNzaW5nIHRoZSByZWdpc3RyeSdzIGAiemstcmVjb3ZlcnkiYApyZXNvbHV0aW9uIChzZWUgYHJlc29sdmVfcmVjb3ZlcnlgKS4gSW50ZW5kZWQgZm9yIGEgcHJldmlldy9zdGFnaW5nCmZhY3RvcnkgaW5zdGFuY2UgdGhhdCBuZWVkcyB0byBwb2ludCBhdCBhbiBpc29sYXRlZCBwcmV2aWV3IHBvb2wKd2l0aG91dCB0b3VjaGluZyB0aGUgcHJvZHVjdGlvbiByZWdpc3RyeSBtYXBwaW5nIGV2ZXJ5IG90aGVyIGZhY3RvcnkKaW5zdGFuY2Ugc2hhcmVzLiBSZXF1aXJlcyB0aGUgY3VycmVudCBhZG1pbidzIGF1dGggLS0gdGhpcyBpcyBhCnBvd2VyZnVsIGtub2I6IGl0IGNoYW5nZXMgd2hpY2ggY29udHJhY3QgYmVjb21lcyBldmVyeSBuZXdseS1jcmVhdGVkCmFjY291bnQncyByZWNvdmVyeSBjb250cm9sbGVyLCBhbmQgd2hpY2ggY29udHJhY3QgcmVjZWl2ZXMgdGhlCmdlbmVzaXMgYGluc2VydGAgY3Jvc3MtY2FsbCBpbiBgZGVwbG95X2FuZF9pbnNlcnRgLgAAABFzZXRfcmVjb3ZlcnlfcG9vbAAAAAAAAAEAAAAAAAAABHBvb2wAAAATAAAAAA==",
+        "AAAAAAAAA/xQaW4gdGhlIGB2ZXJpZmllcmAgYW5kIGB6ay1yZWNvdmVyeWAgYWRkcmVzc2VzIChwbGFuIEIyKS4gQWZ0ZXIgdGhpcywKZXZlcnkgYHJlc29sdmUoInZlcmlmaWVyIilgIC8gYHJlc29sdmUoInprLXJlY292ZXJ5IilgIChpLmUuIGV2ZXJ5CmBjcmVhdGVfYWNjb3VudGAvYGNyZWF0ZV9hY2NvdW50X3YyYCkgcmV0dXJucyBleGFjdGx5IHRoZXNlIGFkZHJlc3NlcwpESVJFQ1RMWSwgd2l0aG91dCBjb25zdWx0aW5nIHRoZSByZWdpc3RyeSBhdCBhbGwgLS0gdGFraW5nIHRoZSByZWdpc3RyeQpvZmYgdGhlIHJ1bnRpbWUgY3JpdGljYWwgcGF0aCBhbmQgY2xvc2luZyB0aGUgImNvbXByb21pc2VkL3JlcG9pbnRlZApyZWdpc3RyeSBzaWxlbnRseSByb3V0ZXMgbmV3IGFjY291bnRzIHRvIGF0dGFja2VyIGNvbnRyYWN0cyIgaG9sZQooYHJlc29sdmVgIHRydXN0ZWQgdGhlIHJlZ2lzdHJ5IHVuY29uZGl0aW9uYWxseSBiZWZvcmUgdGhpcykuIEJlY2F1c2UKdGhlIHJlZ2lzdHJ5IGlzIGJ5cGFzc2VkLCBhIGxhdGVyIHJlcG9pbnQgY2Fubm90IHJlcm91dGUgTk9SIGJsb2NrIG5ldwphY2NvdW50czsgdGhlIHJlZ2lzdHJ5IHJlbWFpbnMgYXV0aG9yaXRhdGl2ZSBvbmx5IGZvciB1bnBpbm5lZCBuYW1lcwphbmQgZm9yIG9mZi1jaGFpbiBkaXNjb3ZlcnkuIEJvdGggYXJlIHNldCB0b2dldGhlciBiZWNhdXNlIGEgY3V0b3ZlcgpwaW5zIGJvdGggYXQgb25jZSBmcm9tIGBERVBMT1lFRC5tZGA7IGNhbGwgYWdhaW4gdG8gcmUtcGluIGFmdGVyIGEKZGVsaWJlcmF0ZSB2ZXJpZmllci9jb250cm9sbGVyIHVwZ3JhZGUuIFJlcXVpcmVzIHRoZSBjdXJyZW50IGFkbWluJ3MKYXV0aC4gTk9URTogdGhlIGB6ay1yZWNvdmVyeWAgcGluIGlzIHN1cGVyc2VkZWQgYnkgdGhlIGFkbWluLXNldApgc2V0X3JlY292ZXJ5X3Bvb2xgIG92ZXJyaWRlLCB3aGljaCBpcyBjaGVja2VkIGZpcnN0IChhbiBleHBsaWNpdCwKc2VwYXJhdGVseS1hdWRpdGVkIGFkbWluIGNob2ljZSAtLSBzZWUgYHJlc29sdmVfcmVjb3ZlcnlgKS4AAAARc2V0X3JlZ2lzdHJ5X3BpbnMAAAAAAAACAAAAAAAAAAh2ZXJpZmllcgAAABMAAAAAAAAAC3prX3JlY292ZXJ5AAAAABMAAAAA",
+        "AAAAAAAAAEFUaGUgcGlubmVkIGV4cGVjdGVkIGB6ay1yZWNvdmVyeWAgYWRkcmVzcywgb3IgYE5vbmVgIGlmIHVucGlubmVkLgAAAAAAABJwaW5uZWRfemtfcmVjb3ZlcnkAAAAAAAAAAAABAAAD6AAAABM=",
+        "AAAAAAAAAYpSZWNvbXB1dGUgYW5kIHN0b3JlIHRoZSBlbWJlZGRlZCBhY2NvdW50LXdhc20gaGFzaCwgcmV0dXJuaW5nIGl0LgpBZG1pbi1nYXRlZCBjb21wYW5pb24gdG8gdGhlIGB1cGdyYWRlYCBvdmVycmlkZSBhYm92ZTogYWZ0ZXIKaW4tcGxhY2UtdXBncmFkaW5nIGEgZmFjdG9yeSB3aG9zZSBPTEQgY29kZSBwcmVkYXRlcyB0aGF0IG92ZXJyaWRlLAp0aGUgc3RhbGUgY2FjaGUgc3Vydml2ZXMgKHRoZSB1cGdyYWRlIHRyYW5zYWN0aW9uIHJ1bnMgdGhlIG9sZApjb2RlKTsgY2FsbGluZyB0aGlzIG9uY2UgYWZ0ZXJ3YXJkcyByZXBhaXJzIGl0LiBIYXJtbGVzcyBhbnkgb3RoZXIKdGltZSDigJQgaXQganVzdCByZWZyZXNoZXMgdGhlIGNhY2hlIHdpdGggdGhlIGZyZXNobHkgY29tcHV0ZWQgdmFsdWUuAAAAAAAZcmVmcmVzaF9hY2NvdW50X3dhc21faGFzaAAAAAAAAAAAAAABAAAD7gAAACA=",
+        "AAAAAgAAAONDb250ZXh0IG9mIGEgc2luZ2xlIGF1dGhvcml6ZWQgY2FsbCBwZXJmb3JtZWQgYnkgYW4gYWRkcmVzcy4KCkN1c3RvbSBhY2NvdW50IGNvbnRyYWN0cyB0aGF0IGltcGxlbWVudCBgX19jaGVja19hdXRoYCBzcGVjaWFsIGZ1bmN0aW9uCnJlY2VpdmUgYSBsaXN0IG9mIGBDb250ZXh0YCB2YWx1ZXMgY29ycmVzcG9uZGluZyB0byBhbGwgdGhlIGNhbGxzIHRoYXQKbmVlZCB0byBiZSBhdXRob3JpemVkLgAAAAAAAAAAB0NvbnRleHQAAAAAAwAAAAEAAAAUQ29udHJhY3QgaW52b2NhdGlvbi4AAAAIQ29udHJhY3QAAAABAAAH0AAAAA9Db250cmFjdENvbnRleHQAAAAAAQAAAD1Db250cmFjdCB0aGF0IGhhcyBhIGNvbnN0cnVjdG9yIHdpdGggbm8gYXJndW1lbnRzIGlzIGNyZWF0ZWQuAAAAAAAAFENyZWF0ZUNvbnRyYWN0SG9zdEZuAAAAAQAAB9AAAAAbQ3JlYXRlQ29udHJhY3RIb3N0Rm5Db250ZXh0AAAAAAEAAABEQ29udHJhY3QgdGhhdCBoYXMgYSBjb25zdHJ1Y3RvciB3aXRoIDEgb3IgbW9yZSBhcmd1bWVudHMgaXMgY3JlYXRlZC4AAAAcQ3JlYXRlQ29udHJhY3RXaXRoQ3Rvckhvc3RGbgAAAAEAAAfQAAAAKkNyZWF0ZUNvbnRyYWN0V2l0aENvbnN0cnVjdG9ySG9zdEZuQ29udGV4dAAA",
+        "AAAAAQAAAL1BdXRob3JpemF0aW9uIGNvbnRleHQgb2YgYSBzaW5nbGUgY29udHJhY3QgY2FsbC4KClRoaXMgc3RydWN0IGNvcnJlc3BvbmRzIHRvIGEgYHJlcXVpcmVfYXV0aF9mb3JfYXJnc2AgY2FsbCBmb3IgYW4gYWRkcmVzcwpmcm9tIGBjb250cmFjdGAgZnVuY3Rpb24gd2l0aCBgZm5fbmFtZWAgbmFtZSBhbmQgYGFyZ3NgIGFyZ3VtZW50cy4AAAAAAAAAAAAAD0NvbnRyYWN0Q29udGV4dAAAAAADAAAAAAAAAARhcmdzAAAD6gAAAAAAAAAAAAAACGNvbnRyYWN0AAAAEwAAAAAAAAAHZm5fbmFtZQAAAAAR",
+        "AAAAAgAAAF9Db250cmFjdCBleGVjdXRhYmxlIHVzZWQgZm9yIGNyZWF0aW5nIGEgbmV3IGNvbnRyYWN0IGFuZCB1c2VkIGluCmBDcmVhdGVDb250cmFjdEhvc3RGbkNvbnRleHRgLgAAAAAAAAAAEkNvbnRyYWN0RXhlY3V0YWJsZQAAAAAAAQAAAAEAAAAAAAAABFdhc20AAAABAAAD7gAAACA=",
+        "AAAAAQAAADhWYWx1ZSBvZiBjb250cmFjdCBub2RlIGluIEludm9rZXJDb250cmFjdEF1dGhFbnRyeSB0cmVlLgAAAAAAAAAVU3ViQ29udHJhY3RJbnZvY2F0aW9uAAAAAAAAAgAAAAAAAAAHY29udGV4dAAAAAfQAAAAD0NvbnRyYWN0Q29udGV4dAAAAAAAAAAAD3N1Yl9pbnZvY2F0aW9ucwAAAAPqAAAH0AAAABhJbnZva2VyQ29udHJhY3RBdXRoRW50cnk=",
+        "AAAAAgAAAS9BIG5vZGUgaW4gdGhlIHRyZWUgb2YgYXV0aG9yaXphdGlvbnMgcGVyZm9ybWVkIG9uIGJlaGFsZiBvZiB0aGUgY3VycmVudApjb250cmFjdCBhcyBpbnZva2VyIG9mIHRoZSBjb250cmFjdHMgZGVlcGVyIGluIHRoZSBjYWxsIHN0YWNrLgoKVGhpcyBpcyB1c2VkIGFzIGFuIGFyZ3VtZW50IG9mIGBhdXRob3JpemVfYXNfY3VycmVudF9jb250cmFjdGAgaG9zdCBmdW5jdGlvbi4KClRoaXMgdHJlZSBjb3JyZXNwb25kcyBgcmVxdWlyZV9hdXRoW19mb3JfYXJnc11gIGNhbGxzIG9uIGJlaGFsZiBvZiB0aGUKY3VycmVudCBjb250cmFjdC4AAAAAAAAAABhJbnZva2VyQ29udHJhY3RBdXRoRW50cnkAAAADAAAAAQAAABJJbnZva2UgYSBjb250cmFjdC4AAAAAAAhDb250cmFjdAAAAAEAAAfQAAAAFVN1YkNvbnRyYWN0SW52b2NhdGlvbgAAAAAAAAEAAAA1Q3JlYXRlIGEgY29udHJhY3QgcGFzc2luZyAwIGFyZ3VtZW50cyB0byBjb25zdHJ1Y3Rvci4AAAAAAAAUQ3JlYXRlQ29udHJhY3RIb3N0Rm4AAAABAAAH0AAAABtDcmVhdGVDb250cmFjdEhvc3RGbkNvbnRleHQAAAAAAQAAAD1DcmVhdGUgYSBjb250cmFjdCBwYXNzaW5nIDAgb3IgbW9yZSBhcmd1bWVudHMgdG8gY29uc3RydWN0b3IuAAAAAAAAHENyZWF0ZUNvbnRyYWN0V2l0aEN0b3JIb3N0Rm4AAAABAAAH0AAAACpDcmVhdGVDb250cmFjdFdpdGhDb25zdHJ1Y3Rvckhvc3RGbkNvbnRleHQAAA==",
+        "AAAAAQAAAHZBdXRob3JpemF0aW9uIGNvbnRleHQgZm9yIGBjcmVhdGVfY29udHJhY3RgIGhvc3QgZnVuY3Rpb24gdGhhdCBjcmVhdGVzIGEKbmV3IGNvbnRyYWN0IG9uIGJlaGFsZiBvZiBhdXRob3JpemVyIGFkZHJlc3MuAAAAAAAAAAAAG0NyZWF0ZUNvbnRyYWN0SG9zdEZuQ29udGV4dAAAAAACAAAAAAAAAApleGVjdXRhYmxlAAAAAAfQAAAAEkNvbnRyYWN0RXhlY3V0YWJsZQAAAAAAAAAAAARzYWx0AAAD7gAAACA=",
+        "AAAAAQAAANZBdXRob3JpemF0aW9uIGNvbnRleHQgZm9yIGBjcmVhdGVfY29udHJhY3RgIGhvc3QgZnVuY3Rpb24gdGhhdCBjcmVhdGVzIGEKbmV3IGNvbnRyYWN0IG9uIGJlaGFsZiBvZiBhdXRob3JpemVyIGFkZHJlc3MuClRoaXMgaXMgdGhlIHNhbWUgYXMgYENyZWF0ZUNvbnRyYWN0SG9zdEZuQ29udGV4dGAsIGJ1dCBhbHNvIGhhcwpjb250cmFjdCBjb25zdHJ1Y3RvciBhcmd1bWVudHMuAAAAAAAAAAAAKkNyZWF0ZUNvbnRyYWN0V2l0aENvbnN0cnVjdG9ySG9zdEZuQ29udGV4dAAAAAAAAwAAAAAAAAAQY29uc3RydWN0b3JfYXJncwAAA+oAAAAAAAAAAAAAAApleGVjdXRhYmxlAAAAAAfQAAAAEkNvbnRyYWN0RXhlY3V0YWJsZQAAAAAAAAAAAARzYWx0AAAD7gAAACA=",
+        "AAAAAgAAAAAAAAAAAAAACkV4ZWN1dGFibGUAAAAAAAMAAAABAAAAAAAAAARXYXNtAAAAAQAAA+4AAAAgAAAAAAAAAAAAAAAMU3RlbGxhckFzc2V0AAAAAAAAAAAAAAAHQWNjb3VudAA=",
         "AAAABQAAADdFdmVudCBlbWl0dGVkIHdoZW4gYSBwb2xpY3kgaXMgYWRkZWQgdG8gYSBjb250ZXh0IHJ1bGUuAAAAAAAAAAALUG9saWN5QWRkZWQAAAAAAQAAAAxwb2xpY3lfYWRkZWQAAAACAAAAAAAAAA9jb250ZXh0X3J1bGVfaWQAAAAABAAAAAEAAAAAAAAACXBvbGljeV9pZAAAAAAAAAQAAAAAAAAAAg==",
         "AAAABQAAADdFdmVudCBlbWl0dGVkIHdoZW4gYSBzaWduZXIgaXMgYWRkZWQgdG8gYSBjb250ZXh0IHJ1bGUuAAAAAAAAAAALU2lnbmVyQWRkZWQAAAAAAQAAAAxzaWduZXJfYWRkZWQAAAACAAAAAAAAAA9jb250ZXh0X3J1bGVfaWQAAAAABAAAAAEAAAAAAAAACXNpZ25lcl9pZAAAAAAAAAQAAAAAAAAAAg==",
         "AAAABQAAADtFdmVudCBlbWl0dGVkIHdoZW4gYSBwb2xpY3kgaXMgcmVtb3ZlZCBmcm9tIGEgY29udGV4dCBydWxlLgAAAAAAAAAADVBvbGljeVJlbW92ZWQAAAAAAAABAAAADnBvbGljeV9yZW1vdmVkAAAAAAACAAAAAAAAAA9jb250ZXh0X3J1bGVfaWQAAAAABAAAAAEAAAAAAAAACXBvbGljeV9pZAAAAAAAAAQAAAAAAAAAAg==",
@@ -639,6 +822,13 @@ export class Client extends ContractClient {
         upgrade: this.txFromJSON<null>,
         set_admin: this.txFromJSON<null>,
         get_c_address: this.txFromJSON<string>,
-        create_account: this.txFromJSON<string>
+        recovery_pool: this.txFromJSON<Option<string>>,
+        create_account: this.txFromJSON<string>,
+        pinned_verifier: this.txFromJSON<Option<string>>,
+        create_account_v2: this.txFromJSON<string>,
+        set_recovery_pool: this.txFromJSON<null>,
+        set_registry_pins: this.txFromJSON<null>,
+        pinned_zk_recovery: this.txFromJSON<Option<string>>,
+        refresh_account_wasm_hash: this.txFromJSON<Buffer>
   }
 }

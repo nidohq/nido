@@ -144,7 +144,22 @@ pub struct Contract;
 impl Administratable for Contract {}
 
 #[contractimpl(contracttrait)]
-impl Upgradable for Contract {}
+impl Upgradable for Contract {
+    /// admin-sep's default, plus one load-bearing line: CLEAR the cached
+    /// account-wasm hash. `account_wasm_hash` caches `sha256(embedded
+    /// wasm)` in instance storage after the first `create_account`; an
+    /// in-place upgrade swaps the embedded bytes but — without this — the
+    /// STALE cached hash survives and every subsequent `create_account`
+    /// deploys the OLD account wasm. (Found upgrading the testnet factory
+    /// in the `apply_doc` spike. A factory upgraded from a build that
+    /// predates this override must call `refresh_account_wasm_hash` once
+    /// after the upgrade — the upgrade call itself still runs the old code.)
+    fn upgrade(e: &soroban_sdk::Env, new_wasm_hash: BytesN<32>) {
+        Self::admin(e).require_auth();
+        Config::new(e).account.remove();
+        e.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+}
 
 #[contractimpl]
 impl Contract {
@@ -258,6 +273,19 @@ impl Contract {
 
     pub fn get_c_address(e: &Env, salt: &BytesN<32>) -> Address {
         Self::deployer(e, salt).deployed_address()
+    }
+
+    /// Recompute and store the embedded account-wasm hash, returning it.
+    /// Admin-gated companion to the `upgrade` override above: after
+    /// in-place-upgrading a factory whose OLD code predates that override,
+    /// the stale cache survives (the upgrade transaction runs the old
+    /// code); calling this once afterwards repairs it. Harmless any other
+    /// time — it just refreshes the cache with the freshly computed value.
+    pub fn refresh_account_wasm_hash(e: &Env) -> BytesN<32> {
+        Self::admin(e).require_auth();
+        let hash = Self::compute_account_wasm_hash(e);
+        Config::set_account(e, &hash);
+        hash
     }
 
     fn deployer(e: &Env, salt: &BytesN<32>) -> DeployerWithAddress {
@@ -787,6 +815,62 @@ mod test {
             .try_set_admin(&new_admin);
         assert!(res.is_err());
         assert_eq!(client.admin(), admin);
+    }
+
+    /// The `upgrade` override clears the cached account-wasm hash — an
+    /// in-place upgrade swaps the embedded bytes, so a surviving cache
+    /// would make every later `create_account` deploy the OLD account wasm
+    /// (found live, upgrading the testnet factory in the `apply_doc` spike).
+    #[test]
+    fn upgrade_clears_account_wasm_hash_cache() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(Contract, (Address::generate(&env),));
+
+        // Populate the cache, as a first create_account would.
+        env.as_contract(&id, || {
+            let _ = Contract::account_wasm_hash(&env);
+            assert!(Config::get_account(&env).is_some(), "cache populated");
+        });
+
+        let wasm_hash = env
+            .deployer()
+            .upload_contract_wasm(Bytes::from_slice(&env, smart_account::WASM));
+        ContractClient::new(&env, &id).upgrade(&wasm_hash);
+
+        env.as_contract(&id, || {
+            assert!(
+                Config::get_account(&env).is_none(),
+                "upgrade must clear the stale embedded-wasm hash cache"
+            );
+        });
+    }
+
+    /// `refresh_account_wasm_hash` (admin-gated) overwrites a stale cached
+    /// hash with the freshly computed one — the one-time repair after
+    /// upgrading a factory whose old code predates the clearing override.
+    #[test]
+    fn refresh_account_wasm_hash_repairs_stale_cache() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(Contract, (Address::generate(&env),));
+        let client = ContractClient::new(&env, &id);
+
+        // Seed a deliberately wrong cache entry (a stale pre-upgrade hash).
+        env.as_contract(&id, || {
+            Config::set_account(&env, &BytesN::from_array(&env, &[7u8; 32]));
+        });
+
+        let refreshed = client.refresh_account_wasm_hash();
+        let expected = env.as_contract(&id, || Contract::compute_account_wasm_hash(&env));
+        assert_eq!(refreshed, expected);
+        env.as_contract(&id, || {
+            assert_eq!(Config::get_account(&env), Some(expected.clone()));
+        });
+
+        // Admin-gated: with auth cleared the repair is refused.
+        env.set_auths(&[]);
+        assert!(client.try_refresh_account_wasm_hash().is_err());
     }
 
     /// `upgrade` requires admin auth and (with auth mocked + an installed wasm)

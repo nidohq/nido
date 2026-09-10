@@ -47,14 +47,11 @@ nido-smart-account = { path = "../../contracts/smart-account" }
 # a `#[contract]`/cdylib so there is no wasm-export collision, and the policy
 # under test is still deployed from `PREAUTH_SWEEP_POLICY_WASM` bytes.
 nido-preauth-sweep-policy = { path = "../../contracts/preauth-sweep-policy" }
-# SPIKE (apply_doc e2e): the REAL perch doc-compiler and interpreter contract
-# types, registered at the exact content addresses the account derives
-# (`nido_smart_account::doc::{compiler,interpreter}_address`) — mirroring
-# perch's own `perch-testkit` native mode. The "contract" feature turns on the
-# compiler's parser/lowering (native tests only; the account WASM keeps the
-# client-only default from the workspace pin). perch-ir gives the test the
-# same canonicalize+hash the compiler uses, to verify a doc recovered from
-# the `DocApplied` event against the stored hash.
-perch-doc-compiler = { workspace = true, features = ["contract"] }
-perch-interpreter = { workspace = true }
+# SPIKE (apply_doc e2e): the perch compiler + interpreter under test are the
+# FETCHED ON-CHAIN BYTES (fixtures/perch/*.wasm, sha256-pinned to the
+# account's derived-address pins), registered at the exact content addresses
+# the account derives — so the e2e exercises the DEPLOYED builds, not a
+# source rev that may be newer than what testnet runs (the wire-type-skew
+# trap this replaced). perch-ir gives the test the same canonicalize+hash
+# the compiler uses.
 perch-ir = { workspace = true }

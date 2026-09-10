@@ -34,36 +34,20 @@ admin-sep = "0.27.0"
 # to a tagged release once one lands on soroban-sdk 27 (latest tag v0.7.2 is 26.1).
 stellar-accounts = { git = "https://github.com/OpenZeppelin/stellar-contracts.git", rev = "ec749c3b75971f2c35ced1bea3e2a7e536e91cda", package = "stellar-accounts" }
 stellar-registry = "0.1.0"
-# Perch policy layer (SPIKE, see PR: applydoc spike). Git-pinned to rev f5676a6
-# — the exact rev the SDK's perch pins mirror (deployment.ts / DEPLOYED.md
-# "Perch canonical deployment"). None of these crates are published to
-# crates.io yet; the trait crate `perch-smart-account` is additionally
-# UNBUILDABLE as a git dependency (it bakes git-ignored fetched wasm artifacts
-# via include_str!/registry_contract! at build time), so nido consumes the
-# compiler wire protocol + client directly and mirrors the trait surface —
-# see contracts/smart-account/src/doc.rs.
-# `default-features = false` = client + wire types only; the "contract"
-# feature (the real on-chain compiler, for tests) is added per-member.
-perch-doc-compiler = { git = "https://github.com/stellar-registry/perch.git", rev = "f5676a6cfb7ae02e9ae487be18cf6247653124b0", default-features = false }
-perch-interpreter = { git = "https://github.com/stellar-registry/perch.git", rev = "f5676a6cfb7ae02e9ae487be18cf6247653124b0" }
+# Perch policy layer (SPIKE, see PR: applydoc spike). The account's compiler
+# WIRE TYPES are no longer taken from perch source at all: the deployed
+# canonical compiler on testnet is an older build than any consumable source
+# rev (5-field CompiledRule, no cap lowering), so the account mirrors the
+# DEPLOYED artifact's spec directly (contracts/smart-account/src/doc.rs) and
+# the e2e runs the fetched on-chain bytes
+# (crates/integration-tests/fixtures/perch/). Only perch-ir (canonical JSON +
+# doc_hash, used by tests to mirror the SDK's canonicalization) remains a git
+# dep — pinned to rev f5676a6, the rev the SDK's perch pins mirror.
 perch-ir = { git = "https://github.com/stellar-registry/perch.git", rev = "f5676a6cfb7ae02e9ae487be18cf6247653124b0" }
 # soroban-sdk-tools 0.1.3 (crates.io) targets soroban-sdk 27, replacing the prior
 # BlaineHeffron git fork rev (which existed only to get a soroban-sdk 26 build). We
 # now depend on a published, versioned, immutable release rather than an untagged fork.
 soroban-sdk-tools = "0.1.3"
-
-# Perch's workspace pins stellar-accounts to theahaco's CAP-0071 fork
-# (theahaco/stellar-contracts-OZ, branch cap-71-delegate-auth); nido pins
-# upstream OpenZeppelin. Without this patch the perch git deps above would drag
-# in a SECOND stellar-accounts (different git source = different crate to
-# cargo), and perch's wire types (`CompiledRule.signers: Vec<Signer>`, …) would
-# not unify with the `Signer`/`ContextRule` types nido's contracts use. The
-# redirect works because both sit at package version 0.7.1 and the perch client
-# code only touches types that exist identically upstream. This is a real
-# adoption cost to flag: it silently swaps the delegate-auth semantics perch
-# was built against for upstream's, and must be revisited if either pin moves.
-[patch."https://github.com/theahaco/stellar-contracts-OZ.git"]
-stellar-accounts = { git = "https://github.com/OpenZeppelin/stellar-contracts.git", rev = "ec749c3b75971f2c35ced1bea3e2a7e536e91cda", package = "stellar-accounts" }
 
 [profile.contract]
 overflow-checks = true

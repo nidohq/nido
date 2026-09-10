@@ -18,11 +18,12 @@
 //!   too, the incoming rule set must contain at least one policy-free,
 //!   cap-free self-admin rule with a signer, or the owner could be locked
 //!   out; refused before touching anything.
-//! - **Caps.** A capped doc rule attaches nido's STOCK spending-limit policy
-//!   (the stateful cumulative cap the stateless interpreter cannot express)
-//!   beside the interpreter, resolved from the pinned deployed address below
-//!   — same audited-pin pattern as the compiler/interpreter. OZ enforces all
-//!   attached policies (AND).
+//! - **Caps: refused for now.** The DEPLOYED canonical compiler predates
+//!   perch's cap lowering and refuses capped docs (`CapUnsupported`,
+//!   surfaced as `DocCapUnsupported`). The in-contract cap branch (nido's
+//!   pinned stock spending-limit policy beside the interpreter) lives in
+//!   this branch's history and returns when perch publishes the
+//!   cap-capable compiler and the pins/types bump together.
 //! - **Persistence.** The canonical `doc_hash` (sha256 of the doc's canonical
 //!   JSON, computed by the compiler) is stored in instance storage; the FULL
 //!   canonical doc JSON is stored in a persistent entry (`get_applied_doc` —
@@ -41,16 +42,87 @@
 //! actually consumable today. The rule-set semantics now match upstream
 //! doc-only apart from the preserved recovery rule and the completion gate.
 
-use perch_doc_compiler::{
-    CompiledDoc, CompiledRule, DocCompilerClient, DocCompilerError, RuleScope,
-};
 use soroban_sdk::{
-    contractevent, symbol_short, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Val, Vec,
+    contractclient, contracterror, contractevent, contracttype, symbol_short, Address, Bytes,
+    BytesN, Env, Map, String, Symbol, Val, Vec,
 };
-use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{
-    add_context_rule, remove_context_rule, ContextRule, ContextRuleType, SmartAccountStorageKey,
+    add_context_rule, remove_context_rule, ContextRule, ContextRuleType, Signer,
+    SmartAccountStorageKey,
 };
+
+// ---------------------------------------------------------------------
+// Wire types of the DEPLOYED canonical doc-compiler — mirrored from the
+// on-chain artifact itself, NOT from perch source. The live testnet
+// compiler (wasm `3645bd0d…`, the registry's LATEST publish) predates
+// perch's cap-lowering (#54): its `CompiledRule` has FIVE fields (no
+// `cap`), and its error enum carries `CapUnsupported = 6` — it refuses
+// capped documents at compile rather than lowering them. Consuming the
+// perch-doc-compiler CRATE at a source rev gave this account SIX-field
+// types and made every live `apply_doc` trap with
+// `Error(Object, UnexpectedSize)` while decoding the compiler's return —
+// masked locally because the e2e registered the NATIVE (source-rev)
+// compiler at the derived address. These mirrors are transcribed from
+// `stellar contract fetch` + `stellar contract info interface` of the
+// deployed wasm; the fixtures under
+// `crates/integration-tests/fixtures/perch/` ARE those fetched bytes,
+// sha256-pinned to the hashes below and registered in the e2e, so a
+// type/artifact skew now fails locally. When perch publishes its
+// cap-capable compiler, bump the pin + re-add `cap` here (the lowering
+// branch exists in this branch's history).
+// ---------------------------------------------------------------------
+
+/// Everything the deployed compiler can refuse (its exact error spec).
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocCompilerError {
+    DocNotUtf8 = 1,
+    DocParse = 2,
+    DocInvalid = 3,
+    WrongNetwork = 4,
+    DocCompile = 5,
+    /// The deployed compiler understands `cap` clauses but refuses them —
+    /// it predates the lowering.
+    CapUnsupported = 6,
+}
+
+/// Where a compiled rule applies (deployed spec).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuleScope {
+    SelfAdmin,
+    Contract(Address),
+}
+
+/// One compiled rule, as the deployed compiler returns it — five fields,
+/// no `cap`. `install` is deliberately `Vec<Val>` rather than a mirrored
+/// `InstallParams`: this account only passes the value through to the
+/// interpreter's policy-install map, so the raw `Val` avoids mirroring the
+/// interpreter's whole program type surface.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledRule {
+    pub install: Vec<Val>,
+    pub name: String,
+    pub scope: RuleScope,
+    pub signers: Vec<Signer>,
+    pub valid_until: Option<u32>,
+}
+
+/// A compiled document (deployed spec).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledDoc {
+    pub doc_hash: BytesN<32>,
+    pub rules: Vec<CompiledRule>,
+}
+
+/// Cross-contract client for the deployed compiler's single entry point.
+#[allow(unused)]
+#[contractclient(name = "DocCompilerClient")]
+trait DocCompilerInterface {
+    fn compile_doc(e: &Env, doc_json: Bytes) -> Result<CompiledDoc, DocCompilerError>;
+}
 
 use crate::contract::NidoSmartAccountError;
 
@@ -68,16 +140,6 @@ pub const PERCH_DOC_COMPILER_WASM_HASH: [u8; 32] = [
     0x36, 0x45, 0xbd, 0x0d, 0xe3, 0x4f, 0x48, 0x96, 0xc5, 0xe6, 0xfd, 0x8c, 0xa1, 0x41, 0x71, 0x3e,
     0xb9, 0xf8, 0x65, 0x87, 0x28, 0xbf, 0x16, 0xd8, 0x20, 0x26, 0x41, 0x8d, 0x4a, 0xb0, 0xb2, 0x7f,
 ];
-
-/// Nido's STOCK spending-limit policy (testnet deploy, DEPLOYED.md) — the
-/// stateful cumulative-cap policy capped doc rules attach beside the
-/// interpreter. Nido-owned deploys are not content-addressed, so this is a
-/// pinned deployed ADDRESS rather than a derived one — the same
-/// audited-constant pattern as [`PERCH_STATELESS_REGISTRY`]. The SDK's
-/// `lowerDoc` lowers caps onto this same deployment, so doc-lowering parity
-/// holds across the SDK and this contract.
-pub const NIDO_SPENDING_LIMIT_POLICY: &str =
-    "CCJMCPGADKMVKYOIZXMV7UWH62XYDAIT6GJRNJPQSZ2CHPOF4K2AU2QC";
 
 /// sha256 of the pinned `perch-interpreter` wasm (perch-interpreter 0.1.2,
 /// perch rev `f5676a6`) — the SAME pin as the SDK's
@@ -190,6 +252,7 @@ fn compiler_error(err: DocCompilerError) -> NidoSmartAccountError {
         DocCompilerError::DocInvalid => NidoSmartAccountError::DocInvalid,
         DocCompilerError::WrongNetwork => NidoSmartAccountError::DocWrongNetwork,
         DocCompilerError::DocCompile => NidoSmartAccountError::DocCompile,
+        DocCompilerError::CapUnsupported => NidoSmartAccountError::DocCapUnsupported,
     }
 }
 
@@ -239,11 +302,10 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, NidoSmartAccountEr
     // whose admin path depended on the interpreter (or a cap) could brick
     // the account on an interpreter refusal; refuse before touching
     // anything.
+    // (No `cap` check: the deployed compiler refuses capped docs outright,
+    // so a compiled rule can never carry one.)
     let admin_survives = compiled.rules.iter().any(|r| {
-        matches!(r.scope, RuleScope::SelfAdmin)
-            && !r.signers.is_empty()
-            && r.install.is_empty()
-            && r.cap.is_empty()
+        matches!(r.scope, RuleScope::SelfAdmin) && !r.signers.is_empty() && r.install.is_empty()
     });
     if !admin_survives {
         return Err(NidoSmartAccountError::DocAdminLockout);
@@ -297,11 +359,11 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, NidoSmartAccountEr
 
 /// Map one compiled rule onto OZ storage via the same library call
 /// `__check_auth` evaluates against. Mirrors upstream
-/// `perch-smart-account::install_rule`, with the cap branch attaching
-/// nido's stock spending-limit deployment (pinned address) instead of
-/// perch's content-addressed one. OZ enforces every attached policy (AND):
-/// the interpreter's per-call program AND the rolling cap must both pass;
-/// the metered token is the rule's `CallContract` scope.
+/// `perch-smart-account::install_rule`. NO cap branch: the DEPLOYED
+/// compiler refuses capped docs (`CapUnsupported`), so a compiled rule
+/// never carries one — the cap-lowering branch (nido's pinned stock
+/// spending-limit policy beside the interpreter) lives in this branch's
+/// history and returns when perch publishes the cap-capable compiler.
 fn install_rule(e: &Env, interpreter: &Address, rule: &CompiledRule) -> ContextRule {
     let scope = match &rule.scope {
         RuleScope::SelfAdmin => ContextRuleType::CallContract(e.current_contract_address()),
@@ -309,15 +371,7 @@ fn install_rule(e: &Env, interpreter: &Address, rule: &CompiledRule) -> ContextR
     };
     let mut policies: Map<Address, Val> = Map::new(e);
     if let Some(install) = rule.install.first() {
-        policies.set(interpreter.clone(), install.into_val(e));
-    }
-    if let Some(cap) = rule.cap.first() {
-        let spending_limit = Address::from_str(e, NIDO_SPENDING_LIMIT_POLICY);
-        let params = SpendingLimitAccountParams {
-            spending_limit: cap.spending_limit,
-            period_ledgers: cap.period_ledgers,
-        };
-        policies.set(spending_limit, params.into_val(e));
+        policies.set(interpreter.clone(), install);
     }
     add_context_rule(
         e,

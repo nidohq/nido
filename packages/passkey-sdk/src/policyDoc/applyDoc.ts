@@ -5,11 +5,12 @@
  *
  * `buildApplyDocTx` submits the document ITSELF: the contract cross-calls
  * perch's stateless doc-compiler to parse/validate/lower on-chain,
- * atomically replaces the whole rule set (recovery rule excepted; capped
- * rules attach the pinned stock spending-limit policy in-contract), stores
+ * atomically replaces the whole rule set (recovery rule excepted), stores
  * the canonical `doc_hash` AND the full canonical doc JSON (readable via
  * `get_applied_doc` — the lossless, no-indexer read), and emits the doc
- * JSON as a `DocApplied` event. The contract REFUSES non-canonical bytes
+ * JSON as a `DocApplied` event. Capped docs are refused up front — the
+ * DEPLOYED compiler predates cap lowering and refuses them on-chain
+ * (`CapUnsupported`). The contract REFUSES non-canonical bytes
  * (`DocNotCanonical`); this builder always submits `canonicalJson(doc)`,
  * so stored == emitted == canonical and either copy hashes straight to the
  * stored identity. Anti-brick: the contract refuses documents without a
@@ -54,6 +55,15 @@ export async function buildApplyDocTx(
   if (doc.network !== undefined && doc.network !== networkPassphrase) {
     throw new Error(
       `policyDoc: doc is bound to network "${doc.network}" but the apply targets "${networkPassphrase}"`,
+    );
+  }
+  if (doc.rules.some((r) => r.cap !== undefined)) {
+    // The DEPLOYED canonical compiler predates perch's cap lowering and
+    // refuses capped docs on-chain (CapUnsupported → DocCapUnsupported).
+    // Refuse before the network round-trip with the real reason; lifts when
+    // perch publishes the cap-capable compiler and the pins bump.
+    throw new Error(
+      'policyDoc: the deployed perch compiler does not support caps yet (CapUnsupported on-chain); remove the cap or wait for the cap-capable compiler publish',
     );
   }
   const canonical = canonicalJson(doc);
