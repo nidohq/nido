@@ -54,6 +54,12 @@ export type { LowerOptions } from './lower.js';
 export { interpreterInstallParamsScVal, spendingLimitInstallParamsScVal } from './params.js';
 export { buildDocInstallTxs } from './txs.js';
 export type { BuildDocInstallArgs } from './txs.js';
+// SPIKE: one-tx apply_doc + the three-tier policy read (see each module's
+// docs; requires the apply_doc smart-account wasm).
+export { buildApplyDocTx } from './applyDoc.js';
+export type { ApplyDocTx, BuildApplyDocArgs } from './applyDoc.js';
+export { DOC_APPLIED_EVENT, readPolicy } from './readPolicy.js';
+export type { PolicyReadTier, ReadPolicyInputs, ReadPolicyResult } from './readPolicy.js';
 export { decompileRules } from './decompile.js';
 export {
   PERCH_STATELESS_REGISTRY_TESTNET,
