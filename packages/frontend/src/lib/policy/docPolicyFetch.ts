@@ -212,7 +212,10 @@ export async function readDocPolicy(
     chainRules,
     appliedDocHash: surface.appliedDocHash,
     docRuleIds: surface.docRuleIds,
-    ...(recovered !== null ? { eventDocJson: recovered.json } : {}),
+    // View-first, matching the SDK's input surface: the on-chain canonical
+    // copy is `storedDocJson`; an event-recovered doc is the fallback field.
+    ...(recovered?.source === 'storage' ? { storedDocJson: recovered.json } : {}),
+    ...(recovered?.source === 'events' ? { eventDocJson: recovered.json } : {}),
     decompileCtx: {
       account,
       interpreterAddress: perchTestnetAddresses().interpreter,
