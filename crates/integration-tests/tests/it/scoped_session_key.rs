@@ -3,13 +3,14 @@
 //! verifies the in-scope / out-of-scope / expired / revoked paths.
 
 use nido_integration_tests::{
-    build_contract_assertion, compute_auth_digest, deploy_smart_account, test_key,
+    build_contract_assertion, compute_auth_digest, deploy_smart_account, install_rule_direct,
+    remove_rule_direct, test_key,
 };
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::xdr::ToXdr;
-use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, Map, String};
+use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, Map};
 use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRuleType, Signer};
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 
@@ -58,14 +59,16 @@ fn context_for(env: &Env, contract: &Address) -> Context {
 fn session_key_authorizes_target_contract() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (_client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
     let target = Address::generate(&env);
     let (key, signer) = session_signer(&env, &verifier_addr);
 
-    client.add_context_rule(
+    let _ = install_rule_direct(
+        &env,
+        &account_addr,
         &ContextRuleType::CallContract(target.clone()),
-        &String::from_str(&env, "session"),
-        &None,
+        "session",
+        None,
         &vec![&env, signer.clone()],
         &Map::new(&env),
     );
@@ -87,15 +90,17 @@ fn session_key_authorizes_target_contract() {
 fn session_key_rejected_for_other_contract() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (_client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
     let target = Address::generate(&env);
     let other = Address::generate(&env);
     let (key, signer) = session_signer(&env, &verifier_addr);
 
-    client.add_context_rule(
+    let _ = install_rule_direct(
+        &env,
+        &account_addr,
         &ContextRuleType::CallContract(target),
-        &String::from_str(&env, "session"),
-        &None,
+        "session",
+        None,
         &vec![&env, signer.clone()],
         &Map::new(&env),
     );
@@ -120,14 +125,16 @@ fn session_key_rejected_for_other_contract() {
 fn session_key_rejected_after_valid_until() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (_client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
     let target = Address::generate(&env);
     let (key, signer) = session_signer(&env, &verifier_addr);
 
-    client.add_context_rule(
+    let _ = install_rule_direct(
+        &env,
+        &account_addr,
         &ContextRuleType::CallContract(target.clone()),
-        &String::from_str(&env, "session"),
-        &Some(100u32),
+        "session",
+        Some(100u32),
         &vec![&env, signer.clone()],
         &Map::new(&env),
     );
@@ -165,14 +172,16 @@ fn session_key_rejected_after_valid_until() {
 fn session_key_rejected_after_revoke() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (_client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
     let target = Address::generate(&env);
     let (key, signer) = session_signer(&env, &verifier_addr);
 
-    let rule = client.add_context_rule(
+    let rule = install_rule_direct(
+        &env,
+        &account_addr,
         &ContextRuleType::CallContract(target.clone()),
-        &String::from_str(&env, "session"),
-        &None,
+        "session",
+        None,
         &vec![&env, signer.clone()],
         &Map::new(&env),
     );
@@ -190,7 +199,7 @@ fn session_key_rejected_after_revoke() {
         .unwrap();
     });
 
-    client.remove_context_rule(&rule.id);
+    remove_rule_direct(&env, &account_addr, rule.id);
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         env.as_contract(&account_addr, || {

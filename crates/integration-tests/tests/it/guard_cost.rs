@@ -205,27 +205,21 @@ fn guard_fires_cost_with_real_pending() {
          measured call"
     );
 
-    // --- The measured call: the second (extra) signer on the Default rule
-    // is the removal target, so this exercises the exact same
-    // `remove_signer` entry point the no-recovery baseline below measures.
-    // ---
-    let default_rule = account.get_context_rule(&0);
-    let signer_id = default_rule
-        .signer_ids
-        .get(1)
-        .expect("Default rule must have the extra signer just installed");
-
-    let res = account.try_remove_signer(&0, &signer_id);
+    // --- The measured call (DOC-ONLY surface): `initiate_upgrade` runs the
+    // exact `guard_live_pending` cross-call the old four-op guard ran --
+    // the same guard that now protects `apply_doc`. ---
+    let placeholder = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    let res = account.try_initiate_upgrade(&placeholder);
 
     // Capture the measured cost IMMEDIATELY -- `cost_estimate().resources()`
     // reflects only the LAST top-level invocation.
     let cpu = env.cost_estimate().resources().instructions;
-    println!("guard cross-call (fires, real pending) remove_signer cpu_instructions = {cpu}");
+    println!("guard cross-call (fires, real pending) initiate_upgrade cpu_instructions = {cpu}");
 
     assert_eq!(
         error_code(&res),
         NidoSmartAccountError::RecoveryPendingBlocked as u32,
-        "remove_signer while a REAL pending exists at the REAL controller \
+        "initiate_upgrade while a REAL pending exists at the REAL controller \
          must be blocked by the in-account guard's cross-call -- otherwise \
          the CPU number above does not correspond to the guarded path"
     );
@@ -236,11 +230,11 @@ fn guard_fires_cost_with_real_pending() {
     );
 }
 
-/// Baseline: `remove_signer` on an account constructed with
-/// `recovery_controller: None` -- `guard_no_pending` is a no-op (no
-/// cross-call at all), so the removal succeeds outright. Diffing this
+/// Baseline: `initiate_upgrade` on an account constructed with
+/// `recovery_controller: None` -- it fails fast at
+/// `recovery_controller_or_panic` with NO cross-call at all. Diffing this
 /// number against [`guard_fires_cost_with_real_pending`]'s isolates the
-/// guard's cross-call overhead from `remove_signer`'s own fixed cost.
+/// guard's cross-call overhead from the entry point's own fixed cost.
 #[test]
 fn no_recovery_configured_baseline_cost() {
     let env = Env::default();
@@ -252,13 +246,15 @@ fn no_recovery_configured_baseline_cost() {
     let (account, _account_addr, _verifier_addr, _signing_key) =
         deploy_smart_account_with_recovery(&env, None);
 
-    // Add a second signer (unmeasured) so removing it doesn't trip
-    // `NoSignersAndPolicies` -- mirrors the with-pending test's setup.
-    let extra_signer_id =
-        account.add_signer(&0, &AccountSigner::Delegated(Address::generate(&env)));
-
-    account.remove_signer(&0, &extra_signer_id);
+    let placeholder = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    let res = account.try_initiate_upgrade(&placeholder);
 
     let cpu = env.cost_estimate().resources().instructions;
-    println!("no-recovery-configured (guard no-op) remove_signer cpu_instructions = {cpu}");
+    println!("no-recovery-configured (no cross-call) initiate_upgrade cpu_instructions = {cpu}");
+
+    assert_eq!(
+        error_code(&res),
+        NidoSmartAccountError::NoRecoveryConfigured as u32,
+        "a None-recovery account must fail fast without any cross-call"
+    );
 }

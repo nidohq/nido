@@ -154,7 +154,7 @@ fn error_code<T: core::fmt::Debug, E: core::fmt::Debug>(
 fn real_controller_pending_blocks_remove_signer() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
-    let (account, account_addr, zk, signer_id) = deploy(&env);
+    let (account, account_addr, zk, _signer_id) = deploy(&env);
     let fixture = zk_fixture::lifecycle_fixture(&env);
 
     // Sanity: no pending yet, remove_signer succeeds freely.
@@ -186,24 +186,31 @@ fn real_controller_pending_blocks_remove_signer() {
          initiate_recovery"
     );
 
-    // The guard: remove_signer on the account must now panic
-    // RecoveryPendingBlocked, via the REAL cross-call to the deployed
+    // The guard (DOC-ONLY surface): the pending guard now fires on the
+    // announce paths and `apply_doc`. `initiate_upgrade` exercises the
+    // exact same guard via the REAL cross-call to the deployed
     // controller's has_pending -- not a stub.
-    let res = account.try_remove_signer(&0, &signer_id);
+    let placeholder = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    let res = account.try_initiate_upgrade(&placeholder);
     assert_eq!(
         error_code(&res),
         NidoSmartAccountError::RecoveryPendingBlocked as u32,
-        "remove_signer while a REAL pending exists at the REAL controller \
+        "initiate_upgrade while a REAL pending exists at the REAL controller \
          must be blocked by the in-account guard's cross-call"
     );
 
-    // And the protected recovery rule: removing it directly must also be
-    // rejected (RecoveryRuleProtected fires before the pending guard even
-    // runs, per contract.rs's ordering), regardless of the live pending.
-    let rule_id = account.recovery_rule_id().expect("recovery rule installed");
-    let res = account.try_remove_context_rule(&rule_id);
-    assert_eq!(
-        error_code(&res),
-        NidoSmartAccountError::RecoveryRuleProtected as u32
+    // The protected recovery rule needs no per-op check anymore: doc-only
+    // removed `remove_context_rule` (and the rest of the mutation surface)
+    // outright, and `apply_doc` structurally skips the recovery rule. The
+    // old RecoveryRuleProtected attack surface is gone with the entry
+    // point itself.
+    let res = env.try_invoke_contract::<soroban_sdk::Val, soroban_sdk::Error>(
+        &account_addr,
+        &soroban_sdk::Symbol::new(&env, "remove_context_rule"),
+        soroban_sdk::vec![&env],
+    );
+    assert!(
+        res.is_err(),
+        "remove_context_rule must not be an entry point under doc-only"
     );
 }

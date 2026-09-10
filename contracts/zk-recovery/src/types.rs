@@ -103,6 +103,16 @@ pub enum RecoveryKey {
     // ledger timestamp of an account's most recent successful cancel, for
     // the 24h cooldown check (spec §2.4).
     LastCancel(Address),
+    // SPIKE (doc-only apply_doc): appended at the end for XDR-ordinal
+    // stability. TEMPORARY-storage marker written by `Policy::enforce` at
+    // the moment it consumes a pending (the completion transaction), holding
+    // the ledger SEQUENCE of consumption. The doc-only smart account's
+    // `add_context_rule` gate reads it via `completion_granted` -- enforce
+    // runs during `__check_auth`, BEFORE the entry-point body, so the
+    // pending it consumed is already gone by the time the body's
+    // `has_pending` gate check runs; this marker is how the body still
+    // recognizes the completion window (same ledger only).
+    CompletionGrant(Address),
     // Upgradability (issue #26). RETAINED FOR XDR-ORDINAL STABILITY ONLY: the
     // admin/upgrade governance key is now owned by the `admin-sep` crate, which
     // stores the admin under its own `ADMIN` symbol key -- this variant is no

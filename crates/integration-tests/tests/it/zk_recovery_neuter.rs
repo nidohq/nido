@@ -239,8 +239,14 @@ fn deploy(env: &Env) -> Deployed<'_> {
         .expect("constructor Some(controller) installs the recovery rule");
 
     // A spare signer so a post-recovery remove of the original doesn't leave
-    // the Default rule empty (mirrors zk_recovery_e2e.rs).
-    account.add_signer(&0, &Signer::Delegated(Address::generate(env)));
+    // the Default rule empty. DOC-ONLY: staged via the library backdoor --
+    // `add_signer` is no longer an entry point.
+    let _ = nido_integration_tests::add_signer_direct(
+        env,
+        &account_addr,
+        0,
+        &Signer::Delegated(Address::generate(env)),
+    );
 
     let secret = BytesN::from_array(env, &hex32(fixture.secret_hex));
     let commitment = leaf_inner(env, &secret);

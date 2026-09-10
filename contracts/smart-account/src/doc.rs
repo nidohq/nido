@@ -1,41 +1,45 @@
-//! SPIKE: perch `apply_doc` for the nido smart account — HYBRID-additive.
+//! SPIKE: perch `apply_doc` for the nido smart account — DOC-ONLY (the
+//! captain's ruling on this spike: `apply_doc` is the sole policy write path,
+//! including for the dapp).
 //!
 //! One entry point (`apply_doc` in `contract.rs`, delegating here) accepts a
 //! perch policy document's JSON bytes, cross-calls perch's shared stateless
 //! doc-compiler contract to parse/validate/network-bind/lower it, and applies
 //! the compiled context rules to this account:
 //!
-//! - **Hybrid, not doc-only.** Upstream perch (`perch-smart-account`'s
-//!   `PerchSmartAccount::apply_doc`) replaces the ENTIRE rule set and hides
-//!   OZ's piecemeal mutation surface, so a doc is the sole write path. Nido
-//!   deliberately does NOT do that here: this module only manages the rules
-//!   IT installed (tracked in `DOC_RIDS`), diffing old-doc-rules out and
-//!   new-doc-rules in atomically, while the constructor's default passkey
-//!   rule, the zk-recovery rule, session-key rules, and every existing
-//!   mutator (`add_signer`, `add_context_rule`, …) stay exactly as they are.
-//!   Whether `apply_doc` should BECOME the sole write path is an explicitly
-//!   deferred decision — see the PR description.
-//! - **Anti-brick by construction.** Upstream's `AdminLockout` check exists
-//!   because a doc-only account's admin path comes from the doc itself. In
-//!   hybrid mode the default passkey rule survives every apply untouched, so
-//!   the account always keeps its non-doc auth path and the check is moot.
+//! - **Doc-only.** `apply_doc` atomically replaces EVERY context rule except
+//!   the protected zk-recovery rule. OZ's piecemeal mutation surface is not
+//!   exported (the sole survivor, `add_context_rule`, is hard-gated to the
+//!   zk-recovery completion window — see `contract.rs`). The constructor's
+//!   default passkey rule exists only until the first apply; from then on
+//!   the document IS the policy.
+//! - **Anti-brick (`DocAdminLockout`).** Re-imported from upstream perch
+//!   (`ensure_admin_survives`): because the apply replaces the default rule
+//!   too, the incoming rule set must contain at least one policy-free,
+//!   cap-free self-admin rule with a signer, or the owner could be locked
+//!   out; refused before touching anything.
+//! - **Caps.** A capped doc rule attaches nido's STOCK spending-limit policy
+//!   (the stateful cumulative cap the stateless interpreter cannot express)
+//!   beside the interpreter, resolved from the pinned deployed address below
+//!   — same audited-pin pattern as the compiler/interpreter. OZ enforces all
+//!   attached policies (AND).
 //! - **Persistence.** The canonical `doc_hash` (sha256 of the doc's canonical
 //!   JSON, computed by the compiler) is stored in instance storage; the FULL
 //!   canonical doc JSON is stored in a persistent entry (`get_applied_doc` —
 //!   the lossless, no-indexer read path) AND emitted as a `DocApplied` event
 //!   (the eventual recovery method). `apply_doc` refuses non-canonical byte
 //!   submissions, so both copies verify against the stored hash by a bare
-//!   sha256 (`readPolicy` tiers a/b).
+//!   sha256.
 //!
 //! The `perch-smart-account` trait crate itself is NOT consumed: it is
 //! unpublished, unbuildable as a git dependency (it bakes git-ignored fetched
-//! wasm artifacts at build time via `include_str!`/`registry_contract!`), its
-//! default `apply_doc` has doc-only wipe-everything semantics, and its
-//! storage/install helpers are private. This module mirrors the trait's
+//! wasm artifacts at build time via `include_str!`/`registry_contract!`), and
+//! its storage/install helpers are private. This module mirrors the trait's
 //! surface (`apply_doc`, `applied_doc_hash`) and its install shape at the
 //! wire level instead — the `CompiledDoc`/`CompiledRule` protocol via the
 //! real `perch-doc-compiler` client — which is the part of perch that is
-//! actually consumable today.
+//! actually consumable today. The rule-set semantics now match upstream
+//! doc-only apart from the preserved recovery rule and the completion gate.
 
 use perch_doc_compiler::{
     CompiledDoc, CompiledRule, DocCompilerClient, DocCompilerError, RuleScope,
@@ -43,6 +47,7 @@ use perch_doc_compiler::{
 use soroban_sdk::{
     contractevent, symbol_short, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Val, Vec,
 };
+use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{
     add_context_rule, remove_context_rule, ContextRule, ContextRuleType, SmartAccountStorageKey,
 };
@@ -63,6 +68,16 @@ pub const PERCH_DOC_COMPILER_WASM_HASH: [u8; 32] = [
     0x36, 0x45, 0xbd, 0x0d, 0xe3, 0x4f, 0x48, 0x96, 0xc5, 0xe6, 0xfd, 0x8c, 0xa1, 0x41, 0x71, 0x3e,
     0xb9, 0xf8, 0x65, 0x87, 0x28, 0xbf, 0x16, 0xd8, 0x20, 0x26, 0x41, 0x8d, 0x4a, 0xb0, 0xb2, 0x7f,
 ];
+
+/// Nido's STOCK spending-limit policy (testnet deploy, DEPLOYED.md) — the
+/// stateful cumulative-cap policy capped doc rules attach beside the
+/// interpreter. Nido-owned deploys are not content-addressed, so this is a
+/// pinned deployed ADDRESS rather than a derived one — the same
+/// audited-constant pattern as [`PERCH_STATELESS_REGISTRY`]. The SDK's
+/// `lowerDoc` lowers caps onto this same deployment, so doc-lowering parity
+/// holds across the SDK and this contract.
+pub const NIDO_SPENDING_LIMIT_POLICY: &str =
+    "CCJMCPGADKMVKYOIZXMV7UWH62XYDAIT6GJRNJPQSZ2CHPOF4K2AU2QC";
 
 /// sha256 of the pinned `perch-interpreter` wasm (perch-interpreter 0.1.2,
 /// perch rev `f5676a6`) — the SAME pin as the SDK's
@@ -217,33 +232,49 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, NidoSmartAccountEr
         return Err(NidoSmartAccountError::DocNotCanonical);
     }
 
-    // Cumulative caps lower onto a stateful spending-limit policy. Upstream
-    // perch attaches ITS content-addressed `perch-spending-limit`; nido's SDK
-    // lowers caps onto nido's OWN stock spending-limit policy, whose address
-    // is registry-resolved — not derivable here. Rather than silently
-    // installing a capped rule WITHOUT its cap (strictly weaker than what the
-    // reviewer approved), refuse; capped docs keep using the SDK's per-rule
-    // `buildDocInstallTxs` path. Folding caps in is a noted spike gap.
-    for rule in compiled.rules.iter() {
-        if !rule.cap.is_empty() {
-            return Err(NidoSmartAccountError::DocCapUnsupported);
-        }
+    // Anti-brick (upstream perch's `ensure_admin_survives`, re-imported by
+    // the doc-only ruling): the apply below replaces the default rule too,
+    // so the incoming rule set must itself carry the owner's path — at
+    // least one policy-free, cap-free self-admin rule with a signer. A doc
+    // whose admin path depended on the interpreter (or a cap) could brick
+    // the account on an interpreter refusal; refuse before touching
+    // anything.
+    let admin_survives = compiled.rules.iter().any(|r| {
+        matches!(r.scope, RuleScope::SelfAdmin)
+            && !r.signers.is_empty()
+            && r.install.is_empty()
+            && r.cap.is_empty()
+    });
+    if !admin_survives {
+        return Err(NidoSmartAccountError::DocAdminLockout);
     }
 
-    // Diff out the previous doc's rules — and ONLY those. A doc rule already
-    // removed through the legacy mutators since the last apply is skipped
-    // (the diff self-heals rather than trapping on a missing id).
-    let previous = doc_rule_ids(e);
-    for id in previous.iter() {
-        if e.storage()
-            .persistent()
-            .has(&SmartAccountStorageKey::ContextRuleData(id))
+    // DOC-ONLY replace: remove EVERY live rule except the protected
+    // zk-recovery rule (whose lifecycle stays with the announce-then-execute
+    // machinery in `contract.rs` — a document can neither remove nor mutate
+    // it). One invocation — all-or-nothing; there is no observable
+    // half-migrated state. This intentionally also removes the
+    // constructor's default passkey rule (first apply) and any
+    // post-recovery "recovered" rule the completion path installed (the new
+    // owner's next apply supersedes it via the doc's admin rule).
+    let recovery_rule = crate::contract::NidoSmartAccount::recovery_rule_id(e);
+    let next_id: u32 = e
+        .storage()
+        .instance()
+        .get(&SmartAccountStorageKey::NextId)
+        .unwrap_or(0);
+    for id in 0..next_id {
+        if Some(id) != recovery_rule
+            && e.storage()
+                .persistent()
+                .has(&SmartAccountStorageKey::ContextRuleData(id))
         {
             remove_context_rule(e, id);
         }
     }
 
-    // Install the new doc's rules and record their ids as the new diff base.
+    // Install the document's rules and record their ids (the doc-managed
+    // set — everything on this account except the recovery rule).
     let interpreter = interpreter_address(e);
     let mut installed: Vec<u32> = Vec::new(e);
     for rule in compiled.rules.iter() {
@@ -264,10 +295,13 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, NidoSmartAccountEr
     Ok(compiled.doc_hash)
 }
 
-/// Map one compiled rule onto OZ storage via the same library call the
-/// legacy `add_context_rule` entry point uses (and `__check_auth` evaluates
-/// against). Mirrors upstream `perch-smart-account::install_rule`, minus the
-/// cap branch (refused above).
+/// Map one compiled rule onto OZ storage via the same library call
+/// `__check_auth` evaluates against. Mirrors upstream
+/// `perch-smart-account::install_rule`, with the cap branch attaching
+/// nido's stock spending-limit deployment (pinned address) instead of
+/// perch's content-addressed one. OZ enforces every attached policy (AND):
+/// the interpreter's per-call program AND the rolling cap must both pass;
+/// the metered token is the rule's `CallContract` scope.
 fn install_rule(e: &Env, interpreter: &Address, rule: &CompiledRule) -> ContextRule {
     let scope = match &rule.scope {
         RuleScope::SelfAdmin => ContextRuleType::CallContract(e.current_contract_address()),
@@ -276,6 +310,14 @@ fn install_rule(e: &Env, interpreter: &Address, rule: &CompiledRule) -> ContextR
     let mut policies: Map<Address, Val> = Map::new(e);
     if let Some(install) = rule.install.first() {
         policies.set(interpreter.clone(), install.into_val(e));
+    }
+    if let Some(cap) = rule.cap.first() {
+        let spending_limit = Address::from_str(e, NIDO_SPENDING_LIMIT_POLICY);
+        let params = SpendingLimitAccountParams {
+            spending_limit: cap.spending_limit,
+            period_ledgers: cap.period_ledgers,
+        };
+        policies.set(spending_limit, params.into_val(e));
     }
     add_context_rule(
         e,

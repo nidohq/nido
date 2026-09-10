@@ -1,26 +1,30 @@
-//! SPIKE e2e for the hybrid `apply_doc` (contracts/smart-account/src/doc.rs):
+//! SPIKE e2e for DOC-ONLY `apply_doc` (contracts/smart-account/src/doc.rs):
 //! the account under test is deployed from the REAL smart-account wasm, and
 //! perch's REAL doc-compiler + interpreter contract types are registered at
 //! the exact content addresses the account derives on this network —
-//! mirroring perch's own `perch-testkit` native mode.
+//! mirroring perch's own `perch-testkit` native mode. Nido's stock
+//! spending-limit policy is registered at its PINNED deployed address for
+//! the capped-doc case.
 //!
-//! Covered here (the contract half of the spike's definition of done):
-//! build doc → `apply_doc` → rules installed / hash stored / doc JSON
+//! Covered here: build doc → `apply_doc` → the WHOLE rule set (default rule
+//! included) is replaced by the document's rules / hash stored / doc JSON
 //! stored on-chain / event emitted → round-trip the doc through the
 //! `get_applied_doc` view and the event → canonical-hash parity passes.
-//! Plus the hybrid-specific properties: re-apply diffs out ONLY doc-managed
-//! rules (default + legacy rules untouched), capped and non-canonical docs
-//! are refused, and the compiler's network binding is enforced. The
-//! SDK-side drift tier (b) is covered by `packages/passkey-sdk`'s
-//! `readPolicy` tests.
+//! Plus: re-apply replaces the previous doc's rules wholesale, capped docs
+//! install the interpreter AND the pinned spending-limit policy, the
+//! anti-brick check refuses admin-less docs, and non-canonical and
+//! wrong-network submissions are refused. The doc-only SURFACE (legacy
+//! mutators absent, `add_context_rule` gated to the completion window) is
+//! covered by the smart-account crate's unit tests.
 
-use nido_integration_tests::{deploy_smart_account, test_key};
+use nido_integration_tests::{deploy_smart_account, SPENDING_LIMIT_POLICY_WASM};
 use nido_smart_account::contract::NidoSmartAccountError;
-use nido_smart_account::doc::{compiler_address, interpreter_address, DocApplied};
+use nido_smart_account::doc::{
+    compiler_address, interpreter_address, DocApplied, NIDO_SPENDING_LIMIT_POLICY,
+};
 use sha2::{Digest, Sha256};
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, Event, String as SString};
-use stellar_accounts::smart_account::{ContextRuleType, Signer};
 
 const TESTNET_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 
@@ -34,13 +38,21 @@ fn bind_testnet(env: &Env) {
 
 /// Register the real perch compiler + interpreter contract types at the
 /// content addresses the account's `doc.rs` derives (network-dependent, so
-/// this must run AFTER [`bind_testnet`]). Returns `(compiler, interpreter)`.
-fn register_perch_infra(env: &Env) -> (Address, Address) {
+/// this must run AFTER [`bind_testnet`]), plus nido's stock spending-limit
+/// policy at its pinned deployed address (capped rules attach it). Returns
+/// `(compiler, interpreter, spending_limit)`.
+fn register_infra(env: &Env) -> (Address, Address, Address) {
     let compiler = compiler_address(env);
     env.register_at(&compiler, perch_doc_compiler::PerchDocCompiler, ());
     let interpreter = interpreter_address(env);
     env.register_at(&interpreter, perch_interpreter::PerchInterpreter, ());
-    (compiler, interpreter)
+    let spending_limit = Address::from_str(env, NIDO_SPENDING_LIMIT_POLICY);
+    env.register_at(
+        &spending_limit,
+        SPENDING_LIMIT_POLICY_WASM,
+        (Address::generate(env),),
+    );
+    (compiler, interpreter, spending_limit)
 }
 
 /// Soroban `Address` → `std::string::String` (strkey), for splicing real
@@ -61,10 +73,11 @@ fn hex_lower(bytes: &[u8]) -> String {
     })
 }
 
-/// A two-rule fixture doc: one interpreter-constrained rule (`functions`)
-/// and one policy-free rule, both scoped to `target`, signed by `key_hex`
-/// via `verifier`.
-fn two_rule_doc(network: &str, verifier: &str, key_hex: &str, target: &str) -> String {
+/// The doc-only fixture: the anti-brick self-admin rule (policy-free, the
+/// owner's path once the default rule is replaced), one
+/// interpreter-constrained rule (`functions`), and one policy-free
+/// contract-scoped rule.
+fn fixture_doc(network: &str, verifier: &str, key_hex: &str, target: &str) -> String {
     format!(
         r#"{{
   "version": 1,
@@ -73,6 +86,9 @@ fn two_rule_doc(network: &str, verifier: &str, key_hex: &str, target: &str) -> S
     {{ "id": "owner", "verifier": "{verifier}", "key": "{key_hex}" }}
   ],
   "rules": [
+    {{ "name": "admin",
+      "scope": {{ "type": "self-admin" }},
+      "principals": {{ "type": "all", "signers": ["owner"] }} }},
     {{ "name": "pay",
       "scope": {{ "type": "contract", "address": "{target}" }},
       "principals": {{ "type": "all", "signers": ["owner"] }},
@@ -94,8 +110,7 @@ fn canonicalize(doc_json: &str) -> String {
 }
 
 /// The canonical `doc_hash` perch defines: sha256 of the doc's canonical
-/// JSON. Computed off-chain with `perch-ir` — the exact library the deployed
-/// compiler runs — so the assertion is byte-for-byte the SDK's tier-a check.
+/// JSON.
 fn canonical_doc_hash(env: &Env, doc_json: &str) -> BytesN<32> {
     let digest: [u8; 32] = Sha256::digest(canonicalize(doc_json).as_bytes()).into();
     BytesN::from_array(env, &digest)
@@ -115,20 +130,20 @@ fn assert_doc_error<T: core::fmt::Debug, E: core::fmt::Debug>(
     }
 }
 
-/// Happy path, end to end: build doc → `apply_doc` → rules installed, hash
-/// stored, event emitted with the FULL doc JSON → recover the doc from the
-/// event → canonical-hash parity passes.
+/// Happy path, end to end: build doc → `apply_doc` → the DEFAULT rule is
+/// replaced by the document's rules, hash + doc JSON stored, event emitted
+/// → recover the doc from the view and the event → canonical-hash parity.
 #[test]
-fn apply_doc_installs_rules_stores_hash_and_emits_recoverable_doc() {
+fn apply_doc_replaces_rule_set_stores_doc_and_emits_recoverable_doc() {
     let env = Env::default();
     env.mock_all_auths();
     bind_testnet(&env);
-    let (_compiler, interpreter) = register_perch_infra(&env);
+    let (_compiler, interpreter, _spending_limit) = register_infra(&env);
     let (client, account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
 
     let target = addr_str(&Address::generate(&env));
     let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
-    let doc = two_rule_doc(
+    let doc = fixture_doc(
         TESTNET_PASSPHRASE,
         &addr_str(&verifier_addr),
         &key_hex,
@@ -141,10 +156,8 @@ fn apply_doc_installs_rules_stores_hash_and_emits_recoverable_doc() {
 
     // Event capture must happen immediately: `Env::events()` reflects only
     // the most recent top-level invocation. `apply_doc` publishes
-    // `DocApplied` LAST (after OZ's own context-rule events), carrying the
-    // canonical hash as topic and the FULL submitted doc JSON as data — the
-    // equality below proves the document is recoverable from the event
-    // stream alone.
+    // `DocApplied` LAST, carrying the canonical hash as topic and the FULL
+    // doc JSON as data.
     let account_events = env.events().all().filter_by_contract(&account_addr);
     let expected_event = DocApplied {
         doc_hash: hash.clone(),
@@ -159,15 +172,9 @@ fn apply_doc_installs_rules_stores_hash_and_emits_recoverable_doc() {
         "DocApplied must carry the doc_hash topic and the full doc JSON"
     );
 
-    // The returned/stored identity is the CANONICAL doc_hash — recompute it
-    // from the (recoverable) JSON exactly the way the SDK's tier-a check
-    // does: parse, canonicalize, sha256.
+    // Canonical identity + on-chain lossless copy round-trip.
     assert_eq!(hash, canonical_doc_hash(&env, &doc));
     assert_eq!(client.applied_doc_hash(), Some(hash.clone()));
-
-    // Lossless on-chain copy: `get_applied_doc` returns exactly the
-    // canonical bytes, and a bare sha256 of the CHAIN-RETURNED value
-    // round-trips to the stored hash (no client-side canonicalization).
     let stored = client.get_applied_doc().expect("doc JSON stored on-chain");
     assert_eq!(stored, doc_bytes);
     let mut stored_buf = std::vec![0u8; stored.len() as usize];
@@ -175,70 +182,49 @@ fn apply_doc_installs_rules_stores_hash_and_emits_recoverable_doc() {
     let stored_digest: [u8; 32] = Sha256::digest(&stored_buf).into();
     assert_eq!(hash, BytesN::from_array(&env, &stored_digest));
 
-    // Default rule 0 untouched; the document's two rules landed as 1 and 2.
+    // DOC-ONLY: the constructor's default rule 0 is REPLACED by the
+    // document's three rules — the doc is now the whole policy.
     assert_eq!(client.get_context_rules_count(), 3);
-    assert_eq!(client.doc_rule_ids(), vec![&env, 1u32, 2u32]);
-    let default_rule = client.get_context_rule(&0);
-    assert!(matches!(
-        default_rule.context_type,
-        ContextRuleType::Default
-    ));
+    assert!(client.try_get_context_rule(&0).is_err());
+    assert_eq!(client.doc_rule_ids(), vec![&env, 1u32, 2u32, 3u32]);
 
-    let pay = client.get_context_rule(&1);
-    assert_eq!(pay.name, SString::from_str(&env, "pay"));
+    let admin = client.get_context_rule(&1);
+    assert_eq!(admin.name, SString::from_str(&env, "admin"));
     assert_eq!(
-        pay.policies.len(),
-        1,
-        "the constrained rule attaches the interpreter"
+        admin.policies.len(),
+        0,
+        "anti-brick admin path is policy-free"
     );
+
+    let pay = client.get_context_rule(&2);
+    assert_eq!(pay.name, SString::from_str(&env, "pay"));
+    assert_eq!(pay.policies.len(), 1);
     assert_eq!(pay.policies.get_unchecked(0), interpreter);
 
-    let ops = client.get_context_rule(&2);
+    let ops = client.get_context_rule(&3);
     assert_eq!(ops.name, SString::from_str(&env, "ops"));
-    assert_eq!(
-        ops.policies.len(),
-        0,
-        "the unconstrained rule is policy-free"
-    );
+    assert_eq!(ops.policies.len(), 0);
 }
 
-/// The hybrid diff: a re-apply replaces ONLY the rules the previous
-/// `apply_doc` installed. The default passkey rule and a rule installed via
-/// the legacy `add_context_rule` mutator survive both applies untouched.
+/// Re-apply replaces the whole rule set again: the first doc's rules are
+/// revoked wholesale and the on-chain doc copy tracks the LATEST apply.
+/// (The small doc is applied FIRST: soroban-env-host 27.0.1's debug-mode
+/// invocation metering underflows when a later invocation SHRINKS storage
+/// — a test-env-only host quirk, not contract behavior.)
 #[test]
-fn reapply_replaces_only_doc_rules_and_leaves_legacy_rules() {
+fn reapply_replaces_the_whole_rule_set() {
     let env = Env::default();
     env.mock_all_auths();
     bind_testnet(&env);
-    register_perch_infra(&env);
-    let (client, account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
-
-    // A "legacy" rule via the untouched mutator path, BEFORE any doc: id 1.
-    let session_key = test_key(7);
-    let legacy_signer = Signer::External(
-        verifier_addr.clone(),
-        Bytes::from_slice(&env, &session_key.verifying_key().to_sec1_bytes()),
-    );
-    let legacy = client.add_context_rule(
-        &ContextRuleType::CallContract(account_addr.clone()),
-        &SString::from_str(&env, "legacy-session"),
-        &None,
-        &vec![&env, legacy_signer],
-        &soroban_sdk::Map::new(&env),
-    );
+    register_infra(&env);
+    let (client, _account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
 
     let verifier = addr_str(&verifier_addr);
     let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
     let target = addr_str(&Address::generate(&env));
 
-    let doc1 = two_rule_doc(TESTNET_PASSPHRASE, &verifier, &key_hex, &target);
-    let first = client.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()));
-    assert_eq!(client.doc_rule_ids(), vec![&env, 2u32, 3u32]);
-    assert_eq!(client.get_context_rules_count(), 4);
-
-    // Second doc: a single policy-free rule — the first doc's grants are
-    // revoked wholesale, nothing else moves.
-    let doc2 = format!(
+    // First doc: admin only.
+    let doc1 = format!(
         r#"{{
   "version": 1,
   "network": "{TESTNET_PASSPHRASE}",
@@ -246,47 +232,47 @@ fn reapply_replaces_only_doc_rules_and_leaves_legacy_rules() {
     {{ "id": "owner", "verifier": "{verifier}", "key": "{key_hex}" }}
   ],
   "rules": [
-    {{ "name": "ops-only",
-      "scope": {{ "type": "contract", "address": "{target}" }},
+    {{ "name": "admin",
+      "scope": {{ "type": "self-admin" }},
       "principals": {{ "type": "all", "signers": ["owner"] }} }}
   ]
 }}"#
     );
+    let first = client.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()));
+    assert_eq!(client.doc_rule_ids(), vec![&env, 1u32]);
+    assert_eq!(client.get_context_rules_count(), 1);
+
+    // Second doc: the full three-rule fixture — the admin-only rule set is
+    // replaced wholesale.
+    let doc2 = fixture_doc(TESTNET_PASSPHRASE, &verifier, &key_hex, &target);
     let canonical2 = canonicalize(&doc2);
     let second = client.apply_doc(&Bytes::from_slice(&env, canonical2.as_bytes()));
 
     assert_ne!(first, second);
     assert_eq!(client.applied_doc_hash(), Some(second));
-    // The on-chain doc copy tracks the LATEST apply.
     assert_eq!(
         client.get_applied_doc(),
         Some(Bytes::from_slice(&env, canonical2.as_bytes()))
     );
-    assert_eq!(client.doc_rule_ids(), vec![&env, 4u32]);
+    assert_eq!(client.doc_rule_ids(), vec![&env, 2u32, 3u32, 4u32]);
     assert_eq!(client.get_context_rules_count(), 3);
-    // The first doc's rules (2, 3) are gone…
-    assert!(client.try_get_context_rule(&2).is_err());
-    assert!(client.try_get_context_rule(&3).is_err());
-    // …while the default rule and the legacy rule are exactly as before.
-    assert!(matches!(
-        client.get_context_rule(&0).context_type,
-        ContextRuleType::Default
-    ));
+    // The first doc's rule (1) no longer exists.
+    assert!(client.try_get_context_rule(&1).is_err());
     assert_eq!(
-        client.get_context_rule(&legacy.id).name,
-        SString::from_str(&env, "legacy-session")
+        client.get_context_rule(&2).name,
+        SString::from_str(&env, "admin")
     );
 }
 
-/// A doc carrying a cumulative cap is refused (`DocCapUnsupported`) rather
-/// than installed weaker than reviewed — capped docs keep the SDK's
-/// per-rule `buildDocInstallTxs` install path. Nothing changes on refusal.
+/// DOC-ONLY supports caps: a capped rule installs the interpreter AND
+/// nido's stock spending-limit policy (at its pinned deployed address) on
+/// the same context rule — OZ enforces both (AND).
 #[test]
-fn capped_doc_is_refused_atomically() {
+fn capped_doc_installs_spending_limit_beside_interpreter() {
     let env = Env::default();
     env.mock_all_auths();
     bind_testnet(&env);
-    register_perch_infra(&env);
+    let (_compiler, interpreter, spending_limit) = register_infra(&env);
     let (client, _account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
 
     let target = addr_str(&Address::generate(&env));
@@ -298,6 +284,9 @@ fn capped_doc_is_refused_atomically() {
     {{ "id": "owner", "verifier": "{verifier}", "key": "{key_hex}" }}
   ],
   "rules": [
+    {{ "name": "admin",
+      "scope": {{ "type": "self-admin" }},
+      "principals": {{ "type": "all", "signers": ["owner"] }} }},
     {{ "name": "capped-pay",
       "scope": {{ "type": "contract", "address": "{target}" }},
       "principals": {{ "type": "all", "signers": ["owner"] }},
@@ -309,10 +298,53 @@ fn capped_doc_is_refused_atomically() {
         key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes()),
     );
 
+    client.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes()));
+
+    let capped = client.get_context_rule(&2);
+    assert_eq!(capped.name, SString::from_str(&env, "capped-pay"));
+    assert_eq!(
+        capped.policies.len(),
+        2,
+        "a capped rule attaches the interpreter AND the spending-limit policy"
+    );
+    assert!(capped.policies.iter().any(|p| p == interpreter));
+    assert!(capped.policies.iter().any(|p| p == spending_limit));
+}
+
+/// The re-imported anti-brick check: a document with no policy-free
+/// self-admin rule is refused (`DocAdminLockout`) — applying it would
+/// replace the default rule and lock the owner out. Nothing changes.
+#[test]
+fn admin_less_doc_is_refused_anti_brick() {
+    let env = Env::default();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_infra(&env);
+    let (client, _account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
+
+    let doc = format!(
+        r#"{{
+  "version": 1,
+  "network": "{TESTNET_PASSPHRASE}",
+  "signers": [
+    {{ "id": "owner", "verifier": "{verifier}", "key": "{key_hex}" }}
+  ],
+  "rules": [
+    {{ "name": "pay-only",
+      "scope": {{ "type": "contract", "address": "{target}" }},
+      "principals": {{ "type": "all", "signers": ["owner"] }} }}
+  ]
+}}"#,
+        verifier = addr_str(&verifier_addr),
+        key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes()),
+        target = addr_str(&Address::generate(&env)),
+    );
+
     assert_doc_error(
         client.try_apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes())),
-        NidoSmartAccountError::DocCapUnsupported,
+        NidoSmartAccountError::DocAdminLockout,
     );
+    // Nothing changed: the constructor's default rule is still the policy.
     assert_eq!(client.get_context_rules_count(), 1);
     assert_eq!(client.applied_doc_hash(), None);
     assert_eq!(client.get_applied_doc(), None);
@@ -320,18 +352,17 @@ fn capped_doc_is_refused_atomically() {
 
 /// `apply_doc` stores (and emits) the submitted bytes as the lossless
 /// canonical policy, so a pretty-printed (non-canonical) submission is
-/// refused with `DocNotCanonical` — resubmit `canonicalJson(doc)`, which is
-/// what `buildApplyDocTx` always sends. Nothing changes on refusal.
+/// refused with `DocNotCanonical`. Nothing changes on refusal.
 #[test]
 fn non_canonical_doc_is_refused() {
     let env = Env::default();
     env.mock_all_auths();
     bind_testnet(&env);
-    register_perch_infra(&env);
+    register_infra(&env);
     let (client, _account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
 
     // The fixture is pretty-printed — semantically valid, byte-non-canonical.
-    let doc = two_rule_doc(
+    let doc = fixture_doc(
         TESTNET_PASSPHRASE,
         &addr_str(&verifier_addr),
         &hex_lower(&signing_key.verifying_key().to_sec1_bytes()),
@@ -354,10 +385,10 @@ fn wrong_network_doc_is_refused() {
     let env = Env::default();
     env.mock_all_auths();
     bind_testnet(&env);
-    register_perch_infra(&env);
+    register_infra(&env);
     let (client, _account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
 
-    let doc = two_rule_doc(
+    let doc = fixture_doc(
         "Public Global Stellar Network ; September 2015",
         &addr_str(&verifier_addr),
         &hex_lower(&signing_key.verifying_key().to_sec1_bytes()),

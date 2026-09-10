@@ -245,6 +245,18 @@ impl Policy for ZkRecovery {
         extend_persistent_max(e, &nullifier_key);
         e.storage().persistent().remove(&pending_key);
 
+        // SPIKE (doc-only): record the completion grant — this enforce runs
+        // inside the completing `add_context_rule`'s `__check_auth`, BEFORE
+        // that entry point's body, and the pending it just consumed is what
+        // the body's doc-only gate would otherwise look for. A TEMPORARY
+        // entry holding the current ledger sequence lets the gate
+        // (`completion_granted`) recognize the completion window without
+        // reopening the mutator beyond this ledger.
+        e.storage().temporary().set(
+            &RecoveryKey::CompletionGrant(smart_account.clone()),
+            &e.ledger().sequence(),
+        );
+
         RecoveryCompleted {
             account: &smart_account,
             nullifier: &pending.nullifier,
