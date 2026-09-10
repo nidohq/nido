@@ -14,6 +14,22 @@ export type OperationDescriptor =
       expiryLabel?: string;
     }
   | { type: "remove-context-rule"; ruleId: number; target: string }
+  | {
+      /** Apply a perch policy document (the doc-based session-grant flow).
+       *  The doc is the source of truth — scope, signers, functions, expiry,
+       *  and cap all live in `docJson`, so nothing here is editable at /sign/
+       *  (adjustments happen on the delegate-doc page, before the handoff). */
+      type: "apply-policy-doc";
+      /** Canonical doc JSON — the exact bytes `apply_doc` receives (and the
+       *  bytes whose sha256 is the doc_hash shown to the user). */
+      docJson: string;
+      /** Install route decided at request-build time: the one-transaction
+       *  `apply_doc` surface, or a per-rule client-side lowering (the only
+       *  path for capped docs and pre-apply_doc accounts). */
+      route: "apply-doc" | "per-rule";
+      /** Human-readable expiry label (e.g. "24 hours"), as for add-context-rule. */
+      expiryLabel?: string;
+    }
   | { type: "raw-xdr"; xdr: string };
 
 export type SignKind =

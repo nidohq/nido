@@ -1,0 +1,386 @@
+---
+// The DOC-based sibling of /security/delegate/: a dApp requests a SCOPED
+// SESSION KEY as a perch policy document. The dApp holds a delegated key
+// (C… or G…) and asks for it to be allowed on one contract's named
+// functions, time-boxed, optionally spend-capped. The wallet builds the
+// document (the canned scoped-session-key template), previews its canonical
+// JSON + doc_hash — the exact identity the account will store on chain —
+// and hands off to /sign/ with an apply-policy-doc descriptor. The policy
+// page then shows the applied document losslessly.
+//
+// The origin / return-URL validation (anti-redirect-abuse) mirrors
+// /security/delegate/ verbatim; the query-param contract is parsed by the
+// pure lib lib/policy/docRequest.
+import NidoLayout from '../../../layouts/NidoLayout.astro';
+import Toast from '../../../components/Toast.astro';
+import PasskeySheet from '../../../components/PasskeySheet.astro';
+import Icon from '../../../components/Icon.astro';
+---
+<NidoLayout title="Let an app in">
+  <div class="col-scroll scroll-hide screen-in">
+    <div class="topbar">
+      <a href="/security/" class="btn ghost sm" style="width:40px;height:40px;padding:0;border-radius:12px;" aria-label="Back">
+        <Icon name="back" size={18} />
+      </a>
+      <h1 class="disp" style="font-weight:800;font-size:19px;">Let an app in?</h1>
+      <span style="width:40px;"></span>
+    </div>
+
+    <div class="pad" style="padding-top:8px;">
+      <div class="card" style="padding:18px;">
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px;">
+          <div style="width:42px;height:42px;border-radius:13px;background:var(--acc-soft);display:grid;place-items:center;">
+            <Icon name="link" size={20} color="var(--acc)" />
+          </div>
+          <div style="min-width:0;">
+            <div style="font-weight:700;font-size:14.5px;">App requests a scoped session key</div>
+            <div class="mut mono" id="origin-text" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+          </div>
+        </div>
+        <p class="mut" style="font-size:13px;line-height:1.55;margin:0;">
+          The app holds its own key and asks to use it with the contract below —
+          only the listed functions, only for a while. What you approve is saved
+          as a policy <em>document</em>, so your policy page can always show
+          exactly this, verified against a hash stored on chain.
+        </p>
+      </div>
+
+      <span class="section-label" style="display:block;margin:22px 0 10px;">What you're allowing</span>
+      <div class="card" style="overflow:hidden;padding:0;">
+        <div class="navrow" style="cursor:default;">
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:13.5px;">Allowed to use</div>
+            <div class="mut mono" style="font-size:12px;"><code id="target-text" style="word-break:break-all;display:block;"></code></div>
+          </div>
+        </div>
+        <div class="navrow" style="cursor:default;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13.5px;">App's key</div>
+            <div class="mut mono" style="font-size:11.5px;word-break:break-all;"><code id="signer-text" class="wrap"></code></div>
+          </div>
+        </div>
+        <div class="navrow" style="cursor:default;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13.5px;">Functions</div>
+            <div class="mut" id="functions-text" style="font-size:12.5px;margin-top:6px;line-height:1.5;"></div>
+          </div>
+        </div>
+        <div class="navrow" style="cursor:default;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13.5px;">Expires</div>
+            <select id="duration-sel" class="input"
+                    style="height:40px;font-size:13.5px;width:auto;padding:0 10px;margin-top:8px;">
+              <option value="24h">In 24 hours</option>
+              <option value="7d">In 7 days</option>
+              <option value="30d">In 30 days</option>
+              <option value="none">Never (until revoked)</option>
+            </select>
+            <div class="mut" id="expiry-text" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
+          </div>
+        </div>
+        <div class="navrow" style="cursor:default;border-bottom:none;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13.5px;">Spending cap</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:8px;">
+              <input type="checkbox" id="cap-on" /> Cap what this key can spend
+            </label>
+            <div id="cap-fields" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;" hidden>
+              <input id="cap-xlm" class="input" inputmode="decimal" placeholder="Amount (XLM)" style="flex:1 1 120px;" />
+              <select id="cap-period" class="input" style="width:auto;">
+                <option value="day">per day</option>
+                <option value="week">per week</option>
+                <option value="30d">per 30 days</option>
+              </select>
+            </div>
+            <div class="mut" id="cap-note" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
+          </div>
+        </div>
+      </div>
+
+      <span class="section-label" style="display:block;margin:22px 0 10px;">The document</span>
+      <div class="card" style="padding:16px;display:grid;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="mut" style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">doc_hash</span>
+          <code id="doc-hash" class="mono" style="font-size:11.5px;word-break:break-all;">—</code>
+        </div>
+        <pre id="doc-json" class="mono" style="font-size:11px;line-height:1.5;margin:0;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;background:var(--paper-3);border:1px solid var(--line);border-radius:10px;padding:10px 12px;">—</pre>
+        <p class="mut" id="route-note" style="font-size:12px;margin:0;line-height:1.5;"></p>
+      </div>
+
+      <div class="actions" style="display:flex;gap:10px;margin-top:18px;">
+        <button id="approve" class="btn acc" type="button" style="flex:1;">Review &amp; continue</button>
+        <button id="deny" class="btn ghost" type="button" style="flex:0 0 auto;width:auto;">Cancel</button>
+      </div>
+      <p id="status" role="status" aria-live="polite" class="mut" style="font-size:12.5px;margin-top:12px;"></p>
+    </div>
+  </div>
+
+  <Toast />
+  <PasskeySheet />
+</NidoLayout>
+
+<script>
+  import { contractIdFromHostname, canonicalJson, docHash } from '@nidohq/passkey-sdk';
+  import { rpc } from '@stellar/stellar-sdk';
+  import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
+  import {
+    DOC_DURATIONS,
+    DOC_DURATION_LABEL,
+    parseDocDelegateParams,
+  } from '../../../lib/policy/docRequest.js';
+  import {
+    chooseApplyRoute,
+    docHasCap,
+    draftToDoc,
+    validateSessionDocDraft,
+    type SessionDocDraft,
+  } from '../../../lib/policy/docDraft.js';
+  import { fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
+  import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../../../lib/spendingLimitParams.js';
+  import { stroopsToXlm } from '../../../lib/money.js';
+  import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest';
+
+  const account = contractIdFromHostname(window.location.hostname);
+  const status = document.getElementById('status')!;
+  const approveBtn = document.getElementById('approve') as HTMLButtonElement;
+  const denyBtn = document.getElementById('deny')!;
+
+  const parsed = parseDocDelegateParams(new URLSearchParams(window.location.search));
+  if (!account) {
+    status.textContent = 'This page must be opened on an account subdomain.';
+    approveBtn.disabled = true;
+  } else if (!parsed.ok) {
+    status.textContent = parsed.error;
+    approveBtn.disabled = true;
+  }
+
+  const req = parsed.ok ? parsed.req : null;
+
+  // Surface the request.
+  document.getElementById('origin-text')!.textContent = req?.origin ?? '(missing)';
+  document.getElementById('target-text')!.textContent = req?.target ?? '(missing)';
+  document.getElementById('signer-text')!.textContent = req?.signer ?? '(missing)';
+  document.getElementById('functions-text')!.textContent = req
+    ? req.functions
+      ? `Only: ${req.functions.join(', ')}`
+      : 'Any function on the contract.'
+    : '(missing)';
+
+  const durationSel = document.getElementById('duration-sel') as HTMLSelectElement;
+  const expiryText = document.getElementById('expiry-text')!;
+  const capOn = document.getElementById('cap-on') as HTMLInputElement;
+  const capFields = document.getElementById('cap-fields')!;
+  const capXlm = document.getElementById('cap-xlm') as HTMLInputElement;
+  const capPeriod = document.getElementById('cap-period') as HTMLSelectElement;
+  const capNote = document.getElementById('cap-note')!;
+  const docHashEl = document.getElementById('doc-hash')!;
+  const docJsonEl = document.getElementById('doc-json')!;
+  const routeNote = document.getElementById('route-note')!;
+
+  if (req) {
+    durationSel.value = req.duration;
+    if (req.limitStroops !== null) {
+      capOn.checked = true;
+      capFields.hidden = false;
+      capXlm.value = stroopsToXlm(req.limitStroops);
+      capPeriod.value = req.limitPeriod;
+    }
+  }
+
+  // The expiry ledger is anchored ONCE at page load, so the previewed
+  // doc_hash is byte-identical to what approve signs (a minutes-old anchor
+  // only shifts the expiry by that skew — irrelevant at ledger scale).
+  let latestLedger: number | null = null;
+  const latestLedgerReady: Promise<void> = (async () => {
+    try {
+      const server = new rpc.Server(RPC_URL);
+      latestLedger = (await server.getLatestLedger()).sequence;
+    } catch {
+      latestLedger = null;
+    }
+  })();
+
+  // Probe the account's apply_doc surface once for the route note.
+  let surfaceSupported: boolean | null = null;
+  const surfaceReady: Promise<void> = account
+    ? fetchDocSurface(account).then(
+        (s) => void (surfaceSupported = s.supported),
+        () => void (surfaceSupported = false),
+      )
+    : Promise.resolve();
+
+  function notAfterFromControls(): number | null {
+    const off = DOC_DURATIONS[durationSel.value];
+    if (off == null) return null;
+    return latestLedger == null ? null : latestLedger + off;
+  }
+
+  function draftFromControls(): SessionDocDraft | null {
+    if (!req) return null;
+    let cap: SessionDocDraft['cap'] = null;
+    if (capOn.checked) {
+      // Parse the visible XLM amount; invalid input yields stroops "0",
+      // which validateSessionDocDraft rejects with a real message.
+      let stroops = '0';
+      try {
+        stroops = stroopsFromXlm(capXlm.value).toString();
+      } catch {
+        stroops = '0';
+      }
+      const period = (capPeriod.value in PERIOD_LEDGERS ? capPeriod.value : 'day') as LimitPeriod;
+      cap = { stroops, periodLedgers: PERIOD_LEDGERS[period] };
+    }
+    return {
+      name: req.label,
+      sessionAddress: req.signer,
+      targetContract: req.target,
+      functionsInput: req.functions?.join(', ') ?? '',
+      notAfterLedger: notAfterFromControls(),
+      cap,
+    };
+  }
+
+  function syncPreview(): void {
+    const off = req ? DOC_DURATIONS[durationSel.value] : null;
+    expiryText.textContent =
+      off == null
+        ? 'Never — stays valid until you revoke it.'
+        : latestLedger == null
+          ? `≈ ${off.toLocaleString()} ledgers from now.`
+          : `At ledger ${(latestLedger + off).toLocaleString()} (≈ ${off.toLocaleString()} ledgers from now).`;
+    capNote.textContent = capOn.checked
+      ? 'With a cap, only token transfers are allowed under this key — other calls in the scoped contract are blocked. Capped documents install per-rule (the cap rides the stock spending-limit policy).'
+      : 'No cap — the key can do whatever the allowed functions permit until it expires.';
+
+    const draft = draftFromControls();
+    if (!draft) return;
+    const check = validateSessionDocDraft(draft);
+    if (!check.ok) {
+      docHashEl.textContent = '—';
+      docJsonEl.textContent = check.errors.join(' ');
+      routeNote.textContent = '';
+      return;
+    }
+    try {
+      const doc = draftToDoc(draft, NETWORK_PASSPHRASE);
+      docHashEl.textContent = docHash(doc);
+      docJsonEl.textContent = canonicalJson(doc);
+      const capped = docHasCap(doc);
+      routeNote.textContent = capped
+        ? 'Installs per-rule: the cap rides the stock spending-limit policy next to the interpreter.'
+        : surfaceSupported === false
+          ? 'This account has no apply_doc surface — the document installs per-rule.'
+          : 'Applies in one transaction via apply_doc; the account stores the document and its hash on chain.';
+    } catch (e) {
+      docHashEl.textContent = '—';
+      docJsonEl.textContent = `Cannot build document: ${e instanceof Error ? e.message : String(e)}`;
+      routeNote.textContent = '';
+    }
+  }
+
+  durationSel.addEventListener('change', syncPreview);
+  capOn.addEventListener('change', () => {
+    capFields.hidden = !capOn.checked;
+    syncPreview();
+  });
+  capXlm.addEventListener('input', syncPreview);
+  capPeriod.addEventListener('change', syncPreview);
+  void latestLedgerReady.then(syncPreview);
+  void surfaceReady.then(syncPreview);
+  syncPreview();
+
+  // Return-URL must be the dApp origin (anti-redirect-abuse) — verbatim from
+  // /security/delegate/.
+  function backToDapp(qs: string): string | null {
+    if (!req?.returnUrl) return null;
+    try {
+      const url = new URL(req.returnUrl);
+      if (url.origin !== req.origin) {
+        status.textContent = `Refusing to redirect: return URL origin (${url.origin}) does not match request origin (${req.origin}).`;
+        return null;
+      }
+      url.search = qs;
+      return url.toString();
+    } catch {
+      status.textContent = 'Invalid return URL; not redirecting.';
+      return null;
+    }
+  }
+
+  denyBtn.addEventListener('click', () => {
+    const back = backToDapp('?delegation=cancelled');
+    if (back) window.location.href = back;
+  });
+
+  approveBtn.addEventListener('click', async () => {
+    if (!req || !account) return;
+    approveBtn.disabled = true;
+    try {
+      // Validate the dApp return URL BEFORE any work.
+      const successReturn = backToDapp('?delegation=ok');
+      if (!successReturn) {
+        approveBtn.disabled = false;
+        return;
+      }
+
+      // The expiry anchor must exist before a non-"none" duration can bind
+      // a real ledger into the document.
+      status.textContent = 'Anchoring expiry…';
+      await latestLedgerReady;
+      if (DOC_DURATIONS[durationSel.value] != null && latestLedger == null) {
+        status.textContent = 'Could not read the current ledger — try again.';
+        approveBtn.disabled = false;
+        return;
+      }
+
+      const draft = draftFromControls()!;
+      const check = validateSessionDocDraft(draft);
+      if (!check.ok) {
+        status.textContent = check.errors.join(' ');
+        approveBtn.disabled = false;
+        return;
+      }
+      const doc = draftToDoc(draft, NETWORK_PASSPHRASE);
+
+      status.textContent = 'Checking the account’s apply_doc surface…';
+      await surfaceReady;
+      const route = chooseApplyRoute({
+        hasDocSurface: surfaceSupported === true,
+        docHasCap: docHasCap(doc),
+      });
+
+      const signReq: SignRequest = {
+        v: 1,
+        kind: 'session-grant',
+        account,
+        operation: {
+          type: 'apply-policy-doc',
+          docJson: canonicalJson(doc),
+          route,
+          expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
+        },
+        title: 'Grant a session key',
+        subtitle: `${req.origin} wants a scoped session key.`,
+        submitMode: 'relayer',
+        returnTarget: {
+          type: 'dapp',
+          origin: req.origin,
+          returnUrl: req.returnUrl,
+          successQuery: '?delegation=ok',
+        },
+      };
+
+      const id = stashSignRequest(signReq);
+      window.location.href = `/sign/?req=${id}`;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      status.textContent = `Failed: ${msg}`;
+      approveBtn.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .pad code { font-family: var(--mono); }
+  code.wrap { word-break: break-all; }
+</style>
