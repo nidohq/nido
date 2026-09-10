@@ -220,7 +220,6 @@ export async function readDocPolicy(
   const result = readPolicy({
     chainRules,
     appliedDocHash: surface.appliedDocHash,
-    docRuleIds: surface.docRuleIds,
     // View-first, matching the SDK's input surface: the on-chain canonical
     // copy is `storedDocJson`; an event-recovered doc is the fallback field.
     ...(recovered?.source === 'storage' ? { storedDocJson: recovered.json } : {}),

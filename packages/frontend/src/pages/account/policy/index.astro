@@ -154,26 +154,23 @@ import Icon from '../../../components/Icon.astro';
       const [rules, ledger] = await Promise.all([fetchAllChainRules(account!), currentLedger()]);
       renderPolicyList(rulesEl, rules, { known, currentLedger: ledger });
 
-      // Three-tier doc read: an applied + recoverable document renders as
-      // the lossless doc view (tier a) — with drift warnings when the live
-      // rules moved out from under it (tier b). Anything else stays on the
-      // raw rule cards alone (tier c). A failed doc read must never take
-      // down the raw view, so it degrades to tier c with a note.
+      // Two-tier doc read: an applied + recoverable document renders as the
+      // lossless doc view (tier a — under doc-only the live rules ARE its
+      // lowering, so there is no drift tier). Anything else stays on the
+      // raw rule cards alone (tier b). A failed doc read must never take
+      // down the raw view, so it degrades to the raw cards with a note.
       let docLine = '';
       try {
         const docRead = await readDocPolicy(account!, rules);
         const { result } = docRead;
-        if (result.tier !== 'decompiled' && result.doc && result.docHash) {
-          renderDocPolicy(docEl, summarizeDoc(result.doc, result.docHash, result.drift ?? []), {
+        if (result.tier === 'doc-verified' && result.doc && result.docHash) {
+          renderDocPolicy(docEl, summarizeDoc(result.doc, result.docHash), {
             currentLedger: ledger,
             source: docRead.docSource,
           });
           docSectionEl.hidden = false;
           rulesHeadingEl.textContent = 'On-chain rules (raw)';
-          docLine =
-            result.tier === 'doc-verified'
-              ? ' Policy document verified against the on-chain hash.'
-              : ` Policy document verified, but ${result.drift?.length ?? 0} drift finding${(result.drift?.length ?? 0) === 1 ? '' : 's'} — see below.`;
+          docLine = ' Policy document verified against the on-chain hash.';
         } else {
           docSectionEl.hidden = true;
           rulesHeadingEl.textContent = 'Current rules';

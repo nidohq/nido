@@ -57,7 +57,7 @@ test.describe('policy page — UI only (no chain) @fast', () => {
     await expect(page.locator('#pol-doc-errors')).toContainText('Target contract');
   });
 
-  test('a valid template previews the merged doc, its hash, and a first-apply diff @fast', async ({ page }) => {
+  test('the builder fails closed when the policy baseline is unreadable @fast', async ({ page }) => {
     await page.goto(POLICY_URL, { waitUntil: 'networkidle' });
     await expect(page.locator('input[name="doc-signer"]')).toBeVisible();
 
@@ -65,12 +65,13 @@ test.describe('policy page — UI only (no chain) @fast', () => {
     await page.locator('input[name="doc-contract"]').fill(TARGET);
     await page.locator('input[name="doc-functions"]').fill('udpate_message');
 
-    // Offline, the account reads as having no applied document, so the
-    // what-changes panel classifies this as a first apply (all-new) — the
-    // merge + diff are pure client-side.
-    await expect(page.locator('#pol-doc-prev-diff')).toContainText('First document');
-    await expect(page.locator('#pol-doc-prev-hash')).toHaveText(/^[0-9a-f]{64}$/);
-    await expect(page.locator('#pol-doc-prev-json')).toContainText('udpate_message');
+    // With no reachable doc surface (offline / fake account) the builder
+    // must refuse to compose an update — apply_doc replaces the whole
+    // document, so composing over an unknown baseline is never safe. The
+    // first-apply preview happy path is covered by the pure diff/merge unit
+    // tests (docDiff.test.ts).
+    await expect(page.locator('#pol-doc-prev-diff')).toContainText('no policy-document surface');
+    await expect(page.locator('#pol-doc-prev-hash')).toHaveText('—');
   });
 });
 

@@ -85,19 +85,11 @@ describe('summarizeDoc', () => {
   });
   const hash = docHash(doc);
 
-  it('is verified with no drift and carries the doc hash badge', () => {
+  it('carries the doc hash badge, signers, and rules', () => {
     const m = summarizeDoc(doc, hash);
-    expect(m.status).toBe('verified');
     expect(m.docHash).toBe(hash);
     expect(m.docHashShort).toContain('…');
     expect(m.signers).toHaveLength(1);
     expect(m.rules).toHaveLength(1);
-    expect(m.drift).toEqual([]);
-  });
-
-  it('flips to drift when drift findings are present', () => {
-    const m = summarizeDoc(doc, hash, ['rule 1 ("status-session"): renamed to "x"']);
-    expect(m.status).toBe('drift');
-    expect(m.drift).toHaveLength(1);
   });
 });

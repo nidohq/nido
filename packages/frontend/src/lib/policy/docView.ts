@@ -129,24 +129,15 @@ export interface DocViewModel {
   docHashShort: string;
   signers: DocSignerView[];
   rules: DocRuleView[];
-  /** 'verified' (tier a) or 'drift' (tier b). */
-  status: 'verified' | 'drift';
-  /** Tier b: what drifted — verbatim from the SDK. */
-  drift: string[];
 }
 
-/** Build the display model for a hash-verified document (tiers a/b). */
-export function summarizeDoc(
-  doc: PolicyDoc,
-  docHashHex: string,
-  drift: string[] = [],
-): DocViewModel {
+/** Build the display model for a hash-verified document (tier a — under
+ *  doc-only there is no drift tier: the live rules ARE the doc's lowering). */
+export function summarizeDoc(doc: PolicyDoc, docHashHex: string): DocViewModel {
   return {
     docHash: docHashHex,
     docHashShort: truncate(docHashHex, 8, 8),
     signers: doc.signers.map(describeDocSigner),
     rules: doc.rules.map(describeDocRule),
-    status: drift.length > 0 ? 'drift' : 'verified',
-    drift: [...drift],
   };
 }

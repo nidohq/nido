@@ -137,6 +137,7 @@ import Icon from '../../../components/Icon.astro';
     parseDocDelegateParams,
   } from '../../../lib/policy/docRequest.js';
   import {
+    ownerAdminBaseline,
     upsertSessionRule,
     validateSessionDocDraft,
     type SessionDocDraft,
@@ -144,6 +145,8 @@ import Icon from '../../../components/Icon.astro';
   import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
   import { renderDocDiffHtml } from '../../../components/PolicyInspector.js';
   import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchDefaultRuleAuthInfo } from '../../../lib/policyChainFetch.js';
+  import { bytesToHex } from '../../../lib/policy/policyView.js';
   import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../../../lib/spendingLimitParams.js';
   import { stroopsToXlm } from '../../../lib/money.js';
   import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest';
@@ -208,41 +211,61 @@ import Icon from '../../../components/Icon.astro';
     }
   })();
 
-  // The currently applied document — the merge target and diff baseline.
+  // The merge baseline and the diff's "before" side: the applied document,
+  // or — on a first apply — the synthesized owner-admin baseline (apply_doc
+  // replaces EVERY rule and refuses docs without a policy-free self-admin
+  // rule, so the account's own passkey must ride along from the start).
   // Doc-only writes: an account without the apply_doc surface cannot take
   // this grant at all, so the flow refuses up front rather than at /sign/.
-  let currentDoc: PolicyDoc | null = null;
-  let currentDocLoaded = false;
-  // Set when the baseline read refused the flow (no doc surface, or an
-  // applied doc that could not be recovered) — approve must never proceed.
+  let baselineDoc: PolicyDoc | null = null;
+  let isFirstApply = false;
+  let baselineLoaded = false;
+  // Set when the baseline read refused the flow — approve must never proceed.
   let docBaselineBlocked = false;
-  const currentDocReady: Promise<void> = account && req
+  const refuse = (msg: string) => {
+    status.textContent = msg;
+    docBaselineBlocked = true;
+    approveBtn.disabled = true;
+  };
+  const baselineReady: Promise<void> = account && req
     ? (async () => {
         try {
           const surface = await fetchDocSurface(account);
           if (!surface.supported) {
-            status.textContent =
-              "This account's contract predates policy documents — it cannot accept this request.";
-            docBaselineBlocked = true;
-            approveBtn.disabled = true;
+            refuse(
+              "This account's contract predates policy documents — it cannot accept this request.",
+            );
           } else if (surface.appliedDocHash !== null) {
             const recovered = await fetchAppliedDocJson(account, toHex(surface.appliedDocHash));
-            if (recovered !== null) currentDoc = parsePolicyDocJson(recovered.json);
+            if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
             else {
               // A document is applied but not recoverable: an update built
               // on an unknown baseline would silently DROP the applied
               // rules on apply. Refuse.
-              status.textContent =
-                "The account has an applied policy document that could not be read — cannot build a safe update.";
-              docBaselineBlocked = true;
-              approveBtn.disabled = true;
+              refuse(
+                'The account has an applied policy document that could not be read — cannot build a safe update.',
+              );
+            }
+          } else {
+            // First apply: anchor the anti-brick admin rule on the
+            // account's live primary passkey (the constructor default rule).
+            const info = await fetchDefaultRuleAuthInfo(account);
+            const passkey = info.externalSigners[0];
+            if (passkey === undefined) {
+              refuse(
+                "Could not read the account's primary passkey — a first document must carry it.",
+              );
+            } else {
+              baselineDoc = ownerAdminBaseline(
+                { verifier: passkey.verifier, publicKeyHex: bytesToHex(passkey.publicKey) },
+                NETWORK_PASSPHRASE,
+              );
+              isFirstApply = true;
             }
           }
-          currentDocLoaded = true;
+          baselineLoaded = true;
         } catch {
-          status.textContent = 'Could not read the applied policy document — try again.';
-          docBaselineBlocked = true;
-          approveBtn.disabled = true;
+          refuse('Could not read the applied policy document — try again.');
         }
       })()
     : Promise.resolve();
@@ -298,15 +321,19 @@ import Icon from '../../../components/Icon.astro';
       docJsonEl.textContent = check.errors.join(' ');
       return;
     }
-    if (!currentDocLoaded) {
-      docDiffEl.textContent = 'Reading the applied document…';
+    if (!baselineLoaded || baselineDoc === null) {
+      docDiffEl.textContent = docBaselineBlocked
+        ? (status.textContent ?? 'Unavailable.')
+        : 'Reading the applied document…';
       return;
     }
     try {
-      const { doc } = upsertSessionRule(currentDoc, draft, NETWORK_PASSPHRASE);
+      const { doc } = upsertSessionRule(baselineDoc, draft, NETWORK_PASSPHRASE);
       docHashEl.textContent = docHash(doc);
       docJsonEl.textContent = canonicalJson(doc);
-      docDiffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(currentDoc, doc));
+      // First apply: nothing was applied before, so everything — the
+      // anti-brick admin rule included — renders as newly granted.
+      docDiffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(isFirstApply ? null : baselineDoc, doc));
     } catch (e) {
       docHashEl.textContent = '—';
       docJsonEl.textContent = `Cannot build the update: ${e instanceof Error ? e.message : String(e)}`;
@@ -321,7 +348,7 @@ import Icon from '../../../components/Icon.astro';
   capXlm.addEventListener('input', syncPreview);
   capPeriod.addEventListener('change', syncPreview);
   void latestLedgerReady.then(syncPreview);
-  void currentDocReady.then(syncPreview);
+  void baselineReady.then(syncPreview);
   syncPreview();
 
   // Return-URL must be the dApp origin (anti-redirect-abuse) — verbatim from
@@ -368,8 +395,8 @@ import Icon from '../../../components/Icon.astro';
         return;
       }
       status.textContent = 'Reading the applied document…';
-      await currentDocReady;
-      if (docBaselineBlocked) return; // refusal above already set status + disabled
+      await baselineReady;
+      if (docBaselineBlocked || baselineDoc === null) return; // refusal above already set status + disabled
 
       const draft = draftFromControls()!;
       const check = validateSessionDocDraft(draft);
@@ -378,7 +405,7 @@ import Icon from '../../../components/Icon.astro';
         approveBtn.disabled = false;
         return;
       }
-      const { doc } = upsertSessionRule(currentDoc, draft, NETWORK_PASSPHRASE);
+      const { doc } = upsertSessionRule(baselineDoc, draft, NETWORK_PASSPHRASE);
 
       const signReq: SignRequest = {
         v: 1,
@@ -387,7 +414,7 @@ import Icon from '../../../components/Icon.astro';
         operation: {
           type: 'apply-policy-doc',
           docJson: canonicalJson(doc),
-          ...(currentDoc !== null ? { prevDocJson: canonicalJson(currentDoc) } : {}),
+          ...(isFirstApply ? {} : { prevDocJson: canonicalJson(baselineDoc) }),
           expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
         },
         title: 'Grant a session key',

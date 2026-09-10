@@ -8,7 +8,7 @@
 // the document via the SDK, and decides which apply route the transaction
 // takes; the component does the RPC + signing.
 
-import { parsePolicyDoc, scopedSessionKeyDoc, type PolicyDoc } from '@nidohq/passkey-sdk';
+import { buildPolicyDoc, parsePolicyDoc, scopedSessionKeyDoc, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress, MAX_RULE_NAME_LEN } from './policyDraft.js';
 
 /** Soroban symbol constraints for function names (SCSymbol: [A-Za-z0-9_],
@@ -113,30 +113,58 @@ export function draftToDoc(draft: SessionDocDraft, networkPassphrase: string): P
   });
 }
 
+/** The account's primary passkey, as read off its live auth rule (the
+ *  constructor default rule before the first apply; the doc's own admin
+ *  rule afterwards — but then the applied doc IS the baseline and this is
+ *  not needed). */
+export interface OwnerPasskey {
+  /** WebAuthn verifier contract the account trusts. */
+  verifier: string;
+  /** SEC1 uncompressed P-256 public key, hex. */
+  publicKeyHex: string;
+}
+
 /**
- * Upsert the template's session rule into the account's currently applied
- * document. `apply_doc` is a whole-document write: applying a standalone
- * single-rule doc to an account that already has one would REPLACE the
- * applied set, so an update must carry the current document forward with
- * the new rule merged in.
+ * The FIRST-APPLY baseline: a document holding only the anti-brick admin
+ * rule — the account's own passkey with policy-free self-admin authority.
+ * `apply_doc` replaces EVERY rule (the constructor's default passkey rule
+ * included) and refuses documents without a policy-free self-admin rule
+ * (`DocAdminLockout`), so a first apply must never submit a session rule
+ * alone: it upserts into this baseline instead.
+ */
+export function ownerAdminBaseline(owner: OwnerPasskey, networkPassphrase: string): PolicyDoc {
+  return buildPolicyDoc({
+    network: networkPassphrase,
+    signers: [
+      { id: 'owner', kind: 'passkey', verifier: owner.verifier, publicKey: owner.publicKeyHex },
+    ],
+    permissions: [{ name: 'admin', on: 'self-admin', by: ['owner'] }],
+  });
+}
+
+/**
+ * Upsert the template's session rule into `base` — the account's currently
+ * applied document, or {@link ownerAdminBaseline} on a first apply.
+ * `apply_doc` is a whole-document write: it REPLACES the applied set, so an
+ * update must carry the base document forward with the new rule merged in
+ * (and a base is REQUIRED — a standalone session doc would trip the
+ * contract's `DocAdminLockout` anti-brick check).
  *
- * - No current doc → the standalone template document.
  * - Same rule name exists → the new rule replaces it (a "modified" rule in
  *   the diff).
  * - Signer reuse: an existing declaration for the SAME key is reused; an id
  *   collision with a DIFFERENT key allocates "session-2", "session-3", ….
  * - Signer declarations no longer referenced by any rule are pruned.
  *
- * Precondition: `validateSessionDocDraft(draft).ok`. Throws when the current
+ * Precondition: `validateSessionDocDraft(draft).ok`. Throws when the base
  * doc is bound to a different network than the draft targets.
  */
 export function upsertSessionRule(
-  current: PolicyDoc | null,
+  current: PolicyDoc,
   draft: SessionDocDraft,
   networkPassphrase: string,
 ): { doc: PolicyDoc; signerId: string } {
   const template = draftToDoc(draft, networkPassphrase);
-  if (current === null) return { doc: template, signerId: template.signers[0].id };
   if (current.network !== undefined && current.network !== networkPassphrase) {
     throw new Error(
       `policy doc: the applied document is bound to "${current.network}" but this update targets "${networkPassphrase}"`,

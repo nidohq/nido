@@ -184,26 +184,13 @@ export function renderDocPolicy(
   ctx: DocRenderContext = {},
 ): void {
   const currentLedger = ctx.currentLedger ?? null;
-  const verified = model.status === 'verified';
-  const tierBadge = verified
-    ? '<span class="pol-badge primary">Verified · lossless</span>'
-    : '<span class="pol-badge gated">Document drift</span>';
+  const tierBadge = '<span class="pol-badge primary">Verified · lossless</span>';
   const sourceBadge =
     ctx.source === 'storage'
       ? '<span class="pol-badge">Stored on chain</span>'
       : ctx.source === 'events'
         ? '<span class="pol-badge">From event history</span>'
         : '';
-
-  const driftBox =
-    model.drift.length > 0
-      ? `<div class="alert" role="note" style="margin-top:2px;">
-          <strong style="font-size:12.5px;">The live rules have drifted from this document:</strong>
-          <ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.5;">
-            ${model.drift.map((d) => `<li>${esc(d)}</li>`).join('')}
-          </ul>
-        </div>`
-      : '';
 
   container.innerHTML = `
     <article class="card pol-card pol-doc-head" style="padding:16px;">
@@ -226,7 +213,6 @@ export function renderDocPolicy(
         <span class="pol-field-label">Signers (${model.signers.length})</span>
         <ul class="pol-signers">${model.signers.map(docSignerRow).join('')}</ul>
       </div>
-      ${driftBox}
     </article>
     ${model.rules.map((r) => docRuleCard(r, currentLedger)).join('')}`;
 }

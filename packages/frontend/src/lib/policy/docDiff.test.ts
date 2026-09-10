@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Networks } from '@stellar/stellar-sdk';
 import { buildPolicyDoc, scopedSessionKeyDoc } from '@nidohq/passkey-sdk';
 import { diffPolicyDocs, diffRuleFields } from './docDiff.js';
-import { upsertSessionRule, type SessionDocDraft } from './docDraft.js';
+import { ownerAdminBaseline, upsertSessionRule, type SessionDocDraft } from './docDraft.js';
 
 const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
 const TARGET2 = 'CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX';
@@ -84,6 +84,31 @@ describe('diffPolicyDocs', () => {
   });
 });
 
+describe('renderDocDiffHtml', () => {
+  it('renders a first apply as all-new and an update with its change kinds', async () => {
+    const { renderDocDiffHtml } = await import('../../components/PolicyInspector.js');
+    const first = renderDocDiffHtml(diffPolicyDocs(null, baseDoc));
+    expect(first).toContain('First document');
+
+    const draft: SessionDocDraft = {
+      name: 'session',
+      sessionAddress: G2,
+      targetContract: TARGET2,
+      functionsInput: '',
+      notAfterLedger: null,
+      cap: null,
+    };
+    const { doc } = upsertSessionRule(baseDoc, draft, Networks.TESTNET);
+    const update = renderDocDiffHtml(diffPolicyDocs(baseDoc, doc));
+    expect(update).toContain('+ added');
+    expect(update).toContain('session');
+    expect(update).toContain('Unchanged: pay, ops');
+
+    const noop = renderDocDiffHtml(diffPolicyDocs(baseDoc, baseDoc));
+    expect(noop).toContain('No changes');
+  });
+});
+
 describe('diffRuleFields', () => {
   it('reports scope, cap, and quorum changes', () => {
     const a = scopedSessionKeyDoc({ sessionAddress: G1, targetContract: TARGET }).rules[0];
@@ -110,10 +135,24 @@ describe('upsertSessionRule', () => {
     cap: null,
   };
 
-  it('returns the standalone template on first apply', () => {
-    const { doc, signerId } = upsertSessionRule(null, draft, Networks.TESTNET);
+  it('first apply: upserts into the owner-admin baseline (anti-brick rule rides along)', () => {
+    const baseline = ownerAdminBaseline(
+      { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
+      Networks.TESTNET,
+    );
+    const { doc, signerId } = upsertSessionRule(baseline, draft, Networks.TESTNET);
     expect(signerId).toBe('session');
-    expect(doc.rules).toHaveLength(1);
+    expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'session']);
+    // The admin rule is the policy-free self-admin shape the contract's
+    // DocAdminLockout check requires.
+    expect(doc.rules[0].scope).toEqual({ type: 'self-admin' });
+    expect(doc.rules[0].functions).toBeUndefined();
+    expect(doc.rules[0].cap).toBeUndefined();
+    expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'session']);
+    // Everything renders as newly granted on the first apply.
+    const d = diffPolicyDocs(null, doc);
+    expect(d.firstApply).toBe(true);
+    expect(d.rulesAdded.map((r) => r.name)).toEqual(['admin', 'session']);
   });
 
   it('appends to an existing doc, keeping its rules and signers', () => {
@@ -154,7 +193,10 @@ describe('upsertSessionRule', () => {
   });
 
   it('refuses a cross-network update', () => {
-    const bound = upsertSessionRule(null, draft, Networks.TESTNET).doc;
+    const bound = ownerAdminBaseline(
+      { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
+      Networks.TESTNET,
+    );
     expect(() => upsertSessionRule(bound, draft, 'Other Net')).toThrow(/bound to/);
   });
 });

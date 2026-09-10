@@ -27,15 +27,18 @@ import { Networks } from '@stellar/stellar-sdk';
 import { esc } from '../lib/html.js';
 import { toast } from '../lib/toast.js';
 import { RPC_URL } from '../lib/network.js';
+import { fetchDefaultRuleAuthInfo } from '../lib/policyChainFetch.js';
 import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../lib/policy/docPolicyFetch.js';
 import { stroopsFromXlm, PERIOD_LEDGERS } from '../lib/spendingLimitParams.js';
 import { signAndSubmit } from '../lib/primaryPasskeySigner.js';
 import {
+  ownerAdminBaseline,
   upsertSessionRule,
   validateSessionDocDraft,
   type SessionDocDraft,
 } from '../lib/policy/docDraft.js';
 import { diffPolicyDocs } from '../lib/policy/docDiff.js';
+import { bytesToHex } from '../lib/policy/policyView.js';
 import { renderDocDiffHtml } from './PolicyInspector.js';
 
 const NETWORK_PASSPHRASE = Networks.TESTNET;
@@ -47,23 +50,52 @@ interface BuilderOptions {
 }
 
 export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions): void {
-  // The currently applied document (null until fetched / when none). The
-  // merge target for every submit and the baseline for the diff panel.
-  let currentDoc: PolicyDoc | null = null;
-  let currentDocLoaded = false;
+  // The merge baseline for every submit and the diff's "before" side:
+  // the applied document, or — on a first apply — the synthesized
+  // owner-admin baseline (apply_doc replaces EVERY rule and refuses docs
+  // without a policy-free self-admin rule, so the account's own passkey
+  // must ride along from the start).
+  let baselineDoc: PolicyDoc | null = null;
+  /** True when nothing is applied yet (diff renders all-new). */
+  let isFirstApply = false;
+  /** Human-readable reason the baseline could not be established — the
+   *  builder fails closed rather than applying over an unknown state. */
+  let baselineBlocked: string | null = null;
+  let baselineLoaded = false;
 
-  const currentDocReady: Promise<void> = (async () => {
+  const baselineReady: Promise<void> = (async () => {
     try {
       const surface = await fetchDocSurface(opts.account);
-      if (surface.appliedDocHash !== null) {
+      if (!surface.supported) {
+        baselineBlocked =
+          "This account's contract has no policy-document surface — it cannot take document updates.";
+      } else if (surface.appliedDocHash !== null) {
         const recovered = await fetchAppliedDocJson(opts.account, toHex(surface.appliedDocHash));
-        if (recovered !== null) currentDoc = parsePolicyDocJson(recovered.json);
+        if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
+        else {
+          baselineBlocked =
+            'The applied policy document could not be read — cannot build a safe update.';
+        }
+      } else {
+        // First apply: anchor the anti-brick admin rule on the account's
+        // live primary passkey (the constructor default rule).
+        const info = await fetchDefaultRuleAuthInfo(opts.account);
+        const passkey = info.externalSigners[0];
+        if (passkey === undefined) {
+          baselineBlocked =
+            "Could not read the account's primary passkey — a first document must carry it (anti-brick).";
+        } else {
+          baselineDoc = ownerAdminBaseline(
+            { verifier: passkey.verifier, publicKeyHex: bytesToHex(passkey.publicKey) },
+            NETWORK_PASSPHRASE,
+          );
+          isFirstApply = true;
+        }
       }
-      currentDocLoaded = true;
-    } catch {
-      // Unreachable RPC / no doc surface: treat as "no applied document" —
-      // the first apply then shows the all-new diff.
-      currentDocLoaded = true;
+    } catch (e) {
+      baselineBlocked = `Could not read the account's policy state: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      baselineLoaded = true;
     }
   })();
 
@@ -167,12 +199,14 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     };
   }
 
-  /** The merged document for the current form state, or null while invalid. */
+  /** The merged document for the current form state, or null while the
+   *  form is invalid or the baseline is unavailable. */
   function mergedFromForm(): PolicyDoc | null {
+    if (baselineDoc === null) return null;
     const draft = collectDraft();
     if (!validateSessionDocDraft(draft).ok) return null;
     try {
-      return upsertSessionRule(currentDoc, draft, NETWORK_PASSPHRASE).doc;
+      return upsertSessionRule(baselineDoc, draft, NETWORK_PASSPHRASE).doc;
     } catch {
       return null;
     }
@@ -182,21 +216,25 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     const hashEl = container.querySelector<HTMLElement>('#pol-doc-prev-hash')!;
     const jsonEl = container.querySelector<HTMLElement>('#pol-doc-prev-json')!;
     const diffEl = container.querySelector<HTMLElement>('#pol-doc-prev-diff')!;
-    if (!currentDocLoaded) {
-      diffEl.textContent = 'Loading the applied document…';
+    if (!baselineLoaded) {
+      diffEl.textContent = 'Reading the applied document…';
+    } else if (baselineBlocked !== null) {
+      diffEl.textContent = baselineBlocked;
     }
     const merged = mergedFromForm();
     if (merged === null) {
       hashEl.textContent = '—';
       jsonEl.textContent = '—';
-      if (currentDocLoaded) diffEl.textContent = 'Fill in the template to see what would change.';
+      if (baselineLoaded && baselineBlocked === null) {
+        diffEl.textContent = 'Fill in the template to see what would change.';
+      }
       return;
     }
     hashEl.textContent = docHash(merged);
     jsonEl.textContent = canonicalJson(merged);
-    if (currentDocLoaded) {
-      diffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(currentDoc, merged));
-    }
+    // The diff's "before" side is the APPLIED doc — on a first apply that
+    // is nothing, so everything (admin rule included) renders as new.
+    diffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(isFirstApply ? null : baselineDoc, merged));
   }
 
   function showErrors(errors: string[]): void {
@@ -228,11 +266,17 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     };
 
     try {
-      // Merge against the LOADED applied document — never submit a
-      // standalone template over an unknown baseline.
+      // Merge against the LOADED baseline — never submit a standalone
+      // template over an unknown state (and never without the anti-brick
+      // admin rule).
       setStatus('Reading the applied document…');
-      await currentDocReady;
-      const { doc } = upsertSessionRule(currentDoc, draft, NETWORK_PASSPHRASE);
+      await baselineReady;
+      if (baselineBlocked !== null || baselineDoc === null) {
+        showErrors([baselineBlocked ?? 'The policy baseline is unavailable.']);
+        setStatus('');
+        return;
+      }
+      const { doc } = upsertSessionRule(baselineDoc, draft, NETWORK_PASSPHRASE);
 
       setStatus('Building the apply_doc transaction…');
       const tx = await buildApplyDocTx(doc, {
@@ -248,7 +292,8 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
 
       toast('Policy document applied.');
       setStatus('');
-      currentDoc = doc;
+      baselineDoc = doc;
+      isFirstApply = false;
       render();
       updatePreview();
       opts.onSubmitted?.();
@@ -286,5 +331,5 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
   }
 
   render();
-  void currentDocReady.then(updatePreview);
+  void baselineReady.then(updatePreview);
 }
