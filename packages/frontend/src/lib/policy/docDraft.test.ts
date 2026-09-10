@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { Networks } from '@stellar/stellar-sdk';
 import { canonicalJson, docHash } from '@nidohq/passkey-sdk';
 import {
-  chooseApplyRoute,
-  docHasCap,
   draftToDoc,
   parseFunctionsInput,
   validateSessionDocDraft,
@@ -81,18 +79,5 @@ describe('draftToDoc', () => {
     expect(rule.functions).toBeUndefined();
     expect(rule['not-after-ledger']).toBeUndefined();
     expect(rule.cap).toBeUndefined();
-    expect(docHasCap(doc)).toBe(false);
-  });
-});
-
-describe('chooseApplyRoute', () => {
-  it('routes capped docs per-rule even when the surface exists (the hybrid contract refuses caps)', () => {
-    expect(chooseApplyRoute({ hasDocSurface: true, docHasCap: true })).toBe('per-rule');
-  });
-  it('routes uncapped docs through apply_doc when the surface exists', () => {
-    expect(chooseApplyRoute({ hasDocSurface: true, docHasCap: false })).toBe('apply-doc');
-  });
-  it('routes per-rule when the account lacks the surface', () => {
-    expect(chooseApplyRoute({ hasDocSurface: false, docHasCap: false })).toBe('per-rule');
   });
 });

@@ -21,7 +21,6 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { canonicalJson, scopedSessionKeyDoc } from "@nidohq/passkey-sdk";
 import { buildOperation } from "./operationBuilders";
 import { describeOperation } from "../transfer/txSummary";
 import { xdr } from "@stellar/stellar-sdk";
@@ -78,48 +77,13 @@ describe("buildOperation", () => {
   });
 
   describe("apply-policy-doc", () => {
-    // Both apply routes end in a network simulation (SmartAccountClient), so
-    // like add-context-rule the happy paths are not unit-tested here. The
-    // OFFLINE guards ARE: they throw before any client is constructed.
-    const SESSION_G = "GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ";
-
-    it("refuses a capped doc on the apply-doc route (the contract would too)", async () => {
-      const doc = scopedSessionKeyDoc({
-        sessionAddress: SESSION_G,
-        targetContract: TOKEN,
-        cap: { limitStroops: 10_0000000n, periodLedgers: 17280 },
-      });
-      await expect(
-        buildOperation(
-          { type: "apply-policy-doc", docJson: canonicalJson(doc), route: "apply-doc" },
-          C1,
-        ),
-      ).rejects.toThrow(/capped docs/);
-    });
-
-    it("refuses multi-rule docs on the per-rule route (one /sign/ ceremony, one tx)", async () => {
-      const { buildPolicyDoc } = await import("@nidohq/passkey-sdk");
-      const doc = buildPolicyDoc({
-        signers: [{ id: "session", kind: "delegated", address: SESSION_G }],
-        permissions: [
-          { name: "a", on: { contract: TOKEN }, by: ["session"] },
-          { name: "b", on: { contract: TO }, by: ["session"] },
-        ],
-      });
-      await expect(
-        buildOperation(
-          { type: "apply-policy-doc", docJson: canonicalJson(doc), route: "per-rule" },
-          C1,
-        ),
-      ).rejects.toThrow(/single-rule/);
-    });
-
+    // The apply path ends in a network simulation (SmartAccountClient), so
+    // like add-context-rule the happy path is not unit-tested here. The
+    // OFFLINE guard IS: a doc that doesn't parse throws before any client
+    // is constructed.
     it("refuses malformed doc JSON", async () => {
       await expect(
-        buildOperation(
-          { type: "apply-policy-doc", docJson: "{\"nope\":true}", route: "apply-doc" },
-          C1,
-        ),
+        buildOperation({ type: "apply-policy-doc", docJson: "{\"nope\":true}" }, C1),
       ).rejects.toThrow();
     });
   });

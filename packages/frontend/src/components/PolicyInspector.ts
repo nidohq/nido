@@ -10,6 +10,8 @@ import { esc } from '../lib/html.js';
 import { summarizeRule, type RuleView, type SignerView, type PolicyView } from '../lib/policy/policyView.js';
 import type { DocRuleView, DocSignerView, DocViewModel } from '../lib/policy/docView.js';
 import type { DocJsonSource } from '../lib/policy/docPolicyFetch.js';
+import type { DocDiff } from '../lib/policy/docDiff.js';
+import { describeDocRule } from '../lib/policy/docView.js';
 
 export interface InspectorContext {
   /** policy contract address → registry label. */
@@ -227,6 +229,81 @@ export function renderDocPolicy(
       ${driftBox}
     </article>
     ${model.rules.map((r) => docRuleCard(r, currentLedger)).join('')}`;
+}
+
+// --- Document-update diff --------------------------------------------------
+
+/**
+ * Render a DocDiff (lib/policy/docDiff) as an HTML string — the "what
+ * changes if you apply this" panel shown before any apply_doc confirm.
+ * Shared by the policy-page builder, the delegate-doc request page, and
+ * /sign/. Pure string builder, no DOM.
+ */
+export function renderDocDiffHtml(diff: DocDiff): string {
+  if (diff.firstApply) {
+    return `<div class="pol-diff">
+      <p class="pol-diff-line" style="margin:0;"><span class="pol-badge primary">First document</span>
+      This account has no applied document — every rule below is newly granted.</p>
+    </div>`;
+  }
+  if (diff.identical) {
+    return `<div class="pol-diff">
+      <p class="pol-diff-line" style="margin:0;"><span class="pol-badge">No changes</span>
+      This document is identical to the one already applied.</p>
+    </div>`;
+  }
+
+  const parts: string[] = [];
+
+  for (const r of diff.rulesAdded) {
+    const v = describeDocRule(r);
+    parts.push(`<div class="pol-diff-row">
+      <span class="pol-badge primary">+ added</span>
+      <div><strong>${esc(r.name)}</strong><div class="mut" style="font-size:12px;">${esc(v.permission)}</div></div>
+    </div>`);
+  }
+  for (const r of diff.rulesRemoved) {
+    const v = describeDocRule(r);
+    parts.push(`<div class="pol-diff-row">
+      <span class="pol-badge danger">− removed</span>
+      <div><strong>${esc(r.name)}</strong><div class="mut" style="font-size:12px;">${esc(v.permission)}</div></div>
+    </div>`);
+  }
+  for (const m of diff.rulesModified) {
+    parts.push(`<div class="pol-diff-row">
+      <span class="pol-badge gated">± changed</span>
+      <div><strong>${esc(m.name)}</strong>
+        <ul class="pol-diff-changes">${m.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+      </div>
+    </div>`);
+  }
+  for (const s of diff.signers) {
+    const badge =
+      s.kind === 'added'
+        ? '<span class="pol-badge primary">+ key</span>'
+        : s.kind === 'removed'
+          ? '<span class="pol-badge danger">− key</span>'
+          : '<span class="pol-badge gated">± key</span>';
+    const detail = 'address' in s.decl ? s.decl.address : s.decl.key;
+    const label =
+      s.kind === 'rekeyed' ? 'now declares a different key' : s.kind === 'added' ? 'newly declared' : 'no longer declared';
+    parts.push(`<div class="pol-diff-row">
+      ${badge}
+      <div><strong>"${esc(s.decl.id)}"</strong> <span class="mut" style="font-size:12px;">${esc(label)}</span>
+        <div class="pol-mono mut" style="font-size:11px;word-break:break-all;">${esc(detail)}</div>
+      </div>
+    </div>`);
+  }
+  if (diff.unchangedRuleNames.length > 0) {
+    parts.push(`<p class="mut pol-diff-line" style="margin:4px 0 0;font-size:12px;">
+      Unchanged: ${diff.unchangedRuleNames.map((n) => esc(n)).join(', ')}.</p>`);
+  }
+
+  return `<div class="pol-diff">
+    <p class="pol-diff-line" style="margin:0 0 8px;font-size:12.5px;">
+      Applying replaces the account's document. This update changes:</p>
+    ${parts.join('')}
+  </div>`;
 }
 
 /** Render (or re-render) the rule list into `container`. */

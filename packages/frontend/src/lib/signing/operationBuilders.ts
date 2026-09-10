@@ -19,12 +19,9 @@ import { Address, Operation, Networks, nativeToScVal, xdr } from "@stellar/stell
 import { Client as SmartAccountClient } from "@nidohq/smart-account";
 import {
   buildApplyDocTx,
-  buildDocInstallTxs,
   extractXdrOperations,
   hex2buf,
-  lowerDoc,
   parsePolicyDocJson,
-  perchTestnetAddresses,
 } from "@nidohq/passkey-sdk";
 import type { OperationDescriptor } from "./signRequest";
 import { buildSendOperation } from "../transfer/buildSend.js";
@@ -116,37 +113,18 @@ export async function buildOperation(
     }
 
     case "apply-policy-doc": {
-      // Mirror: components/PolicyBuilder.ts submitDoc. The doc is parsed
-      // fresh from the canonical JSON in the descriptor (never trusted as a
-      // live object), then built into ONE operation — the /sign/ surface
-      // signs exactly one transaction, so multi-rule docs on the per-rule
-      // route are refused here and stay on the wallet's own policy page.
+      // Mirror: components/PolicyBuilder.ts submit. The doc is parsed fresh
+      // from the canonical JSON in the descriptor (never trusted as a live
+      // object) and applied through the account's `apply_doc` surface —
+      // the ONLY policy write path (doc-only ruling; the per-rule
+      // add_context_rule lowering for docs is gone).
       const doc = parsePolicyDocJson(d.docJson);
-      if (d.route === "apply-doc") {
-        const tx = await buildApplyDocTx(doc, {
-          account,
-          rpcUrl: RPC_URL,
-          networkPassphrase: NETWORK_PASSPHRASE,
-        });
-        return tx.operations[0]!;
-      }
-      const lowered = lowerDoc(doc, { account });
-      if (lowered.rules.length !== 1) {
-        throw new Error(
-          `apply-policy-doc: the per-rule route through /sign/ supports single-rule documents only (got ${lowered.rules.length} rules)`,
-        );
-      }
-      const spendingLimitAddress = lowered.usesSpendingLimit
-        ? await fetchRegistryAddress("spending-limit-policy")
-        : undefined;
-      const steps = await buildDocInstallTxs(lowered, {
+      const tx = await buildApplyDocTx(doc, {
         account,
         rpcUrl: RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
-        interpreterAddress: perchTestnetAddresses().interpreter,
-        ...(spendingLimitAddress !== undefined ? { spendingLimitAddress } : {}),
       });
-      return steps[0]!.operations[0]!;
+      return tx.operations[0]!;
     }
 
     case "remove-context-rule": {

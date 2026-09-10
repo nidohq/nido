@@ -43,10 +43,14 @@ export interface DocSurface {
 
 /** Probe the account's doc surface (`applied_doc_hash` + `doc_rule_ids`). */
 export async function fetchDocSurface(account: string): Promise<DocSurface> {
-  const server = new rpc.Server(RPC_URL);
-  const contract = new Contract(account);
+  let server: rpc.Server;
+  let contract: Contract;
   let appliedDocHash: Uint8Array | null;
   try {
+    // Construction inside the try: an account string the SDK rejects (bad
+    // checksum) must read as "no doc surface", not escape as a throw.
+    server = new rpc.Server(RPC_URL);
+    contract = new Contract(account);
     const rv = await simulateView(server, contract, 'applied_doc_hash');
     const native = scValToNative(rv) as Uint8Array | Buffer | null | undefined;
     appliedDocHash = native == null ? null : new Uint8Array(native);
@@ -111,9 +115,14 @@ export async function fetchAppliedDocJson(
   account: string,
   storedHashHex: string,
 ): Promise<RecoveredDocJson | null> {
-  const server = new rpc.Server(RPC_URL);
+  let server: rpc.Server;
+  try {
+    server = new rpc.Server(RPC_URL);
+  } catch {
+    return null;
+  }
 
-  // Lossless path: the canonical doc JSON in instance storage.
+  // Lossless path: the canonical doc JSON in persistent storage.
   try {
     const rv = await simulateView(server, new Contract(account), 'get_applied_doc');
     const native = scValToNative(rv) as Uint8Array | Buffer | null | undefined;

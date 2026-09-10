@@ -8,7 +8,7 @@
 // the document via the SDK, and decides which apply route the transaction
 // takes; the component does the RPC + signing.
 
-import { scopedSessionKeyDoc, type PolicyDoc } from '@nidohq/passkey-sdk';
+import { parsePolicyDoc, scopedSessionKeyDoc, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress, MAX_RULE_NAME_LEN } from './policyDraft.js';
 
 /** Soroban symbol constraints for function names (SCSymbol: [A-Za-z0-9_],
@@ -113,26 +113,77 @@ export function draftToDoc(draft: SessionDocDraft, networkPassphrase: string): P
   });
 }
 
-export type ApplyRoute = 'apply-doc' | 'per-rule';
-
 /**
- * Which install path a document takes:
+ * Upsert the template's session rule into the account's currently applied
+ * document. `apply_doc` is a whole-document write: applying a standalone
+ * single-rule doc to an account that already has one would REPLACE the
+ * applied set, so an update must carry the current document forward with
+ * the new rule merged in.
  *
- * - `apply-doc` — the one-transaction on-chain compile path. Requires the
- *   account's `apply_doc` surface AND an uncapped doc (the hybrid contract
- *   refuses capped docs: it cannot resolve the stock spending-limit policy
- *   in-contract).
- * - `per-rule` — the SDK lowers client-side and installs one
- *   `add_context_rule` per rule. Works on every account; the only path for
- *   capped docs.
+ * - No current doc → the standalone template document.
+ * - Same rule name exists → the new rule replaces it (a "modified" rule in
+ *   the diff).
+ * - Signer reuse: an existing declaration for the SAME key is reused; an id
+ *   collision with a DIFFERENT key allocates "session-2", "session-3", ….
+ * - Signer declarations no longer referenced by any rule are pruned.
+ *
+ * Precondition: `validateSessionDocDraft(draft).ok`. Throws when the current
+ * doc is bound to a different network than the draft targets.
  */
-export function chooseApplyRoute(args: { hasDocSurface: boolean; docHasCap: boolean }): ApplyRoute {
-  if (args.docHasCap || !args.hasDocSurface) return 'per-rule';
-  return 'apply-doc';
+export function upsertSessionRule(
+  current: PolicyDoc | null,
+  draft: SessionDocDraft,
+  networkPassphrase: string,
+): { doc: PolicyDoc; signerId: string } {
+  const template = draftToDoc(draft, networkPassphrase);
+  if (current === null) return { doc: template, signerId: template.signers[0].id };
+  if (current.network !== undefined && current.network !== networkPassphrase) {
+    throw new Error(
+      `policy doc: the applied document is bound to "${current.network}" but this update targets "${networkPassphrase}"`,
+    );
+  }
+
+  const newSigner = template.signers[0];
+  const newKey = 'address' in newSigner ? `delegated:${newSigner.address}` : `external:${newSigner.verifier}:${newSigner.key}`;
+  const keyOf = (s: (typeof current.signers)[number]) =>
+    'address' in s ? `delegated:${s.address}` : `external:${s.verifier}:${s.key}`;
+
+  const sameKey = current.signers.find((s) => keyOf(s) === newKey);
+  let signerId: string;
+  let signers: PolicyDoc['signers'];
+  if (sameKey !== undefined) {
+    signerId = sameKey.id;
+    signers = [...current.signers];
+  } else {
+    const taken = new Set(current.signers.map((s) => s.id));
+    signerId = newSigner.id;
+    for (let n = 2; taken.has(signerId); n++) signerId = `${newSigner.id}-${n}`;
+    signers = [...current.signers, { ...newSigner, id: signerId }];
+  }
+
+  const rule = {
+    ...template.rules[0],
+    principals: { type: 'all' as const, signers: [signerId] },
+  };
+  const rules = current.rules.some((r) => r.name === rule.name)
+    ? current.rules.map((r) => (r.name === rule.name ? rule : r))
+    : [...current.rules, rule];
+
+  // Prune declarations no rule references any more (e.g. the sole signer of
+  // a rule this upsert replaced).
+  const referenced = new Set(
+    rules.flatMap((r) => (r.principals.type === 'self-authenticating' ? [] : r.principals.signers)),
+  );
+  signers = signers.filter((s) => referenced.has(s.id));
+
+  // Re-validate through the schema so a malformed merge fails closed here,
+  // not at the compiler.
+  const doc = parsePolicyDoc({
+    ...current,
+    network: networkPassphrase,
+    signers,
+    rules,
+  });
+  return { doc, signerId };
 }
 
-/** Does the document carry any cumulative cap? (Drives the route choice and
- *  the builder's route hint.) */
-export function docHasCap(doc: PolicyDoc): boolean {
-  return doc.rules.some((r) => r.cap !== undefined);
-}

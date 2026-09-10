@@ -1,12 +1,15 @@
 ---
 // The DOC-based sibling of /security/delegate/: a dApp requests a SCOPED
-// SESSION KEY as a perch policy document. The dApp holds a delegated key
-// (C… or G…) and asks for it to be allowed on one contract's named
-// functions, time-boxed, optionally spend-capped. The wallet builds the
-// document (the canned scoped-session-key template), previews its canonical
-// JSON + doc_hash — the exact identity the account will store on chain —
-// and hands off to /sign/ with an apply-policy-doc descriptor. The policy
-// page then shows the applied document losslessly.
+// SESSION KEY as a perch policy-document update. The dApp holds a delegated
+// key (C… or G…) and asks for it to be allowed on one contract's named
+// functions, time-boxed, optionally spend-capped.
+//
+// Policy writes are DOC-ONLY: the wallet reads the account's currently
+// applied document, upserts the requested session rule into it (apply_doc
+// replaces the whole document, so the update carries existing rules
+// forward), previews the merged document's canonical JSON + doc_hash AND
+// the exact diff against the applied one — rules added / removed / modified
+// — then hands off to /sign/ with an apply-policy-doc descriptor.
 //
 // The origin / return-URL validation (anti-redirect-abuse) mirrors
 // /security/delegate/ verbatim; the query-param contract is parsed by the
@@ -39,9 +42,9 @@ import Icon from '../../../components/Icon.astro';
         </div>
         <p class="mut" style="font-size:13px;line-height:1.55;margin:0;">
           The app holds its own key and asks to use it with the contract below —
-          only the listed functions, only for a while. What you approve is saved
-          as a policy <em>document</em>, so your policy page can always show
-          exactly this, verified against a hash stored on chain.
+          only the listed functions, only for a while. What you approve becomes
+          part of your account's policy <em>document</em>, so your policy page can
+          always show exactly this, verified against a hash stored on chain.
         </p>
       </div>
 
@@ -97,14 +100,18 @@ import Icon from '../../../components/Icon.astro';
         </div>
       </div>
 
-      <span class="section-label" style="display:block;margin:22px 0 10px;">The document</span>
+      <span class="section-label" style="display:block;margin:22px 0 10px;">What changes</span>
+      <div class="card" style="padding:16px;">
+        <div id="doc-diff" class="mut" style="font-size:12.5px;">Reading the applied document…</div>
+      </div>
+
+      <span class="section-label" style="display:block;margin:22px 0 10px;">The document (after this update)</span>
       <div class="card" style="padding:16px;display:grid;gap:8px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span class="mut" style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">doc_hash</span>
           <code id="doc-hash" class="mono" style="font-size:11.5px;word-break:break-all;">—</code>
         </div>
         <pre id="doc-json" class="mono" style="font-size:11px;line-height:1.5;margin:0;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;background:var(--paper-3);border:1px solid var(--line);border-radius:10px;padding:10px 12px;">—</pre>
-        <p class="mut" id="route-note" style="font-size:12px;margin:0;line-height:1.5;"></p>
       </div>
 
       <div class="actions" style="display:flex;gap:10px;margin-top:18px;">
@@ -120,7 +127,8 @@ import Icon from '../../../components/Icon.astro';
 </NidoLayout>
 
 <script>
-  import { contractIdFromHostname, canonicalJson, docHash } from '@nidohq/passkey-sdk';
+  import { contractIdFromHostname, canonicalJson, docHash, parsePolicyDocJson } from '@nidohq/passkey-sdk';
+  import type { PolicyDoc } from '@nidohq/passkey-sdk';
   import { rpc } from '@stellar/stellar-sdk';
   import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
   import {
@@ -129,13 +137,13 @@ import Icon from '../../../components/Icon.astro';
     parseDocDelegateParams,
   } from '../../../lib/policy/docRequest.js';
   import {
-    chooseApplyRoute,
-    docHasCap,
-    draftToDoc,
+    upsertSessionRule,
     validateSessionDocDraft,
     type SessionDocDraft,
   } from '../../../lib/policy/docDraft.js';
-  import { fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
+  import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
+  import { renderDocDiffHtml } from '../../../components/PolicyInspector.js';
+  import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../../../lib/policy/docPolicyFetch.js';
   import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../../../lib/spendingLimitParams.js';
   import { stroopsToXlm } from '../../../lib/money.js';
   import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest';
@@ -175,7 +183,7 @@ import Icon from '../../../components/Icon.astro';
   const capNote = document.getElementById('cap-note')!;
   const docHashEl = document.getElementById('doc-hash')!;
   const docJsonEl = document.getElementById('doc-json')!;
-  const routeNote = document.getElementById('route-note')!;
+  const docDiffEl = document.getElementById('doc-diff')!;
 
   if (req) {
     durationSel.value = req.duration;
@@ -200,13 +208,43 @@ import Icon from '../../../components/Icon.astro';
     }
   })();
 
-  // Probe the account's apply_doc surface once for the route note.
-  let surfaceSupported: boolean | null = null;
-  const surfaceReady: Promise<void> = account
-    ? fetchDocSurface(account).then(
-        (s) => void (surfaceSupported = s.supported),
-        () => void (surfaceSupported = false),
-      )
+  // The currently applied document — the merge target and diff baseline.
+  // Doc-only writes: an account without the apply_doc surface cannot take
+  // this grant at all, so the flow refuses up front rather than at /sign/.
+  let currentDoc: PolicyDoc | null = null;
+  let currentDocLoaded = false;
+  // Set when the baseline read refused the flow (no doc surface, or an
+  // applied doc that could not be recovered) — approve must never proceed.
+  let docBaselineBlocked = false;
+  const currentDocReady: Promise<void> = account && req
+    ? (async () => {
+        try {
+          const surface = await fetchDocSurface(account);
+          if (!surface.supported) {
+            status.textContent =
+              "This account's contract predates policy documents — it cannot accept this request.";
+            docBaselineBlocked = true;
+            approveBtn.disabled = true;
+          } else if (surface.appliedDocHash !== null) {
+            const recovered = await fetchAppliedDocJson(account, toHex(surface.appliedDocHash));
+            if (recovered !== null) currentDoc = parsePolicyDocJson(recovered.json);
+            else {
+              // A document is applied but not recoverable: an update built
+              // on an unknown baseline would silently DROP the applied
+              // rules on apply. Refuse.
+              status.textContent =
+                "The account has an applied policy document that could not be read — cannot build a safe update.";
+              docBaselineBlocked = true;
+              approveBtn.disabled = true;
+            }
+          }
+          currentDocLoaded = true;
+        } catch {
+          status.textContent = 'Could not read the applied policy document — try again.';
+          docBaselineBlocked = true;
+          approveBtn.disabled = true;
+        }
+      })()
     : Promise.resolve();
 
   function notAfterFromControls(): number | null {
@@ -249,7 +287,7 @@ import Icon from '../../../components/Icon.astro';
           ? `≈ ${off.toLocaleString()} ledgers from now.`
           : `At ledger ${(latestLedger + off).toLocaleString()} (≈ ${off.toLocaleString()} ledgers from now).`;
     capNote.textContent = capOn.checked
-      ? 'With a cap, only token transfers are allowed under this key — other calls in the scoped contract are blocked. Capped documents install per-rule (the cap rides the stock spending-limit policy).'
+      ? 'With a cap, only token transfers are allowed under this key — other calls in the scoped contract are blocked.'
       : 'No cap — the key can do whatever the allowed functions permit until it expires.';
 
     const draft = draftFromControls();
@@ -258,23 +296,20 @@ import Icon from '../../../components/Icon.astro';
     if (!check.ok) {
       docHashEl.textContent = '—';
       docJsonEl.textContent = check.errors.join(' ');
-      routeNote.textContent = '';
+      return;
+    }
+    if (!currentDocLoaded) {
+      docDiffEl.textContent = 'Reading the applied document…';
       return;
     }
     try {
-      const doc = draftToDoc(draft, NETWORK_PASSPHRASE);
+      const { doc } = upsertSessionRule(currentDoc, draft, NETWORK_PASSPHRASE);
       docHashEl.textContent = docHash(doc);
       docJsonEl.textContent = canonicalJson(doc);
-      const capped = docHasCap(doc);
-      routeNote.textContent = capped
-        ? 'Installs per-rule: the cap rides the stock spending-limit policy next to the interpreter.'
-        : surfaceSupported === false
-          ? 'This account has no apply_doc surface — the document installs per-rule.'
-          : 'Applies in one transaction via apply_doc; the account stores the document and its hash on chain.';
+      docDiffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(currentDoc, doc));
     } catch (e) {
       docHashEl.textContent = '—';
-      docJsonEl.textContent = `Cannot build document: ${e instanceof Error ? e.message : String(e)}`;
-      routeNote.textContent = '';
+      docJsonEl.textContent = `Cannot build the update: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
 
@@ -286,7 +321,7 @@ import Icon from '../../../components/Icon.astro';
   capXlm.addEventListener('input', syncPreview);
   capPeriod.addEventListener('change', syncPreview);
   void latestLedgerReady.then(syncPreview);
-  void surfaceReady.then(syncPreview);
+  void currentDocReady.then(syncPreview);
   syncPreview();
 
   // Return-URL must be the dApp origin (anti-redirect-abuse) — verbatim from
@@ -323,8 +358,8 @@ import Icon from '../../../components/Icon.astro';
         return;
       }
 
-      // The expiry anchor must exist before a non-"none" duration can bind
-      // a real ledger into the document.
+      // Both anchors must exist before the update can be built: the expiry
+      // ledger (non-"none" durations) and the applied-document baseline.
       status.textContent = 'Anchoring expiry…';
       await latestLedgerReady;
       if (DOC_DURATIONS[durationSel.value] != null && latestLedger == null) {
@@ -332,6 +367,9 @@ import Icon from '../../../components/Icon.astro';
         approveBtn.disabled = false;
         return;
       }
+      status.textContent = 'Reading the applied document…';
+      await currentDocReady;
+      if (docBaselineBlocked) return; // refusal above already set status + disabled
 
       const draft = draftFromControls()!;
       const check = validateSessionDocDraft(draft);
@@ -340,14 +378,7 @@ import Icon from '../../../components/Icon.astro';
         approveBtn.disabled = false;
         return;
       }
-      const doc = draftToDoc(draft, NETWORK_PASSPHRASE);
-
-      status.textContent = 'Checking the account’s apply_doc surface…';
-      await surfaceReady;
-      const route = chooseApplyRoute({
-        hasDocSurface: surfaceSupported === true,
-        docHasCap: docHasCap(doc),
-      });
+      const { doc } = upsertSessionRule(currentDoc, draft, NETWORK_PASSPHRASE);
 
       const signReq: SignRequest = {
         v: 1,
@@ -356,7 +387,7 @@ import Icon from '../../../components/Icon.astro';
         operation: {
           type: 'apply-policy-doc',
           docJson: canonicalJson(doc),
-          route,
+          ...(currentDoc !== null ? { prevDocJson: canonicalJson(currentDoc) } : {}),
           expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
         },
         title: 'Grant a session key',
@@ -380,7 +411,20 @@ import Icon from '../../../components/Icon.astro';
   });
 </script>
 
-<style>
+<style is:global>
   .pad code { font-family: var(--mono); }
   code.wrap { word-break: break-all; }
+  /* Diff-panel styles (shared markup with the policy page's builder). */
+  .pol-diff { display: grid; gap: 8px; }
+  .pol-diff-row { display: flex; gap: 10px; align-items: flex-start; }
+  .pol-diff-row .pol-badge { flex: 0 0 auto; margin-top: 2px; }
+  .pol-diff-changes { margin: 4px 0 0; padding-left: 16px; font-size: 12px; line-height: 1.5; }
+  .pol-badge {
+    font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+    background: var(--soft, rgba(0,0,0,0.06)); color: var(--ink, inherit); white-space: nowrap;
+  }
+  .pol-badge.primary { background: rgba(64, 132, 88, 0.16); color: #2f6b45; }
+  .pol-badge.gated { background: rgba(180, 120, 20, 0.16); color: #8a5a10; }
+  .pol-badge.danger { background: rgba(190, 60, 60, 0.16); color: #a13030; }
+  .pol-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; }
 </style>
