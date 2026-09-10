@@ -1,5 +1,3 @@
-import { Client as SmartAccountClient } from '@nidohq/smart-account';
-import { extractXdrOperations } from '../assembledTx.js';
 import type {
   ChainRule, LocalOverlay, MultisigRecoveryBlock,
   PolicyBlockModule, PolicyState, TxBuild,
@@ -24,67 +22,25 @@ export type {
   NewPasskeySigner,
 } from './multisigRotation.js';
 
-const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
+/// DOC-ONLY (spike): the account no longer exports `add_multisig_recovery`
+/// or `remove_context_rule` — `apply_doc` is the sole policy write path.
+/// M-of-N friend recovery is NOT expressible in doc v1 (its `principals`
+/// are all-signers only), so this block currently has NO install/revoke
+/// route at all: a real product cost of the doc-only ruling, recorded in
+/// the spike PR. The read-side (`fromChain`/`summarize`) still renders
+/// existing rules.
+const DOC_ONLY_ERROR =
+  'doc-only: the account has no rule mutators; M-of-N friend recovery is not yet expressible as a policy document (doc v1 has all-signers principals only)';
 
 export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = {
   kind: 'multisig-recovery',
 
-  async buildInstall(args): Promise<TxBuild> {
-    if (!args.policyAddress) {
-      throw new Error('multisig-recovery: policyAddress fetcher required');
-    }
-    const multisigPolicy = await args.policyAddress('multisig');
-
-    const client = new SmartAccountClient({
-      contractId: args.account,
-      networkPassphrase: TESTNET_PASSPHRASE,
-      rpcUrl: args.rpcUrl,
-    });
-
-    // Smart-account exposes a typed wrapper that constructs the policies map
-    // server-side. The bindings give us a fully-typed call — no Map<string,
-    // any> to wrestle with — and threshold ends up as a proper u32 in the
-    // install param.
-    let tx;
-    try {
-      tx = await client.add_multisig_recovery({
-        name: args.block.label ?? 'recovery',
-        valid_until: undefined,
-        friends: args.block.friends.map((f) => ({
-          tag: 'Delegated' as const,
-          values: [f.address] as readonly [string],
-        })),
-        multisig_policy: multisigPolicy,
-        threshold: args.block.threshold,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      throw new Error(
-        `multisig-recovery.buildInstall failed: ${msg}\n` +
-          `  account: ${args.account}\n` +
-          `  policy: ${multisigPolicy}\n` +
-          `  threshold: ${args.block.threshold}\n` +
-          `  friends: ${args.block.friends.length}`,
-      );
-    }
-
-    return {
-      operations: extractXdrOperations(tx, 'multisig-recovery'),
-      description: `Set up ${args.block.threshold}-of-${args.block.friends.length} recovery`,
-    };
+  async buildInstall(_args): Promise<TxBuild> {
+    throw new Error(`multisig-recovery.buildInstall: ${DOC_ONLY_ERROR}`);
   },
 
-  async buildRevoke(args): Promise<TxBuild> {
-    const client = new SmartAccountClient({
-      contractId: args.account,
-      networkPassphrase: TESTNET_PASSPHRASE,
-      rpcUrl: args.rpcUrl,
-    });
-    const tx = await client.remove_context_rule({ context_rule_id: args.ruleId });
-    return {
-      operations: extractXdrOperations(tx, 'multisig-recovery'),
-      description: 'Remove recovery rule',
-    };
+  async buildRevoke(_args): Promise<TxBuild> {
+    throw new Error(`multisig-recovery.buildRevoke: ${DOC_ONLY_ERROR}`);
   },
 
   fromChain(rule: ChainRule, state: PolicyState, overlay: LocalOverlay): MultisigRecoveryBlock | null {

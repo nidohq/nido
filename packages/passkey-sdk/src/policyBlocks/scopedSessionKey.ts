@@ -1,57 +1,29 @@
-import { Buffer } from 'buffer';
-import { Client as SmartAccountClient } from '@nidohq/smart-account';
-import { extractXdrOperations } from '../assembledTx.js';
 import type {
   ChainRule, LocalOverlay, PolicyBlockModule, PolicyState,
   ScopedSessionKeyBlock, TxBuild,
 } from './types.js';
 import { registerPolicyBlockModule } from './registry.js';
 
-const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
+/// DOC-ONLY (spike): the account no longer exports rule mutators —
+/// `apply_doc` is the sole policy write path. Session keys ARE expressible
+/// as documents (`scopedSessionKeyDoc` + `buildApplyDocTx`), so install and
+/// revoke both become "compose the account's current document with/without
+/// this rule and apply it" — a flow the dapp must build on the doc layer
+/// (readPolicy → edit doc → apply). These per-rule tx builders are dead and
+/// throw with that pointer. The read-side (`fromChain`/`summarize`) still
+/// renders existing rules.
+const DOC_ONLY_ERROR =
+  "doc-only: the account has no per-rule mutators; compose the policy document instead (scopedSessionKeyDoc + buildApplyDocTx, editing the doc from readPolicy)";
 
 export const scopedSessionKeyModule: PolicyBlockModule<ScopedSessionKeyBlock> = {
   kind: 'scoped-session-key',
 
-  async buildInstall(args): Promise<TxBuild> {
-    if (!args.verifierAddress) {
-      throw new Error('scoped-session-key: verifierAddress fetcher required');
-    }
-    const verifierAddr = await args.verifierAddress();
-
-    const client = new SmartAccountClient({
-      contractId: args.account,
-      networkPassphrase: TESTNET_PASSPHRASE,
-      rpcUrl: args.rpcUrl,
-    });
-
-    const tx = await client.add_context_rule({
-      context_type: { tag: 'CallContract', values: [args.block.targetContract] as readonly [string] },
-      name: args.block.label ?? 'session',
-      valid_until: args.block.validUntil,
-      signers: [{
-        tag: 'External' as const,
-        values: [verifierAddr, Buffer.from(args.block.sessionPubkey)] as readonly [string, Buffer],
-      }],
-      policies: new Map(),
-    });
-
-    return {
-      operations: extractXdrOperations(tx, 'scoped-session-key'),
-      description: `Delegate session key to ${args.block.targetContract}`,
-    };
+  async buildInstall(_args): Promise<TxBuild> {
+    throw new Error(`scoped-session-key.buildInstall: ${DOC_ONLY_ERROR}`);
   },
 
-  async buildRevoke(args): Promise<TxBuild> {
-    const client = new SmartAccountClient({
-      contractId: args.account,
-      networkPassphrase: TESTNET_PASSPHRASE,
-      rpcUrl: args.rpcUrl,
-    });
-    const tx = await client.remove_context_rule({ context_rule_id: args.ruleId });
-    return {
-      operations: extractXdrOperations(tx, 'scoped-session-key'),
-      description: 'Revoke session key',
-    };
+  async buildRevoke(_args): Promise<TxBuild> {
+    throw new Error(`scoped-session-key.buildRevoke: ${DOC_ONLY_ERROR}`);
   },
 
   fromChain(rule: ChainRule, state: PolicyState, overlay: LocalOverlay): ScopedSessionKeyBlock | null {

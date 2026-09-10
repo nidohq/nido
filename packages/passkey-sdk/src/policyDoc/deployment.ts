@@ -23,16 +23,20 @@ import { Buffer } from 'buffer';
 
 export const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 
-/** Perch's content-addressed "stateless" subregistry on testnet — the
- *  deployer of every canonical perch contract instance. */
+/** Perch's content-addressed "stateless" registry on testnet — the deployer
+ *  of every canonical perch contract instance. This is the NEW registry the
+ *  perch release CI publishes to as of doc-compiler 0.2.1 (publish receipt
+ *  on the `perch-doc-compiler-v0.2.1` GitHub release); the previous
+ *  registry `CC6ELNH6…` holds only the pre-cap builds. */
 export const PERCH_STATELESS_REGISTRY_TESTNET =
-  'CC6ELNH6YVRRO4WIETIURY3PZLD7NHSDXHRMTJQUT7D733SYVQFYB26O';
+  'CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7';
 
-/** Pinned wasm hashes of the canonical perch contracts nido v1 uses
- *  (perch-interpreter 0.1.2 era, perch rev
- *  f5676a6cfb7ae02e9ae487be18cf6247653124b0). */
+/** Pinned wasm hashes of the canonical perch contracts nido uses — the
+ *  cap-capable 0.2.1 generation. Mirrors the smart account's in-contract
+ *  pins (contracts/smart-account/src/doc.rs). */
 export const PERCH_WASM_HASHES = {
-  interpreter: 'f8320d3031e7dffe51fac14177c5353b8818f8e6df3bda6c4c1b714f5ce1d858',
+  interpreter: 'f63cae53fff084183181a220121de3394442ac4a2704e78896c07af8196f3651',
+  docCompiler: '35f248f0bcbf3d888bc1e6178707e90dbae37989b0efc3f43c85ce8b491506f5',
 } as const;
 
 /** Derive a content-addressed perch contract id from its deployer registry
@@ -62,6 +66,7 @@ export function derivePerchContractId(
 
 export interface PerchAddresses {
   interpreter: string;
+  docCompiler: string;
 }
 
 let testnetAddresses: PerchAddresses | undefined;
@@ -74,6 +79,11 @@ export function perchTestnetAddresses(): PerchAddresses {
       TESTNET_PASSPHRASE,
       PERCH_STATELESS_REGISTRY_TESTNET,
       PERCH_WASM_HASHES.interpreter,
+    ),
+    docCompiler: derivePerchContractId(
+      TESTNET_PASSPHRASE,
+      PERCH_STATELESS_REGISTRY_TESTNET,
+      PERCH_WASM_HASHES.docCompiler,
     ),
   });
 }

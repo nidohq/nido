@@ -144,7 +144,22 @@ pub struct Contract;
 impl Administratable for Contract {}
 
 #[contractimpl(contracttrait)]
-impl Upgradable for Contract {}
+impl Upgradable for Contract {
+    /// admin-sep's default, plus one load-bearing line: CLEAR the cached
+    /// account-wasm hash. `account_wasm_hash` caches `sha256(embedded
+    /// wasm)` in instance storage after the first `create_account`; an
+    /// in-place upgrade swaps the embedded bytes but — without this — the
+    /// STALE cached hash survives and every subsequent `create_account`
+    /// deploys the OLD account wasm. (Found upgrading the testnet factory
+    /// in the `apply_doc` spike. A factory upgraded from a build that
+    /// predates this override must call `refresh_account_wasm_hash` once
+    /// after the upgrade — the upgrade call itself still runs the old code.)
+    fn upgrade(e: &soroban_sdk::Env, new_wasm_hash: BytesN<32>) {
+        Self::admin(e).require_auth();
+        Config::new(e).account.remove();
+        e.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+}
 
 #[contractimpl]
 impl Contract {
@@ -258,6 +273,19 @@ impl Contract {
 
     pub fn get_c_address(e: &Env, salt: &BytesN<32>) -> Address {
         Self::deployer(e, salt).deployed_address()
+    }
+
+    /// Recompute and store the embedded account-wasm hash, returning it.
+    /// Admin-gated companion to the `upgrade` override above: after
+    /// in-place-upgrading a factory whose OLD code predates that override,
+    /// the stale cache survives (the upgrade transaction runs the old
+    /// code); calling this once afterwards repairs it. Harmless any other
+    /// time — it just refreshes the cache with the freshly computed value.
+    pub fn refresh_account_wasm_hash(e: &Env) -> BytesN<32> {
+        Self::admin(e).require_auth();
+        let hash = Self::compute_account_wasm_hash(e);
+        Config::set_account(e, &hash);
+        hash
     }
 
     fn deployer(e: &Env, salt: &BytesN<32>) -> DeployerWithAddress {
@@ -789,6 +817,62 @@ mod test {
         assert_eq!(client.admin(), admin);
     }
 
+    /// The `upgrade` override clears the cached account-wasm hash — an
+    /// in-place upgrade swaps the embedded bytes, so a surviving cache
+    /// would make every later `create_account` deploy the OLD account wasm
+    /// (found live, upgrading the testnet factory in the `apply_doc` spike).
+    #[test]
+    fn upgrade_clears_account_wasm_hash_cache() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(Contract, (Address::generate(&env),));
+
+        // Populate the cache, as a first create_account would.
+        env.as_contract(&id, || {
+            let _ = Contract::account_wasm_hash(&env);
+            assert!(Config::get_account(&env).is_some(), "cache populated");
+        });
+
+        let wasm_hash = env
+            .deployer()
+            .upload_contract_wasm(Bytes::from_slice(&env, smart_account::WASM));
+        ContractClient::new(&env, &id).upgrade(&wasm_hash);
+
+        env.as_contract(&id, || {
+            assert!(
+                Config::get_account(&env).is_none(),
+                "upgrade must clear the stale embedded-wasm hash cache"
+            );
+        });
+    }
+
+    /// `refresh_account_wasm_hash` (admin-gated) overwrites a stale cached
+    /// hash with the freshly computed one — the one-time repair after
+    /// upgrading a factory whose old code predates the clearing override.
+    #[test]
+    fn refresh_account_wasm_hash_repairs_stale_cache() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(Contract, (Address::generate(&env),));
+        let client = ContractClient::new(&env, &id);
+
+        // Seed a deliberately wrong cache entry (a stale pre-upgrade hash).
+        env.as_contract(&id, || {
+            Config::set_account(&env, &BytesN::from_array(&env, &[7u8; 32]));
+        });
+
+        let refreshed = client.refresh_account_wasm_hash();
+        let expected = env.as_contract(&id, || Contract::compute_account_wasm_hash(&env));
+        assert_eq!(refreshed, expected);
+        env.as_contract(&id, || {
+            assert_eq!(Config::get_account(&env), Some(expected.clone()));
+        });
+
+        // Admin-gated: with auth cleared the repair is refused.
+        env.set_auths(&[]);
+        assert!(client.try_refresh_account_wasm_hash().is_err());
+    }
+
     /// `upgrade` requires admin auth and (with auth mocked + an installed wasm)
     /// succeeds. We install the embedded smart-account wasm to obtain a valid,
     /// already-uploaded wasm hash for `update_current_contract_wasm`.
@@ -904,6 +988,12 @@ mod test {
     #[contractclient(name = "ProbeClient")]
     trait Probe {
         fn recovery_rule_id(e: Env) -> Option<u32>;
+        // SPIKE (apply_doc): the doc-layer views the new smart-account wasm
+        // exports — probed below to prove the factory's embedded wasm ships
+        // the perch doc surface to every newly created account.
+        fn applied_doc_hash(e: Env) -> Option<BytesN<32>>;
+        fn get_applied_doc(e: Env) -> Option<Bytes>;
+        fn doc_rule_ids(e: Env) -> soroban_sdk::Vec<u32>;
     }
 
     /// Deploys a factory + a REAL `nido-zk-recovery` pool/controller,
@@ -1381,6 +1471,32 @@ mod test {
             probe.try_recovery_rule_id().is_err(),
             "no account should be deployed at get_c_address(salt) after the reverted call"
         );
+    }
+
+    /// SPIKE (`apply_doc`): the factory needs NO code change to ship the doc
+    /// layer — it embeds the smart-account wasm at build time
+    /// (`smart_account::WASM`), so rebuilding + republishing the factory is
+    /// the whole deploy story for new accounts. This test proves the
+    /// embedded wasm actually exports the doc surface: a freshly created
+    /// account answers the doc views (no document applied yet).
+    #[test]
+    fn created_account_exposes_apply_doc_surface() {
+        let env = Env::default();
+        let (factory_addr, _pool_addr) = setup_factory_and_pool(&env, false);
+        let client = ContractClient::new(&env, &factory_addr);
+
+        let salt = BytesN::from_array(&env, &[21; 32]);
+        let key = BytesN::from_array(&env, &[8; 65]);
+        let account = client.create_account(&salt, &key);
+
+        let probe = ProbeClient::new(&env, &account);
+        assert_eq!(
+            probe.applied_doc_hash(),
+            None,
+            "a fresh account has no applied policy document"
+        );
+        assert_eq!(probe.get_applied_doc(), None);
+        assert_eq!(probe.doc_rule_ids().len(), 0);
     }
 
     // ---------------------------------------------------------------------

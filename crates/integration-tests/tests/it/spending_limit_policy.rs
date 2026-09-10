@@ -6,13 +6,13 @@
 //! window frees up budget once old entries age out.
 
 use nido_integration_tests::{
-    deploy_smart_account, deploy_spending_limit_policy, one_sig, session_signer,
-    spending_limit_install_map, SmartAccountClient,
+    deploy_smart_account, deploy_spending_limit_policy, install_rule_direct, one_sig,
+    session_signer, spending_limit_install_map, SmartAccountClient,
 };
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::{Address as _, Ledger as _};
-use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, IntoVal, String};
+use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, IntoVal};
 use stellar_accounts::policies::spending_limit::SpendingLimitError;
 use stellar_accounts::smart_account::{do_check_auth, ContextRule, ContextRuleType, Signer};
 
@@ -81,10 +81,14 @@ fn setup(
     let policy_addr = deploy_spending_limit_policy(env);
     let (key, signer) = session_signer(env, &verifier_addr, 2);
 
-    client.add_context_rule(
+    // DOC-ONLY: staged via the library backdoor (no add_context_rule
+    // outside the recovery-completion window).
+    let _ = install_rule_direct(
+        env,
+        &account_addr,
         &ContextRuleType::CallContract(sac.clone()),
-        &String::from_str(env, "session"),
-        &None,
+        "session",
+        None,
         &vec![env, signer.clone()],
         &spending_limit_install_map(env, &policy_addr, limit, period_ledgers),
     );

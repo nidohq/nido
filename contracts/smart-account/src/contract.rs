@@ -6,14 +6,13 @@ use soroban_sdk::{
     auth::{Context, CustomAccountInterface},
     contract, contractclient, contracterror, contractimpl, contracttype,
     crypto::Hash,
-    panic_with_error, symbol_short, Address, BytesN, Env, IntoVal, Map, String, Symbol, Val, Vec,
+    panic_with_error, symbol_short, Address, Bytes, BytesN, Env, IntoVal, Map, String, Symbol, Val,
+    Vec,
 };
-use stellar_accounts::policies::simple_threshold::SimpleThresholdAccountParams;
 use stellar_accounts::smart_account::{
-    add_context_rule, add_policy, add_signer, do_check_auth, get_context_rule,
-    get_context_rules_count, remove_context_rule, remove_policy, remove_signer,
-    update_context_rule_name, update_context_rule_valid_until, AuthPayload, ContextRule,
-    ContextRuleType, ExecutionEntryPoint, Signer, SmartAccount, SmartAccountError,
+    add_context_rule, do_check_auth, get_context_rule, get_context_rules_count,
+    remove_context_rule, AuthPayload, ContextRule, ContextRuleType, ExecutionEntryPoint, Signer,
+    SmartAccountError,
 };
 
 /// Nido-specific errors for the in-account recovery guard (M2 Task 4).
@@ -76,6 +75,44 @@ pub enum NidoSmartAccountError {
     UpgradeNotAnnounced = 8,
     /// `execute_upgrade` was called before the announced 7-day delay elapsed.
     UpgradeDelayNotElapsed = 9,
+    // --- SPIKE: `apply_doc` (see `doc.rs`). 10 is the doc layer's own
+    // refusal; 11–15 mirror perch's `DocCompilerError` variants 1–5 (offset
+    // +10 so the two error spaces can't collide in this contract's codes);
+    // 16 is the fail-closed cross-call fallback. ---
+    // 10 was `DocCapUnsupported` (twice: the hybrid cut's own refusal,
+    // then the relay of the pre-cap deployed compiler's `CapUnsupported`).
+    // Compiler 0.2.1 lowers caps, so the code is retired again.
+    /// Compiler: the submitted document bytes are not UTF-8.
+    DocNotUtf8 = 11,
+    /// Compiler: the document failed fail-closed parsing.
+    DocParse = 12,
+    /// Compiler: the document failed semantic validation.
+    DocInvalid = 13,
+    /// Compiler: the document names no network, or one that is not this
+    /// chain.
+    DocWrongNetwork = 14,
+    /// Compiler: the document cannot be lowered to rules.
+    DocCompile = 15,
+    /// The doc-compiler cross-call failed outright (no contract at the
+    /// derived address, or a host trap). Fail closed.
+    DocCompilerUnreachable = 16,
+    /// The submitted doc bytes are not the canonical form
+    /// (`sha256(doc_json) != doc_hash`). The account stores the bytes as
+    /// the lossless on-chain policy (`get_applied_doc`) and emits them in
+    /// the `DocApplied` event, so only canonical bytes are accepted —
+    /// resubmit `canonicalJson(doc)` (what `buildApplyDocTx` always sends).
+    DocNotCanonical = 17,
+    /// DOC-ONLY anti-brick (the `AdminLockout`-class check this decision
+    /// re-imports from upstream perch): the compiled document contains no
+    /// policy-free, cap-free self-admin rule with at least one signer.
+    /// Since `apply_doc` now replaces the default rule too, applying such a
+    /// document could lock the owner out; refused before touching anything.
+    DocAdminLockout = 18,
+    /// `add_context_rule` was called outside the zk-recovery COMPLETION
+    /// window (no configured controller, or no live pending). `apply_doc`
+    /// is the sole policy write path; `add_context_rule` survives only as
+    /// the completion vehicle while a recovery is live-pending.
+    DocOnlyWritePath = 19,
 }
 
 /// Minimal cross-call stub for `nido-zk-recovery`'s `has_pending` view.
@@ -95,6 +132,12 @@ pub enum NidoSmartAccountError {
 #[contractclient(name = "RecoveryControllerClient")]
 trait RecoveryController {
     fn has_pending(e: Env, account: Address) -> bool;
+    // SPIKE (doc-only): true iff a completion was consumed for `account`
+    // in THIS ledger — `Policy::enforce` runs during the completing
+    // `add_context_rule`'s `__check_auth` and removes the pending, so the
+    // entry point's body can no longer see it; the grant is the body's
+    // window signal (see `add_context_rule`'s gate).
+    fn completion_granted(e: Env, account: Address) -> bool;
 }
 
 /// Cross-calls `controller`'s `has_pending` view for this account. Pure
@@ -439,48 +482,11 @@ impl NidoSmartAccount {
         install_recovery_rule(e, &recovery_controller);
     }
 
-    /// Install a social-recovery rule scoped to calls on this account, gated
-    /// by an M-of-N multisig policy.
-    ///
-    /// Typed wrapper around `add_context_rule` that constructs the policies
-    /// map for the caller — the SDK doesn't need to wrestle with the
-    /// `Map<Address, Val>` install-param encoding (the generated TS bindings
-    /// would otherwise erase the install param to `any`).
-    ///
-    /// The rule is scoped to `CallContract(self)` so it authorises calls
-    /// against the account's own methods (e.g. `add_signer`, `remove_signer`,
-    /// `add_context_rule`) — not external transfers.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Human-readable rule name.
-    /// * `valid_until` - Optional expiration ledger sequence.
-    /// * `friends` - The signers authorised by the recovery rule.
-    /// * `multisig_policy` - Address of the deployed multisig policy contract.
-    /// * `threshold` - Number of `friends` signatures required (M).
-    #[must_use]
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn add_multisig_recovery(
-        e: &Env,
-        name: String,
-        valid_until: Option<u32>,
-        friends: Vec<Signer>,
-        multisig_policy: Address,
-        threshold: u32,
-    ) -> ContextRule {
-        e.current_contract_address().require_auth();
-        let install: Val = SimpleThresholdAccountParams { threshold }.into_val(e);
-        let mut policies: Map<Address, Val> = Map::new(e);
-        policies.set(multisig_policy, install);
-        add_context_rule(
-            e,
-            &ContextRuleType::CallContract(e.current_contract_address()),
-            &name,
-            valid_until,
-            &friends,
-            &policies,
-        )
-    }
+    // DOC-ONLY: the `add_multisig_recovery` typed wrapper is REMOVED. It was
+    // a doc-bypassing rule mutator (install an M-of-N friends rule via the
+    // stock multisig policy). Doc v1 cannot express M-of-N principals, so
+    // this product flow has NO doc equivalent yet -- a headline cost of the
+    // doc-only ruling, recorded in the PR description.
 
     /// Upgrade this account's own wasm to `new_wasm_hash` (an
     /// already-installed wasm hash). Governed by the account's OWN auth --
@@ -576,6 +582,69 @@ impl NidoSmartAccount {
         e.storage().instance().remove(&PENDING_UPGRADE_AT);
         e.deployer().update_current_contract_wasm(new_wasm_hash);
     }
+
+    // -----------------------------------------------------------------
+    // SPIKE: perch apply_doc, hybrid-additive (see `doc.rs` for the full
+    // story and the deliberately-deferred decisions).
+    // -----------------------------------------------------------------
+
+    /// Apply a perch policy document — THE sole policy write path
+    /// (doc-only): atomically replaces every context rule on this account
+    /// EXCEPT the protected zk-recovery rule with the document's compiled
+    /// rules. The constructor's default passkey rule exists only until the
+    /// first apply; from then on the doc's anti-brick self-admin rule
+    /// (`DocAdminLockout` refuses docs without one) is the owner's path.
+    /// Compilation (parse/validate/network-bind/canonical `doc_hash`)
+    /// happens in perch's shared stateless doc-compiler contract,
+    /// cross-called at its pinned derived address; cumulative caps lower
+    /// onto the pinned stock spending-limit policy. Stores the canonical
+    /// `doc_hash` + full doc JSON, emits the doc as a `DocApplied` event,
+    /// and returns the hash.
+    ///
+    /// Same auth model as every other account mutation (the account's own
+    /// signing policy), plus the recovery-pending guard: `apply_doc`
+    /// removes rules, so an in-flight recovery blocks it — completion runs
+    /// through the pending-gated `add_context_rule` instead.
+    ///
+    /// # Errors
+    ///
+    /// See [`crate::doc::apply`]: the compiler's typed refusals
+    /// (`DocNotUtf8`/`DocParse`/`DocInvalid`/`DocWrongNetwork`/`DocCompile`),
+    /// `DocCompilerUnreachable` (fail-closed cross-call fallback), and
+    /// `DocCapUnsupported` (capped docs keep the SDK install path).
+    // `#[contractimpl]` entry point; SDK ABI requires an owned `Bytes`.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn apply_doc(e: &Env, doc_json: Bytes) -> Result<BytesN<32>, NidoSmartAccountError> {
+        e.current_contract_address().require_auth();
+        guard_no_pending(e);
+        crate::doc::apply(e, &doc_json)
+    }
+
+    /// The canonical `doc_hash` of the currently applied policy document,
+    /// or `None` if no document has been applied. Anyone can check
+    /// installed == reviewed. Mirrors `PerchSmartAccount::applied_doc_hash`.
+    #[must_use]
+    pub fn applied_doc_hash(e: &Env) -> Option<BytesN<32>> {
+        crate::doc::applied_doc_hash(e)
+    }
+
+    /// The full canonical doc JSON of the currently applied policy
+    /// document, or `None` if none has been applied — the lossless
+    /// on-chain read path (no event history or indexer needed).
+    /// `sha256` of these bytes equals [`Self::applied_doc_hash`] by
+    /// construction (`apply_doc` refuses non-canonical submissions).
+    #[must_use]
+    pub fn get_applied_doc(e: &Env) -> Option<Bytes> {
+        crate::doc::applied_doc(e)
+    }
+
+    /// The context-rule ids installed by the last successful `apply_doc`
+    /// (empty if none) — the doc-managed subset of this account's rules,
+    /// used by the SDK's `readPolicy` parity check.
+    #[must_use]
+    pub fn doc_rule_ids(e: &Env) -> Vec<u32> {
+        crate::doc::doc_rule_ids(e)
+    }
 }
 
 #[contractimpl]
@@ -595,17 +664,47 @@ impl CustomAccountInterface for NidoSmartAccount {
     }
 }
 
+// DOC-ONLY (captain ruling on the spike): OZ's `SmartAccount` mutation
+// surface is no longer implemented or exported at all -- `add_signer`,
+// `remove_signer`, `remove_context_rule`, `add_policy`, `remove_policy`,
+// `update_context_rule_name`, `update_context_rule_valid_until` and the
+// `add_multisig_recovery` wrapper do not exist as entry points. `apply_doc`
+// (below, in the inherent impl) is the sole policy write path; the previous
+// per-entry-point guards (`RecoveryRuleProtected`, the four-op pending
+// guard) are superseded by structure: `apply_doc` never touches the
+// recovery rule, runs under `guard_no_pending`, and enforces the anti-brick
+// admin check (`doc.rs`). The single deliberate exception is
+// `add_context_rule` below, kept exported but hard-gated to a LIVE pending
+// recovery: it is the zk-recovery COMPLETION vehicle (spec Â§3.1 -- the
+// zero-signer recovery rule authorizes `add_context_rule(Default,
+// "recovered", ...)` to rotate in the new passkey), and completion must run
+// exactly when a pending is live -- the one window in which `apply_doc`
+// itself is blocked. Read-only views are re-exposed here since the trait
+// impl that used to export them is gone.
 #[contractimpl]
-impl SmartAccount for NidoSmartAccount {
-    fn get_context_rule(e: &Env, context_rule_id: u32) -> ContextRule {
+impl NidoSmartAccount {
+    /// Read-only: one context rule by id.
+    #[must_use]
+    pub fn get_context_rule(e: &Env, context_rule_id: u32) -> ContextRule {
         get_context_rule(e, context_rule_id)
     }
 
-    fn get_context_rules_count(e: &Env) -> u32 {
+    /// Read-only: number of live context rules.
+    #[must_use]
+    pub fn get_context_rules_count(e: &Env) -> u32 {
         get_context_rules_count(e)
     }
 
-    fn add_context_rule(
+    /// The zk-recovery COMPLETION vehicle -- the ONLY rule mutation outside
+    /// `apply_doc`, and only while a recovery is LIVE-pending on this
+    /// account's controller. The completion transaction is authorized by
+    /// the zero-signer recovery rule (policy-checked in `__check_auth`) and
+    /// installs the post-recovery rule (new passkey). Any call without a
+    /// configured controller or without a live pending is refused
+    /// (`DocOnlyWritePath`): normal policy changes go through `apply_doc`.
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn add_context_rule(
         e: &Env,
         context_type: ContextRuleType,
         name: String,
@@ -614,87 +713,23 @@ impl SmartAccount for NidoSmartAccount {
         policies: Map<Address, Val>,
     ) -> ContextRule {
         e.current_contract_address().require_auth();
+        // The completion window, per the controller: either a live pending
+        // (the general window) or a completion grant from THIS ledger —
+        // `Policy::enforce` consumes the pending during this very call's
+        // `__check_auth`, before this body runs, so on the actual
+        // completion transaction only the grant is still visible.
+        let in_completion_window = match NidoSmartAccount::recovery_controller(e) {
+            Some(controller) => {
+                let client = RecoveryControllerClient::new(e, &controller);
+                let me = e.current_contract_address();
+                client.has_pending(&me) || client.completion_granted(&me)
+            }
+            None => false,
+        };
+        if !in_completion_window {
+            panic_with_error!(e, NidoSmartAccountError::DocOnlyWritePath);
+        }
         add_context_rule(e, &context_type, &name, valid_until, &signers, &policies)
-    }
-
-    fn update_context_rule_name(e: &Env, context_rule_id: u32, name: String) -> ContextRule {
-        e.current_contract_address().require_auth();
-        update_context_rule_name(e, context_rule_id, &name)
-    }
-
-    fn update_context_rule_valid_until(
-        e: &Env,
-        context_rule_id: u32,
-        valid_until: Option<u32>,
-    ) -> ContextRule {
-        e.current_contract_address().require_auth();
-        // Same unconditional `RecoveryRuleProtected` check as
-        // `remove_context_rule` below: a thief with a live passkey must not
-        // be able to shrink the recovery rule's `valid_until` window (e.g.
-        // to the current ledger sequence, which OZ accepts and which
-        // expires the rule as of the very next ledger) to silently disarm
-        // recovery instead of removing it outright.
-        if NidoSmartAccount::recovery_rule_id(e) == Some(context_rule_id) {
-            panic_with_error!(e, NidoSmartAccountError::RecoveryRuleProtected);
-        }
-        guard_no_pending(e);
-        update_context_rule_valid_until(e, context_rule_id, valid_until)
-    }
-
-    fn remove_context_rule(e: &Env, context_rule_id: u32) {
-        e.current_contract_address().require_auth();
-        // The `RecoveryRuleProtected` check runs BEFORE the pending guard,
-        // and unconditionally (even with no pending): the recovery rule can
-        // ONLY be removed via `initiate_recovery_rule_removal` /
-        // `execute_recovery_rule_removal` (the announce-then-execute path),
-        // never through this entry point directly.
-        if NidoSmartAccount::recovery_rule_id(e) == Some(context_rule_id) {
-            panic_with_error!(e, NidoSmartAccountError::RecoveryRuleProtected);
-        }
-        guard_no_pending(e);
-        remove_context_rule(e, context_rule_id);
-    }
-
-    fn add_signer(e: &Env, context_rule_id: u32, signer: Signer) -> u32 {
-        e.current_contract_address().require_auth();
-        add_signer(e, context_rule_id, &signer)
-    }
-
-    fn remove_signer(e: &Env, context_rule_id: u32, signer_id: u32) {
-        e.current_contract_address().require_auth();
-        guard_no_pending(e);
-        remove_signer(e, context_rule_id, signer_id);
-    }
-
-    fn add_policy(e: &Env, context_rule_id: u32, policy: Address, install_param: Val) -> u32 {
-        e.current_contract_address().require_auth();
-        // Same unconditional `RecoveryRuleProtected` check as
-        // `remove_context_rule` below: OZ enforces ALL policies on a rule
-        // (AND-semantics), so attaching even one always-failing policy to
-        // the recovery rule is enough to make the completion
-        // `add_context_rule` cross-check against it fail forever -- a
-        // thief could otherwise neuter recovery without ever removing the
-        // rule, including while a recovery is already pending.
-        if NidoSmartAccount::recovery_rule_id(e) == Some(context_rule_id) {
-            panic_with_error!(e, NidoSmartAccountError::RecoveryRuleProtected);
-        }
-        guard_no_pending(e);
-        add_policy(e, context_rule_id, &policy, install_param)
-    }
-
-    fn remove_policy(e: &Env, context_rule_id: u32, policy_id: u32) {
-        e.current_contract_address().require_auth();
-        // Same unconditional `RecoveryRuleProtected` check as
-        // `remove_context_rule` below: stripping the recovery rule's
-        // controller policy (e.g. after adding a filler policy to dodge an
-        // "empty policy set" edge case) would leave the rule unenforced,
-        // so it must be blocked regardless of pending state, same as
-        // removing the rule itself.
-        if NidoSmartAccount::recovery_rule_id(e) == Some(context_rule_id) {
-            panic_with_error!(e, NidoSmartAccountError::RecoveryRuleProtected);
-        }
-        guard_no_pending(e);
-        remove_policy(e, context_rule_id, policy_id);
     }
 }
 
@@ -786,6 +821,14 @@ mod test {
                 .instance()
                 .get(&(symbol_short!("PEND"), account))
                 .unwrap_or(false)
+        }
+
+        /// The stub never grants a completion window (the real controller
+        /// writes the grant from `Policy::enforce` — see
+        /// `contracts/zk-recovery/src/policy.rs`).
+        #[allow(clippy::needless_pass_by_value)]
+        pub fn completion_granted(_e: Env, _account: Address) -> bool {
+            false
         }
     }
 
@@ -924,58 +967,6 @@ mod test {
         }
     }
 
-    /// Guard blocks: with `has_pending == true`, each of the four guarded
-    /// ops (`remove_signer`/`remove_context_rule`/`remove_policy`/
-    /// `update_context_rule_valid_until`) panics `RecoveryPendingBlocked`,
-    /// even against a NON-recovery rule/signer/policy (proving the guard,
-    /// not the rule-protection check, is what fires here).
-    #[test]
-    fn guard_blocks_four_ops_while_pending() {
-        let e = Env::default();
-        e.mock_all_auths();
-        let setup = deploy_with_stub(&e);
-        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
-        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
-
-        // Set up removable targets on the Default rule BEFORE marking a
-        // pending (these adds are unguarded) -- a rule needs >= 1
-        // signer/policy, so we add an extra one rather than remove the
-        // original.
-        let extra_signer_id = client.add_signer(
-            &setup.default_rule_id,
-            &Signer::Delegated(Address::generate(&e)),
-        );
-        let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(&e);
-        let extra_policy_id =
-            client.add_policy(&setup.default_rule_id, &setup.controller, &install);
-        let extra_rule = client.add_context_rule(
-            &ContextRuleType::CallContract(setup.account_addr.clone()),
-            &String::from_str(&e, "extra"),
-            &None,
-            &one_signer(&e),
-            &empty_policies(&e),
-        );
-
-        stub.set_pending(&setup.account_addr, &true);
-
-        assert_account_error(
-            client.try_remove_signer(&setup.default_rule_id, &extra_signer_id),
-            NidoSmartAccountError::RecoveryPendingBlocked,
-        );
-        assert_account_error(
-            client.try_remove_policy(&setup.default_rule_id, &extra_policy_id),
-            NidoSmartAccountError::RecoveryPendingBlocked,
-        );
-        assert_account_error(
-            client.try_update_context_rule_valid_until(&setup.default_rule_id, &Some(1_000)),
-            NidoSmartAccountError::RecoveryPendingBlocked,
-        );
-        assert_account_error(
-            client.try_remove_context_rule(&extra_rule.id),
-            NidoSmartAccountError::RecoveryPendingBlocked,
-        );
-    }
-
     /// The guard also blocks `upgrade` while a recovery is pending: without
     /// it a thief who can authorize as the account could swap in a wasm that
     /// ignores the recovery rule and disarm recovery mid-timelock, bypassing
@@ -1087,39 +1078,10 @@ mod test {
         );
     }
 
-    /// Guard doesn't over-block: with `has_pending == false`, the same four
-    /// ops succeed against a non-recovery rule.
-    #[test]
-    fn guard_allows_four_ops_when_not_pending() {
-        let e = Env::default();
-        e.mock_all_auths();
-        let setup = deploy_with_stub(&e);
-        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
-        // `has_pending` defaults to `false` (never called `set_pending`).
-
-        let extra_signer_id = client.add_signer(
-            &setup.default_rule_id,
-            &Signer::Delegated(Address::generate(&e)),
-        );
-        let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(&e);
-        let extra_policy_id =
-            client.add_policy(&setup.default_rule_id, &setup.controller, &install);
-        let extra_rule = client.add_context_rule(
-            &ContextRuleType::CallContract(setup.account_addr.clone()),
-            &String::from_str(&e, "extra"),
-            &None,
-            &one_signer(&e),
-            &empty_policies(&e),
-        );
-
-        client.remove_signer(&setup.default_rule_id, &extra_signer_id);
-        client.remove_policy(&setup.default_rule_id, &extra_policy_id);
-        client.update_context_rule_valid_until(&setup.default_rule_id, &Some(1_000));
-        client.remove_context_rule(&extra_rule.id);
-    }
-
-    /// `add_context_rule` (the completion path) is NOT blocked by the guard
-    /// even while `has_pending == true`.
+    /// DOC-ONLY: `add_context_rule` survives solely as the zk-recovery
+    /// COMPLETION vehicle — with a controller configured and a LIVE
+    /// pending, the call is allowed (this is the window in which
+    /// `apply_doc` itself is blocked).
     #[test]
     fn add_context_rule_allowed_while_pending() {
         let e = Env::default();
@@ -1137,138 +1099,6 @@ mod test {
             &empty_policies(&e),
         );
         assert_ne!(rule.id, setup.recovery_rule_id);
-    }
-
-    /// `remove_context_rule(recovery_rule_id)` always panics
-    /// `RecoveryRuleProtected`, regardless of whether a recovery is
-    /// pending -- the recovery rule can only be removed via
-    /// `initiate_recovery_rule_removal`/`execute_recovery_rule_removal`.
-    #[test]
-    fn remove_context_rule_on_recovery_rule_is_protected_regardless_of_pending() {
-        let e = Env::default();
-        e.mock_all_auths();
-        let setup = deploy_with_stub(&e);
-        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
-        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
-
-        // Not pending.
-        assert_account_error(
-            client.try_remove_context_rule(&setup.recovery_rule_id),
-            NidoSmartAccountError::RecoveryRuleProtected,
-        );
-
-        // Pending.
-        stub.set_pending(&setup.account_addr, &true);
-        assert_account_error(
-            client.try_remove_context_rule(&setup.recovery_rule_id),
-            NidoSmartAccountError::RecoveryRuleProtected,
-        );
-    }
-
-    /// Bypass A: `update_context_rule_valid_until(recovery_rule_id, ..)`
-    /// always panics `RecoveryRuleProtected`, regardless of pending state.
-    /// Without this check, a thief could set `valid_until` to the current
-    /// ledger sequence (OZ accepts `valid_until == sequence`) and expire the
-    /// recovery rule as of the very next ledger, killing recovery in one
-    /// call without ever removing the rule.
-    #[test]
-    fn update_valid_until_on_recovery_rule_is_protected_regardless_of_pending() {
-        let e = Env::default();
-        e.mock_all_auths();
-        let setup = deploy_with_stub(&e);
-        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
-        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
-
-        let now = e.ledger().sequence();
-
-        // Not pending.
-        assert_account_error(
-            client.try_update_context_rule_valid_until(&setup.recovery_rule_id, &Some(now)),
-            NidoSmartAccountError::RecoveryRuleProtected,
-        );
-
-        // Pending.
-        stub.set_pending(&setup.account_addr, &true);
-        assert_account_error(
-            client.try_update_context_rule_valid_until(&setup.recovery_rule_id, &Some(now)),
-            NidoSmartAccountError::RecoveryRuleProtected,
-        );
-    }
-
-    /// Bypass B: `add_policy(recovery_rule_id, ..)` always panics
-    /// `RecoveryRuleProtected`, regardless of pending state -- this is the
-    /// critical case, since OZ's AND-semantics over a rule's policies mean a
-    /// single always-failing policy attached to the recovery rule makes the
-    /// completion cross-check fail forever, and (unlike the other three
-    /// guarded ops) this previously worked even DURING a live pending
-    /// recovery, since `add_policy` had no guard of any kind.
-    #[test]
-    fn add_policy_on_recovery_rule_is_protected_regardless_of_pending() {
-        let e = Env::default();
-        e.mock_all_auths();
-        let setup = deploy_with_stub(&e);
-        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
-        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
-        let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(&e);
-
-        // Not pending.
-        assert_account_error(
-            client.try_add_policy(&setup.recovery_rule_id, &setup.controller, &install),
-            NidoSmartAccountError::RecoveryRuleProtected,
-        );
-
-        // Pending -- this is Bypass B: it worked while pending before the
-        // fix, since `add_policy` had no `guard_no_pending` call either.
-        stub.set_pending(&setup.account_addr, &true);
-        assert_account_error(
-            client.try_add_policy(&setup.recovery_rule_id, &setup.controller, &install),
-            NidoSmartAccountError::RecoveryRuleProtected,
-        );
-    }
-
-    /// Bypass C: `remove_policy(recovery_rule_id, ..)` always panics
-    /// `RecoveryRuleProtected`, regardless of pending state -- previously a
-    /// thief could add a filler policy (unguarded) then remove the original
-    /// controller policy, stripping enforcement from the rule entirely.
-    #[test]
-    fn remove_policy_on_recovery_rule_is_protected_regardless_of_pending() {
-        let e = Env::default();
-        e.mock_all_auths();
-        let setup = deploy_with_stub(&e);
-        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
-        let stub = StubRecoveryPolicyClient::new(&e, &setup.controller);
-
-        // Not pending. Policy id 0 is the controller policy installed at
-        // construction (the recovery rule has exactly one policy).
-        assert_account_error(
-            client.try_remove_policy(&setup.recovery_rule_id, &0),
-            NidoSmartAccountError::RecoveryRuleProtected,
-        );
-
-        // Pending.
-        stub.set_pending(&setup.account_addr, &true);
-        assert_account_error(
-            client.try_remove_policy(&setup.recovery_rule_id, &0),
-            NidoSmartAccountError::RecoveryRuleProtected,
-        );
-    }
-
-    /// Guard doesn't over-block: the same three newly-guarded ops still
-    /// succeed against a NON-recovery rule (the Default rule) when not
-    /// pending -- proves the `RecoveryRuleProtected` check is scoped to the
-    /// recovery rule id, not a blanket lockdown of these ops.
-    #[test]
-    fn newly_guarded_ops_allowed_on_non_recovery_rule_when_not_pending() {
-        let e = Env::default();
-        e.mock_all_auths();
-        let setup = deploy_with_stub(&e);
-        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
-
-        client.update_context_rule_valid_until(&setup.default_rule_id, &Some(1_000_000));
-
-        let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(&e);
-        let policy_id = client.add_policy(&setup.default_rule_id, &setup.controller, &install);
-        client.remove_policy(&setup.default_rule_id, &policy_id);
     }
 
     /// Announce-then-execute: executing without announcing fails
@@ -1318,13 +1148,13 @@ mod test {
         );
     }
 
-    /// `recovery_controller: None`: the guard is a complete no-op (accounts
-    /// without recovery configured are unaffected) -- `remove_signer`
-    /// succeeds freely, and the announce-then-execute entry points reject
-    /// with `NoRecoveryConfigured`/`RemovalNotAnnounced` (there is no
-    /// recovery rule to remove).
+    /// `recovery_controller: None`: the announce-then-execute entry points
+    /// reject with `NoRecoveryConfigured`/`RemovalNotAnnounced` (there is
+    /// no recovery rule to remove), and `add_context_rule` — the
+    /// completion-only vehicle — refuses with `DocOnlyWritePath` (no
+    /// controller means no completion window ever opens).
     #[test]
-    fn none_controller_guard_is_noop() {
+    fn none_controller_account_rejects_recovery_and_completion_paths() {
         let e = Env::default();
         e.mock_all_auths();
         let account_addr = e.register(
@@ -1332,14 +1162,6 @@ mod test {
             (one_signer(&e), empty_policies(&e), None::<Address>),
         );
         let client = NidoSmartAccountClient::new(&e, &account_addr);
-        let default_rule_id = e.as_contract(&account_addr, || get_context_rule(&e, 0).id);
-
-        let extra_signer_id =
-            client.add_signer(&default_rule_id, &Signer::Delegated(Address::generate(&e)));
-        // No panic -- proves the guard doesn't even attempt a cross-call
-        // (there is no controller address to call) for a non-recovery
-        // account.
-        client.remove_signer(&default_rule_id, &extra_signer_id);
 
         assert_account_error(
             client.try_initiate_recovery_rule_removal(),
@@ -1349,6 +1171,69 @@ mod test {
             client.try_execute_recovery_rule_removal(),
             NidoSmartAccountError::RemovalNotAnnounced,
         );
+        assert_account_error(
+            client.try_add_context_rule(
+                &ContextRuleType::CallContract(account_addr.clone()),
+                &String::from_str(&e, "no-window"),
+                &None,
+                &one_signer(&e),
+                &empty_policies(&e),
+            ),
+            NidoSmartAccountError::DocOnlyWritePath,
+        );
+    }
+
+    /// DOC-ONLY: with a controller configured but NO live pending,
+    /// `add_context_rule` refuses (`DocOnlyWritePath`) — outside the
+    /// completion window, `apply_doc` is the only way rules change.
+    #[test]
+    fn add_context_rule_refused_without_live_pending() {
+        let e = Env::default();
+        e.mock_all_auths();
+        let setup = deploy_with_stub(&e);
+        let client = NidoSmartAccountClient::new(&e, &setup.account_addr);
+        // `has_pending` defaults to false — the steady state.
+        assert_account_error(
+            client.try_add_context_rule(
+                &ContextRuleType::CallContract(setup.account_addr.clone()),
+                &String::from_str(&e, "steady-state"),
+                &None,
+                &one_signer(&e),
+                &empty_policies(&e),
+            ),
+            NidoSmartAccountError::DocOnlyWritePath,
+        );
+    }
+
+    /// DOC-ONLY is structural for the rest of the old mutation surface:
+    /// `add_signer`, `remove_signer`, `remove_context_rule`, `add_policy`,
+    /// `remove_policy`, `update_context_rule_name`,
+    /// `update_context_rule_valid_until` and `add_multisig_recovery` are
+    /// not entry points at all — there is nothing to authorize, misuse, or
+    /// guard. (Mirrors upstream perch's
+    /// `piecemeal_mutation_entry_points_do_not_exist`.)
+    #[test]
+    fn legacy_mutation_entry_points_do_not_exist() {
+        let e = Env::default();
+        e.mock_all_auths();
+        let setup = deploy_with_stub(&e);
+        for func in [
+            "add_signer",
+            "remove_signer",
+            "remove_context_rule",
+            "add_policy",
+            "remove_policy",
+            "update_context_rule_name",
+            "update_context_rule_valid_until",
+            "add_multisig_recovery",
+        ] {
+            let res = e.try_invoke_contract::<Val, soroban_sdk::Error>(
+                &setup.account_addr,
+                &Symbol::new(&e, func),
+                soroban_sdk::vec![&e],
+            );
+            assert!(res.is_err(), "{func} should not be an entry point");
+        }
     }
 
     // ---------------------------------------------------------------

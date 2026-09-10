@@ -244,14 +244,6 @@ fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
         "constructor must store the recovery controller"
     );
 
-    // A second, throwaway signer on the Default rule -- purely so the
-    // post-recovery guard-release check below can remove the ORIGINAL
-    // webauthn signer without leaving the rule with zero signers AND zero
-    // policies (which OZ's `add_context_rule`/`remove_signer` rejects with
-    // `NoSignersAndPolicies`, unrelated to anything this test is about).
-    let spare_signer_addr = Address::generate(&env);
-    account.add_signer(&0, &Signer::Delegated(spare_signer_addr));
-
     // --- Genesis-insert the fixture leaf via the pool. ---
     let secret = BytesN::from_array(&env, &hex32(fixture.secret_hex));
     let commitment = leaf_inner(&env, &secret);
@@ -282,28 +274,28 @@ fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
         "a real fixture proof through initiate_recovery must create a live pending"
     );
 
-    // --- The guard, during the pending window: remove_signer blocked
-    // (REAL cross-call into the deployed controller's has_pending), and the
-    // recovery rule itself unremovable directly. ---
-    let default_rule = account.get_context_rule(&0);
-    let orig_signer_id = default_rule
-        .signer_ids
-        .first()
-        .expect("Default rule must have the one signer just installed");
-
-    let res = account.try_remove_signer(&0, &orig_signer_id);
+    // --- The guard, during the pending window (DOC-ONLY surface):
+    // initiate_upgrade blocked via the REAL cross-call into the deployed
+    // controller's has_pending; the recovery rule is protected
+    // structurally -- its removal entry point no longer exists at all. ---
+    let placeholder = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    let res = account.try_initiate_upgrade(&placeholder);
     assert_eq!(
         error_code(&res),
         NidoSmartAccountError::RecoveryPendingBlocked as u32,
-        "remove_signer while a REAL pending exists must be blocked by the in-account guard"
+        "initiate_upgrade while a REAL pending exists must be blocked by the in-account guard"
     );
 
-    let res = account.try_remove_context_rule(&rule_id);
-    assert_eq!(
-        error_code(&res),
-        NidoSmartAccountError::RecoveryRuleProtected as u32,
-        "the recovery rule can never be removed via remove_context_rule directly"
+    let res = env.try_invoke_contract::<soroban_sdk::Val, soroban_sdk::Error>(
+        &account_addr,
+        &soroban_sdk::Symbol::new(&env, "remove_context_rule"),
+        soroban_sdk::vec![&env],
     );
+    assert!(
+        res.is_err(),
+        "remove_context_rule must not be an entry point under doc-only"
+    );
+    let _ = rule_id;
 
     // --- Advance the ledger past the timelock. ---
     env.ledger().with_mut(|li| {
@@ -376,16 +368,12 @@ fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
         "the pending's nullifier must be permanently Spent after completion"
     );
 
-    // --- Post-recovery: the guard releases -- remove_signer on a
-    // non-recovery rule now succeeds, proving the account is usable again. ---
+    // --- Post-recovery: the guard releases -- the announce path (same
+    // guard_live_pending cross-call the pending window blocked above) now
+    // succeeds, proving the account is usable again once no pending
+    // recovery remains. ---
     env.mock_all_auths();
-    account.remove_signer(&0, &orig_signer_id);
-    let default_rule_after = account.get_context_rule(&0);
-    assert!(
-        !default_rule_after.signer_ids.contains(&orig_signer_id),
-        "remove_signer must have actually removed the original signer once no \
-         pending recovery remained"
-    );
+    account.initiate_recovery_rule_removal();
 }
 
 // ---------------------------------------------------------------------

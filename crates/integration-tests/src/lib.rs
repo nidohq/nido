@@ -35,6 +35,19 @@ pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
 pub const FACTORY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
 
+/// SPIKE (`apply_doc`): the CANONICAL perch doc-compiler + interpreter as
+/// deployed on testnet — fetched from chain (`stellar contract fetch`) and
+/// committed, so the e2e exercises the exact builds live accounts talk to.
+/// `apply_doc.rs`'s pin tests assert sha256 of these bytes equals the
+/// account's derived-address pins: a pin bump without refetching (or vice
+/// versa) fails fast. This replaces registering perch's NATIVE source-rev
+/// contracts, which masked a live wire-type skew (the deployed compiler
+/// returns 5-field rules; the source rev had grown a 6th).
+pub const PERCH_DOC_COMPILER_WASM: &[u8] =
+    include_bytes!("../fixtures/perch/perch-doc-compiler.wasm");
+pub const PERCH_INTERPRETER_WASM: &[u8] =
+    include_bytes!("../fixtures/perch/perch-interpreter.wasm");
+
 #[allow(dead_code)]
 #[soroban_sdk::contractclient(name = "SmartAccountClient")]
 trait SmartAccountInterface {
@@ -44,6 +57,12 @@ trait SmartAccountInterface {
         context_rule_type: ContextRuleType,
     ) -> soroban_sdk::Vec<ContextRule>;
     fn get_context_rules_count(env: soroban_sdk::Env) -> u32;
+    // DOC-ONLY: the OZ mutation surface (add_signer/remove_signer/
+    // remove_context_rule/add_policy/remove_policy/update_context_rule_*)
+    // no longer exists on the account — stage rule shapes with the
+    // `*_direct` library helpers below instead. `add_context_rule` remains
+    // an entry point solely as the zk-recovery COMPLETION vehicle (gated to
+    // a live pending).
     fn add_context_rule(
         env: soroban_sdk::Env,
         context_type: ContextRuleType,
@@ -52,23 +71,9 @@ trait SmartAccountInterface {
         signers: soroban_sdk::Vec<Signer>,
         policies: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val>,
     ) -> ContextRule;
-    fn update_context_rule_valid_until(
-        env: soroban_sdk::Env,
-        context_rule_id: u32,
-        valid_until: Option<u32>,
-    ) -> ContextRule;
-    fn remove_context_rule(env: soroban_sdk::Env, context_rule_id: u32);
-    fn add_signer(env: soroban_sdk::Env, context_rule_id: u32, signer: Signer) -> u32;
-    fn remove_signer(env: soroban_sdk::Env, context_rule_id: u32, signer_id: u32);
-    fn add_policy(
-        env: soroban_sdk::Env,
-        context_rule_id: u32,
-        policy: soroban_sdk::Address,
-        install_param: soroban_sdk::Val,
-    ) -> u32;
-    fn remove_policy(env: soroban_sdk::Env, context_rule_id: u32, policy_id: u32);
     // M2 Task 4: the in-account recovery guard's views/entry points
     // (`contracts/smart-account/src/contract.rs`).
+    fn initiate_upgrade(env: soroban_sdk::Env, new_wasm_hash: soroban_sdk::BytesN<32>);
     fn recovery_rule_id(env: soroban_sdk::Env) -> Option<u32>;
     fn recovery_controller(env: soroban_sdk::Env) -> Option<soroban_sdk::Address>;
     fn initiate_recovery_rule_removal(env: soroban_sdk::Env);
@@ -76,6 +81,101 @@ trait SmartAccountInterface {
     // M2 Task 6: the migration path for a NEW-wasm account deployed with
     // `recovery_controller: None` (`contract.rs::enroll_zk_recovery`).
     fn enroll_zk_recovery(env: soroban_sdk::Env, recovery_controller: soroban_sdk::Address);
+    // SPIKE: perch apply_doc (hybrid) + its views
+    // (`contract.rs`/`doc.rs`). `apply_doc` is declared with the success
+    // type only — the deployed contract's `Result<BytesN<32>, _>` returns
+    // the Ok value on success and traps with the typed code otherwise,
+    // which `try_apply_doc` surfaces exactly like the guard errors above.
+    fn apply_doc(env: soroban_sdk::Env, doc_json: soroban_sdk::Bytes) -> soroban_sdk::BytesN<32>;
+    fn applied_doc_hash(env: soroban_sdk::Env) -> Option<soroban_sdk::BytesN<32>>;
+    fn get_applied_doc(env: soroban_sdk::Env) -> Option<soroban_sdk::Bytes>;
+    fn doc_rule_ids(env: soroban_sdk::Env) -> soroban_sdk::Vec<u32>;
+}
+
+// ---------------------------------------------------------------------
+// DOC-ONLY test harness (spike): the account no longer exports the OZ rule
+// mutators (`apply_doc` is the sole policy write path; `add_context_rule`
+// survives only inside the zk-recovery completion window). Tests that
+// exercise policy/auth MECHANICS — session-key scoping, threshold
+// policies, spending limits, sweep policies — still need to stage
+// arbitrary rule shapes, so they write rules directly through the OZ
+// library against the account's storage via `env.as_contract`. This is a
+// test-only backdoor: on a real network these shapes are reachable only by
+// applying a document.
+// ---------------------------------------------------------------------
+
+/// Install a context rule directly (library call, no entry point).
+#[must_use]
+pub fn install_rule_direct(
+    env: &soroban_sdk::Env,
+    account: &soroban_sdk::Address,
+    context_type: &ContextRuleType,
+    name: &str,
+    valid_until: Option<u32>,
+    signers: &soroban_sdk::Vec<Signer>,
+    policies: &soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val>,
+) -> ContextRule {
+    let name = soroban_sdk::String::from_str(env, name);
+    env.as_contract(account, || {
+        stellar_accounts::smart_account::add_context_rule(
+            env,
+            context_type,
+            &name,
+            valid_until,
+            signers,
+            policies,
+        )
+    })
+}
+
+/// Add a signer to a rule directly (library call, no entry point).
+#[must_use]
+pub fn add_signer_direct(
+    env: &soroban_sdk::Env,
+    account: &soroban_sdk::Address,
+    context_rule_id: u32,
+    signer: &Signer,
+) -> u32 {
+    env.as_contract(account, || {
+        stellar_accounts::smart_account::add_signer(env, context_rule_id, signer)
+    })
+}
+
+/// Remove a signer from a rule directly (library call, no entry point).
+pub fn remove_signer_direct(
+    env: &soroban_sdk::Env,
+    account: &soroban_sdk::Address,
+    context_rule_id: u32,
+    signer_id: u32,
+) {
+    env.as_contract(account, || {
+        stellar_accounts::smart_account::remove_signer(env, context_rule_id, signer_id);
+    });
+}
+
+/// Attach a policy to a rule directly (library call, no entry point).
+#[must_use]
+pub fn add_policy_direct(
+    env: &soroban_sdk::Env,
+    account: &soroban_sdk::Address,
+    context_rule_id: u32,
+    policy: &soroban_sdk::Address,
+    install_param: soroban_sdk::Val,
+) -> u32 {
+    env.as_contract(account, || {
+        stellar_accounts::smart_account::add_policy(env, context_rule_id, policy, install_param)
+    })
+}
+
+/// Remove a context rule directly (library call, no entry point).
+pub fn remove_rule_direct(
+    env: &soroban_sdk::Env,
+    account: &soroban_sdk::Address,
+    context_rule_id: u32,
+) {
+    env.as_contract(account, || {
+        stellar_accounts::smart_account::remove_context_rule(env, context_rule_id);
+    });
 }
 
 /// Create a deterministic P-256 signing key from a `u64` seed.

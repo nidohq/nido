@@ -8,13 +8,13 @@
 
 use nido_integration_tests::{
     build_contract_assertion, compute_auth_digest, deploy_multisig_policy, deploy_smart_account,
-    multisig_install_map, test_key,
+    install_rule_direct, multisig_install_map, test_key,
 };
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::xdr::ToXdr;
-use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, Map, String, Symbol};
+use soroban_sdk::{symbol_short, vec, Address, Bytes, Env, Map, Symbol};
 use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRuleType, Signer};
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 
@@ -42,7 +42,7 @@ fn signature_for(
 
 fn install_two_of_three_recovery(
     env: &Env,
-    client: &nido_integration_tests::SmartAccountClient<'_>,
+    _client: &nido_integration_tests::SmartAccountClient<'_>,
     account_addr: &Address,
     verifier: &Address,
     friend_keys: [&SigningKey; 3],
@@ -53,10 +53,15 @@ fn install_two_of_three_recovery(
     let s2 = external_signer(env, verifier, friend_keys[1]);
     let s3 = external_signer(env, verifier, friend_keys[2]);
 
-    client.add_context_rule(
+    // DOC-ONLY: staged via the library backdoor — the account no longer
+    // exports rule mutators, and doc v1 cannot express M-of-N principals,
+    // so this rule shape has NO doc route today (noted in the PR).
+    let _ = install_rule_direct(
+        env,
+        account_addr,
         &ContextRuleType::CallContract(account_addr.clone()),
-        &String::from_str(env, "recovery"),
-        &None,
+        "recovery",
+        None,
         &vec![env, s1.clone(), s2.clone(), s3.clone()],
         &multisig_install_map(env, &policy_addr, 2u32),
     );
