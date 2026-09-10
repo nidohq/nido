@@ -9,7 +9,7 @@
     []
   ],
   "ledger": {
-    "protocol_version": 26,
+    "protocol_version": 27,
     "sequence_number": 0,
     "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -35,18 +35,18 @@
                   "storage": [
                     {
                       "key": {
-                        "symbol": "Account"
+                        "symbol": "ADMIN"
                       },
                       "val": {
-                        "bytes": "962166d9703a0432dd344c7eb8e52a0c2f63d59a079bd1b73ea783004146b204"
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                       }
                     },
                     {
                       "key": {
-                        "symbol": "Admin"
+                        "symbol": "Account"
                       },
                       "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        "bytes": "fcae6928ae65b607509a9e3ca1e4dac59427ff62f11313b95c5b9e2209407d01"
                       }
                     }
                   ]

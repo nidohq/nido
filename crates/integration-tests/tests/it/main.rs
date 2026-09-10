@@ -1,3 +1,4 @@
+mod apply_doc;
 mod contract_verifier;
 mod default_rule_threshold;
 mod drift;

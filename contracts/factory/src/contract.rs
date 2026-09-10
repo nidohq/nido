@@ -904,6 +904,11 @@ mod test {
     #[contractclient(name = "ProbeClient")]
     trait Probe {
         fn recovery_rule_id(e: Env) -> Option<u32>;
+        // SPIKE (apply_doc): the doc-layer views the new smart-account wasm
+        // exports — probed below to prove the factory's embedded wasm ships
+        // the perch doc surface to every newly created account.
+        fn applied_doc_hash(e: Env) -> Option<BytesN<32>>;
+        fn doc_rule_ids(e: Env) -> soroban_sdk::Vec<u32>;
     }
 
     /// Deploys a factory + a REAL `nido-zk-recovery` pool/controller,
@@ -1381,6 +1386,31 @@ mod test {
             probe.try_recovery_rule_id().is_err(),
             "no account should be deployed at get_c_address(salt) after the reverted call"
         );
+    }
+
+    /// SPIKE (`apply_doc`): the factory needs NO code change to ship the doc
+    /// layer — it embeds the smart-account wasm at build time
+    /// (`smart_account::WASM`), so rebuilding + republishing the factory is
+    /// the whole deploy story for new accounts. This test proves the
+    /// embedded wasm actually exports the doc surface: a freshly created
+    /// account answers the doc views (no document applied yet).
+    #[test]
+    fn created_account_exposes_apply_doc_surface() {
+        let env = Env::default();
+        let (factory_addr, _pool_addr) = setup_factory_and_pool(&env, false);
+        let client = ContractClient::new(&env, &factory_addr);
+
+        let salt = BytesN::from_array(&env, &[21; 32]);
+        let key = BytesN::from_array(&env, &[8; 65]);
+        let account = client.create_account(&salt, &key);
+
+        let probe = ProbeClient::new(&env, &account);
+        assert_eq!(
+            probe.applied_doc_hash(),
+            None,
+            "a fresh account has no applied policy document"
+        );
+        assert_eq!(probe.doc_rule_ids().len(), 0);
     }
 
     // ---------------------------------------------------------------------

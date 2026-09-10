@@ -6,7 +6,8 @@ use soroban_sdk::{
     auth::{Context, CustomAccountInterface},
     contract, contractclient, contracterror, contractimpl, contracttype,
     crypto::Hash,
-    panic_with_error, symbol_short, Address, BytesN, Env, IntoVal, Map, String, Symbol, Val, Vec,
+    panic_with_error, symbol_short, Address, Bytes, BytesN, Env, IntoVal, Map, String, Symbol, Val,
+    Vec,
 };
 use stellar_accounts::policies::simple_threshold::SimpleThresholdAccountParams;
 use stellar_accounts::smart_account::{
@@ -76,6 +77,30 @@ pub enum NidoSmartAccountError {
     UpgradeNotAnnounced = 8,
     /// `execute_upgrade` was called before the announced 7-day delay elapsed.
     UpgradeDelayNotElapsed = 9,
+    // --- SPIKE: `apply_doc` (see `doc.rs`). 10 is the doc layer's own
+    // refusal; 11–15 mirror perch's `DocCompilerError` variants 1–5 (offset
+    // +10 so the two error spaces can't collide in this contract's codes);
+    // 16 is the fail-closed cross-call fallback. ---
+    /// The document carries a cumulative spend cap. Hybrid `apply_doc` refuses
+    /// capped docs rather than installing a rule WEAKER than reviewed (the
+    /// cap's stateful policy address is registry-resolved SDK-side, not
+    /// derivable in-contract). Capped docs install via the SDK's per-rule
+    /// `buildDocInstallTxs` path instead.
+    DocCapUnsupported = 10,
+    /// Compiler: the submitted document bytes are not UTF-8.
+    DocNotUtf8 = 11,
+    /// Compiler: the document failed fail-closed parsing.
+    DocParse = 12,
+    /// Compiler: the document failed semantic validation.
+    DocInvalid = 13,
+    /// Compiler: the document names no network, or one that is not this
+    /// chain.
+    DocWrongNetwork = 14,
+    /// Compiler: the document cannot be lowered to rules.
+    DocCompile = 15,
+    /// The doc-compiler cross-call failed outright (no contract at the
+    /// derived address, or a host trap). Fail closed.
+    DocCompilerUnreachable = 16,
 }
 
 /// Minimal cross-call stub for `nido-zk-recovery`'s `has_pending` view.
@@ -575,6 +600,56 @@ impl NidoSmartAccount {
         e.storage().instance().remove(&PENDING_UPGRADE_HASH);
         e.storage().instance().remove(&PENDING_UPGRADE_AT);
         e.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    // -----------------------------------------------------------------
+    // SPIKE: perch apply_doc, hybrid-additive (see `doc.rs` for the full
+    // story and the deliberately-deferred decisions).
+    // -----------------------------------------------------------------
+
+    /// Apply a perch policy document — HYBRID: manages only the rules a
+    /// previous `apply_doc` installed (diffed out and replaced atomically);
+    /// the default passkey rule, the recovery rule, and rules from the
+    /// legacy mutators are untouched. Compilation (parse/validate/
+    /// network-bind/canonical `doc_hash`) happens in perch's shared
+    /// stateless doc-compiler contract, cross-called at its pinned derived
+    /// address. Stores the canonical `doc_hash`, emits the full doc JSON as
+    /// a `DocApplied` event, and returns the hash.
+    ///
+    /// Same auth model as every other account mutation (the account's own
+    /// signing policy), and the same recovery-pending guard as the four
+    /// guarded mutating ops — `apply_doc` REMOVES rules, so an in-flight
+    /// recovery must block it for exactly the reasons documented on
+    /// `remove_context_rule`.
+    ///
+    /// # Errors
+    ///
+    /// See [`crate::doc::apply`]: the compiler's typed refusals
+    /// (`DocNotUtf8`/`DocParse`/`DocInvalid`/`DocWrongNetwork`/`DocCompile`),
+    /// `DocCompilerUnreachable` (fail-closed cross-call fallback), and
+    /// `DocCapUnsupported` (capped docs keep the SDK install path).
+    // `#[contractimpl]` entry point; SDK ABI requires an owned `Bytes`.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn apply_doc(e: &Env, doc_json: Bytes) -> Result<BytesN<32>, NidoSmartAccountError> {
+        e.current_contract_address().require_auth();
+        guard_no_pending(e);
+        crate::doc::apply(e, &doc_json)
+    }
+
+    /// The canonical `doc_hash` of the currently applied policy document,
+    /// or `None` if no document has been applied. Anyone can check
+    /// installed == reviewed. Mirrors `PerchSmartAccount::applied_doc_hash`.
+    #[must_use]
+    pub fn applied_doc_hash(e: &Env) -> Option<BytesN<32>> {
+        crate::doc::applied_doc_hash(e)
+    }
+
+    /// The context-rule ids installed by the last successful `apply_doc`
+    /// (empty if none) — the doc-managed subset of this account's rules,
+    /// used by the SDK's `readPolicy` parity check.
+    #[must_use]
+    pub fn doc_rule_ids(e: &Env) -> Vec<u32> {
+        crate::doc::doc_rule_ids(e)
     }
 }
 

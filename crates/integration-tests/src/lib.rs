@@ -76,6 +76,14 @@ trait SmartAccountInterface {
     // M2 Task 6: the migration path for a NEW-wasm account deployed with
     // `recovery_controller: None` (`contract.rs::enroll_zk_recovery`).
     fn enroll_zk_recovery(env: soroban_sdk::Env, recovery_controller: soroban_sdk::Address);
+    // SPIKE: perch apply_doc (hybrid) + its views
+    // (`contract.rs`/`doc.rs`). `apply_doc` is declared with the success
+    // type only — the deployed contract's `Result<BytesN<32>, _>` returns
+    // the Ok value on success and traps with the typed code otherwise,
+    // which `try_apply_doc` surfaces exactly like the guard errors above.
+    fn apply_doc(env: soroban_sdk::Env, doc_json: soroban_sdk::Bytes) -> soroban_sdk::BytesN<32>;
+    fn applied_doc_hash(env: soroban_sdk::Env) -> Option<soroban_sdk::BytesN<32>>;
+    fn doc_rule_ids(env: soroban_sdk::Env) -> soroban_sdk::Vec<u32>;
 }
 
 /// Create a deterministic P-256 signing key from a `u64` seed.
