@@ -8,10 +8,12 @@
  * `add_context_rule` per rule, `buildApplyDocTx` submits the document
  * ITSELF: the contract cross-calls perch's stateless doc-compiler to
  * parse/validate/lower on-chain, installs the whole rule set atomically,
- * stores the canonical `doc_hash`, and emits the full doc JSON as a
- * `DocApplied` event. The bytes submitted here are the CANONICAL JSON, so
- * the emitted event carries the canonical form and a document recovered
- * from event history hashes straight to the stored identity.
+ * stores the canonical `doc_hash` AND the full canonical doc JSON
+ * (readable via `get_applied_doc` — the lossless, no-indexer read), and
+ * emits the doc JSON as a `DocApplied` event. The contract REFUSES
+ * non-canonical bytes (`DocNotCanonical`); this builder always submits
+ * `canonicalJson(doc)`, so stored == emitted == canonical and either copy
+ * hashes straight to the stored identity.
  *
  * Deliberate scope cuts, mirrored from the contract:
  * - Capped docs are refused (`DocCapUnsupported` on-chain; refused here

@@ -908,6 +908,7 @@ mod test {
         // exports — probed below to prove the factory's embedded wasm ships
         // the perch doc surface to every newly created account.
         fn applied_doc_hash(e: Env) -> Option<BytesN<32>>;
+        fn get_applied_doc(e: Env) -> Option<Bytes>;
         fn doc_rule_ids(e: Env) -> soroban_sdk::Vec<u32>;
     }
 
@@ -1410,6 +1411,7 @@ mod test {
             None,
             "a fresh account has no applied policy document"
         );
+        assert_eq!(probe.get_applied_doc(), None);
         assert_eq!(probe.doc_rule_ids().len(), 0);
     }
 

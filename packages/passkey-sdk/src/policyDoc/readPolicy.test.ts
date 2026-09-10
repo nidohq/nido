@@ -65,12 +65,28 @@ function inputs(overrides: Partial<ReadPolicyInputs> = {}): ReadPolicyInputs {
 }
 
 describe('readPolicy: tier a (doc-verified)', () => {
-  it('verifies an event-recovered doc against the stored hash and live rules', () => {
+  it('verifies the on-chain doc copy (view-first, no event needed) against the stored hash and live rules', () => {
+    const res = readPolicy(
+      inputs({ storedDocJson: canonicalJson(doc), eventDocJson: undefined }),
+    );
+    expect(res.tier).toBe('doc-verified');
+    expect(res.docHash).toBe(docHash(doc));
+    expect(res.doc?.rules.map((r) => r.name)).toEqual(['pay', 'ops']);
+    expect(res.drift).toBeUndefined();
+  });
+
+  it('verifies an event-recovered doc when the on-chain view is not fetched', () => {
     const res = readPolicy(inputs());
     expect(res.tier).toBe('doc-verified');
     expect(res.docHash).toBe(docHash(doc));
     expect(res.doc?.rules.map((r) => r.name)).toEqual(['pay', 'ops']);
     expect(res.drift).toBeUndefined();
+  });
+
+  it('falls back from a corrupt view value to a valid event doc', () => {
+    const res = readPolicy(inputs({ storedDocJson: 'not json at all' }));
+    expect(res.tier).toBe('doc-verified');
+    expect(res.docHash).toBe(docHash(doc));
   });
 
   it('is indifferent to non-doc rules (hybrid coexistence)', () => {

@@ -20,10 +20,12 @@
 //!   hybrid mode the default passkey rule survives every apply untouched, so
 //!   the account always keeps its non-doc auth path and the check is moot.
 //! - **Persistence.** The canonical `doc_hash` (sha256 of the doc's canonical
-//!   JSON, computed by the compiler) is stored in instance storage, and the
-//!   full submitted doc JSON is emitted as a `DocApplied` event, so the SDK
-//!   can recover the document from event history and verify it against the
-//!   stored hash (`readPolicy` tiers a/b).
+//!   JSON, computed by the compiler) is stored in instance storage; the FULL
+//!   canonical doc JSON is stored in a persistent entry (`get_applied_doc` —
+//!   the lossless, no-indexer read path) AND emitted as a `DocApplied` event
+//!   (the eventual recovery method). `apply_doc` refuses non-canonical byte
+//!   submissions, so both copies verify against the stored hash by a bare
+//!   sha256 (`readPolicy` tiers a/b).
 //!
 //! The `perch-smart-account` trait crate itself is NOT consumed: it is
 //! unpublished, unbuildable as a git dependency (it bakes git-ignored fetched
@@ -81,13 +83,27 @@ const DOC_HASH: Symbol = symbol_short!("DOC_HASH");
 /// installed through the legacy mutators.
 const DOC_RIDS: Symbol = symbol_short!("DOC_RIDS");
 
+/// PERSISTENT storage key for the full canonical doc JSON of the currently
+/// applied policy document — the lossless on-chain copy behind
+/// `get_applied_doc` (the showcase's no-indexer read path; the `DocApplied`
+/// event remains the eventual recovery method).
+///
+/// Persistent, NOT instance, deliberately: the instance entry is loaded on
+/// EVERY invocation of this account — including every `__check_auth` — so a
+/// KB-scale JSON blob there would tax every transaction the account signs.
+/// A persistent entry is read only when actually accessed (this view, or
+/// the overwrite on re-apply), and is archivable/restorable under normal
+/// rent rules. The 32-byte `doc_hash` and the small rule-id vec stay in
+/// instance storage. Rent: one persistent entry of ~doc-JSON size per
+/// account; this spike does not bump its TTL (noted shortcut).
+const DOC_JSON: Symbol = symbol_short!("DOC_JSON");
+
 /// Emitted once per successful `apply_doc`: the canonical `doc_hash` (topic,
-/// so indexers can filter by document identity) plus the FULL submitted doc
-/// JSON (data), so the document is recoverable from event history alone. The
-/// SDK verifies a recovered doc by canonicalizing it client-side and
-/// comparing sha256 against the STORED hash — formatting of the submitted
-/// bytes therefore doesn't matter, though `buildApplyDocTx` submits canonical
-/// bytes so the event carries the canonical form in practice.
+/// so indexers can filter by document identity) plus the FULL doc JSON
+/// (data), so the document is recoverable from event history alone. The
+/// bytes are the CANONICAL form by construction (`apply_doc` refuses
+/// non-canonical submissions), so a recovered doc verifies against the
+/// stored hash by a bare sha256.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DocApplied {
@@ -128,6 +144,16 @@ pub fn applied_doc_hash(e: &Env) -> Option<BytesN<32>> {
     e.storage().instance().get(&DOC_HASH)
 }
 
+/// The full canonical doc JSON of the currently applied policy document,
+/// or `None` if no document has been applied. Lossless by construction:
+/// `apply_doc` refuses non-canonical submissions (`DocNotCanonical`), so
+/// these bytes sha256 directly to [`applied_doc_hash`] — no client-side
+/// canonicalization needed to verify.
+#[must_use]
+pub fn applied_doc(e: &Env) -> Option<Bytes> {
+    e.storage().persistent().get(&DOC_JSON)
+}
+
 /// The context-rule ids installed by the last successful `apply_doc` (empty
 /// if none). The SDK's `readPolicy` uses this to scope its doc-vs-chain
 /// parity check to doc-managed rules only.
@@ -161,8 +187,9 @@ fn compiler_error(err: DocCompilerError) -> NidoSmartAccountError {
 ///
 /// `DocNotUtf8`/`DocParse`/`DocInvalid`/`DocWrongNetwork`/`DocCompile` relay
 /// the compiler's typed refusals; `DocCompilerUnreachable` is the fail-closed
-/// fallback when the cross-call itself fails; `DocCapUnsupported` refuses
-/// capped documents (see the comment at the check).
+/// fallback when the cross-call itself fails; `DocNotCanonical` refuses
+/// submissions that are not the canonical byte form; `DocCapUnsupported`
+/// refuses capped documents (see the comments at each check).
 pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, NidoSmartAccountError> {
     // Stateless compile: parse, validate, network-bind, canonicalize + hash,
     // lower. Every compiler refusal surfaces as a typed error.
@@ -174,6 +201,21 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, NidoSmartAccountEr
             // derived address or misbehaving. Fail closed.
             _ => return Err(NidoSmartAccountError::DocCompilerUnreachable),
         };
+
+    // The submitted bytes must BE the canonical form: sha256(doc_json) must
+    // equal the compiler's canonical doc_hash. Perch's compiler is
+    // deliberately format-agnostic (pretty and minified twins compile to the
+    // same hash), but this account also STORES the bytes as the lossless
+    // on-chain policy (`get_applied_doc`) and emits them in the event — so
+    // canonical-only keeps one invariant everywhere: stored == emitted ==
+    // canonical, and either verifies against the stored hash by a bare
+    // sha256, no client-side canonicalization needed. The SDK's
+    // `buildApplyDocTx` always submits canonical bytes. (A spike-flagged
+    // divergence from upstream perch, easy to relax.)
+    let submitted_hash = e.crypto().sha256(doc_json).to_bytes();
+    if submitted_hash != compiled.doc_hash {
+        return Err(NidoSmartAccountError::DocNotCanonical);
+    }
 
     // Cumulative caps lower onto a stateful spending-limit policy. Upstream
     // perch attaches ITS content-addressed `perch-spending-limit`; nido's SDK
@@ -210,6 +252,10 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, NidoSmartAccountEr
 
     e.storage().instance().set(&DOC_RIDS, &installed);
     e.storage().instance().set(&DOC_HASH, &compiled.doc_hash);
+    // The lossless on-chain copy (canonical by the check above). Overwritten
+    // wholesale on every apply; the event below remains the eventual
+    // recovery method once an indexer exists.
+    e.storage().persistent().set(&DOC_JSON, doc_json);
     DocApplied {
         doc_hash: compiled.doc_hash.clone(),
         doc_json: doc_json.clone(),

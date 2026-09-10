@@ -5,12 +5,14 @@
 //! mirroring perch's own `perch-testkit` native mode.
 //!
 //! Covered here (the contract half of the spike's definition of done):
-//! build doc → `apply_doc` → rules installed / hash stored / event emitted →
-//! recover the doc from the event → canonical-hash parity passes. Plus the
-//! hybrid-specific properties: re-apply diffs out ONLY doc-managed rules
-//! (default + legacy rules untouched), capped docs are refused, and the
-//! compiler's network binding is enforced. The SDK-side drift tier (b) is
-//! covered by `packages/passkey-sdk`'s `readPolicy` tests.
+//! build doc → `apply_doc` → rules installed / hash stored / doc JSON
+//! stored on-chain / event emitted → round-trip the doc through the
+//! `get_applied_doc` view and the event → canonical-hash parity passes.
+//! Plus the hybrid-specific properties: re-apply diffs out ONLY doc-managed
+//! rules (default + legacy rules untouched), capped and non-canonical docs
+//! are refused, and the compiler's network binding is enforced. The
+//! SDK-side drift tier (b) is covered by `packages/passkey-sdk`'s
+//! `readPolicy` tests.
 
 use nido_integration_tests::{deploy_smart_account, test_key};
 use nido_smart_account::contract::NidoSmartAccountError;
@@ -83,13 +85,19 @@ fn two_rule_doc(network: &str, verifier: &str, key_hex: &str, target: &str) -> S
     )
 }
 
+/// The canonical byte form of a fixture doc — what `apply_doc` requires
+/// (non-canonical submissions are refused) and what `buildApplyDocTx`
+/// always sends. Via `perch-ir`, the exact library the deployed compiler
+/// runs.
+fn canonicalize(doc_json: &str) -> String {
+    perch_ir::canonical_json(&perch_ir::from_json(doc_json).expect("fixture doc parses"))
+}
+
 /// The canonical `doc_hash` perch defines: sha256 of the doc's canonical
 /// JSON. Computed off-chain with `perch-ir` — the exact library the deployed
 /// compiler runs — so the assertion is byte-for-byte the SDK's tier-a check.
 fn canonical_doc_hash(env: &Env, doc_json: &str) -> BytesN<32> {
-    let doc = perch_ir::from_json(doc_json).expect("fixture doc parses");
-    let canonical = perch_ir::canonical_json(&doc);
-    let digest: [u8; 32] = Sha256::digest(canonical.as_bytes()).into();
+    let digest: [u8; 32] = Sha256::digest(canonicalize(doc_json).as_bytes()).into();
     BytesN::from_array(env, &digest)
 }
 
@@ -126,7 +134,8 @@ fn apply_doc_installs_rules_stores_hash_and_emits_recoverable_doc() {
         &key_hex,
         &target,
     );
-    let doc_bytes = Bytes::from_slice(&env, doc.as_bytes());
+    let canonical = canonicalize(&doc);
+    let doc_bytes = Bytes::from_slice(&env, canonical.as_bytes());
 
     let hash = client.apply_doc(&doc_bytes);
 
@@ -154,7 +163,17 @@ fn apply_doc_installs_rules_stores_hash_and_emits_recoverable_doc() {
     // from the (recoverable) JSON exactly the way the SDK's tier-a check
     // does: parse, canonicalize, sha256.
     assert_eq!(hash, canonical_doc_hash(&env, &doc));
-    assert_eq!(client.applied_doc_hash(), Some(hash));
+    assert_eq!(client.applied_doc_hash(), Some(hash.clone()));
+
+    // Lossless on-chain copy: `get_applied_doc` returns exactly the
+    // canonical bytes, and a bare sha256 of the CHAIN-RETURNED value
+    // round-trips to the stored hash (no client-side canonicalization).
+    let stored = client.get_applied_doc().expect("doc JSON stored on-chain");
+    assert_eq!(stored, doc_bytes);
+    let mut stored_buf = std::vec![0u8; stored.len() as usize];
+    stored.copy_into_slice(&mut stored_buf);
+    let stored_digest: [u8; 32] = Sha256::digest(&stored_buf).into();
+    assert_eq!(hash, BytesN::from_array(&env, &stored_digest));
 
     // Default rule 0 untouched; the document's two rules landed as 1 and 2.
     assert_eq!(client.get_context_rules_count(), 3);
@@ -213,7 +232,7 @@ fn reapply_replaces_only_doc_rules_and_leaves_legacy_rules() {
     let target = addr_str(&Address::generate(&env));
 
     let doc1 = two_rule_doc(TESTNET_PASSPHRASE, &verifier, &key_hex, &target);
-    let first = client.apply_doc(&Bytes::from_slice(&env, doc1.as_bytes()));
+    let first = client.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()));
     assert_eq!(client.doc_rule_ids(), vec![&env, 2u32, 3u32]);
     assert_eq!(client.get_context_rules_count(), 4);
 
@@ -233,10 +252,16 @@ fn reapply_replaces_only_doc_rules_and_leaves_legacy_rules() {
   ]
 }}"#
     );
-    let second = client.apply_doc(&Bytes::from_slice(&env, doc2.as_bytes()));
+    let canonical2 = canonicalize(&doc2);
+    let second = client.apply_doc(&Bytes::from_slice(&env, canonical2.as_bytes()));
 
     assert_ne!(first, second);
     assert_eq!(client.applied_doc_hash(), Some(second));
+    // The on-chain doc copy tracks the LATEST apply.
+    assert_eq!(
+        client.get_applied_doc(),
+        Some(Bytes::from_slice(&env, canonical2.as_bytes()))
+    );
     assert_eq!(client.doc_rule_ids(), vec![&env, 4u32]);
     assert_eq!(client.get_context_rules_count(), 3);
     // The first doc's rules (2, 3) are gone…
@@ -285,11 +310,41 @@ fn capped_doc_is_refused_atomically() {
     );
 
     assert_doc_error(
-        client.try_apply_doc(&Bytes::from_slice(&env, doc.as_bytes())),
+        client.try_apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes())),
         NidoSmartAccountError::DocCapUnsupported,
     );
     assert_eq!(client.get_context_rules_count(), 1);
     assert_eq!(client.applied_doc_hash(), None);
+    assert_eq!(client.get_applied_doc(), None);
+}
+
+/// `apply_doc` stores (and emits) the submitted bytes as the lossless
+/// canonical policy, so a pretty-printed (non-canonical) submission is
+/// refused with `DocNotCanonical` — resubmit `canonicalJson(doc)`, which is
+/// what `buildApplyDocTx` always sends. Nothing changes on refusal.
+#[test]
+fn non_canonical_doc_is_refused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_perch_infra(&env);
+    let (client, _account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
+
+    // The fixture is pretty-printed — semantically valid, byte-non-canonical.
+    let doc = two_rule_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &hex_lower(&signing_key.verifying_key().to_sec1_bytes()),
+        &addr_str(&Address::generate(&env)),
+    );
+
+    assert_doc_error(
+        client.try_apply_doc(&Bytes::from_slice(&env, doc.as_bytes())),
+        NidoSmartAccountError::DocNotCanonical,
+    );
+    assert_eq!(client.get_context_rules_count(), 1);
+    assert_eq!(client.applied_doc_hash(), None);
+    assert_eq!(client.get_applied_doc(), None);
 }
 
 /// The compiler's network binding holds end to end: a doc naming another
@@ -310,9 +365,10 @@ fn wrong_network_doc_is_refused() {
     );
 
     assert_doc_error(
-        client.try_apply_doc(&Bytes::from_slice(&env, doc.as_bytes())),
+        client.try_apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes())),
         NidoSmartAccountError::DocWrongNetwork,
     );
     assert_eq!(client.get_context_rules_count(), 1);
     assert_eq!(client.applied_doc_hash(), None);
+    assert_eq!(client.get_applied_doc(), None);
 }

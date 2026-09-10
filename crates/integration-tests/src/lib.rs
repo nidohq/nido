@@ -83,6 +83,7 @@ trait SmartAccountInterface {
     // which `try_apply_doc` surfaces exactly like the guard errors above.
     fn apply_doc(env: soroban_sdk::Env, doc_json: soroban_sdk::Bytes) -> soroban_sdk::BytesN<32>;
     fn applied_doc_hash(env: soroban_sdk::Env) -> Option<soroban_sdk::BytesN<32>>;
+    fn get_applied_doc(env: soroban_sdk::Env) -> Option<soroban_sdk::Bytes>;
     fn doc_rule_ids(env: soroban_sdk::Env) -> soroban_sdk::Vec<u32>;
 }
 

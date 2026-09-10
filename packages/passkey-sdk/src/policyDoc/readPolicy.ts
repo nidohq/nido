@@ -2,10 +2,11 @@
  * SPIKE: the three-tier policy read for accounts with the hybrid
  * `apply_doc` surface (contracts/smart-account/src/doc.rs):
  *
- *   a. `doc-verified` — a document recovered from the `DocApplied` event
- *      history whose canonical hash matches the STORED `applied_doc_hash`,
- *      AND whose lowering matches the live doc-managed chain rules. The
- *      rich, reviewer-grade view.
+ *   a. `doc-verified` — a document read from the on-chain copy
+ *      (`get_applied_doc`, lossless, no indexer needed) or recovered from
+ *      the `DocApplied` event history, whose canonical hash matches the
+ *      STORED `applied_doc_hash`, AND whose lowering matches the live
+ *      doc-managed chain rules. The rich, reviewer-grade view.
  *   b. `doc-drift` — the hash still verifies (the doc is authentic) but the
  *      live rules have drifted from its lowering — hybrid accounts keep the
  *      legacy mutators, so a doc-managed rule can be edited out from under
@@ -15,13 +16,17 @@
  *      existing best-effort `decompileRules` view.
  *
  * Pure, like `decompileRules`: the caller fetches chain state and passes it
- * in. The three chain-side inputs come from:
+ * in. The chain-side inputs come from:
  * - `applied_doc_hash()` / `doc_rule_ids()` — smart-account views,
- * - the doc JSON — the account's latest `DocApplied` contract event (topics
- *   `["doc_applied", <doc_hash: bytes>]`, data `{doc_json: bytes}`), e.g.
- *   via RPC `getEvents`. NOTE: RPC event retention is finite (days); past
- *   it, recovery needs an indexer — until then such accounts read as tier c
- *   even though a document is applied. A real adoption cost to weigh.
+ * - the doc JSON, from either source (prefer the view):
+ *   - `get_applied_doc()` — the on-chain canonical copy (`storedDocJson`).
+ *     Lossless and always available while the entry lives; this is the
+ *     primary source.
+ *   - the account's latest `DocApplied` contract event (topics
+ *     `["doc_applied", <doc_hash: bytes>]`, data `{doc_json: bytes}`), e.g.
+ *     via RPC `getEvents` (`eventDocJson`) — the eventual method once an
+ *     indexer archives events; used here as the fallback when the view
+ *     isn't fetched. NOTE: RPC event retention is finite (days).
  *
  * Drift detection is deliberately spike-lean: it compares rule scope, name,
  * signer sets, expiry, and interpreter attachment, and — when interpreter
@@ -53,9 +58,12 @@ export interface ReadPolicyInputs {
   /** Doc-managed rule ids from `doc_rule_ids()`, in install (= document)
    *  order. */
   docRuleIds: number[];
+  /** The on-chain canonical doc JSON from `get_applied_doc()` — the
+   *  primary, lossless doc source (decoded to a string). */
+  storedDocJson?: string;
   /** The doc JSON recovered from the latest `DocApplied` event whose
    *  `doc_hash` topic equals `appliedDocHash`, if event history still
-   *  reaches it. */
+   *  reaches it. Fallback source when the view isn't fetched. */
   eventDocJson?: string;
   /** Context for the decompile fallback; its `interpreterAddress` and
    *  `programs` also power the tier-a/b parity check. */
@@ -82,21 +90,30 @@ export function readPolicy(inputs: ReadPolicyInputs): ReadPolicyResult {
     decompiled: decompileRules(inputs.chainRules, inputs.decompileCtx),
   });
 
-  if (stored === null || inputs.eventDocJson === undefined) {
+  if (stored === null) {
     return fallback();
   }
 
-  let doc: PolicyDoc;
-  try {
-    doc = parsePolicyDocJson(inputs.eventDocJson);
-  } catch {
+  // Prefer the on-chain copy (`get_applied_doc`), fall back to the
+  // event-recovered JSON. Either way a candidate is trusted only if it
+  // parses AND canonicalizes to the STORED hash.
+  let doc: PolicyDoc | null = null;
+  for (const candidate of [inputs.storedDocJson, inputs.eventDocJson]) {
+    if (candidate === undefined) continue;
+    try {
+      const parsed = parsePolicyDocJson(candidate);
+      if (docHash(parsed) === stored) {
+        doc = parsed;
+        break;
+      }
+    } catch {
+      // Unparseable candidate — try the next source.
+    }
+  }
+  if (doc === null) {
     return fallback();
   }
-  const hash = docHash(doc);
-  if (hash !== stored) {
-    // The recovered doc is not the applied one — treat as unrecoverable.
-    return fallback();
-  }
+  const hash = stored;
 
   const drift = diffDocAgainstChain(doc, inputs, stored);
   if (drift.length > 0) {

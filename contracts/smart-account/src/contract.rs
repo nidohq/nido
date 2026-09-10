@@ -101,6 +101,12 @@ pub enum NidoSmartAccountError {
     /// The doc-compiler cross-call failed outright (no contract at the
     /// derived address, or a host trap). Fail closed.
     DocCompilerUnreachable = 16,
+    /// The submitted doc bytes are not the canonical form
+    /// (`sha256(doc_json) != doc_hash`). The account stores the bytes as
+    /// the lossless on-chain policy (`get_applied_doc`) and emits them in
+    /// the `DocApplied` event, so only canonical bytes are accepted —
+    /// resubmit `canonicalJson(doc)` (what `buildApplyDocTx` always sends).
+    DocNotCanonical = 17,
 }
 
 /// Minimal cross-call stub for `nido-zk-recovery`'s `has_pending` view.
@@ -642,6 +648,16 @@ impl NidoSmartAccount {
     #[must_use]
     pub fn applied_doc_hash(e: &Env) -> Option<BytesN<32>> {
         crate::doc::applied_doc_hash(e)
+    }
+
+    /// The full canonical doc JSON of the currently applied policy
+    /// document, or `None` if none has been applied — the lossless
+    /// on-chain read path (no event history or indexer needed).
+    /// `sha256` of these bytes equals [`Self::applied_doc_hash`] by
+    /// construction (`apply_doc` refuses non-canonical submissions).
+    #[must_use]
+    pub fn get_applied_doc(e: &Env) -> Option<Bytes> {
+        crate::doc::applied_doc(e)
     }
 
     /// The context-rule ids installed by the last successful `apply_doc`
