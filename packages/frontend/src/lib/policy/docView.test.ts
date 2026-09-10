@@ -93,3 +93,25 @@ describe('summarizeDoc', () => {
     expect(m.rules).toHaveLength(1);
   });
 });
+
+describe('renderDocPreviewHtml', () => {
+  it('renders rule cards with the doc names and tucks the JSON behind a toggle', async () => {
+    const { renderDocPreviewHtml } = await import('../../components/PolicyInspector.js');
+    const { canonicalJson } = await import('@nidohq/passkey-sdk');
+    const doc = scopedSessionKeyDoc({
+      sessionAddress: SESSION_G,
+      targetContract: TARGET,
+      functions: ['update_message'],
+      notAfterLedger: 5000,
+      name: 'status-session',
+    });
+    const html = renderDocPreviewHtml(summarizeDoc(doc, docHash(doc)), canonicalJson(doc));
+    expect(html).toContain('status-session');
+    expect(html).toContain('update_message');
+    expect(html).toContain('"session"'); // the doc's own signer id
+    expect(html).toContain('Stops at ledger 5,000');
+    // Raw JSON is available but folded, not dumped.
+    expect(html).toContain('<details');
+    expect(html).toContain('Raw document JSON');
+  });
+});

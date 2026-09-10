@@ -99,6 +99,21 @@ import Icon from '../../../components/Icon.astro';
   .pol-diff-row { display: flex; gap: 10px; align-items: flex-start; }
   .pol-diff-row .pol-badge { flex: 0 0 auto; margin-top: 2px; }
   .pol-diff-changes { margin: 4px 0 0; padding-left: 16px; font-size: 12px; line-height: 1.5; }
+  .pol-preview { display: grid; gap: 10px; }
+  .pol-preview-rule {
+    border: 1px solid var(--line, rgba(0,0,0,0.1)); border-radius: 10px;
+    padding: 10px 12px; display: grid; gap: 6px; background: var(--paper-3, transparent);
+  }
+  .pol-preview-rule-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .pol-preview-perm { margin: 0; font-size: 12.5px; line-height: 1.5; }
+  .pol-preview-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .pol-preview-fact { font-size: 11.5px; color: var(--mut, #888); }
+  .pol-preview-raw summary { font-size: 11.5px; cursor: pointer; color: var(--mut, #888); }
+  .pol-preview-raw pre {
+    font-size: 11px; line-height: 1.5; margin: 6px 0 0; max-height: 180px; overflow: auto;
+    white-space: pre-wrap; word-break: break-all; background: var(--paper-3);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
 </style>
 
 <script>

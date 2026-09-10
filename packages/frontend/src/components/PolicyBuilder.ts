@@ -52,7 +52,8 @@ import {
 } from '../lib/policy/docDraft.js';
 import { diffPolicyDocs } from '../lib/policy/docDiff.js';
 import { bytesToHex, truncate } from '../lib/policy/policyView.js';
-import { renderDocDiffHtml } from './PolicyInspector.js';
+import { summarizeDoc } from '../lib/policy/docView.js';
+import { renderDocDiffHtml, renderDocPreviewHtml } from './PolicyInspector.js';
 
 const NETWORK_PASSPHRASE = Networks.TESTNET;
 
@@ -211,7 +212,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
             <span class="pol-field-label" style="text-transform:none;letter-spacing:0;">doc_hash</span>
             <code id="pol-doc-prev-hash" class="pol-mono">—</code>
           </div>
-          <pre id="pol-doc-prev-json" class="pol-mono" style="font-size:11px;line-height:1.5;margin:0;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-all;">—</pre>
+          <div id="pol-doc-prev-doc" class="mut" style="font-size:12.5px;">—</div>
         </div>
 
         <div id="pol-doc-errors" class="alert danger" role="alert" hidden style="margin-top:10px;"></div>
@@ -272,7 +273,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
 
   function updateSessionPreview(): void {
     const hashEl = sessionWrap.querySelector<HTMLElement>('#pol-doc-prev-hash')!;
-    const jsonEl = sessionWrap.querySelector<HTMLElement>('#pol-doc-prev-json')!;
+    const docEl = sessionWrap.querySelector<HTMLElement>('#pol-doc-prev-doc')!;
     const diffEl = sessionWrap.querySelector<HTMLElement>('#pol-doc-prev-diff')!;
     if (!baselineLoaded) {
       diffEl.textContent = 'Reading the applied document…';
@@ -282,14 +283,15 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     const merged = mergedFromForm();
     if (merged === null) {
       hashEl.textContent = '—';
-      jsonEl.textContent = '—';
+      docEl.textContent = '—';
       if (baselineLoaded && baselineBlocked === null) {
         diffEl.textContent = 'Fill in the template to see what would change.';
       }
       return;
     }
-    hashEl.textContent = docHash(merged);
-    jsonEl.textContent = canonicalJson(merged);
+    const hash = docHash(merged);
+    hashEl.textContent = hash;
+    docEl.innerHTML = renderDocPreviewHtml(summarizeDoc(merged, hash), canonicalJson(merged));
     // The diff's "before" side is the APPLIED doc — on a first apply that
     // is nothing, so everything (admin rule included) renders as new.
     diffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(isFirstApply ? null : baselineDoc, merged));
@@ -429,7 +431,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
             <span class="pol-field-label" style="text-transform:none;letter-spacing:0;">doc_hash</span>
             <code id="pol-adm-prev-hash" class="pol-mono">—</code>
           </div>
-          <pre id="pol-adm-prev-json" class="pol-mono" style="font-size:11px;line-height:1.5;margin:0;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-all;">—</pre>
+          <div id="pol-adm-prev-doc" class="mut" style="font-size:12.5px;">—</div>
         </div>
 
         <div id="pol-adm-errors" class="alert danger" role="alert" hidden style="margin-top:10px;"></div>
@@ -469,11 +471,11 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
 
   function updateAdminPreview(): void {
     const hashEl = adminWrap.querySelector<HTMLElement>('#pol-adm-prev-hash')!;
-    const jsonEl = adminWrap.querySelector<HTMLElement>('#pol-adm-prev-json')!;
+    const docEl = adminWrap.querySelector<HTMLElement>('#pol-adm-prev-doc')!;
     const diffEl = adminWrap.querySelector<HTMLElement>('#pol-adm-prev-diff')!;
     const showNone = (msg: string) => {
       hashEl.textContent = '—';
-      jsonEl.textContent = '—';
+      docEl.textContent = '—';
       diffEl.textContent = msg;
     };
     if (!baselineLoaded) return showNone('Reading the applied document…');
@@ -506,8 +508,9 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
         return showNone(e instanceof Error ? e.message : String(e));
       }
     }
-    hashEl.textContent = docHash(merged);
-    jsonEl.textContent = canonicalJson(merged);
+    const hash = docHash(merged);
+    hashEl.textContent = hash;
+    docEl.innerHTML = renderDocPreviewHtml(summarizeDoc(merged, hash), canonicalJson(merged));
     diffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(isFirstApply ? null : baselineDoc, merged));
   }
 

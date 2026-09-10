@@ -217,6 +217,59 @@ export function renderDocPolicy(
     ${model.rules.map((r) => docRuleCard(r, currentLedger)).join('')}`;
 }
 
+// --- Compact document preview ----------------------------------------------
+
+/**
+ * Render a document as a COMPACT, readable preview — for the builder's and
+ * delegate-doc's "document after this update" panels. Same display model as
+ * the inspector's full doc view (`summarizeDoc`), condensed: signer chips,
+ * one mini-card per rule (name, permission sentence, function/cap/expiry
+ * facts), and the canonical JSON tucked behind a details toggle rather than
+ * dumped raw. Pure string builder, no DOM.
+ */
+export function renderDocPreviewHtml(model: DocViewModel, canonical: string): string {
+  const signerChips = model.signers
+    .map(
+      (s) =>
+        `<span class="pol-chip" title="${esc(s.full)}">${s.kind === 'passkey' ? '🔑' : '👤'} "${esc(s.id)}" · ${esc(s.detail)}</span>`,
+    )
+    .join('');
+
+  const ruleCard = (r: DocRuleView): string => {
+    const facts: string[] = [];
+    if (r.functions !== null) {
+      facts.push(
+        `<span class="pol-preview-fact">Functions: ${r.functions.map((f) => `<code class="pol-mono">${esc(f)}</code>`).join(', ')}</span>`,
+      );
+    }
+    if (r.cap !== null) {
+      facts.push(
+        `<span class="pol-preview-fact">Cap: ${esc(r.cap.limit)} stroops / ${r.cap.periodLedgers.toLocaleString()} ledgers</span>`,
+      );
+    }
+    facts.push(
+      `<span class="pol-preview-fact">${r.notAfterLedger === null ? 'No expiry' : `Stops at ledger ${r.notAfterLedger.toLocaleString()}`}</span>`,
+    );
+    return `<article class="pol-preview-rule">
+      <div class="pol-preview-rule-head">
+        <strong>${esc(r.name)}</strong>
+        <span class="pol-badge">${esc(r.scopeLabel)}</span>
+      </div>
+      <p class="pol-preview-perm">${esc(r.permission)}</p>
+      <div class="pol-preview-facts">${facts.join('')}</div>
+    </article>`;
+  };
+
+  return `<div class="pol-preview">
+    <div class="pol-chips">${signerChips}</div>
+    ${model.rules.map(ruleCard).join('')}
+    <details class="pol-preview-raw">
+      <summary>Raw document JSON</summary>
+      <pre class="pol-mono">${esc(canonical)}</pre>
+    </details>
+  </div>`;
+}
+
 // --- Document-update diff --------------------------------------------------
 
 /**
