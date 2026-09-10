@@ -52,10 +52,8 @@ export type { NidoSigner, ScopedSessionKeyDocOptions } from './build.js';
 export { PROGRAM_VERSION, lowerDoc, signerDeclToChain, validateProgram } from './lower.js';
 export type { LowerOptions } from './lower.js';
 export { interpreterInstallParamsScVal, spendingLimitInstallParamsScVal } from './params.js';
-export { buildDocInstallTxs } from './txs.js';
-export type { BuildDocInstallArgs } from './txs.js';
-// SPIKE: one-tx apply_doc + the three-tier policy read (see each module's
-// docs; requires the apply_doc smart-account wasm).
+// SPIKE (doc-only): apply_doc is the sole policy write path — the per-rule
+// buildDocInstallTxs route is gone with the account's rule mutators.
 export { buildApplyDocTx } from './applyDoc.js';
 export type { ApplyDocTx, BuildApplyDocArgs } from './applyDoc.js';
 export { DOC_APPLIED_EVENT, readPolicy } from './readPolicy.js';

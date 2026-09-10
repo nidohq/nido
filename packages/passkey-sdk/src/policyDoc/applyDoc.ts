@@ -1,25 +1,19 @@
 /**
- * SPIKE: one-transaction document apply — the SDK half of the smart
- * account's hybrid `apply_doc` entry point (contracts/smart-account/src/
- * doc.rs), sitting NEXT TO `buildDocInstallTxs` (the per-rule multi-tx
- * install path), not replacing it.
+ * SPIKE (doc-only): the ONE apply route — the SDK half of the smart
+ * account's `apply_doc` entry point (contracts/smart-account/src/doc.rs),
+ * the account's sole policy write path.
  *
- * Where `buildDocInstallTxs` lowers the doc client-side and submits one
- * `add_context_rule` per rule, `buildApplyDocTx` submits the document
- * ITSELF: the contract cross-calls perch's stateless doc-compiler to
- * parse/validate/lower on-chain, installs the whole rule set atomically,
- * stores the canonical `doc_hash` AND the full canonical doc JSON
- * (readable via `get_applied_doc` — the lossless, no-indexer read), and
- * emits the doc JSON as a `DocApplied` event. The contract REFUSES
- * non-canonical bytes (`DocNotCanonical`); this builder always submits
- * `canonicalJson(doc)`, so stored == emitted == canonical and either copy
- * hashes straight to the stored identity.
- *
- * Deliberate scope cuts, mirrored from the contract:
- * - Capped docs are refused (`DocCapUnsupported` on-chain; refused here
- *   before any network round-trip) — nido lowers caps onto its stock
- *   spending-limit policy, whose address the account cannot derive
- *   in-contract. Capped docs keep the `buildDocInstallTxs` path.
+ * `buildApplyDocTx` submits the document ITSELF: the contract cross-calls
+ * perch's stateless doc-compiler to parse/validate/lower on-chain,
+ * atomically replaces the whole rule set (recovery rule excepted; capped
+ * rules attach the pinned stock spending-limit policy in-contract), stores
+ * the canonical `doc_hash` AND the full canonical doc JSON (readable via
+ * `get_applied_doc` — the lossless, no-indexer read), and emits the doc
+ * JSON as a `DocApplied` event. The contract REFUSES non-canonical bytes
+ * (`DocNotCanonical`); this builder always submits `canonicalJson(doc)`,
+ * so stored == emitted == canonical and either copy hashes straight to the
+ * stored identity. Anti-brick: the contract refuses documents without a
+ * policy-free self-admin rule (`DocAdminLockout`) — build docs with one.
  */
 
 import { Buffer } from 'buffer';
@@ -62,12 +56,6 @@ export async function buildApplyDocTx(
       `policyDoc: doc is bound to network "${doc.network}" but the apply targets "${networkPassphrase}"`,
     );
   }
-  if (doc.rules.some((r) => r.cap !== undefined)) {
-    throw new Error(
-      'policyDoc: apply_doc refuses capped docs (the contract cannot resolve the spending-limit policy); use buildDocInstallTxs for this document',
-    );
-  }
-
   const canonical = canonicalJson(doc);
   const client = new SmartAccountClient({
     contractId: args.account,

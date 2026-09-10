@@ -26,21 +26,7 @@ describe('buildApplyDocTx: pre-network refusals', () => {
     ).rejects.toThrow(/bound to network/);
   });
 
-  it('refuses capped docs, pointing at the buildDocInstallTxs path', async () => {
-    const doc = buildPolicyDoc({
-      signers: [OWNER],
-      permissions: [
-        {
-          name: 'capped-pay',
-          on: { contract: TARGET },
-          by: ['owner'],
-          functions: ['transfer'],
-          cap: { limit: '1000000', 'period-ledgers': 17280 },
-        },
-      ],
-    });
-    await expect(
-      buildApplyDocTx(doc, { account: ACCOUNT, rpcUrl: 'http://localhost:1' }),
-    ).rejects.toThrow(/capped docs/);
-  });
+  // DOC-ONLY: capped docs are no longer refused here — the contract lowers
+  // caps onto its pinned stock spending-limit policy in-contract, so a
+  // capped doc rides the same single apply_doc transaction.
 });

@@ -108,19 +108,14 @@ export async function buildOperation(
     }
 
     case "remove-context-rule": {
-      // Mirror: passkey-sdk/src/policyBlocks/scopedSessionKey.ts buildRevoke
-      // (~lines 44-55) which calls SmartAccountClient.remove_context_rule.
-      const client = new SmartAccountClient({
-        contractId: account,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        rpcUrl: RPC_URL,
-      });
-
-      const assembled = await client.remove_context_rule({
-        context_rule_id: d.ruleId,
-      });
-
-      return extractXdrOperations(assembled, "remove-context-rule")[0]!;
+      // DOC-ONLY (spike): the account no longer exports remove_context_rule
+      // — apply_doc is the sole policy write path. Revoking a rule means
+      // composing the account's current policy document WITHOUT it and
+      // applying that (readPolicy → edit doc → buildApplyDocTx), a flow this
+      // UI has not been rebuilt on yet.
+      throw new Error(
+        `doc-only: rule ${d.ruleId} cannot be removed per-rule; apply an updated policy document instead (buildApplyDocTx)`,
+      );
     }
   }
 }
