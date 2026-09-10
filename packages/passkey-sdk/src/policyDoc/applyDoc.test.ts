@@ -26,21 +26,8 @@ describe('buildApplyDocTx: pre-network refusals', () => {
     ).rejects.toThrow(/bound to network/);
   });
 
-  it('refuses capped docs — the deployed compiler predates cap lowering', async () => {
-    const doc = buildPolicyDoc({
-      signers: [OWNER],
-      permissions: [
-        {
-          name: 'capped-pay',
-          on: { contract: TARGET },
-          by: ['owner'],
-          functions: ['transfer'],
-          cap: { limit: '1000000', 'period-ledgers': 17280 },
-        },
-      ],
-    });
-    await expect(
-      buildApplyDocTx(doc, { account: ACCOUNT, rpcUrl: 'http://localhost:1' }),
-    ).rejects.toThrow(/does not support caps yet/);
-  });
+  // Caps are supported since perch's cap-capable compiler 0.2.1 — a capped
+  // doc rides the same single apply_doc transaction (the contract attaches
+  // the pinned stock spending-limit policy in-contract; proven in the Rust
+  // e2e against the fetched 0.2.1 build).
 });

@@ -79,12 +79,9 @@ pub enum NidoSmartAccountError {
     // refusal; 11–15 mirror perch's `DocCompilerError` variants 1–5 (offset
     // +10 so the two error spaces can't collide in this contract's codes);
     // 16 is the fail-closed cross-call fallback. ---
-    /// The document carries a cumulative spend cap, which the DEPLOYED
-    /// canonical compiler refuses (`CapUnsupported` — it predates perch's
-    /// cap lowering; see `doc.rs`'s wire-type note). Relayed here so the
-    /// wallet gets a typed refusal. In-contract cap support returns when
-    /// perch publishes the cap-capable compiler and the pins/types bump.
-    DocCapUnsupported = 10,
+    // 10 was `DocCapUnsupported` (twice: the hybrid cut's own refusal,
+    // then the relay of the pre-cap deployed compiler's `CapUnsupported`).
+    // Compiler 0.2.1 lowers caps, so the code is retired again.
     /// Compiler: the submitted document bytes are not UTF-8.
     DocNotUtf8 = 11,
     /// Compiler: the document failed fail-closed parsing.

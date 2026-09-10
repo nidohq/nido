@@ -11,19 +11,20 @@
 //! stored on-chain / event emitted → round-trip the doc through the
 //! `get_applied_doc` view and the event → canonical-hash parity passes.
 //! Plus: re-apply replaces the previous doc's rules wholesale, capped docs
-//! are refused by the DEPLOYED compiler (`CapUnsupported` — it predates
-//! perch's cap lowering), the anti-brick check refuses admin-less docs, and
-//! non-canonical and wrong-network submissions are refused. The doc-only SURFACE (legacy
+//! install the interpreter AND the pinned spending-limit policy (compiler
+//! 0.2.1), the anti-brick check refuses admin-less docs, and non-canonical
+//! and wrong-network submissions are refused. The doc-only SURFACE (legacy
 //! mutators absent, `add_context_rule` gated to the completion window) is
 //! covered by the smart-account crate's unit tests.
 
 use nido_integration_tests::{
     deploy_smart_account, PERCH_DOC_COMPILER_WASM, PERCH_INTERPRETER_WASM,
+    SPENDING_LIMIT_POLICY_WASM,
 };
 use nido_smart_account::contract::NidoSmartAccountError;
 use nido_smart_account::doc::{
-    compiler_address, interpreter_address, DocApplied, PERCH_DOC_COMPILER_WASM_HASH,
-    PERCH_INTERPRETER_WASM_HASH,
+    compiler_address, interpreter_address, DocApplied, NIDO_SPENDING_LIMIT_POLICY,
+    PERCH_DOC_COMPILER_WASM_HASH, PERCH_INTERPRETER_WASM_HASH,
 };
 use sha2::{Digest, Sha256};
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
@@ -42,13 +43,21 @@ fn bind_testnet(env: &Env) {
 /// Register the DEPLOYED perch compiler + interpreter — the fetched
 /// on-chain BYTES, not native source-rev contracts — at the content
 /// addresses the account's `doc.rs` derives (network-dependent, so this
-/// must run AFTER [`bind_testnet`]). Returns `(compiler, interpreter)`.
-fn register_infra(env: &Env) -> (Address, Address) {
+/// must run AFTER [`bind_testnet`]), plus nido's stock spending-limit
+/// policy at its pinned deployed address (capped rules attach it).
+/// Returns `(compiler, interpreter, spending_limit)`.
+fn register_infra(env: &Env) -> (Address, Address, Address) {
     let compiler = compiler_address(env);
     env.register_at(&compiler, PERCH_DOC_COMPILER_WASM, ());
     let interpreter = interpreter_address(env);
     env.register_at(&interpreter, PERCH_INTERPRETER_WASM, ());
-    (compiler, interpreter)
+    let spending_limit = Address::from_str(env, NIDO_SPENDING_LIMIT_POLICY);
+    env.register_at(
+        &spending_limit,
+        SPENDING_LIMIT_POLICY_WASM,
+        (Address::generate(env),),
+    );
+    (compiler, interpreter, spending_limit)
 }
 
 /// LIVE-SHAPE guard: the committed fixture bytes ARE the deployed builds
@@ -153,7 +162,7 @@ fn apply_doc_replaces_rule_set_stores_doc_and_emits_recoverable_doc() {
     let env = Env::default();
     env.mock_all_auths();
     bind_testnet(&env);
-    let (_compiler, interpreter) = register_infra(&env);
+    let (_compiler, interpreter, _spending_limit) = register_infra(&env);
     let (client, account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
 
     let target = addr_str(&Address::generate(&env));
@@ -279,19 +288,16 @@ fn reapply_replaces_the_whole_rule_set() {
     );
 }
 
-/// Capped docs are REFUSED by the DEPLOYED canonical compiler
-/// (`CapUnsupported` — it predates perch's cap lowering), relayed as
-/// `DocCapUnsupported`. Proven here against the fetched on-chain build:
-/// the same doc compiled fine under perch's newer SOURCE rev, which is
-/// exactly the skew that trapped live `apply_doc`. Nothing changes on
-/// refusal. (In-contract cap install returns when perch publishes the
-/// cap-capable compiler; the branch history has the lowering.)
+/// Caps are LIVE (compiler 0.2.1): a capped rule installs the interpreter
+/// AND nido's stock spending-limit policy (at its pinned deployed address)
+/// on the same context rule — OZ enforces both (AND). Proven against the
+/// fetched 0.2.1 on-chain build.
 #[test]
-fn capped_doc_is_refused_by_deployed_compiler() {
+fn capped_doc_installs_spending_limit_beside_interpreter() {
     let env = Env::default();
     env.mock_all_auths();
     bind_testnet(&env);
-    register_infra(&env);
+    let (_compiler, interpreter, spending_limit) = register_infra(&env);
     let (client, _account_addr, verifier_addr, signing_key) = deploy_smart_account(&env);
 
     let target = addr_str(&Address::generate(&env));
@@ -317,13 +323,17 @@ fn capped_doc_is_refused_by_deployed_compiler() {
         key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes()),
     );
 
-    assert_doc_error(
-        client.try_apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes())),
-        NidoSmartAccountError::DocCapUnsupported,
+    client.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes()));
+
+    let capped = client.get_context_rule(&2);
+    assert_eq!(capped.name, SString::from_str(&env, "capped-pay"));
+    assert_eq!(
+        capped.policies.len(),
+        2,
+        "a capped rule attaches the interpreter AND the spending-limit policy"
     );
-    assert_eq!(client.get_context_rules_count(), 1);
-    assert_eq!(client.applied_doc_hash(), None);
-    assert_eq!(client.get_applied_doc(), None);
+    assert!(capped.policies.iter().any(|p| p == interpreter));
+    assert!(capped.policies.iter().any(|p| p == spending_limit));
 }
 
 /// The re-imported anti-brick check: a document with no policy-free
