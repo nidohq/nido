@@ -165,30 +165,9 @@ export function upsertSessionRule(
   networkPassphrase: string,
 ): { doc: PolicyDoc; signerId: string } {
   const template = draftToDoc(draft, networkPassphrase);
-  if (current.network !== undefined && current.network !== networkPassphrase) {
-    throw new Error(
-      `policy doc: the applied document is bound to "${current.network}" but this update targets "${networkPassphrase}"`,
-    );
-  }
+  assertSameNetwork(current, networkPassphrase);
 
-  const newSigner = template.signers[0];
-  const newKey = 'address' in newSigner ? `delegated:${newSigner.address}` : `external:${newSigner.verifier}:${newSigner.key}`;
-  const keyOf = (s: (typeof current.signers)[number]) =>
-    'address' in s ? `delegated:${s.address}` : `external:${s.verifier}:${s.key}`;
-
-  const sameKey = current.signers.find((s) => keyOf(s) === newKey);
-  let signerId: string;
-  let signers: PolicyDoc['signers'];
-  if (sameKey !== undefined) {
-    signerId = sameKey.id;
-    signers = [...current.signers];
-  } else {
-    const taken = new Set(current.signers.map((s) => s.id));
-    signerId = newSigner.id;
-    for (let n = 2; taken.has(signerId); n++) signerId = `${newSigner.id}-${n}`;
-    signers = [...current.signers, { ...newSigner, id: signerId }];
-  }
-
+  const { signers: merged, signerId } = mergeSignerDecl(current.signers, template.signers[0]);
   const rule = {
     ...template.rules[0],
     principals: { type: 'all' as const, signers: [signerId] },
@@ -197,21 +176,208 @@ export function upsertSessionRule(
     ? current.rules.map((r) => (r.name === rule.name ? rule : r))
     : [...current.rules, rule];
 
-  // Prune declarations no rule references any more (e.g. the sole signer of
-  // a rule this upsert replaced).
+  return { doc: rebuildDoc(current, merged, rules, networkPassphrase), signerId };
+}
+
+// --- Shared doc-merge helpers ----------------------------------------------
+
+type WireSigner = PolicyDoc['signers'][number];
+type WireRule = PolicyDoc['rules'][number];
+
+function assertSameNetwork(doc: PolicyDoc, networkPassphrase: string): void {
+  if (doc.network !== undefined && doc.network !== networkPassphrase) {
+    throw new Error(
+      `policy doc: the applied document is bound to "${doc.network}" but this update targets "${networkPassphrase}"`,
+    );
+  }
+}
+
+/** Structural identity of a signer declaration (id excluded). */
+function signerKeyOf(s: WireSigner): string {
+  return 'address' in s ? `delegated:${s.address}` : `external:${s.verifier}:${s.key}`;
+}
+
+/** Merge one declaration into a signer list: reuse an existing declaration
+ *  for the SAME key; on an id collision with a DIFFERENT key allocate
+ *  "<id>-2", "<id>-3", …. */
+function mergeSignerDecl(
+  signers: readonly WireSigner[],
+  decl: WireSigner,
+): { signers: WireSigner[]; signerId: string } {
+  const sameKey = signers.find((s) => signerKeyOf(s) === signerKeyOf(decl));
+  if (sameKey !== undefined) return { signers: [...signers], signerId: sameKey.id };
+  const taken = new Set(signers.map((s) => s.id));
+  let signerId = decl.id;
+  for (let n = 2; taken.has(signerId); n++) signerId = `${decl.id}-${n}`;
+  return { signers: [...signers, { ...decl, id: signerId }], signerId };
+}
+
+/** Drop declarations no rule references, then re-validate through the
+ *  schema so a malformed merge fails closed here, not at the compiler. */
+function rebuildDoc(
+  base: PolicyDoc,
+  signers: readonly WireSigner[],
+  rules: readonly WireRule[],
+  networkPassphrase: string,
+): PolicyDoc {
   const referenced = new Set(
     rules.flatMap((r) => (r.principals.type === 'self-authenticating' ? [] : r.principals.signers)),
   );
-  signers = signers.filter((s) => referenced.has(s.id));
-
-  // Re-validate through the schema so a malformed merge fails closed here,
-  // not at the compiler.
-  const doc = parsePolicyDoc({
-    ...current,
+  return parsePolicyDoc({
+    ...base,
     network: networkPassphrase,
-    signers,
+    signers: signers.filter((s) => referenced.has(s.id)),
     rules,
   });
-  return { doc, signerId };
+}
+
+// --- Admin keys -------------------------------------------------------------
+
+/** An ADMIN rule is the anti-brick shape: policy-free, cap-free self-admin
+ *  authority (bare `all` principals, no functions, no args, no cap, no
+ *  expiry — full account authority for its signer). */
+export function isAdminRule(rule: WireRule): boolean {
+  return (
+    rule.scope.type === 'self-admin' &&
+    rule.principals.type === 'all' &&
+    rule.functions === undefined &&
+    rule.args === undefined &&
+    rule.cap === undefined &&
+    rule['not-after-ledger'] === undefined
+  );
+}
+
+/** The document's admin rules, in doc order. */
+export function adminRules(doc: PolicyDoc): WireRule[] {
+  return doc.rules.filter(isAdminRule);
+}
+
+/** Next free "admin-N" rule name for the add form's default. */
+export function nextAdminRuleName(doc: PolicyDoc): string {
+  const taken = new Set(doc.rules.map((r) => r.name));
+  if (!taken.has('admin')) return 'admin';
+  for (let n = 2; ; n++) {
+    if (!taken.has(`admin-${n}`)) return `admin-${n}`;
+  }
+}
+
+/** The new admin signer: a passkey (WebAuthn ceremony or pasted key) or a
+ *  delegated address. */
+export interface AdminKeyDraft {
+  /** Rule name for the new admin rule. */
+  name: string;
+  signer:
+    | { kind: 'passkey'; verifier: string; publicKeyHex: string }
+    | { kind: 'delegated'; address: string };
+}
+
+export function validateAdminKeyDraft(draft: AdminKeyDraft, base: PolicyDoc): DocValidationResult {
+  const errors: string[] = [];
+
+  const name = draft.name.trim();
+  if (name.length === 0) errors.push('Give the admin rule a name.');
+  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_LEN) {
+    errors.push(`Name must be at most ${MAX_RULE_NAME_LEN} bytes.`);
+  } else if (base.rules.some((r) => r.name === name)) {
+    // Never silently REPLACE an existing rule from the admin form — a
+    // colliding name must be an explicit error, not a surprise overwrite.
+    errors.push(`The document already has a rule named "${name}" — pick another name.`);
+  }
+
+  if (draft.signer.kind === 'delegated') {
+    if (!isStellarAddress(draft.signer.address.trim())) {
+      errors.push('Admin key is not a valid C- or G-address.');
+    }
+  } else {
+    if (!isContractAddress(draft.signer.verifier.trim())) {
+      errors.push('Verifier is not a valid C-address.');
+    }
+    if (!/^[0-9a-fA-F]{2,512}$/.test(draft.signer.publicKeyHex.trim()) || draft.signer.publicKeyHex.trim().length % 2 !== 0) {
+      errors.push('Public key is not valid hex.');
+    }
+  }
+
+  // Refuse enrolling a key that already holds admin authority.
+  if (errors.length === 0) {
+    const decl = adminDraftToDecl(draft, 'probe');
+    const existing = base.signers.find((s) => signerKeyOf(s) === signerKeyOf(decl));
+    if (
+      existing !== undefined &&
+      adminRules(base).some(
+        (r) => r.principals.type !== 'self-authenticating' && r.principals.signers.includes(existing.id),
+      )
+    ) {
+      errors.push('This key is already an admin on the account.');
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+function adminDraftToDecl(draft: AdminKeyDraft, id: string): WireSigner {
+  return draft.signer.kind === 'delegated'
+    ? { id, address: draft.signer.address.trim() }
+    : {
+        id,
+        verifier: draft.signer.verifier.trim(),
+        key: draft.signer.publicKeyHex.trim().toLowerCase(),
+      };
+}
+
+/**
+ * Add an admin key: the signer declaration plus its own policy-free
+ * self-admin rule (each admin key gets its OWN rule — `all` principals are
+ * N-of-N, so sharing one rule would require both keys to co-sign).
+ * Precondition: `validateAdminKeyDraft(draft, base).ok`.
+ */
+export function addAdminKey(
+  base: PolicyDoc,
+  draft: AdminKeyDraft,
+  networkPassphrase: string,
+): { doc: PolicyDoc; signerId: string } {
+  assertSameNetwork(base, networkPassphrase);
+  const { signers, signerId } = mergeSignerDecl(base.signers, adminDraftToDecl(draft, 'admin'));
+  const rule: WireRule = {
+    name: draft.name.trim(),
+    scope: { type: 'self-admin' },
+    principals: { type: 'all', signers: [signerId] },
+  };
+  return {
+    doc: rebuildDoc(base, signers, [...base.rules, rule], networkPassphrase),
+    signerId,
+  };
+}
+
+/**
+ * Remove an admin rule (and prune its signer if nothing else references
+ * it). Refuses to remove the LAST admin rule — the contract's
+ * `DocAdminLockout` anti-brick check would reject the document anyway, so
+ * the refusal surfaces here with a human-readable reason instead of a
+ * failed simulation.
+ */
+export function removeAdminRule(
+  base: PolicyDoc,
+  ruleName: string,
+  networkPassphrase: string,
+): PolicyDoc {
+  assertSameNetwork(base, networkPassphrase);
+  const target = base.rules.find((r) => r.name === ruleName);
+  if (target === undefined) {
+    throw new Error(`policy doc: no rule named "${ruleName}"`);
+  }
+  if (!isAdminRule(target)) {
+    throw new Error(`policy doc: rule "${ruleName}" is not an admin rule`);
+  }
+  if (adminRules(base).length <= 1) {
+    throw new Error(
+      'policy doc: cannot remove the last admin key — the account would have no admin authority (the contract refuses such documents)',
+    );
+  }
+  return rebuildDoc(
+    base,
+    base.signers,
+    base.rules.filter((r) => r.name !== ruleName),
+    networkPassphrase,
+  );
 }
 

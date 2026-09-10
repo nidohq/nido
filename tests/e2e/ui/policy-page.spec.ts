@@ -57,6 +57,21 @@ test.describe('policy page — UI only (no chain) @fast', () => {
     await expect(page.locator('#pol-doc-errors')).toContainText('Target contract');
   });
 
+  test('the admin-keys tab mounts and fails closed without a baseline @fast', async ({ page }) => {
+    await page.goto(POLICY_URL, { waitUntil: 'networkidle' });
+    await expect(page.locator('#pol-tab-admin')).toBeVisible();
+
+    await page.locator('#pol-tab-admin').click();
+    // The add form and the new-passkey/paste choice render; the session
+    // form hides while the admin tab is active.
+    await expect(page.locator('input[name="adm-name"]')).toBeVisible();
+    await expect(page.locator('input[name="adm-source"][value="new-passkey"]')).toBeChecked();
+    await expect(page.locator('input[name="doc-signer"]')).toBeHidden();
+    // Doc-only writes fail closed offline: the what-changes panel carries
+    // the baseline refusal, same as the session tab.
+    await expect(page.locator('#pol-adm-prev-diff')).toContainText('no policy-document surface');
+  });
+
   test('the builder fails closed when the policy baseline is unreadable @fast', async ({ page }) => {
     await page.goto(POLICY_URL, { waitUntil: 'networkidle' });
     await expect(page.locator('input[name="doc-signer"]')).toBeVisible();
