@@ -118,7 +118,8 @@ import Icon from '../../../components/Icon.astro';
 
 <script>
   import { rpc } from '@stellar/stellar-sdk';
-  import { contractIdFromHostname, isContractId } from '@nidohq/passkey-sdk';
+  import { canonicalJson, contractIdFromHostname, isContractId } from '@nidohq/passkey-sdk';
+  import { toast } from '../../../lib/toast.js';
   import { RPC_URL } from '../../../lib/network.js';
   import { fetchAllChainRules, fetchRegistryAddress } from '../../../lib/policyChainFetch.js';
   import { readDocPolicy } from '../../../lib/policy/docPolicyFetch.js';
@@ -179,9 +180,19 @@ import Icon from '../../../components/Icon.astro';
         const docRead = await readDocPolicy(account!, rules);
         const { result } = docRead;
         if (result.tier === 'doc-verified' && result.doc && result.docHash) {
+          // Regenerating the canonical form from the verified doc yields
+          // exactly the stored bytes (hash-checked by readPolicy).
+          const canonical = canonicalJson(result.doc);
           renderDocPolicy(docEl, summarizeDoc(result.doc, result.docHash), {
             currentLedger: ledger,
             source: docRead.docSource,
+            canonicalJson: canonical,
+          });
+          document.getElementById('pol-doc-copy-json')?.addEventListener('click', () => {
+            navigator.clipboard.writeText(canonical).then(
+              () => toast('Canonical document JSON copied.'),
+              () => toast('Copy failed — select the JSON manually.'),
+            );
           });
           docSectionEl.hidden = false;
           rulesHeadingEl.textContent = 'On-chain rules (raw)';

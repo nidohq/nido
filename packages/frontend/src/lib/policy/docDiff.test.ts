@@ -92,7 +92,7 @@ describe('renderDocDiffHtml', () => {
 
     const draft: SessionDocDraft = {
       name: 'session',
-      sessionAddress: G2,
+      signer: { kind: 'delegated' as const, address: G2 },
       targetContract: TARGET2,
       functionsInput: '',
       notAfterLedger: null,
@@ -128,7 +128,7 @@ describe('diffRuleFields', () => {
 describe('upsertSessionRule', () => {
   const draft: SessionDocDraft = {
     name: 'session',
-    sessionAddress: G2,
+    signer: { kind: 'delegated' as const, address: G2 },
     targetContract: TARGET2,
     functionsInput: 'udpate_message',
     notAfterLedger: 700,
@@ -169,7 +169,7 @@ describe('upsertSessionRule', () => {
   it('reuses an existing declaration for the same key', () => {
     const { doc, signerId } = upsertSessionRule(
       baseDoc,
-      { ...draft, sessionAddress: G1 },
+      { ...draft, signer: { kind: 'delegated' as const, address: G1 } },
       Networks.TESTNET,
     );
     expect(signerId).toBe('ops');
@@ -181,7 +181,7 @@ describe('upsertSessionRule', () => {
     // different key: the old declaration must not linger unreferenced.
     const first = upsertSessionRule(baseDoc, draft, Networks.TESTNET).doc;
     const G3 = 'GCS7RFDDWSU2S2KYWEZDGHDGYUHM2VZWMCDTFP7ZS3MK7RY2VUXQ5D67';
-    const second = upsertSessionRule(first, { ...draft, sessionAddress: G3 }, Networks.TESTNET);
+    const second = upsertSessionRule(first, { ...draft, signer: { kind: 'delegated' as const, address: G3 } }, Networks.TESTNET);
     expect(second.signerId).toBe('session-2');
     expect(second.doc.signers.map((s) => s.id)).toEqual(['owner', 'ops', 'session-2']);
     const d = diffPolicyDocs(first, second.doc);

@@ -138,6 +138,7 @@ import Icon from '../../../components/Icon.astro';
   import {
     DOC_DURATIONS,
     DOC_DURATION_LABEL,
+    buildSessionGrantOperation,
     parseDocDelegateParams,
   } from '../../../lib/policy/docRequest.js';
   import {
@@ -298,7 +299,7 @@ import Icon from '../../../components/Icon.astro';
     }
     return {
       name: req.label,
-      sessionAddress: req.signer,
+      signer: { kind: 'delegated', address: req.signer },
       targetContract: req.target,
       functionsInput: req.functions?.join(', ') ?? '',
       notAfterLedger: notAfterFromControls(),
@@ -411,18 +412,17 @@ import Icon from '../../../components/Icon.astro';
         approveBtn.disabled = false;
         return;
       }
-      const { doc } = upsertSessionRule(baselineDoc, draft, NETWORK_PASSPHRASE);
-
       const signReq: SignRequest = {
         v: 1,
         kind: 'session-grant',
         account,
-        operation: {
-          type: 'apply-policy-doc',
-          docJson: canonicalJson(doc),
-          ...(isFirstApply ? {} : { prevDocJson: canonicalJson(baselineDoc) }),
+        operation: buildSessionGrantOperation({
+          baseline: baselineDoc,
+          isFirstApply,
+          draft,
+          networkPassphrase: NETWORK_PASSPHRASE,
           expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
-        },
+        }),
         title: 'Grant a session key',
         subtitle: `${req.origin} wants a scoped session key.`,
         submitMode: 'relayer',

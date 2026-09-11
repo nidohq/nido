@@ -16,11 +16,17 @@ import { isContractAddress, isStellarAddress, MAX_RULE_NAME_LEN } from './policy
  *  real message instead of a doomed simulation. */
 const FN_NAME_RE = /^[A-Za-z0-9_]{1,32}$/;
 
+/** The session signer: a delegated address the dApp holds, or a WebAuthn
+ *  passkey (the dApp-origin session passkey of the legacy delegate flow). */
+export type SessionSignerDraft =
+  | { kind: 'delegated'; address: string }
+  | { kind: 'passkey'; verifier: string; publicKeyHex: string };
+
 export interface SessionDocDraft {
   /** Rule name (becomes the doc rule's name — shown losslessly on read). */
   name: string;
-  /** The delegated session signer (G… account or C… contract strkey). */
-  sessionAddress: string;
+  /** The session signer the rule authorizes. */
+  signer: SessionSignerDraft;
   /** The one contract the key may call. */
   targetContract: string;
   /** Raw comma/space-separated function-name input; empty = any function. */
@@ -55,8 +61,18 @@ export function validateSessionDocDraft(draft: SessionDocDraft): DocValidationRe
     errors.push(`Name must be at most ${MAX_RULE_NAME_LEN} bytes.`);
   }
 
-  if (!isStellarAddress(draft.sessionAddress.trim())) {
-    errors.push('Session key is not a valid C- or G-address.');
+  if (draft.signer.kind === 'delegated') {
+    if (!isStellarAddress(draft.signer.address.trim())) {
+      errors.push('Session key is not a valid C- or G-address.');
+    }
+  } else {
+    if (!isContractAddress(draft.signer.verifier.trim())) {
+      errors.push('Session-key verifier is not a valid C-address.');
+    }
+    const hex = draft.signer.publicKeyHex.trim();
+    if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0 || hex.length === 0) {
+      errors.push('Session public key is not valid hex.');
+    }
   }
   if (!isContractAddress(draft.targetContract.trim())) {
     errors.push('Target contract is not a valid C-address.');
@@ -90,26 +106,54 @@ export function validateSessionDocDraft(draft: SessionDocDraft): DocValidationRe
   return { ok: errors.length === 0, errors };
 }
 
-/** Build the template document from a validated draft.
+/** Build the template document from a validated draft. Delegated signers
+ *  route through the SDK's canned scopedSessionKeyDoc; passkey signers (the
+ *  legacy delegate flow's dApp-origin session passkey) compose the same
+ *  one-rule shape via buildPolicyDoc with an external signer declaration.
  *  Precondition: `validateSessionDocDraft(draft).ok`. */
 export function draftToDoc(draft: SessionDocDraft, networkPassphrase: string): PolicyDoc {
   const functions = parseFunctionsInput(draft.functionsInput);
-  return scopedSessionKeyDoc({
-    sessionAddress: draft.sessionAddress.trim(),
-    targetContract: draft.targetContract.trim(),
-    ...(functions !== undefined ? { functions } : {}),
-    ...(draft.notAfterLedger !== null ? { notAfterLedger: draft.notAfterLedger } : {}),
-    ...(draft.cap !== null
-      ? {
-          cap: {
-            limitStroops: BigInt(draft.cap.stroops),
-            periodLedgers: draft.cap.periodLedgers,
-          },
-        }
-      : {}),
+  if (draft.signer.kind === 'delegated') {
+    return scopedSessionKeyDoc({
+      sessionAddress: draft.signer.address.trim(),
+      targetContract: draft.targetContract.trim(),
+      ...(functions !== undefined ? { functions } : {}),
+      ...(draft.notAfterLedger !== null ? { notAfterLedger: draft.notAfterLedger } : {}),
+      ...(draft.cap !== null
+        ? {
+            cap: {
+              limitStroops: BigInt(draft.cap.stroops),
+              periodLedgers: draft.cap.periodLedgers,
+            },
+          }
+        : {}),
+      network: networkPassphrase,
+      name: draft.name.trim(),
+      signerId: 'session',
+    });
+  }
+  return buildPolicyDoc({
     network: networkPassphrase,
-    name: draft.name.trim(),
-    signerId: 'session',
+    signers: [
+      {
+        id: 'session',
+        kind: 'passkey',
+        verifier: draft.signer.verifier.trim(),
+        publicKey: draft.signer.publicKeyHex.trim().toLowerCase(),
+      },
+    ],
+    permissions: [
+      {
+        name: draft.name.trim(),
+        on: { contract: draft.targetContract.trim() },
+        by: ['session'],
+        ...(functions !== undefined ? { functions } : {}),
+        ...(draft.notAfterLedger !== null ? { until: draft.notAfterLedger } : {}),
+        ...(draft.cap !== null
+          ? { cap: { limit: draft.cap.stroops, 'period-ledgers': draft.cap.periodLedgers } }
+          : {}),
+      },
+    ],
   });
 }
 

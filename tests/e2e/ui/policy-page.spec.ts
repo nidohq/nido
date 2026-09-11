@@ -90,6 +90,36 @@ test.describe('policy page — UI only (no chain) @fast', () => {
   });
 });
 
+test.describe('delegate page (passkey grant, doc-only) — UI only (no chain) @fast', () => {
+  const PUBKEY = '04' + 'b0'.repeat(64);
+
+  test('rejects an invalid session public key @fast', async ({ page }) => {
+    await page.goto(
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate/` +
+        `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&pubkey=nope` +
+        `&duration=24h&return=https%3A%2F%2Fdapp.example%2F`,
+      { waitUntil: 'networkidle' },
+    );
+    await expect(page.locator('#status')).toContainText('Invalid session public key');
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+
+  test('renders a well-formed request but fails closed without the doc baseline @fast', async ({ page }) => {
+    await page.goto(
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate/` +
+        `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&pubkey=${PUBKEY}` +
+        `&duration=24h&return=https%3A%2F%2Fdapp.example%2Fpage`,
+      { waitUntil: 'networkidle' },
+    );
+    await expect(page.locator('#origin-text')).toHaveText('https://dapp.example');
+    await expect(page.locator('#pubkey-text')).toHaveText(PUBKEY);
+    // Doc-only: the passkey grant is a document update too — no baseline,
+    // no grant (this page must never fall back to add_context_rule).
+    await expect(page.locator('#status')).toContainText('cannot accept this request');
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+});
+
 test.describe('delegate-doc page — UI only (no chain) @fast', () => {
   test('rejects a request with a missing origin @fast', async ({ page }) => {
     await page.goto(

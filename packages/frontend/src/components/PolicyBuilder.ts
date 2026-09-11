@@ -250,7 +250,10 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     }
     return {
       name: q<HTMLInputElement>('input[name="doc-name"]')?.value ?? '',
-      sessionAddress: q<HTMLInputElement>('input[name="doc-signer"]')?.value.trim() ?? '',
+      signer: {
+        kind: 'delegated',
+        address: q<HTMLInputElement>('input[name="doc-signer"]')?.value.trim() ?? '',
+      },
       targetContract: q<HTMLInputElement>('input[name="doc-contract"]')?.value.trim() ?? '',
       functionsInput: q<HTMLInputElement>('input[name="doc-functions"]')?.value ?? '',
       notAfterLedger,

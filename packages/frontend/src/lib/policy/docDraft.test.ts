@@ -26,7 +26,7 @@ const G2 = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
 function draft(overrides: Partial<SessionDocDraft> = {}): SessionDocDraft {
   return {
     name: 'status-session',
-    sessionAddress: SESSION_G,
+    signer: { kind: 'delegated' as const, address: SESSION_G },
     targetContract: TARGET,
     functionsInput: 'update_message',
     notAfterLedger: 5000,
@@ -51,7 +51,7 @@ describe('validateSessionDocDraft', () => {
 
   it('rejects a bad session address, target, and function name', () => {
     const r = validateSessionDocDraft(
-      draft({ sessionAddress: 'nope', targetContract: 'also-no', functionsInput: 'bad-fn!' }),
+      draft({ signer: { kind: 'delegated' as const, address: 'nope' }, targetContract: 'also-no', functionsInput: 'bad-fn!' }),
     );
     expect(r.ok).toBe(false);
     expect(r.errors).toHaveLength(3);
@@ -104,7 +104,7 @@ describe('admin keys', () => {
     baseline,
     {
       name: 'session',
-      sessionAddress: SESSION_G,
+      signer: { kind: 'delegated' as const, address: SESSION_G },
       targetContract: TARGET,
       functionsInput: 'udpate_message',
       notAfterLedger: 900,
@@ -204,5 +204,34 @@ describe('admin keys', () => {
       );
       expect(() => removeAdminRule(twoAdmins, 'ghost', Networks.TESTNET)).toThrow(/no rule named/);
     });
+  });
+});
+
+describe('passkey session signers (legacy delegate flow)', () => {
+  const draft: SessionDocDraft = {
+    name: 'session-key',
+    signer: { kind: 'passkey', verifier: VERIFIER, publicKeyHex: '04' + 'b0'.repeat(64) },
+    targetContract: TARGET,
+    functionsInput: '',
+    notAfterLedger: null,
+    cap: null,
+  };
+
+  it('validates and builds an external-signer session doc', () => {
+    expect(validateSessionDocDraft(draft)).toEqual({ ok: true, errors: [] });
+    const doc = draftToDoc(draft, Networks.TESTNET);
+    expect(doc.signers).toEqual([
+      { id: 'session', verifier: VERIFIER, key: '04' + 'b0'.repeat(64) },
+    ]);
+    expect(doc.rules[0].name).toBe('session-key');
+  });
+
+  it('rejects a bad verifier and non-hex key', () => {
+    const r = validateSessionDocDraft({
+      ...draft,
+      signer: { kind: 'passkey', verifier: 'nope', publicKeyHex: 'zz' },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors).toHaveLength(2);
   });
 });

@@ -10,11 +10,11 @@
  *     REGISTRY_FALLBACKS["name-registry"] address when the RPC is unreachable,
  *     so buildOperation returns a valid xdr.Operation without any mock needed.
  *
- *   - `add-context-rule` / `remove-context-rule`: SmartAccountClient.add_context_rule
- *     and .remove_context_rule call simulateTransaction against RPC, which will
- *     fail in jsdom. These branches are verified by code inspection and covered
- *     indirectly through integration tests — they are NOT unit-tested here
- *     (no vi.stubGlobal fetch mock exists for them).
+ *   - `add-context-rule` / `remove-context-rule`: DOC-ONLY — both branches
+ *     THROW offline (the account has no general rule mutators), which IS
+ *     the unit-tested behavior below: the regression guard against the
+ *     legacy delegate flow emitting a per-rule install (the live
+ *     Error(Contract, #19) failure).
  *
  *   - `transfer`: buildSendOperation is pure (no network), so the round-trip
  *     test runs without any mock.
@@ -73,6 +73,31 @@ describe("buildOperation", () => {
       );
       const summary = describeOperation(op);
       expect(summary).toMatchObject({ kind: "transfer", amount: 99999999999n });
+    });
+  });
+
+  describe("doc-only guards (regression: no legacy mutator escapes)", () => {
+    it("refuses the add-context-rule descriptor with doc-only guidance", async () => {
+      await expect(
+        buildOperation(
+          {
+            type: "add-context-rule",
+            target: TOKEN,
+            signerPublicKeyHex: "04" + "b0".repeat(64),
+            verifierAddress: TO,
+            validUntil: 5145276,
+            limit: null,
+            label: "session-key",
+          },
+          C1,
+        ),
+      ).rejects.toThrow(/doc-only.*apply_doc/);
+    });
+
+    it("refuses the remove-context-rule descriptor with doc-only guidance", async () => {
+      await expect(
+        buildOperation({ type: "remove-context-rule", ruleId: 3, target: TOKEN }, C1),
+      ).rejects.toThrow(/doc-only/);
     });
   });
 

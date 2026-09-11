@@ -1,10 +1,25 @@
 ---
-// Nido reskin of the session-key delegation approval page. The ENTIRE <script>
-// is preserved verbatim from the BaseLayout version — including the origin /
-// return-URL validation (anti-redirect-abuse) which is copied VERBATIM — and all
-// element IDs and query-param names (origin, target, pubkey, duration, return)
-// are unchanged. Only the shell, markup and copy are reskinned to Nido voice
-// ("an app wants to act on your behalf").
+// The session-key delegation approval page ("an app wants to act on your
+// behalf"): a dApp created a WebAuthn passkey at ITS origin and asks for it
+// to be allowed on one contract, time-boxed, optionally spend-capped.
+//
+// DOC-ONLY: the account has no rule mutators — a grant is a policy-DOCUMENT
+// update. This page reads the account's currently applied document, upserts
+// a "session-key" rule for the dApp's passkey into it (re-delegation
+// REPLACES the same-named rule — the diff shows it as modified), previews
+// the merged document (readable rule cards, doc_hash, raw JSON behind a
+// toggle) AND the exact diff against the applied one, then hands off to
+// /sign/ with an apply-policy-doc descriptor built by the shared
+// buildSessionGrantOperation helper. It must NEVER emit add_context_rule:
+// the doc-only contract refuses that outside the recovery-completion window
+// (the live Error(Contract, #19) this rewrite fixes).
+//
+// The query-param contract (origin, target, pubkey, duration, limit,
+// limit_period, return) and the origin / return-URL validation
+// (anti-redirect-abuse) are UNCHANGED from the pre-doc version, so
+// delegationHandover's startDelegation keeps working as-is. The
+// spending-limit control moved HERE from /sign/ (doc grants are
+// confirm-only at /sign/).
 import NidoLayout from '../../../layouts/NidoLayout.astro';
 import Toast from '../../../components/Toast.astro';
 import PasskeySheet from '../../../components/PasskeySheet.astro';
@@ -12,8 +27,6 @@ import Icon from '../../../components/Icon.astro';
 ---
 <NidoLayout title="Let an app in">
   <div class="col-scroll scroll-hide screen-in">
-    <!-- K-02: standard sub-flow top bar (back + centered title) so reaching and
-         leaving nested flows is predictable — matches the recover sub-flow. -->
     <div class="topbar">
       <a href="/security/" class="btn ghost sm" style="width:40px;height:40px;padding:0;border-radius:12px;" aria-label="Back">
         <Icon name="back" size={18} />
@@ -34,9 +47,10 @@ import Icon from '../../../components/Icon.astro';
           </div>
         </div>
         <p class="mut" style="font-size:13px;line-height:1.55;margin:0;">
-          This app made its own key and wants permission to use it with the contract
-          below — just for a while. You stay in control: approve with your passkey,
-          and you can cut it off any time.
+          This app made its own key and wants permission to use it with the
+          contract below — just for a while. What you approve becomes part of
+          your account's policy <em>document</em>, so your policy page can
+          always show exactly this, verified against a hash stored on chain.
         </p>
       </div>
 
@@ -70,15 +84,43 @@ import Icon from '../../../components/Icon.astro';
         <div class="navrow" style="cursor:default;border-bottom:none;">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:700;font-size:13.5px;">Spending limit</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:8px;">
+              <input type="checkbox" id="cap-on" /> Cap what this key can spend
+            </label>
+            <div id="cap-fields" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;" hidden>
+              <input id="cap-xlm" class="input" inputmode="decimal" placeholder="Amount (XLM)" style="flex:1 1 120px;" />
+              <select id="cap-period" class="input" style="width:auto;">
+                <option value="day">per day</option>
+                <option value="week">per week</option>
+                <option value="30d">per 30 days</option>
+              </select>
+            </div>
             <div class="mut" id="limit-summary" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
           </div>
         </div>
       </div>
 
+      <span class="section-label" style="display:block;margin:22px 0 10px;">What changes</span>
+      <div class="card" style="padding:16px;">
+        <div id="doc-diff" class="mut" style="font-size:12.5px;">Reading the applied document…</div>
+      </div>
+
+      <span class="section-label" style="display:block;margin:22px 0 10px;">The document (after this update)</span>
+      <div class="card" style="padding:16px;display:grid;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="mut" style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">doc_hash</span>
+          <code id="doc-hash" class="mono" style="font-size:11.5px;word-break:break-all;">—</code>
+        </div>
+        <div id="doc-preview" class="mut" style="font-size:12.5px;">—</div>
+        <p class="mut" style="font-size:12px;margin:4px 0 0;line-height:1.5;">
+          After applying, this document is always visible on
+          <a class="link" href="/account/policy/">your Policy page</a>.
+        </p>
+      </div>
+
       <p class="mut" style="font-size:12.5px;line-height:1.55;margin:14px 0 0;">
-        Next you'll review and confirm with your passkey. You can adjust the
-        spending limit on the review screen. To cut it off later, visit
-        <a href="/security/" class="link">your safety settings</a>.
+        Next you'll review and confirm with your passkey. To cut it off later,
+        visit <a href="/account/policy/" class="link">your Policy page</a>.
       </p>
 
       <div class="actions" style="display:flex;gap:10px;margin-top:18px;">
@@ -94,32 +136,34 @@ import Icon from '../../../components/Icon.astro';
 </NidoLayout>
 
 <script>
-  import { contractIdFromHostname } from '@nidohq/passkey-sdk';
-  import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
-  import { stroopsToXlm } from '../../../lib/money.js';
+  import { contractIdFromHostname, canonicalJson, docHash, parsePolicyDocJson } from '@nidohq/passkey-sdk';
+  import type { PolicyDoc } from '@nidohq/passkey-sdk';
+  import { rpc } from '@stellar/stellar-sdk';
+  import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
+  import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
+  import {
+    DOC_DURATIONS,
+    DOC_DURATION_LABEL,
+    buildSessionGrantOperation,
+  } from '../../../lib/policy/docRequest.js';
+  import {
+    ownerAdminBaseline,
+    upsertSessionRule,
+    validateSessionDocDraft,
+    type SessionDocDraft,
+  } from '../../../lib/policy/docDraft.js';
+  import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
+  import { summarizeDoc } from '../../../lib/policy/docView.js';
+  import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
+  import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../../../lib/policy/docPolicyFetch.js';
+  import { bytesToHex } from '../../../lib/policy/policyView.js';
   import {
     PERIOD_LEDGERS,
-    PERIOD_LABEL,
     stroopsFromXlm,
     type LimitPeriod,
   } from '../../../lib/spendingLimitParams.js';
+  import { stroopsToXlm } from '../../../lib/money.js';
   import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest';
-
-  const RPC_URL = 'https://soroban-testnet.stellar.org';
-  const DURATIONS: Record<string, number | null> = {
-    '24h': 17280,
-    '7d': 17280 * 7,
-    '30d': 17280 * 30,
-    'none': null,
-  };
-  // Human-readable expiry labels matching the <select> option text, used to carry
-  // the display label through to /sign/ so it never has to interpret validUntil.
-  const DURATION_LABEL: Record<string, string> = {
-    '24h': '24 hours',
-    '7d': '7 days',
-    '30d': '30 days',
-    'none': 'Until revoked',
-  };
 
   const params = new URLSearchParams(window.location.search);
   const dappOrigin = params.get('origin') ?? '';
@@ -127,9 +171,9 @@ import Icon from '../../../components/Icon.astro';
   const pubkeyHex = params.get('pubkey') ?? '';
   const duration = params.get('duration') ?? '30d';
   // Optional spending limit: `limit` (decimal XLM string) + `limit_period`
-  // (day|week|30d, default day). Absent or EMPTY `limit` = no cap (today's
-  // behavior). The dApp's request seeds the editable control on /sign/; it
-  // must NOT pre-block here with a parse error.
+  // (day|week|30d, default day). Absent or EMPTY `limit` = no cap. Seeds the
+  // editable control BELOW (the /sign/ step is confirm-only for doc grants);
+  // a malformed dApp-supplied limit is ignored, never a blocker.
   const limitParam = params.get('limit') || null;
   const limitPeriodParam = params.get('limit_period') ?? 'day';
   const limitPeriodInitial: LimitPeriod =
@@ -144,54 +188,211 @@ import Icon from '../../../components/Icon.astro';
 
   const expirySpan = document.getElementById('expiry-text')!;
   const durationSel = document.getElementById('duration-sel') as HTMLSelectElement;
-  // Pre-select the dApp's requested duration when it's one we offer; otherwise
-  // fall back to the 30-day default. The user can change it before continuing —
-  // the selected value (not the URL param) is what gets installed.
-  durationSel.value = duration in DURATIONS ? duration : '30d';
-
-  // The select only holds keys we defined, so the lookup is always valid; a
-  // `none` value is a real `null` (no expiry), not a missing key.
-  const selectedExpiryOffset = (): number | null => DURATIONS[durationSel.value];
-
-  function syncExpiry() {
-    const off = selectedExpiryOffset();
-    expirySpan.textContent =
-      off == null
-        ? 'Never — stays valid until you revoke it.'
-        : `≈ ${off.toLocaleString()} ledgers from now.`;
-  }
-  durationSel.addEventListener('change', syncExpiry);
-  syncExpiry();
+  durationSel.value = duration in DOC_DURATIONS ? duration : '30d';
 
   const denyBtn = document.getElementById('deny')!;
   const approveBtn = document.getElementById('approve') as HTMLButtonElement;
   const status = document.getElementById('status')!;
-
-  // Read-only spending-limit summary — the EDITABLE control now lives on the
-  // /sign/ review screen. We compute the limit the dApp seeded (if any) so the
-  // user sees it before continuing; the actual editing happens on /sign/.
+  const capOn = document.getElementById('cap-on') as HTMLInputElement;
+  const capFields = document.getElementById('cap-fields')!;
+  const capXlm = document.getElementById('cap-xlm') as HTMLInputElement;
+  const capPeriod = document.getElementById('cap-period') as HTMLSelectElement;
   const limitSummary = document.getElementById('limit-summary')!;
-  let initialStroops: string | null = null;
+  const docHashEl = document.getElementById('doc-hash')!;
+  const docPreviewEl = document.getElementById('doc-preview')!;
+  const docDiffEl = document.getElementById('doc-diff')!;
+
+  // Seed the cap controls from the dApp's request.
   if (limitParam != null) {
     try {
-      initialStroops = stroopsFromXlm(limitParam).toString();
-      limitSummary.textContent =
-        `Requested cap: ${stroopsToXlm(initialStroops)} XLM ${PERIOD_LABEL[limitPeriodInitial]} ` +
-        `(rolling window). You can change this on the next screen.`;
+      const seeded = stroopsFromXlm(limitParam);
+      capOn.checked = true;
+      capFields.hidden = false;
+      capXlm.value = stroopsToXlm(seeded);
+      capPeriod.value = limitPeriodInitial;
     } catch {
-      // A malformed dApp-supplied limit is ignored (treated as no cap); the
-      // user can set one on /sign/. Never block the flow on a bad ?limit=.
-      initialStroops = null;
-      limitSummary.textContent =
-        'No cap requested — you can set a spending limit on the next screen.';
+      // Malformed ?limit= — leave the cap off.
     }
-  } else {
-    limitSummary.textContent =
-      'No cap requested — you can set a spending limit on the next screen.';
   }
 
-  // Return-URL must be the dApp origin (anti-redirect-abuse). Returns the
-  // validated, query-rewritten URL string, or null if it fails validation.
+  // Sanity-check request parameters before allowing the handoff — UNCHANGED
+  // param contract from the pre-doc version.
+  function validate(): string | null {
+    if (!account) return 'This page must be opened on an account subdomain.';
+    if (!dappOrigin) return 'Missing origin parameter.';
+    if (!target || !/^C[A-Z0-9]{55}$/.test(target)) return 'Invalid target contract address.';
+    if (!pubkeyHex || !/^04[0-9a-fA-F]{128}$/.test(pubkeyHex)) {
+      return 'Invalid session public key (expected 65-byte SEC1 uncompressed P-256, hex-encoded with 0x04 prefix).';
+    }
+    if (!returnUrl) return 'Missing return URL.';
+    try { new URL(returnUrl); } catch { return 'Malformed return URL.'; }
+    return null;
+  }
+
+  const paramErr = validate();
+  if (paramErr) {
+    status.textContent = paramErr;
+    approveBtn.disabled = true;
+  }
+
+  // The expiry ledger is anchored ONCE at page load, so the previewed
+  // doc_hash is byte-identical to what approve signs.
+  let latestLedger: number | null = null;
+  const latestLedgerReady: Promise<void> = (async () => {
+    try {
+      const server = new rpc.Server(RPC_URL);
+      latestLedger = (await server.getLatestLedger()).sequence;
+    } catch {
+      latestLedger = null;
+    }
+  })();
+
+  // The verifier THIS account trusts for its passkeys — the dApp's session
+  // passkey must be declared against it.
+  let verifierAddress: string | null = null;
+  const verifierReady: Promise<void> =
+    account && !paramErr
+      ? fetchVerifierAddress(account).then(
+          (v) => void (verifierAddress = v),
+          () => void (verifierAddress = null),
+        )
+      : Promise.resolve();
+
+  // The merge baseline and the diff's "before" side — same discipline as
+  // /security/delegate-doc/: refuse rather than build over unknown state.
+  let baselineDoc: PolicyDoc | null = null;
+  let isFirstApply = false;
+  let baselineLoaded = false;
+  let docBaselineBlocked = false;
+  const refuse = (msg: string) => {
+    status.textContent = msg;
+    docBaselineBlocked = true;
+    approveBtn.disabled = true;
+  };
+  const baselineReady: Promise<void> =
+    account && !paramErr
+      ? (async () => {
+          try {
+            const surface = await fetchDocSurface(account);
+            if (!surface.supported) {
+              refuse(
+                "This account's contract predates policy documents — it cannot accept this request.",
+              );
+            } else if (surface.appliedDocHash !== null) {
+              const recovered = await fetchAppliedDocJson(account, toHex(surface.appliedDocHash));
+              if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
+              else {
+                refuse(
+                  'The account has an applied policy document that could not be read — cannot build a safe update.',
+                );
+              }
+            } else {
+              const info = await fetchDefaultRuleAuthInfo(account);
+              const passkey = info.externalSigners[0];
+              if (passkey === undefined) {
+                refuse(
+                  "Could not read the account's primary passkey — a first document must carry it.",
+                );
+              } else {
+                baselineDoc = ownerAdminBaseline(
+                  { verifier: passkey.verifier, publicKeyHex: bytesToHex(passkey.publicKey) },
+                  NETWORK_PASSPHRASE,
+                );
+                isFirstApply = true;
+              }
+            }
+            baselineLoaded = true;
+          } catch {
+            refuse('Could not read the applied policy document — try again.');
+          }
+        })()
+      : Promise.resolve();
+
+  function notAfterFromControls(): number | null {
+    const off = DOC_DURATIONS[durationSel.value];
+    if (off == null) return null;
+    return latestLedger == null ? null : latestLedger + off;
+  }
+
+  function draftFromControls(): SessionDocDraft | null {
+    if (paramErr || verifierAddress === null) return null;
+    let cap: SessionDocDraft['cap'] = null;
+    if (capOn.checked) {
+      let stroops = '0';
+      try {
+        stroops = stroopsFromXlm(capXlm.value).toString();
+      } catch {
+        stroops = '0';
+      }
+      const period = (capPeriod.value in PERIOD_LEDGERS ? capPeriod.value : 'day') as LimitPeriod;
+      cap = { stroops, periodLedgers: PERIOD_LEDGERS[period] };
+    }
+    return {
+      // The rule name the passkey grant has always used; a re-delegation
+      // replaces it (the diff shows the rule as modified).
+      name: 'session-key',
+      signer: { kind: 'passkey', verifier: verifierAddress, publicKeyHex: pubkeyHex },
+      targetContract: target,
+      functionsInput: '',
+      notAfterLedger: notAfterFromControls(),
+      cap,
+    };
+  }
+
+  function syncPreview(): void {
+    const off = DOC_DURATIONS[durationSel.value];
+    expirySpan.textContent =
+      off == null
+        ? 'Never — stays valid until you revoke it.'
+        : latestLedger == null
+          ? `≈ ${off.toLocaleString()} ledgers from now.`
+          : `At ledger ${(latestLedger + off).toLocaleString()} (≈ ${off.toLocaleString()} ledgers from now).`;
+    limitSummary.textContent = capOn.checked
+      ? 'With a cap, only token transfers are allowed under this key — other calls in the scoped contract are blocked outright.'
+      : 'No cap — the app can move any amount this contract allows until the key expires.';
+
+    if (docBaselineBlocked) {
+      docDiffEl.textContent = status.textContent ?? 'Unavailable.';
+      return;
+    }
+    if (!baselineLoaded || baselineDoc === null || verifierAddress === null) {
+      docDiffEl.textContent = 'Reading the applied document…';
+      return;
+    }
+    const draft = draftFromControls();
+    if (draft === null) return;
+    const check = validateSessionDocDraft(draft);
+    if (!check.ok) {
+      docHashEl.textContent = '—';
+      docPreviewEl.textContent = check.errors.join(' ');
+      return;
+    }
+    try {
+      const { doc } = upsertSessionRule(baselineDoc, draft, NETWORK_PASSPHRASE);
+      const hash = docHash(doc);
+      docHashEl.textContent = hash;
+      docPreviewEl.innerHTML = renderDocPreviewHtml(summarizeDoc(doc, hash), canonicalJson(doc));
+      docDiffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(isFirstApply ? null : baselineDoc, doc));
+    } catch (e) {
+      docHashEl.textContent = '—';
+      docPreviewEl.textContent = `Cannot build the update: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+
+  durationSel.addEventListener('change', syncPreview);
+  capOn.addEventListener('change', () => {
+    capFields.hidden = !capOn.checked;
+    syncPreview();
+  });
+  capXlm.addEventListener('input', syncPreview);
+  capPeriod.addEventListener('change', syncPreview);
+  void latestLedgerReady.then(syncPreview);
+  void verifierReady.then(syncPreview);
+  void baselineReady.then(syncPreview);
+  syncPreview();
+
+  // Return-URL must be the dApp origin (anti-redirect-abuse) — verbatim
+  // from the pre-doc version.
   function backToDapp(qs: string): string | null {
     if (!returnUrl) return null;
     try {
@@ -213,82 +414,57 @@ import Icon from '../../../components/Icon.astro';
     if (back) window.location.href = back;
   });
 
-  // Sanity-check request parameters before allowing the handoff.
-  function validate(): string | null {
-    if (!account) return 'This page must be opened on an account subdomain.';
-    if (!dappOrigin) return 'Missing origin parameter.';
-    if (!target || !/^C[A-Z0-9]{55}$/.test(target)) return 'Invalid target contract address.';
-    if (!pubkeyHex || !/^04[0-9a-fA-F]{128}$/.test(pubkeyHex)) {
-      return 'Invalid session public key (expected 65-byte SEC1 uncompressed P-256, hex-encoded with 0x04 prefix).';
-    }
-    if (!returnUrl) return 'Missing return URL.';
-    try { new URL(returnUrl); } catch { return 'Malformed return URL.'; }
-    return null;
-  }
-
-  const err = validate();
-  if (err) {
-    status.textContent = err;
-    approveBtn.disabled = true;
-  }
-
   approveBtn.addEventListener('click', async () => {
+    if (paramErr || !account) return;
     approveBtn.disabled = true;
     try {
-      // Validate the dApp return URL BEFORE we do any work — keeps the
-      // anti-redirect-abuse guard at the front of the flow.
+      // Validate the dApp return URL BEFORE any work.
       const successReturn = backToDapp('?delegation=ok');
       if (!successReturn) {
-        // backToDapp already wrote the reason to `status`.
         approveBtn.disabled = false;
         return;
       }
 
-      // Resolve the verifier THIS account trusts (read from rule 0) so the
-      // installed External signer cites the right verifier. Done in the caller
-      // to keep /sign/ generic — the descriptor carries the resolved address.
+      status.textContent = 'Anchoring expiry…';
+      await latestLedgerReady;
+      if (DOC_DURATIONS[durationSel.value] != null && latestLedger == null) {
+        status.textContent = 'Could not read the current ledger — try again.';
+        approveBtn.disabled = false;
+        return;
+      }
       status.textContent = 'Resolving verifier address…';
-      const verifierAddress = await fetchVerifierAddress(account!);
+      await verifierReady;
+      if (verifierAddress === null) {
+        status.textContent = "Could not resolve the account's passkey verifier — try again.";
+        approveBtn.disabled = false;
+        return;
+      }
+      status.textContent = 'Reading the applied document…';
+      await baselineReady;
+      if (docBaselineBlocked || baselineDoc === null) return; // refusal already on screen
 
-      // Compute the absolute expiry ledger from the chosen duration. A `none`
-      // selection installs no expiry (validUntil = null → valid until revoked).
-      status.textContent = 'Computing expiry…';
-      const { rpc } = await import('@stellar/stellar-sdk');
-      const server = new rpc.Server(RPC_URL);
-      const latest = await server.getLatestLedger();
-      const off = selectedExpiryOffset();
-      const validUntil = off == null ? null : latest.sequence + off;
+      const draft = draftFromControls()!;
+      const check = validateSessionDocDraft(draft);
+      if (!check.ok) {
+        status.textContent = check.errors.join(' ');
+        approveBtn.disabled = false;
+        return;
+      }
 
-      const limit =
-        initialStroops != null
-          ? { stroops: initialStroops, periodLedgers: PERIOD_LEDGERS[limitPeriodInitial] }
-          : null;
-
-      // Build the canonical SignRequest and hand off to /sign/. The grant runs
-      // on this account's contract-id subdomain, so sessionStorage is
-      // same-origin and `?req=<id>` resolves on the next page.
       const req: SignRequest = {
         v: 1,
         kind: 'session-grant',
-        account: account!,
-        operation: {
-          type: 'add-context-rule',
-          target,
-          signerPublicKeyHex: pubkeyHex,
-          verifierAddress,
-          validUntil,
-          limit,
-          label: 'session-key',
-          expiryLabel: DURATION_LABEL[durationSel.value] ?? (validUntil == null ? 'Until revoked' : `${durationSel.value}`),
-        },
+        account,
+        operation: buildSessionGrantOperation({
+          baseline: baselineDoc,
+          isFirstApply,
+          draft,
+          networkPassphrase: NETWORK_PASSPHRASE,
+          expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
+        }),
         title: 'Grant a session key',
         subtitle: `${dappOrigin} wants to act on your behalf.`,
         submitMode: 'relayer',
-        editable: [
-          { field: 'spending-limit', initialStroops, initialPeriod: limitPeriodInitial },
-        ],
-        // dApp return: /sign/ posts `?delegation=ok` on success (and
-        // `?delegation=cancelled` on cancel) — the delegationHandover contract.
         returnTarget: {
           type: 'dapp',
           origin: dappOrigin,
@@ -307,7 +483,40 @@ import Icon from '../../../components/Icon.astro';
   });
 </script>
 
-<style>
+<style is:global>
   .pad code { font-family: var(--mono); }
   code.wrap { word-break: break-all; }
+  /* Diff + preview panels (shared markup with the policy page's builder). */
+  .pol-diff { display: grid; gap: 8px; }
+  .pol-diff-row { display: flex; gap: 10px; align-items: flex-start; }
+  .pol-diff-row .pol-badge { flex: 0 0 auto; margin-top: 2px; }
+  .pol-diff-changes { margin: 4px 0 0; padding-left: 16px; font-size: 12px; line-height: 1.5; }
+  .pol-badge {
+    font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+    background: var(--soft, rgba(0,0,0,0.06)); color: var(--ink, inherit); white-space: nowrap;
+  }
+  .pol-badge.primary { background: rgba(64, 132, 88, 0.16); color: #2f6b45; }
+  .pol-badge.gated { background: rgba(180, 120, 20, 0.16); color: #8a5a10; }
+  .pol-badge.danger { background: rgba(190, 60, 60, 0.16); color: #a13030; }
+  .pol-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; }
+  .pol-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pol-chip {
+    font-size: 11.5px; padding: 3px 8px; border-radius: 8px;
+    background: var(--soft, rgba(0,0,0,0.06));
+  }
+  .pol-preview { display: grid; gap: 10px; }
+  .pol-preview-rule {
+    border: 1px solid var(--line, rgba(0,0,0,0.1)); border-radius: 10px;
+    padding: 10px 12px; display: grid; gap: 6px; background: var(--paper-3, transparent);
+  }
+  .pol-preview-rule-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .pol-preview-perm { margin: 0; font-size: 12.5px; line-height: 1.5; }
+  .pol-preview-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .pol-preview-fact { font-size: 11.5px; color: var(--mut, #888); }
+  .pol-preview-raw summary { font-size: 11.5px; cursor: pointer; color: var(--mut, #888); }
+  .pol-preview-raw pre {
+    font-size: 11px; line-height: 1.5; margin: 6px 0 0; max-height: 180px; overflow: auto;
+    white-space: pre-wrap; word-break: break-all; background: var(--paper-3);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
 </style>

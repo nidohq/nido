@@ -175,6 +175,35 @@ export interface DocRenderContext {
   /** Where the doc JSON was recovered from (storage = the lossless on-chain
    *  copy; events = event history). */
   source?: DocJsonSource | null;
+  /** The document's canonical JSON. When present, the doc view offers a
+   *  raw-JSON toggle: pretty-printed for reading, with a copy button the
+   *  page wires (id `pol-doc-copy-json`) that should copy THIS exact
+   *  canonical string — the bytes whose sha256 is the stored doc_hash. */
+  canonicalJson?: string;
+}
+
+/** The doc view's raw-JSON toggle: pretty-printed for reading (the rule
+ *  cards stay the default view), copy button for the exact canonical
+ *  string. Empty when no canonical JSON was provided. */
+function rawJsonToggle(canonical: string | undefined): string {
+  if (canonical === undefined) return '';
+  let pretty: string;
+  try {
+    pretty = JSON.stringify(JSON.parse(canonical), null, 2);
+  } catch {
+    pretty = canonical;
+  }
+  return `<details class="pol-preview-raw">
+    <summary>Raw document JSON</summary>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;flex-wrap:wrap;">
+      <span class="mut" style="font-size:11.5px;line-height:1.5;">
+        Pretty-printed for reading. Copy gives the exact canonical bytes —
+        their sha256 is the doc_hash above.
+      </span>
+      <button type="button" id="pol-doc-copy-json" class="btn ghost sm" style="flex:0 0 auto;">Copy canonical JSON</button>
+    </div>
+    <pre class="pol-mono">${esc(pretty)}</pre>
+  </details>`;
 }
 
 /** Render the verified policy document (tiers a/b) into `container`. */
@@ -213,6 +242,7 @@ export function renderDocPolicy(
         <span class="pol-field-label">Signers (${model.signers.length})</span>
         <ul class="pol-signers">${model.signers.map(docSignerRow).join('')}</ul>
       </div>
+      ${rawJsonToggle(ctx.canonicalJson)}
     </article>
     ${model.rules.map((r) => docRuleCard(r, currentLedger)).join('')}`;
 }

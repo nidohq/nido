@@ -8,9 +8,11 @@
 // (comma-separated), `duration` (24h|7d|30d|none), optional `limit` (decimal
 // XLM) + `limit_period`, optional `label` (rule name), `return` (URL).
 
+import { canonicalJson, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress } from './policyDraft.js';
-import { parseFunctionsInput } from './docDraft.js';
+import { parseFunctionsInput, upsertSessionRule, type SessionDocDraft } from './docDraft.js';
 import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
+import type { OperationDescriptor } from '../signing/signRequest.js';
 
 export const DOC_DURATIONS: Record<string, number | null> = {
   '24h': 17280,
@@ -101,5 +103,35 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
       label,
       returnUrl,
     },
+  };
+}
+
+/**
+ * The ONE way a session grant becomes a signable operation: upsert the
+ * session rule into the loaded baseline and wrap the merged document in an
+ * `apply-policy-doc` descriptor. Every policy write is an `apply_doc` — a
+ * grant flow must never emit `add_context_rule` (the doc-only contract
+ * hard-refuses it outside the recovery-completion window). Both delegate
+ * pages (passkey and delegated-key requests) build their /sign/ handoff
+ * through this helper, so the invariant is testable in one place.
+ *
+ * Precondition: `validateSessionDocDraft(draft).ok` and a loaded baseline
+ * (the applied doc, or the owner-admin baseline on a first apply).
+ */
+export function buildSessionGrantOperation(args: {
+  baseline: PolicyDoc;
+  /** True when nothing is applied yet — no prevDocJson (all-new diff). */
+  isFirstApply: boolean;
+  draft: SessionDocDraft;
+  networkPassphrase: string;
+  /** Human-readable expiry label (e.g. "24 hours"). */
+  expiryLabel: string;
+}): Extract<OperationDescriptor, { type: 'apply-policy-doc' }> {
+  const { doc } = upsertSessionRule(args.baseline, args.draft, args.networkPassphrase);
+  return {
+    type: 'apply-policy-doc',
+    docJson: canonicalJson(doc),
+    ...(args.isFirstApply ? {} : { prevDocJson: canonicalJson(args.baseline) }),
+    expiryLabel: args.expiryLabel,
   };
 }
