@@ -57,3 +57,14 @@ Tests use synthetic P-256 keypairs (`SigningKey::random()`) to construct full We
 ## Dependency Version Constraints
 
 - `stellar-accounts` is pinned to a git rev of OpenZeppelin/stellar-contracts to match `soroban-sdk` 25.x
+
+## Relayer channels plugin
+
+`infra/relayer/plugins/channels/index.ts` is a thin passthrough to the upstream
+`@openzeppelin/relayer-plugin-channels` handler — it no longer allowlists which
+contract function names the relayer will fee-sponsor (removed by design; the
+per-function allowlist was a recurring maintenance-friction source, most recently
+commit 2533c9a). On-chain auth (the passkey signer on each auth entry) is the only
+enforced gate on submitted transactions now — the relayer will fee-sponsor *any*
+contract call with valid auth, including calls to contracts other than nido's own.
+Do not reintroduce a function-name allowlist here without a captain decision.
