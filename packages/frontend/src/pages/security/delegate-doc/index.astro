@@ -1,25 +1,19 @@
 ---
-// The session-key delegation approval page ("an app wants to act on your
-// behalf"): a dApp created a WebAuthn passkey at ITS origin and asks for it
-// to be allowed on one contract, time-boxed, optionally spend-capped.
+// The DOC-based sibling of /security/delegate/: a dApp requests a SCOPED
+// SESSION KEY as a perch policy-document update. The dApp holds a delegated
+// key (C… or G…) and asks for it to be allowed on one contract's named
+// functions, time-boxed, optionally spend-capped.
 //
-// DOC-ONLY: the account has no rule mutators — a grant is a policy-DOCUMENT
-// update. This page reads the account's currently applied document, upserts
-// a "session-key" rule for the dApp's passkey into it (re-delegation
-// REPLACES the same-named rule — the diff shows it as modified), previews
-// the merged document (readable rule cards, doc_hash, raw JSON behind a
-// toggle) AND the exact diff against the applied one, then hands off to
-// /sign/ with an apply-policy-doc descriptor built by the shared
-// buildSessionGrantOperation helper. It must NEVER emit add_context_rule:
-// the doc-only contract refuses that outside the recovery-completion window
-// (the live Error(Contract, #19) this rewrite fixes).
+// Policy writes are DOC-ONLY: the wallet reads the account's currently
+// applied document, upserts the requested session rule into it (apply_doc
+// replaces the whole document, so the update carries existing rules
+// forward), previews the merged document's canonical JSON + doc_hash AND
+// the exact diff against the applied one — rules added / removed / modified
+// — then hands off to /sign/ with an apply-policy-doc descriptor.
 //
-// The query-param contract (origin, target, pubkey, duration, limit,
-// limit_period, return) and the origin / return-URL validation
-// (anti-redirect-abuse) are UNCHANGED from the pre-doc version, so
-// delegationHandover's startDelegation keeps working as-is. The
-// spending-limit control moved HERE from /sign/ (doc grants are
-// confirm-only at /sign/).
+// The origin / return-URL validation (anti-redirect-abuse) mirrors
+// /security/delegate/ verbatim; the query-param contract is parsed by the
+// pure lib lib/policy/docRequest.
 import NidoLayout from '../../../layouts/NidoLayout.astro';
 import Toast from '../../../components/Toast.astro';
 import PasskeySheet from '../../../components/PasskeySheet.astro';
@@ -42,14 +36,14 @@ import Icon from '../../../components/Icon.astro';
             <Icon name="link" size={20} color="var(--acc)" />
           </div>
           <div style="min-width:0;">
-            <div style="font-weight:700;font-size:14.5px;">App wants to act for you</div>
+            <div style="font-weight:700;font-size:14.5px;">App requests a scoped session key</div>
             <div class="mut mono" id="origin-text" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
           </div>
         </div>
         <p class="mut" style="font-size:13px;line-height:1.55;margin:0;">
-          This app made its own key and wants permission to use it with the
-          contract below — just for a while. What you approve becomes part of
-          your account's policy <em>document</em>, so your policy page can
+          The app holds its own key and asks to use it with the contract below —
+          only the listed functions, only for a while. What you approve becomes
+          part of your account's policy <em>document</em>, so your policy page can
           always show exactly this, verified against a hash stored on chain.
         </p>
       </div>
@@ -59,13 +53,19 @@ import Icon from '../../../components/Icon.astro';
         <div class="navrow" style="cursor:default;">
           <div style="flex:1;">
             <div style="font-weight:700;font-size:13.5px;">Allowed to use</div>
-            <div class="mut mono" style="font-size:12px;"><code id="target-text" style="word-break:break-all; display:block;"></code></div>
+            <div class="mut mono" style="font-size:12px;"><code id="target-text" style="word-break:break-all;display:block;"></code></div>
           </div>
         </div>
         <div class="navrow" style="cursor:default;">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:700;font-size:13.5px;">App's key</div>
-            <div class="mut mono" style="font-size:11.5px;word-break:break-all;"><code id="pubkey-text" class="wrap"></code></div>
+            <div class="mut mono" style="font-size:11.5px;word-break:break-all;"><code id="signer-text" class="wrap"></code></div>
+          </div>
+        </div>
+        <div class="navrow" style="cursor:default;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13.5px;">Functions</div>
+            <div class="mut" id="functions-text" style="font-size:12.5px;margin-top:6px;line-height:1.5;"></div>
           </div>
         </div>
         <div class="navrow" style="cursor:default;">
@@ -83,7 +83,7 @@ import Icon from '../../../components/Icon.astro';
         </div>
         <div class="navrow" style="cursor:default;border-bottom:none;">
           <div style="flex:1;min-width:0;">
-            <div style="font-weight:700;font-size:13.5px;">Spending limit</div>
+            <div style="font-weight:700;font-size:13.5px;">Spending cap</div>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:8px;">
               <input type="checkbox" id="cap-on" /> Cap what this key can spend
             </label>
@@ -95,7 +95,7 @@ import Icon from '../../../components/Icon.astro';
                 <option value="30d">per 30 days</option>
               </select>
             </div>
-            <div class="mut" id="limit-summary" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
+            <div class="mut" id="cap-note" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
           </div>
         </div>
       </div>
@@ -118,11 +118,6 @@ import Icon from '../../../components/Icon.astro';
         </p>
       </div>
 
-      <p class="mut" style="font-size:12.5px;line-height:1.55;margin:14px 0 0;">
-        Next you'll review and confirm with your passkey. To cut it off later,
-        visit <a href="/account/policy/" class="link">your Policy page</a>.
-      </p>
-
       <div class="actions" style="display:flex;gap:10px;margin-top:18px;">
         <button id="approve" class="btn acc" type="button" style="flex:1;">Review &amp; continue</button>
         <button id="deny" class="btn ghost" type="button" style="flex:0 0 auto;width:auto;">Cancel</button>
@@ -140,11 +135,11 @@ import Icon from '../../../components/Icon.astro';
   import type { PolicyDoc } from '@nidohq/passkey-sdk';
   import { rpc } from '@stellar/stellar-sdk';
   import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
-  import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
   import {
     DOC_DURATIONS,
     DOC_DURATION_LABEL,
     buildSessionGrantOperation,
+    parseDocDelegateParams,
   } from '../../../lib/policy/docRequest.js';
   import {
     ownerAdminBaseline,
@@ -156,87 +151,62 @@ import Icon from '../../../components/Icon.astro';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
   import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchDefaultRuleAuthInfo } from '../../../lib/policyChainFetch.js';
   import { bytesToHex } from '../../../lib/policy/policyView.js';
-  import {
-    PERIOD_LEDGERS,
-    stroopsFromXlm,
-    type LimitPeriod,
-  } from '../../../lib/spendingLimitParams.js';
+  import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../../../lib/spendingLimitParams.js';
   import { stroopsToXlm } from '../../../lib/money.js';
   import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest';
 
-  const params = new URLSearchParams(window.location.search);
-  const dappOrigin = params.get('origin') ?? '';
-  const target = params.get('target') ?? '';
-  const pubkeyHex = params.get('pubkey') ?? '';
-  const duration = params.get('duration') ?? '30d';
-  // Optional spending limit: `limit` (decimal XLM string) + `limit_period`
-  // (day|week|30d, default day). Absent or EMPTY `limit` = no cap. Seeds the
-  // editable control BELOW (the /sign/ step is confirm-only for doc grants);
-  // a malformed dApp-supplied limit is ignored, never a blocker.
-  const limitParam = params.get('limit') || null;
-  const limitPeriodParam = params.get('limit_period') ?? 'day';
-  const limitPeriodInitial: LimitPeriod =
-    limitPeriodParam in PERIOD_LEDGERS ? (limitPeriodParam as LimitPeriod) : 'day';
-  const returnUrl = params.get('return') ?? '';
   const account = contractIdFromHostname(window.location.hostname);
-
-  // Surface the request to the user.
-  document.getElementById('origin-text')!.textContent = dappOrigin || '(missing)';
-  document.getElementById('target-text')!.textContent = target || '(missing)';
-  document.getElementById('pubkey-text')!.textContent = pubkeyHex || '(missing)';
-
-  const expirySpan = document.getElementById('expiry-text')!;
-  const durationSel = document.getElementById('duration-sel') as HTMLSelectElement;
-  durationSel.value = duration in DOC_DURATIONS ? duration : '30d';
-
-  const denyBtn = document.getElementById('deny')!;
-  const approveBtn = document.getElementById('approve') as HTMLButtonElement;
   const status = document.getElementById('status')!;
+  const approveBtn = document.getElementById('approve') as HTMLButtonElement;
+  const denyBtn = document.getElementById('deny')!;
+
+  const parsed = parseDocDelegateParams(new URLSearchParams(window.location.search));
+  if (!account) {
+    status.textContent = 'This page must be opened on an account subdomain.';
+    approveBtn.disabled = true;
+  } else if (!parsed.ok) {
+    status.textContent = parsed.error;
+    approveBtn.disabled = true;
+  }
+
+  const req = parsed.ok ? parsed.req : null;
+
+  // Surface the request.
+  document.getElementById('origin-text')!.textContent = req?.origin ?? '(missing)';
+  document.getElementById('target-text')!.textContent = req?.target ?? '(missing)';
+  document.getElementById('signer-text')!.textContent = req?.signer ?? '(missing)';
+  document.getElementById('functions-text')!.textContent = req
+    ? req.functions
+      ? `Only: ${req.functions.join(', ')}`
+      : 'Any function on the contract.'
+    : '(missing)';
+
+  const durationSel = document.getElementById('duration-sel') as HTMLSelectElement;
+  const expiryText = document.getElementById('expiry-text')!;
   const capOn = document.getElementById('cap-on') as HTMLInputElement;
   const capFields = document.getElementById('cap-fields')!;
   const capXlm = document.getElementById('cap-xlm') as HTMLInputElement;
   const capPeriod = document.getElementById('cap-period') as HTMLSelectElement;
-  const limitSummary = document.getElementById('limit-summary')!;
+  const capNote = document.getElementById('cap-note')!;
   const docHashEl = document.getElementById('doc-hash')!;
   const docPreviewEl = document.getElementById('doc-preview')!;
   const docDiffEl = document.getElementById('doc-diff')!;
 
-  // Seed the cap controls from the dApp's request.
-  if (limitParam != null) {
-    try {
-      const seeded = stroopsFromXlm(limitParam);
+  if (req) {
+    durationSel.value = req.duration;
+    if (req.limitStroops !== null) {
       capOn.checked = true;
       capFields.hidden = false;
-      capXlm.value = stroopsToXlm(seeded);
-      capPeriod.value = limitPeriodInitial;
-    } catch {
-      // Malformed ?limit= — leave the cap off.
+      capXlm.value = stroopsToXlm(req.limitStroops);
+      capPeriod.value = req.limitPeriod;
     }
-  }
-
-  // Sanity-check request parameters before allowing the handoff — UNCHANGED
-  // param contract from the pre-doc version.
-  function validate(): string | null {
-    if (!account) return 'This page must be opened on an account subdomain.';
-    if (!dappOrigin) return 'Missing origin parameter.';
-    if (!target || !/^C[A-Z0-9]{55}$/.test(target)) return 'Invalid target contract address.';
-    if (!pubkeyHex || !/^04[0-9a-fA-F]{128}$/.test(pubkeyHex)) {
-      return 'Invalid session public key (expected 65-byte SEC1 uncompressed P-256, hex-encoded with 0x04 prefix).';
-    }
-    if (!returnUrl) return 'Missing return URL.';
-    try { new URL(returnUrl); } catch { return 'Malformed return URL.'; }
-    return null;
-  }
-
-  const paramErr = validate();
-  if (paramErr) {
-    status.textContent = paramErr;
-    approveBtn.disabled = true;
   }
 
   // The expiry ledger is anchored ONCE at page load, so the previewed
-  // doc_hash is byte-identical to what approve signs.
+  // doc_hash is byte-identical to what approve signs (a minutes-old anchor
+  // only shifts the expiry by that skew — irrelevant at ledger scale).
   let latestLedger: number | null = null;
   const latestLedgerReady: Promise<void> = (async () => {
     try {
@@ -247,66 +217,64 @@ import Icon from '../../../components/Icon.astro';
     }
   })();
 
-  // The verifier THIS account trusts for its passkeys — the dApp's session
-  // passkey must be declared against it.
-  let verifierAddress: string | null = null;
-  const verifierReady: Promise<void> =
-    account && !paramErr
-      ? fetchVerifierAddress(account).then(
-          (v) => void (verifierAddress = v),
-          () => void (verifierAddress = null),
-        )
-      : Promise.resolve();
-
-  // The merge baseline and the diff's "before" side — same discipline as
-  // /security/delegate-doc/: refuse rather than build over unknown state.
+  // The merge baseline and the diff's "before" side: the applied document,
+  // or — on a first apply — the synthesized owner-admin baseline (apply_doc
+  // replaces EVERY rule and refuses docs without a policy-free self-admin
+  // rule, so the account's own passkey must ride along from the start).
+  // Doc-only writes: an account without the apply_doc surface cannot take
+  // this grant at all, so the flow refuses up front rather than at /sign/.
   let baselineDoc: PolicyDoc | null = null;
   let isFirstApply = false;
   let baselineLoaded = false;
+  // Set when the baseline read refused the flow — approve must never proceed.
   let docBaselineBlocked = false;
   const refuse = (msg: string) => {
     status.textContent = msg;
     docBaselineBlocked = true;
     approveBtn.disabled = true;
   };
-  const baselineReady: Promise<void> =
-    account && !paramErr
-      ? (async () => {
-          try {
-            const surface = await fetchDocSurface(account);
-            if (!surface.supported) {
+  const baselineReady: Promise<void> = account && req
+    ? (async () => {
+        try {
+          const surface = await fetchDocSurface(account);
+          if (!surface.supported) {
+            refuse(
+              "This account's contract predates policy documents — it cannot accept this request.",
+            );
+          } else if (surface.appliedDocHash !== null) {
+            const recovered = await fetchAppliedDocJson(account, toHex(surface.appliedDocHash));
+            if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
+            else {
+              // A document is applied but not recoverable: an update built
+              // on an unknown baseline would silently DROP the applied
+              // rules on apply. Refuse.
               refuse(
-                "This account's contract predates policy documents — it cannot accept this request.",
+                'The account has an applied policy document that could not be read — cannot build a safe update.',
               );
-            } else if (surface.appliedDocHash !== null) {
-              const recovered = await fetchAppliedDocJson(account, toHex(surface.appliedDocHash));
-              if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
-              else {
-                refuse(
-                  'The account has an applied policy document that could not be read — cannot build a safe update.',
-                );
-              }
-            } else {
-              const info = await fetchDefaultRuleAuthInfo(account);
-              const passkey = info.externalSigners[0];
-              if (passkey === undefined) {
-                refuse(
-                  "Could not read the account's primary passkey — a first document must carry it.",
-                );
-              } else {
-                baselineDoc = ownerAdminBaseline(
-                  { verifier: passkey.verifier, publicKeyHex: bytesToHex(passkey.publicKey) },
-                  NETWORK_PASSPHRASE,
-                );
-                isFirstApply = true;
-              }
             }
-            baselineLoaded = true;
-          } catch {
-            refuse('Could not read the applied policy document — try again.');
+          } else {
+            // First apply: anchor the anti-brick admin rule on the
+            // account's live primary passkey (the constructor default rule).
+            const info = await fetchDefaultRuleAuthInfo(account);
+            const passkey = info.externalSigners[0];
+            if (passkey === undefined) {
+              refuse(
+                "Could not read the account's primary passkey — a first document must carry it.",
+              );
+            } else {
+              baselineDoc = ownerAdminBaseline(
+                { verifier: passkey.verifier, publicKeyHex: bytesToHex(passkey.publicKey) },
+                NETWORK_PASSPHRASE,
+              );
+              isFirstApply = true;
+            }
           }
-        })()
-      : Promise.resolve();
+          baselineLoaded = true;
+        } catch {
+          refuse('Could not read the applied policy document — try again.');
+        }
+      })()
+    : Promise.resolve();
 
   function notAfterFromControls(): number | null {
     const off = DOC_DURATIONS[durationSel.value];
@@ -315,9 +283,11 @@ import Icon from '../../../components/Icon.astro';
   }
 
   function draftFromControls(): SessionDocDraft | null {
-    if (paramErr || verifierAddress === null) return null;
+    if (!req) return null;
     let cap: SessionDocDraft['cap'] = null;
     if (capOn.checked) {
+      // Parse the visible XLM amount; invalid input yields stroops "0",
+      // which validateSessionDocDraft rejects with a real message.
       let stroops = '0';
       try {
         stroops = stroopsFromXlm(capXlm.value).toString();
@@ -328,43 +298,39 @@ import Icon from '../../../components/Icon.astro';
       cap = { stroops, periodLedgers: PERIOD_LEDGERS[period] };
     }
     return {
-      // The rule name the passkey grant has always used; a re-delegation
-      // replaces it (the diff shows the rule as modified).
-      name: 'session-key',
-      signer: { kind: 'passkey', verifier: verifierAddress, publicKeyHex: pubkeyHex },
-      targetContract: target,
-      functionsInput: '',
+      name: req.label,
+      signer: { kind: 'delegated', address: req.signer },
+      targetContract: req.target,
+      functionsInput: req.functions?.join(', ') ?? '',
       notAfterLedger: notAfterFromControls(),
       cap,
     };
   }
 
   function syncPreview(): void {
-    const off = DOC_DURATIONS[durationSel.value];
-    expirySpan.textContent =
+    const off = req ? DOC_DURATIONS[durationSel.value] : null;
+    expiryText.textContent =
       off == null
         ? 'Never — stays valid until you revoke it.'
         : latestLedger == null
           ? `≈ ${off.toLocaleString()} ledgers from now.`
           : `At ledger ${(latestLedger + off).toLocaleString()} (≈ ${off.toLocaleString()} ledgers from now).`;
-    limitSummary.textContent = capOn.checked
-      ? 'With a cap, only token transfers are allowed under this key — other calls in the scoped contract are blocked outright.'
-      : 'No cap — the app can move any amount this contract allows until the key expires.';
+    capNote.textContent = capOn.checked
+      ? 'With a cap, only token transfers are allowed under this key — other calls in the scoped contract are blocked.'
+      : 'No cap — the key can do whatever the allowed functions permit until it expires.';
 
-    if (docBaselineBlocked) {
-      docDiffEl.textContent = status.textContent ?? 'Unavailable.';
-      return;
-    }
-    if (!baselineLoaded || baselineDoc === null || verifierAddress === null) {
-      docDiffEl.textContent = 'Reading the applied document…';
-      return;
-    }
     const draft = draftFromControls();
-    if (draft === null) return;
+    if (!draft) return;
     const check = validateSessionDocDraft(draft);
     if (!check.ok) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = check.errors.join(' ');
+      return;
+    }
+    if (!baselineLoaded || baselineDoc === null) {
+      docDiffEl.textContent = docBaselineBlocked
+        ? (status.textContent ?? 'Unavailable.')
+        : 'Reading the applied document…';
       return;
     }
     try {
@@ -372,6 +338,8 @@ import Icon from '../../../components/Icon.astro';
       const hash = docHash(doc);
       docHashEl.textContent = hash;
       docPreviewEl.innerHTML = renderDocPreviewHtml(summarizeDoc(doc, hash), canonicalJson(doc));
+      // First apply: nothing was applied before, so everything — the
+      // anti-brick admin rule included — renders as newly granted.
       docDiffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(isFirstApply ? null : baselineDoc, doc));
     } catch (e) {
       docHashEl.textContent = '—';
@@ -387,18 +355,17 @@ import Icon from '../../../components/Icon.astro';
   capXlm.addEventListener('input', syncPreview);
   capPeriod.addEventListener('change', syncPreview);
   void latestLedgerReady.then(syncPreview);
-  void verifierReady.then(syncPreview);
   void baselineReady.then(syncPreview);
   syncPreview();
 
-  // Return-URL must be the dApp origin (anti-redirect-abuse) — verbatim
-  // from the pre-doc version.
+  // Return-URL must be the dApp origin (anti-redirect-abuse) — verbatim from
+  // /security/delegate/.
   function backToDapp(qs: string): string | null {
-    if (!returnUrl) return null;
+    if (!req?.returnUrl) return null;
     try {
-      const url = new URL(returnUrl);
-      if (url.origin !== dappOrigin) {
-        status.textContent = `Refusing to redirect: return URL origin (${url.origin}) does not match request origin (${dappOrigin}).`;
+      const url = new URL(req.returnUrl);
+      if (url.origin !== req.origin) {
+        status.textContent = `Refusing to redirect: return URL origin (${url.origin}) does not match request origin (${req.origin}).`;
         return null;
       }
       url.search = qs;
@@ -415,7 +382,7 @@ import Icon from '../../../components/Icon.astro';
   });
 
   approveBtn.addEventListener('click', async () => {
-    if (paramErr || !account) return;
+    if (!req || !account) return;
     approveBtn.disabled = true;
     try {
       // Validate the dApp return URL BEFORE any work.
@@ -425,6 +392,8 @@ import Icon from '../../../components/Icon.astro';
         return;
       }
 
+      // Both anchors must exist before the update can be built: the expiry
+      // ledger (non-"none" durations) and the applied-document baseline.
       status.textContent = 'Anchoring expiry…';
       await latestLedgerReady;
       if (DOC_DURATIONS[durationSel.value] != null && latestLedger == null) {
@@ -432,16 +401,9 @@ import Icon from '../../../components/Icon.astro';
         approveBtn.disabled = false;
         return;
       }
-      status.textContent = 'Resolving verifier address…';
-      await verifierReady;
-      if (verifierAddress === null) {
-        status.textContent = "Could not resolve the account's passkey verifier — try again.";
-        approveBtn.disabled = false;
-        return;
-      }
       status.textContent = 'Reading the applied document…';
       await baselineReady;
-      if (docBaselineBlocked || baselineDoc === null) return; // refusal already on screen
+      if (docBaselineBlocked || baselineDoc === null) return; // refusal above already set status + disabled
 
       const draft = draftFromControls()!;
       const check = validateSessionDocDraft(draft);
@@ -450,8 +412,7 @@ import Icon from '../../../components/Icon.astro';
         approveBtn.disabled = false;
         return;
       }
-
-      const req: SignRequest = {
+      const signReq: SignRequest = {
         v: 1,
         kind: 'session-grant',
         account,
@@ -463,17 +424,17 @@ import Icon from '../../../components/Icon.astro';
           expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
         }),
         title: 'Grant a session key',
-        subtitle: `${dappOrigin} wants to act on your behalf.`,
+        subtitle: `${req.origin} wants a scoped session key.`,
         submitMode: 'relayer',
         returnTarget: {
           type: 'dapp',
-          origin: dappOrigin,
-          returnUrl,
+          origin: req.origin,
+          returnUrl: req.returnUrl,
           successQuery: '?delegation=ok',
         },
       };
 
-      const id = stashSignRequest(req);
+      const id = stashSignRequest(signReq);
       window.location.href = `/sign/?req=${id}`;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -486,7 +447,7 @@ import Icon from '../../../components/Icon.astro';
 <style is:global>
   .pad code { font-family: var(--mono); }
   code.wrap { word-break: break-all; }
-  /* Diff + preview panels (shared markup with the policy page's builder). */
+  /* Diff-panel styles (shared markup with the policy page's builder). */
   .pol-diff { display: grid; gap: 8px; }
   .pol-diff-row { display: flex; gap: 10px; align-items: flex-start; }
   .pol-diff-row .pol-badge { flex: 0 0 auto; margin-top: 2px; }

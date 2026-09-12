@@ -148,4 +148,9 @@ export function renderGenericOp(op: OpSummary): string {
   return `<div class="card" style="padding:13px 16px;">${renderGenericOpLine(op)}</div>`;
 }
 
-export { renderSessionGrant, type SessionGrantScope } from "./sessionGrantReview.js";
+export {
+  renderSessionGrant,
+  renderDocSessionGrant,
+  type SessionGrantScope,
+  type DocSessionGrantView,
+} from "./sessionGrantReview.js";
