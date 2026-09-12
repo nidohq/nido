@@ -206,6 +206,41 @@ function rawJsonToggle(canonical: string | undefined): string {
   </details>`;
 }
 
+/** The consolidated "Admin keys" card: every admin rule folded into ONE
+ *  list — each is independent full authority, so any listed key may act.
+ *  Rule names ride along small (they're the revoke handle in the builder). */
+function adminKeysCard(adminViews: DocRuleView[], signers: DocSignerView[]): string {
+  if (adminViews.length === 0) return '';
+  const byId = new Map(signers.map((s) => [s.id, s]));
+  const rows = adminViews
+    .map((r) => {
+      const s = r.signerIds[0] !== undefined ? byId.get(r.signerIds[0]) : undefined;
+      const icon = s?.kind === 'passkey' ? '🔑' : '👤';
+      return `<li class="pol-signer">
+        <span class="pol-signer-ico" aria-hidden="true">${icon}</span>
+        <span class="pol-signer-label">"${esc(s?.id ?? r.signerIds[0] ?? '')}"</span>
+        <span class="pol-badge">${esc(s?.kindLabel ?? '')}</span>
+        <code class="pol-mono" title="${esc(s?.full ?? '')}">${esc(s?.detail ?? '')}</code>
+        <span class="mut" style="font-size:11px;">rule ${esc(r.name)}</span>
+      </li>`;
+    })
+    .join('');
+  return `<article class="card pol-card" data-doc-admins style="padding:16px;">
+    <header class="pol-head">
+      <div>
+        <span class="section-label">This account</span>
+        <h3 class="pol-name disp">Admin keys</h3>
+      </div>
+      <div class="pol-badges"><span class="pol-badge primary">Full authority</span></div>
+    </header>
+    <p class="pol-perm">Any of these ${adminViews.length === 1 ? 'keys' : `${adminViews.length} keys`} can act for this account on its own — each holds independent full authority.</p>
+    <div class="pol-field">
+      <span class="pol-field-label">Keys (${adminViews.length})</span>
+      <ul class="pol-signers">${rows}</ul>
+    </div>
+  </article>`;
+}
+
 /** Render the verified policy document (tiers a/b) into `container`. */
 export function renderDocPolicy(
   container: HTMLElement,
@@ -244,7 +279,8 @@ export function renderDocPolicy(
       </div>
       ${rawJsonToggle(ctx.canonicalJson)}
     </article>
-    ${model.rules.map((r) => docRuleCard(r, currentLedger)).join('')}`;
+    ${adminKeysCard(model.rules.filter((r) => r.isAdmin), model.signers)}
+    ${model.rules.filter((r) => !r.isAdmin).map((r) => docRuleCard(r, currentLedger)).join('')}`;
 }
 
 // --- Compact document preview ----------------------------------------------

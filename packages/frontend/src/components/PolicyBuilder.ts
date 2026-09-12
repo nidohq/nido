@@ -386,13 +386,14 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     adminWrap.innerHTML = `
       <form class="nido-form pol-builder" novalidate>
         <p class="mut" style="font-size:12.5px;margin:0 0 4px;line-height:1.55;">
-          Admin keys hold <strong>full authority</strong> over this account —
-          each one is a policy-free self-admin rule in the document. Add a
-          backup passkey or another device's key here; remove one when it
-          should no longer control the account.
+          <strong>Any</strong> of the keys below can act for this account on
+          its own — each holds independent full authority (one policy-free
+          self-admin rule per key in the document). Add a backup passkey or
+          another device's key; remove one when it should no longer control
+          the account.
         </p>
 
-        <div class="pol-field-label" style="margin-top:6px;">Current admin keys</div>
+        <div class="pol-field-label" style="margin-top:6px;">Admin keys — any may act</div>
         <div id="pol-adm-list">${baselineLoaded && baselineDoc !== null ? adminKeyRows() : `<span class="mut" style="font-size:12.5px;">${esc(baselineBlocked ?? 'Reading the applied document…')}</span>`}</div>
 
         <div id="pol-adm-add" ${pendingRemoval !== null ? 'hidden' : ''}>

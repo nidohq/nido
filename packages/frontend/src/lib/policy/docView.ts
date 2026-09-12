@@ -60,6 +60,10 @@ export interface DocRuleView {
   /** True when the rule constrains args (rendered as a badge only — arg
    *  predicates have no compact prose form yet). */
   hasArgConstraints: boolean;
+  /** True for the ADMIN shape: policy-free cap-free self-admin authority
+   *  (bare `all` principals, no functions/args/cap/expiry). The inspector
+   *  folds these into one "Admin keys" list — any admin may act. */
+  isAdmin: boolean;
   /** Plain-language sentence of what this rule permits. */
   permission: string;
 }
@@ -81,6 +85,14 @@ export function describeDocRule(rule: Rule): DocRuleView {
       ? { limit: rule.cap.limit, periodLedgers: rule.cap['period-ledgers'] }
       : null;
 
+  const isAdmin =
+    rule.scope.type === 'self-admin' &&
+    rule.principals.type === 'all' &&
+    rule.functions === undefined &&
+    rule.args === undefined &&
+    rule.cap === undefined &&
+    rule['not-after-ledger'] === undefined;
+
   return {
     name: rule.name,
     scopeLabel,
@@ -91,6 +103,7 @@ export function describeDocRule(rule: Rule): DocRuleView {
     notAfterLedger,
     cap,
     hasArgConstraints: rule.args !== undefined,
+    isAdmin,
     permission: docPermissionSentence({ rule, contract, signerIds, functions }),
   };
 }

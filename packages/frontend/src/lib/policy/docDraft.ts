@@ -296,10 +296,11 @@ export function adminRules(doc: PolicyDoc): WireRule[] {
   return doc.rules.filter(isAdminRule);
 }
 
-/** Next free "admin-N" rule name for the add form's default. */
+/** Next free "admin-N" slot (N ≥ 2 — the founder's ids are `owner` /
+ *  `admin`), free as BOTH a rule name and a signer id, so by default the
+ *  added admin's rule name mirrors its signer id. */
 export function nextAdminRuleName(doc: PolicyDoc): string {
-  const taken = new Set(doc.rules.map((r) => r.name));
-  if (!taken.has('admin')) return 'admin';
+  const taken = new Set([...doc.rules.map((r) => r.name), ...doc.signers.map((s) => s.id)]);
   for (let n = 2; ; n++) {
     if (!taken.has(`admin-${n}`)) return `admin-${n}`;
   }
@@ -380,7 +381,14 @@ export function addAdminKey(
   networkPassphrase: string,
 ): { doc: PolicyDoc; signerId: string } {
   assertSameNetwork(base, networkPassphrase);
-  const { signers, signerId } = mergeSignerDecl(base.signers, adminDraftToDecl(draft, 'admin'));
+  // Naming convention (captain's ruling): the founder keeps `owner`; added
+  // admins are `admin-2`, `admin-3`, … — never a bare `admin` id colliding
+  // with the founder's rule name. mergeSignerDecl still reuses an existing
+  // declaration when the KEY already exists.
+  const { signers, signerId } = mergeSignerDecl(
+    base.signers,
+    adminDraftToDecl(draft, nextAdminRuleName(base)),
+  );
   const rule: WireRule = {
     name: draft.name.trim(),
     scope: { type: 'self-admin' },

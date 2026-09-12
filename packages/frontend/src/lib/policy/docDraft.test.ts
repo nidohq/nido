@@ -161,18 +161,19 @@ describe('admin keys', () => {
   });
 
   describe('addAdminKey', () => {
-    it('adds the signer and its own self-admin rule', () => {
+    it('adds the signer (id admin-2, mirroring the default rule name) and its own self-admin rule', () => {
       const { doc, signerId } = addAdminKey(base, delegatedDraft, Networks.TESTNET);
-      expect(signerId).toBe('admin');
-      expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'session', 'admin']);
+      // Naming ruling: founder keeps `owner`; added admins are admin-2, admin-3, …
+      expect(signerId).toBe('admin-2');
+      expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'session', 'admin-2']);
       expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'session', 'admin-2']);
       expect(adminRules(doc).map((r) => r.name)).toEqual(['admin', 'admin-2']);
       // Each admin has its OWN rule (all = N-of-N, never co-signing).
       const added = doc.rules.find((r) => r.name === 'admin-2')!;
-      expect(added.principals).toEqual({ type: 'all', signers: ['admin'] });
+      expect(added.principals).toEqual({ type: 'all', signers: ['admin-2'] });
     });
 
-    it('allocates a fresh signer id when "admin" is taken by a different key', () => {
+    it('allocates the next admin-N id for each further key', () => {
       const withOne = addAdminKey(base, delegatedDraft, Networks.TESTNET).doc;
       const G3 = 'GCS7RFDDWSU2S2KYWEZDGHDGYUHM2VZWMCDTFP7ZS3MK7RY2VUXQ5D67';
       const { doc, signerId } = addAdminKey(
@@ -180,7 +181,8 @@ describe('admin keys', () => {
         { name: 'admin-3', signer: { kind: 'delegated', address: G3 } },
         Networks.TESTNET,
       );
-      expect(signerId).toBe('admin-2');
+      expect(signerId).toBe('admin-3');
+      expect(nextAdminRuleName(doc)).toBe('admin-4');
       expect(adminRules(doc)).toHaveLength(3);
     });
   });

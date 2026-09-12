@@ -115,3 +115,43 @@ describe('renderDocPreviewHtml', () => {
     expect(html).toContain('Raw document JSON');
   });
 });
+
+describe('admin single-list rendering', () => {
+  it('marks admin rules in the display model', async () => {
+    const { Networks } = await import('@stellar/stellar-sdk');
+    const { ownerAdminBaseline } = await import('./docDraft.js');
+    const baseline = ownerAdminBaseline(
+      { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
+      Networks.TESTNET,
+    );
+    expect(describeDocRule(baseline.rules[0]).isAdmin).toBe(true);
+    const session = scopedSessionKeyDoc({ sessionAddress: SESSION_G, targetContract: TARGET });
+    expect(describeDocRule(session.rules[0]).isAdmin).toBe(false);
+  });
+
+  it('folds all admin rules into ONE Admin-keys card in the doc view', async () => {
+    const { Networks } = await import('@stellar/stellar-sdk');
+    const { addAdminKey, ownerAdminBaseline } = await import('./docDraft.js');
+    const { renderDocPolicy } = await import('../../components/PolicyInspector.js');
+    const { docHash: hashOf } = await import('@nidohq/passkey-sdk');
+    const baseline = ownerAdminBaseline(
+      { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
+      Networks.TESTNET,
+    );
+    const twoAdmins = addAdminKey(
+      baseline,
+      { name: 'admin-2', signer: { kind: 'delegated', address: SESSION_G } },
+      Networks.TESTNET,
+    ).doc;
+    const el = document.createElement('div');
+    renderDocPolicy(el, summarizeDoc(twoAdmins, hashOf(twoAdmins)), {});
+    // ONE consolidated card listing both keys ("any may act"), no per-rule
+    // admin cards.
+    expect(el.querySelectorAll('[data-doc-admins]')).toHaveLength(1);
+    const card = el.querySelector('[data-doc-admins]')!;
+    expect(card.textContent).toContain('"owner"');
+    expect(card.textContent).toContain('"admin-2"');
+    expect(card.textContent).toContain('Any of these');
+    expect(el.querySelectorAll('[data-doc-rule]')).toHaveLength(0);
+  });
+});
