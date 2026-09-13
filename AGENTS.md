@@ -64,6 +64,14 @@ Pages whose UI lives inside `class="hidden"` mode containers need their primary
 state revealed; the script's `reveal` map handles this (currently un-hides
 `#home-mode` on the account page). Add an entry there if another page exports blank.
 
+## Recovery spec (Stage 1 spike)
+
+`docs/recovery/TRANSITION_SPEC.md` + `packages/recovery-spec/` are a Stage 1
+spike (transition spec + executable reference state machine + adversarial
+tests) for Perch/Nido ZK+guardian recovery, per
+`firstmate/data/perch-zk-recovery-scout-p5/follow-up.md`. No contracts or
+circuits — read the spec doc before extending recovery design elsewhere.
+
 ## Testing Notes
 
 Tests use synthetic P-256 keypairs (`SigningKey::random()`) to construct full WebAuthn assertions without a browser. Contract test IDs use valid stellar-strkey encoded addresses.

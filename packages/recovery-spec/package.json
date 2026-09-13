@@ -1,0 +1,15 @@
+{
+  "name": "@nidohq/recovery-spec",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Stage 1 spike: executable reference state machine for Perch/Nido recovery (docs/recovery/TRANSITION_SPEC.md). Not production code.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.7"
+  }
+}
