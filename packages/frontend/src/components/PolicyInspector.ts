@@ -261,7 +261,7 @@ export function renderDocPolicy(
       <header class="pol-head">
         <div>
           <span class="section-label">Policy document</span>
-          <h3 class="pol-name disp">What this account's owner approved</h3>
+          <h3 class="pol-name disp">What was approved for this account</h3>
         </div>
         <div class="pol-badges">${tierBadge}${sourceBadge}</div>
       </header>

@@ -77,8 +77,8 @@ describe('buildSessionGrantOperation (doc-only regression)', () => {
   it('emits an apply-policy-doc descriptor — never add_context_rule — for the passkey grant', async () => {
     const { Networks } = await import('@stellar/stellar-sdk');
     const { parsePolicyDocJson } = await import('@nidohq/passkey-sdk');
-    const { ownerAdminBaseline } = await import('./docDraft.js');
-    const baseline = ownerAdminBaseline(
+    const { adminBaseline } = await import('./docDraft.js');
+    const baseline = adminBaseline(
       { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
       Networks.TESTNET,
     );
@@ -116,9 +116,9 @@ describe('buildSessionGrantOperation (doc-only regression)', () => {
   it('carries prevDocJson on an update and replaces a same-named rule', async () => {
     const { Networks } = await import('@stellar/stellar-sdk');
     const { parsePolicyDocJson } = await import('@nidohq/passkey-sdk');
-    const { ownerAdminBaseline, upsertSessionRule } = await import('./docDraft.js');
+    const { adminBaseline, upsertSessionRule } = await import('./docDraft.js');
     const { diffPolicyDocs } = await import('./docDiff.js');
-    const baseline = ownerAdminBaseline(
+    const baseline = adminBaseline(
       { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
       Networks.TESTNET,
     );

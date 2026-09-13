@@ -8,6 +8,7 @@
 // everything here pure (no RPC, no DOM) so it unit-tests like policyView.
 
 import type { PolicyDoc, Rule, SignerDecl } from '@nidohq/passkey-sdk';
+import { renameLegacyOwner } from './docDraft.js';
 import { truncate } from './policyView.js';
 
 /** One declared signer, displayed with the doc's own id as the label. */
@@ -147,10 +148,16 @@ export interface DocViewModel {
 /** Build the display model for a hash-verified document (tier a — under
  *  doc-only there is no drift tier: the live rules ARE the doc's lowering). */
 export function summarizeDoc(doc: PolicyDoc, docHashHex: string): DocViewModel {
+  // Display-layer id migration: a legacy applied doc may still declare the
+  // founder as `owner` until its next update rewrites it — render it as
+  // `admin` so the two names never show at once (renameLegacyOwner's guard
+  // keeps distinct owner/admin keys apart). Display only; the hash shown is
+  // still the STORED doc's identity.
+  const display = renameLegacyOwner(doc);
   return {
     docHash: docHashHex,
     docHashShort: truncate(docHashHex, 8, 8),
-    signers: doc.signers.map(describeDocSigner),
-    rules: doc.rules.map(describeDocRule),
+    signers: display.signers.map(describeDocSigner),
+    rules: display.rules.map(describeDocRule),
   };
 }

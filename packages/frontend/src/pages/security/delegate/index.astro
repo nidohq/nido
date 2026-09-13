@@ -147,7 +147,7 @@ import Icon from '../../../components/Icon.astro';
     buildSessionGrantOperation,
   } from '../../../lib/policy/docRequest.js';
   import {
-    ownerAdminBaseline,
+    adminBaseline,
     upsertSessionRule,
     validateSessionDocDraft,
     type SessionDocDraft,
@@ -294,7 +294,7 @@ import Icon from '../../../components/Icon.astro';
                   "Could not read the account's primary passkey — a first document must carry it.",
                 );
               } else {
-                baselineDoc = ownerAdminBaseline(
+                baselineDoc = adminBaseline(
                   { verifier: passkey.verifier, publicKeyHex: bytesToHex(passkey.publicKey) },
                   NETWORK_PASSPHRASE,
                 );

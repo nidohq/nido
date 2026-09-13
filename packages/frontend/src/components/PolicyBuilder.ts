@@ -14,7 +14,7 @@
 //   an admin authority, and the contract would refuse such a document).
 //
 // `apply_doc` replaces the whole document, so every submit is an update
-// against a loaded BASELINE (the applied doc, or the owner-admin baseline
+// against a loaded BASELINE (the applied doc, or the admin baseline
 // on a first apply), and every preview shows the full merged document
 // (canonical JSON + doc_hash) AND the diff against the applied one —
 // exactly what changes — before the user confirms. Validation and the
@@ -42,7 +42,7 @@ import {
   addAdminKey,
   adminRules,
   nextAdminRuleName,
-  ownerAdminBaseline,
+  adminBaseline,
   removeAdminRule,
   upsertSessionRule,
   validateAdminKeyDraft,
@@ -68,7 +68,7 @@ type BuilderTab = 'session' | 'admin';
 export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions): void {
   // The merge baseline for every submit and the diff's "before" side:
   // the applied document, or — on a first apply — the synthesized
-  // owner-admin baseline (apply_doc replaces EVERY rule and refuses docs
+  // admin baseline (apply_doc replaces EVERY rule and refuses docs
   // without a policy-free self-admin rule, so the account's own passkey
   // must ride along from the start).
   let baselineDoc: PolicyDoc | null = null;
@@ -108,7 +108,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
           baselineBlocked =
             "Could not read the account's primary passkey — a first document must carry it (anti-brick).";
         } else {
-          baselineDoc = ownerAdminBaseline(
+          baselineDoc = adminBaseline(
             { verifier: passkey.verifier, publicKeyHex: bytesToHex(passkey.publicKey) },
             NETWORK_PASSPHRASE,
           );

@@ -7,7 +7,7 @@ import {
   draftToDoc,
   isAdminRule,
   nextAdminRuleName,
-  ownerAdminBaseline,
+  adminBaseline,
   parseFunctionsInput,
   removeAdminRule,
   upsertSessionRule,
@@ -95,7 +95,7 @@ describe('draftToDoc', () => {
 });
 
 describe('admin keys', () => {
-  const baseline = ownerAdminBaseline(
+  const baseline = adminBaseline(
     { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
     Networks.TESTNET,
   );
@@ -165,7 +165,7 @@ describe('admin keys', () => {
       const { doc, signerId } = addAdminKey(base, delegatedDraft, Networks.TESTNET);
       // Naming ruling: founder keeps `owner`; added admins are admin-2, admin-3, …
       expect(signerId).toBe('admin-2');
-      expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'session', 'admin-2']);
+      expect(doc.signers.map((s) => s.id)).toEqual(['admin', 'session', 'admin-2']);
       expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'session', 'admin-2']);
       expect(adminRules(doc).map((r) => r.name)).toEqual(['admin', 'admin-2']);
       // Each admin has its OWN rule (all = N-of-N, never co-signing).
@@ -193,7 +193,7 @@ describe('admin keys', () => {
     it('removes an admin rule and prunes its now-orphaned signer', () => {
       const doc = removeAdminRule(twoAdmins, 'admin-2', Networks.TESTNET);
       expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'session']);
-      expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'session']);
+      expect(doc.signers.map((s) => s.id)).toEqual(['admin', 'session']);
     });
 
     it('refuses to remove the last admin rule', () => {

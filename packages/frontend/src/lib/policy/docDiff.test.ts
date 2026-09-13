@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Networks } from '@stellar/stellar-sdk';
 import { buildPolicyDoc, scopedSessionKeyDoc } from '@nidohq/passkey-sdk';
 import { diffPolicyDocs, diffRuleFields } from './docDiff.js';
-import { ownerAdminBaseline, upsertSessionRule, type SessionDocDraft } from './docDraft.js';
+import { adminBaseline, upsertSessionRule, type SessionDocDraft } from './docDraft.js';
 
 const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
 const TARGET2 = 'CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX';
@@ -13,11 +13,11 @@ const OWNER_KEY = '04' + 'ab'.repeat(64);
 
 const baseDoc = buildPolicyDoc({
   signers: [
-    { id: 'owner', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY },
+    { id: 'admin', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY },
     { id: 'ops', kind: 'delegated', address: G1 },
   ],
   permissions: [
-    { name: 'pay', on: { contract: TARGET }, by: ['owner'], functions: ['transfer'], until: 9000 },
+    { name: 'pay', on: { contract: TARGET }, by: ['admin'], functions: ['transfer'], until: 9000 },
     { name: 'ops', on: { contract: TARGET2 }, by: ['ops'] },
   ],
 });
@@ -40,12 +40,12 @@ describe('diffPolicyDocs', () => {
   it('classifies added, removed, and modified rules by name', () => {
     const next = buildPolicyDoc({
       signers: [
-        { id: 'owner', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY },
+        { id: 'admin', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY },
         { id: 'session', kind: 'delegated', address: G2 },
       ],
       permissions: [
         // 'pay' modified: functions widen, expiry moves.
-        { name: 'pay', on: { contract: TARGET }, by: ['owner'], functions: ['transfer', 'approve'], until: 12000 },
+        { name: 'pay', on: { contract: TARGET }, by: ['admin'], functions: ['transfer', 'approve'], until: 12000 },
         // 'ops' removed; 'session' added.
         { name: 'session', on: { contract: TARGET2 }, by: ['session'], until: 500 },
       ],
@@ -68,11 +68,11 @@ describe('diffPolicyDocs', () => {
   it('surfaces a rekeyed signer on rules that reference it', () => {
     const next = buildPolicyDoc({
       signers: [
-        { id: 'owner', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY },
+        { id: 'admin', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY },
         { id: 'ops', kind: 'delegated', address: G2 }, // same id, new key
       ],
       permissions: [
-        { name: 'pay', on: { contract: TARGET }, by: ['owner'], functions: ['transfer'], until: 9000 },
+        { name: 'pay', on: { contract: TARGET }, by: ['admin'], functions: ['transfer'], until: 9000 },
         { name: 'ops', on: { contract: TARGET2 }, by: ['ops'] },
       ],
     });
@@ -136,7 +136,7 @@ describe('upsertSessionRule', () => {
   };
 
   it('first apply: upserts into the owner-admin baseline (anti-brick rule rides along)', () => {
-    const baseline = ownerAdminBaseline(
+    const baseline = adminBaseline(
       { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
       Networks.TESTNET,
     );
@@ -148,7 +148,7 @@ describe('upsertSessionRule', () => {
     expect(doc.rules[0].scope).toEqual({ type: 'self-admin' });
     expect(doc.rules[0].functions).toBeUndefined();
     expect(doc.rules[0].cap).toBeUndefined();
-    expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'session']);
+    expect(doc.signers.map((s) => s.id)).toEqual(['admin', 'session']);
     // Everything renders as newly granted on the first apply.
     const d = diffPolicyDocs(null, doc);
     expect(d.firstApply).toBe(true);
@@ -159,7 +159,7 @@ describe('upsertSessionRule', () => {
     const { doc, signerId } = upsertSessionRule(baseDoc, draft, Networks.TESTNET);
     expect(signerId).toBe('session');
     expect(doc.rules.map((r) => r.name)).toEqual(['pay', 'ops', 'session']);
-    expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'ops', 'session']);
+    expect(doc.signers.map((s) => s.id)).toEqual(['admin', 'ops', 'session']);
     const d = diffPolicyDocs(baseDoc, doc);
     expect(d.rulesAdded.map((r) => r.name)).toEqual(['session']);
     expect(d.rulesRemoved).toEqual([]);
@@ -173,7 +173,7 @@ describe('upsertSessionRule', () => {
       Networks.TESTNET,
     );
     expect(signerId).toBe('ops');
-    expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'ops']);
+    expect(doc.signers.map((s) => s.id)).toEqual(['admin', 'ops']);
   });
 
   it('allocates a fresh id on collision and prunes orphaned signers on replace', () => {
@@ -183,7 +183,7 @@ describe('upsertSessionRule', () => {
     const G3 = 'GCS7RFDDWSU2S2KYWEZDGHDGYUHM2VZWMCDTFP7ZS3MK7RY2VUXQ5D67';
     const second = upsertSessionRule(first, { ...draft, signer: { kind: 'delegated' as const, address: G3 } }, Networks.TESTNET);
     expect(second.signerId).toBe('session-2');
-    expect(second.doc.signers.map((s) => s.id)).toEqual(['owner', 'ops', 'session-2']);
+    expect(second.doc.signers.map((s) => s.id)).toEqual(['admin', 'ops', 'session-2']);
     const d = diffPolicyDocs(first, second.doc);
     expect(d.rulesModified.map((m) => m.name)).toEqual(['session']);
     expect(d.signers.map((s) => [s.decl.id, s.kind])).toEqual([
@@ -193,10 +193,62 @@ describe('upsertSessionRule', () => {
   });
 
   it('refuses a cross-network update', () => {
-    const bound = ownerAdminBaseline(
+    const bound = adminBaseline(
       { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
       Networks.TESTNET,
     );
     expect(() => upsertSessionRule(bound, draft, 'Other Net')).toThrow(/bound to/);
+  });
+});
+
+describe('legacy owner→admin migration (captain naming ruling)', () => {
+  it('renames owner to admin on the next composed update and shows it in the diff', () => {
+    const legacy = buildPolicyDoc({
+      signers: [{ id: 'owner', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY }],
+      permissions: [{ name: 'admin', on: 'self-admin', by: ['owner'] }],
+    });
+    const draft: SessionDocDraft = {
+      name: 'session',
+      signer: { kind: 'delegated', address: G2 },
+      targetContract: TARGET2,
+      functionsInput: '',
+      notAfterLedger: null,
+      cap: null,
+    };
+    const { doc } = upsertSessionRule(legacy, draft, Networks.TESTNET);
+    // The update carries the rename: no 'owner' id survives.
+    expect(doc.signers.map((s) => s.id)).toEqual(['admin', 'session']);
+    expect(doc.rules[0].principals).toEqual({ type: 'all', signers: ['admin'] });
+    // And the diff against the still-legacy applied doc RENDERS the rename.
+    const d = diffPolicyDocs(legacy, doc);
+    expect(d.signers.map((c) => [c.decl.id, c.kind])).toContainEqual(['admin', 'added']);
+    expect(d.signers.map((c) => [c.decl.id, c.kind])).toContainEqual(['owner', 'removed']);
+    expect(d.rulesModified.map((m) => m.name)).toEqual(['admin']);
+    expect(d.rulesModified[0].changes.join(' ')).toContain('owner');
+    expect(d.rulesModified[0].changes.join(' ')).toContain('admin');
+  });
+
+  it('never renames when a distinct admin id already exists (guard)', () => {
+    const G3 = 'GCS7RFDDWSU2S2KYWEZDGHDGYUHM2VZWMCDTFP7ZS3MK7RY2VUXQ5D67';
+    const mixed = buildPolicyDoc({
+      signers: [
+        { id: 'owner', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY },
+        { id: 'admin', kind: 'delegated', address: G3 },
+      ],
+      permissions: [
+        { name: 'admin', on: 'self-admin', by: ['owner'] },
+        { name: 'admin-b', on: 'self-admin', by: ['admin'] },
+      ],
+    });
+    const draft: SessionDocDraft = {
+      name: 'session',
+      signer: { kind: 'delegated', address: G2 },
+      targetContract: TARGET2,
+      functionsInput: '',
+      notAfterLedger: null,
+      cap: null,
+    };
+    const { doc } = upsertSessionRule(mixed, draft, Networks.TESTNET);
+    expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'admin', 'session']);
   });
 });

@@ -161,7 +161,7 @@ export function draftToDoc(draft: SessionDocDraft, networkPassphrase: string): P
  *  constructor default rule before the first apply; the doc's own admin
  *  rule afterwards — but then the applied doc IS the baseline and this is
  *  not needed). */
-export interface OwnerPasskey {
+export interface AdminPasskey {
   /** WebAuthn verifier contract the account trusts. */
   verifier: string;
   /** SEC1 uncompressed P-256 public key, hex. */
@@ -170,19 +170,20 @@ export interface OwnerPasskey {
 
 /**
  * The FIRST-APPLY baseline: a document holding only the anti-brick admin
- * rule — the account's own passkey with policy-free self-admin authority.
+ * rule — the account's own passkey, signer id `admin`, with policy-free
+ * self-admin authority.
  * `apply_doc` replaces EVERY rule (the constructor's default passkey rule
  * included) and refuses documents without a policy-free self-admin rule
  * (`DocAdminLockout`), so a first apply must never submit a session rule
  * alone: it upserts into this baseline instead.
  */
-export function ownerAdminBaseline(owner: OwnerPasskey, networkPassphrase: string): PolicyDoc {
+export function adminBaseline(admin: AdminPasskey, networkPassphrase: string): PolicyDoc {
   return buildPolicyDoc({
     network: networkPassphrase,
     signers: [
-      { id: 'owner', kind: 'passkey', verifier: owner.verifier, publicKey: owner.publicKeyHex },
+      { id: 'admin', kind: 'passkey', verifier: admin.verifier, publicKey: admin.publicKeyHex },
     ],
-    permissions: [{ name: 'admin', on: 'self-admin', by: ['owner'] }],
+    permissions: [{ name: 'admin', on: 'self-admin', by: ['admin'] }],
   });
 }
 
@@ -220,7 +221,9 @@ export function upsertSessionRule(
     ? current.rules.map((r) => (r.name === rule.name ? rule : r))
     : [...current.rules, rule];
 
-  return { doc: rebuildDoc(current, merged, rules, networkPassphrase), signerId };
+  const doc = rebuildDoc(current, merged, rules, networkPassphrase);
+  // rebuildDoc may have applied the legacy owner→admin rename under us.
+  return { doc, signerId: signerId === 'owner' && !doc.signers.some((s) => s.id === 'owner') ? 'admin' : signerId };
 }
 
 // --- Shared doc-merge helpers ----------------------------------------------
@@ -256,8 +259,39 @@ function mergeSignerDecl(
   return { signers: [...signers, { ...decl, id: signerId }], signerId };
 }
 
-/** Drop declarations no rule references, then re-validate through the
- *  schema so a malformed merge fails closed here, not at the compiler. */
+/**
+ * Legacy-id migration: early spike documents declared the founder signer as
+ * `owner`; the captain's naming ruling is `admin` only ("confusing for new
+ * users that there are both"). Guarded rename — applied only when `owner`
+ * exists and no distinct `admin` signer does, so a rename can never merge
+ * two different keys. Pure; every composed update flows through it (via
+ * rebuildDoc), so the rename lands with the user's NEXT doc update and
+ * shows up in the diff preview as the owner → admin signer change.
+ */
+export function renameLegacyOwner(doc: PolicyDoc): PolicyDoc {
+  const hasOwner = doc.signers.some((s) => s.id === 'owner');
+  const hasAdmin = doc.signers.some((s) => s.id === 'admin');
+  if (!hasOwner || hasAdmin) return doc;
+  return {
+    ...doc,
+    signers: doc.signers.map((s) => (s.id === 'owner' ? { ...s, id: 'admin' } : s)),
+    rules: doc.rules.map((r) =>
+      r.principals.type === 'self-authenticating'
+        ? r
+        : {
+            ...r,
+            principals: {
+              ...r.principals,
+              signers: r.principals.signers.map((id) => (id === 'owner' ? 'admin' : id)),
+            },
+          },
+    ),
+  };
+}
+
+/** Drop declarations no rule references, migrate legacy ids, then
+ *  re-validate through the schema so a malformed merge fails closed here,
+ *  not at the compiler. */
 function rebuildDoc(
   base: PolicyDoc,
   signers: readonly WireSigner[],
@@ -267,12 +301,14 @@ function rebuildDoc(
   const referenced = new Set(
     rules.flatMap((r) => (r.principals.type === 'self-authenticating' ? [] : r.principals.signers)),
   );
-  return parsePolicyDoc({
-    ...base,
-    network: networkPassphrase,
-    signers: signers.filter((s) => referenced.has(s.id)),
-    rules,
-  });
+  return parsePolicyDoc(
+    renameLegacyOwner({
+      ...base,
+      network: networkPassphrase,
+      signers: signers.filter((s) => referenced.has(s.id)),
+      rules,
+    } as PolicyDoc),
+  );
 }
 
 // --- Admin keys -------------------------------------------------------------
@@ -394,9 +430,11 @@ export function addAdminKey(
     scope: { type: 'self-admin' },
     principals: { type: 'all', signers: [signerId] },
   };
+  const doc = rebuildDoc(base, signers, [...base.rules, rule], networkPassphrase);
+  // rebuildDoc may have applied the legacy owner→admin rename under us.
   return {
-    doc: rebuildDoc(base, signers, [...base.rules, rule], networkPassphrase),
-    signerId,
+    doc,
+    signerId: signerId === 'owner' && !doc.signers.some((s) => s.id === 'owner') ? 'admin' : signerId,
   };
 }
 
