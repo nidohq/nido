@@ -155,3 +155,39 @@ describe('admin single-list rendering', () => {
     expect(el.querySelectorAll('[data-doc-rule]')).toHaveLength(0);
   });
 });
+
+describe('new-account (unapplied baseline) doc view', () => {
+  it('renders the synthesized baseline labeled not-yet-applied, with cards and the raw toggle', async () => {
+    const { Networks } = await import('@stellar/stellar-sdk');
+    const { adminBaseline } = await import('./docDraft.js');
+    const { renderDocPolicy } = await import('../../components/PolicyInspector.js');
+    const { canonicalJson, docHash: hashOf } = await import('@nidohq/passkey-sdk');
+    // The new-account fixture: no applied doc; the page synthesizes the
+    // SAME baseline every first-apply flow composes against.
+    const baseline = adminBaseline(
+      { verifier: VERIFIER, publicKeyHex: OWNER_KEY },
+      Networks.TESTNET,
+    );
+    const el = document.createElement('div');
+    renderDocPolicy(el, summarizeDoc(baseline, hashOf(baseline)), {
+      canonicalJson: canonicalJson(baseline),
+      unapplied: true,
+    });
+    expect(el.textContent).toContain('Not yet applied');
+    expect(el.textContent).toContain('current effective policy');
+    expect(el.textContent).toContain('Document hash (once applied)');
+    // The admin list renders (founder as "admin") and the raw toggle exists.
+    expect(el.querySelectorAll('[data-doc-admins]')).toHaveLength(1);
+    expect(el.textContent).toContain('"admin"');
+    expect(el.textContent).toContain('Raw document JSON');
+    expect(el.querySelector('#pol-doc-copy-json')).not.toBeNull();
+    // An applied doc must NOT carry the unapplied label.
+    const applied = document.createElement('div');
+    renderDocPolicy(applied, summarizeDoc(baseline, hashOf(baseline)), {
+      canonicalJson: canonicalJson(baseline),
+      source: 'storage',
+    });
+    expect(applied.textContent).toContain('Verified · lossless');
+    expect(applied.textContent).not.toContain('Not yet applied');
+  });
+});

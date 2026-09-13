@@ -180,6 +180,12 @@ export interface DocRenderContext {
    *  page wires (id `pol-doc-copy-json`) that should copy THIS exact
    *  canonical string — the bytes whose sha256 is the stored doc_hash. */
   canonicalJson?: string;
+  /** True for a fresh doc-surface account: the rendered document is the
+   *  SYNTHESIZED baseline (the account's current effective policy), not an
+   *  applied document — the first policy edit applies it and the label
+   *  drops. Changes the badge + lead copy; the hash shown is the identity
+   *  the document WOULD store. */
+  unapplied?: boolean;
 }
 
 /** The doc view's raw-JSON toggle: pretty-printed for reading (the rule
@@ -248,9 +254,13 @@ export function renderDocPolicy(
   ctx: DocRenderContext = {},
 ): void {
   const currentLedger = ctx.currentLedger ?? null;
-  const tierBadge = '<span class="pol-badge primary">Verified · lossless</span>';
-  const sourceBadge =
-    ctx.source === 'storage'
+  const unapplied = ctx.unapplied === true;
+  const tierBadge = unapplied
+    ? '<span class="pol-badge gated">Not yet applied</span>'
+    : '<span class="pol-badge primary">Verified · lossless</span>';
+  const sourceBadge = unapplied
+    ? ''
+    : ctx.source === 'storage'
       ? '<span class="pol-badge">Stored on chain</span>'
       : ctx.source === 'events'
         ? '<span class="pol-badge">From event history</span>'
@@ -266,11 +276,14 @@ export function renderDocPolicy(
         <div class="pol-badges">${tierBadge}${sourceBadge}</div>
       </header>
       <p class="pol-perm mut" style="font-size:12.5px;">
-        This is the document itself — names and all — checked byte-for-byte
-        against the hash the account stores on chain.
+        ${
+          unapplied
+            ? "The account's current effective policy, shown as the document it would become — nothing has been applied as a document yet. Your first policy edit applies exactly this (plus your change)."
+            : 'This is the document itself — names and all — checked byte-for-byte against the hash the account stores on chain.'
+        }
       </p>
       <div class="pol-field">
-        <span class="pol-field-label">Document hash</span>
+        <span class="pol-field-label">${unapplied ? 'Document hash (once applied)' : 'Document hash'}</span>
         <span class="pol-field-val"><code class="pol-mono" title="${esc(model.docHash)}">${esc(model.docHashShort)}</code></span>
       </div>
       <div class="pol-field">

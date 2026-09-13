@@ -118,11 +118,11 @@ import Icon from '../../../components/Icon.astro';
 
 <script>
   import { rpc } from '@stellar/stellar-sdk';
-  import { canonicalJson, contractIdFromHostname, isContractId } from '@nidohq/passkey-sdk';
+  import { canonicalJson, contractIdFromHostname, docHash, isContractId } from '@nidohq/passkey-sdk';
   import { toast } from '../../../lib/toast.js';
-  import { RPC_URL } from '../../../lib/network.js';
+  import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
   import { fetchAllChainRules, fetchRegistryAddress } from '../../../lib/policyChainFetch.js';
-  import { readDocPolicy } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchUnappliedBaseline, readDocPolicy } from '../../../lib/policy/docPolicyFetch.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocPolicy, renderPolicyList } from '../../../components/PolicyInspector.js';
   import { mountPolicyBuilder } from '../../../components/PolicyBuilder.js';
@@ -197,6 +197,32 @@ import Icon from '../../../components/Icon.astro';
           docSectionEl.hidden = false;
           rulesHeadingEl.textContent = 'On-chain rules (raw)';
           docLine = ' Policy document verified against the on-chain hash.';
+        } else if (docRead.unapplied) {
+          // Fresh doc-surface account: nothing applied yet. Render the
+          // SYNTHESIZED baseline — the same document every first-apply
+          // flow composes against — as the current effective policy,
+          // labeled not-yet-applied.
+          const baseline = await fetchUnappliedBaseline(account!, NETWORK_PASSPHRASE);
+          if (baseline !== null) {
+            const canonical = canonicalJson(baseline);
+            renderDocPolicy(docEl, summarizeDoc(baseline, docHash(baseline)), {
+              currentLedger: ledger,
+              canonicalJson: canonical,
+              unapplied: true,
+            });
+            document.getElementById('pol-doc-copy-json')?.addEventListener('click', () => {
+              navigator.clipboard.writeText(canonical).then(
+                () => toast('Canonical document JSON copied.'),
+                () => toast('Copy failed — select the JSON manually.'),
+              );
+            });
+            docSectionEl.hidden = false;
+            rulesHeadingEl.textContent = 'On-chain rules (raw)';
+            docLine = ' No document applied yet — showing the effective policy as a document.';
+          } else {
+            docSectionEl.hidden = true;
+            rulesHeadingEl.textContent = 'Current rules';
+          }
         } else {
           docSectionEl.hidden = true;
           rulesHeadingEl.textContent = 'Current rules';

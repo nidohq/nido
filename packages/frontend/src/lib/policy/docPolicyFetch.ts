@@ -15,8 +15,11 @@ import {
   perchTestnetAddresses,
   readPolicy,
   type ChainRule,
+  type PolicyDoc,
   type ReadPolicyResult,
 } from '@nidohq/passkey-sdk';
+import { fetchDefaultRuleAuthInfo } from '../policyChainFetch.js';
+import { adminBaseline } from './docDraft.js';
 import { Client as InterpreterClient } from '@stellar-registry/perch-interpreter';
 import { fetchRegistryAddress, simulateView } from '../policyChainFetch.js';
 import { RPC_URL, NETWORK_PASSPHRASE } from '../network.js';
@@ -196,6 +199,12 @@ export interface DocPolicyRead {
   docSource: DocJsonSource | null;
   /** Whether the account exposes the `apply_doc` surface at all. */
   surfaceSupported: boolean;
+  /** True when the surface exists but NO document has ever been applied —
+   *  a fresh account. The page then renders the synthesized baseline
+   *  (adminBaseline over the default rule's passkey, the SAME baseline
+   *  every first-apply flow composes against) as the effective policy,
+   *  labeled not-yet-applied. */
+  unapplied: boolean;
 }
 
 /**
@@ -235,5 +244,31 @@ export async function readDocPolicy(
     result,
     docSource: result.tier === 'decompiled' ? null : (recovered?.source ?? null),
     surfaceSupported: surface.supported,
+    unapplied: surface.supported && surface.appliedDocHash === null,
   };
+}
+
+/**
+ * The synthesized FIRST-APPLY baseline document for a fresh doc-surface
+ * account: the founder admin rule over the default rule's live passkey —
+ * byte-identical to what the builder and both delegate pages compose
+ * against on a first apply, so the policy page's "effective policy"
+ * rendering and the flows agree on one baseline. Null when the passkey
+ * cannot be read (the flows fail closed on the same condition).
+ */
+export async function fetchUnappliedBaseline(
+  account: string,
+  networkPassphrase: string,
+): Promise<PolicyDoc | null> {
+  try {
+    const info = await fetchDefaultRuleAuthInfo(account);
+    const passkey = info.externalSigners[0];
+    if (passkey === undefined) return null;
+    return adminBaseline(
+      { verifier: passkey.verifier, publicKeyHex: toHex(passkey.publicKey) },
+      networkPassphrase,
+    );
+  } catch {
+    return null;
+  }
 }
