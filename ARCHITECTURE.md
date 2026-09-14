@@ -128,10 +128,13 @@ Cross-contract integration tests (crates/integration-tests/) using synthetic P-2
 
 - **Subdomain Passkey Isolation:** Each account's passkey is bound to its subdomain RP ID (`<contractId>.nido.fyi`), preventing cross-account signature reuse at the WebAuthn protocol level.
 - **On-Chain Verification:** All passkey signature verification happens on-chain via the WebAuthn verifier contract. There is no off-chain validation step that could be bypassed.
-- **G-Key Ephemerality:** The `G_temp` private key is used only for the deployment transaction and should be discarded afterward. On testnet, the secret is passed via URL query parameter (acceptable for development; must change for mainnet).
-- **Passkey Recovery:** SmartAccount supports multiple admin signers via context rules. Users should register a backup device after onboarding.
+- **G-Key Ephemerality:** The `G_temp` private key is used only for the deployment transaction and should be discarded afterward. It's passed via the URL **hash fragment**, which is never sent to the server; legacy query-string links are still accepted but scrubbed from the URL immediately.
+- **Recovery:** SmartAccount supports multiple recovery paths beyond the original passkey — friend-assisted M-of-N recovery (`add_multisig_recovery`) and secretless ZK recovery via a Merkle commitment pool + UltraHonk proof (`contracts/zk-recovery`). An in-account guard blocks removing/editing the recovery rule or upgrading the account's wasm while a recovery is pending, and changing the recovery configuration itself requires a 7-day announce-then-execute delay — so a stolen passkey alone can't disarm recovery.
 - **Replay Protection:** SmartAccount nonce tracking (via OZ stellar-accounts) prevents replay. Each WebAuthn assertion challenge is bound to the specific transaction payload.
-- **Scoped Sessions:** Context rules can restrict session signers to specific contracts, functions, spending limits, and time windows — enforced on-chain by the SmartAccount.
+- **Scoped Sessions:** Context rules can restrict session signers to specific contracts, functions, spending limits, and time windows — enforced on-chain by the SmartAccount, including delegated session keys (`/security/delegate/`).
+- **Registry Pinning:** Once the factory admin calls `set_registry_pins`, address resolution bypasses the on-chain Stellar Registry entirely for the verifier and zk-recovery controller — a repointed or compromised registry can no longer reroute or block new-account creation.
+- **Uniform Anonymity Set:** Every account gets a genesis Merkle leaf (a real or deterministic-dummy commitment) inserted at creation, whether or not its owner ever enrolls in recovery, so enrolled and non-enrolled accounts are indistinguishable on-chain.
+- **Bounded Sweep:** The onboarding sweep (`preauth-sweep-policy`) is deliberately permissionless — anyone can trigger it with zero signatures — but is safe because it's provably bounded to move funds only from the one recorded G-address into its own C-address. The security guarantee is the bound, not a signature.
 
 ## 6. Architecture Diagrams
 
