@@ -104,3 +104,43 @@ export function buildEnroll(args: BuildEnrollArgs): TxBuild {
     description: `Enroll in Stage 3 recovery (${args.config.mode.tag})`,
   };
 }
+
+export interface BuildReconfigureArgs {
+  controllerId: string;
+  account: string;
+  /** The FULL proposed new config — same shape `enroll` takes. Every field
+   *  other than the added factor (`guardians`/`guardian_threshold` OR
+   *  `verifier`/`zk_pool`, whichever direction) must equal the account's
+   *  CURRENTLY stored config exactly, or the contract refuses
+   *  (`Error::ReconfigureFieldMismatch`) — build this by spreading the
+   *  existing config (`readRecoveryConfig`) and only overwriting the added
+   *  factor's fields plus `mode`, never rebuilding from scratch. */
+  config: RecoveryConfig;
+  /** `Profile::Protected` only: the enrolled guardians nested-authorizing
+   *  THIS exact `(account, config)` pair in the same transaction (see
+   *  `contracts/recovery-controller/src/contract.rs::reconfigure_digest`).
+   *  Omit (or pass `[]`) for `Profile::Loss`, which needs no evidence. */
+  guardianEvidence?: string[];
+}
+
+/**
+ * Build the (self-authed — `account.require_auth()`, plus, for
+ * `Profile::Protected`, the currently-enrolled factor's nested guardian
+ * evidence) `reconfigure` operation — the ONE allowed mutation to an
+ * already-enrolled account's config: strictly ADDING a missing evidence
+ * factor (`GuardianOnly -> Combined` or `ZkOnly -> Combined`), never
+ * anything else. See `contracts/recovery-controller/src/lib.rs`'s crate
+ * doc comment for the full design and its remaining bound (no ZK
+ * reconfigure-evidence path).
+ */
+export function buildReconfigure(args: BuildReconfigureArgs): TxBuild {
+  const scVals = recoveryControllerSpec().funcArgsToScVals('reconfigure', {
+    account: args.account,
+    new_config: args.config,
+    guardian_evidence: args.guardianEvidence ?? [],
+  });
+  return {
+    operations: [new Contract(args.controllerId).call('reconfigure', ...scVals)],
+    description: `Reconfigure Stage 3 recovery (-> ${args.config.mode.tag})`,
+  };
+}

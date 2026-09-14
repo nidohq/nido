@@ -4,64 +4,57 @@ import { createAndDeployAs } from '../../support/recovery';
 
 const PORT = Number(process.env.E2E_PORT || 4399);
 
-// Live-probe deploy of `contracts/recovery-controller` used only by this
-// spec. No constructor (shared, per-account storage only) — deployed once via
-// `stellar contract deploy` against testnet identity `theahaco` for this probe.
-// See DEPLOYED.md for the rest of the stack's addresses; this one is
-// deliberately NOT added there (a throwaway probe instance, not part of the
-// app's real deployed set).
-const RECOVERY_CONTROLLER_ID = 'CDHB5B3GI63EQKPLSQWB6OKBZKMBLRAA3SHOBCYAPTDZ6ZN3YLADTHL6';
-// The M1 `nido-zk-recovery` pool/controller the doc-only factory wires EVERY
-// new account to at construction (see DEPLOYED.md's M2 section: "every
-// account this factory creates now installs the zero-signer CallContract(self)
-// recovery rule ... whether or not its owner ever uses recovery"). Confirmed
-// live by this very probe below — a BRAND NEW account, seconds old, already
-// reports this as its `recovery_controller()` before this spec touches it.
-const M1_POOL_ID = 'CAUZ6WFUTTZCJQNNL5D3BNZSG7FYYGX46BDJE6G2XVVCGN76RKE5ESAR';
+// Stage 3 recovery-controller v2 (adds reconfigure/config_hash — captain
+// live-fail #3 fix). See packages/passkey-sdk/src/recoveryStage3/deployment.ts.
+const RECOVERY_CONTROLLER_ID = 'CBYSWPHNWAHYUBZO5TBTO5MCW2ZC45F2C3L4JSUZXYQFNMHTOBOCCHZU';
+// Any well-formed G-address — GuardianOnly mode just needs a nonempty
+// guardian list; this probe doesn't drive a real recovery attempt.
+const DUMMY_GUARDIAN = 'GAMPJROHOAW662FINQ4XQOY2ULX5IEGYXCI4SMZYE75EHQBR6PSTJG3M';
+const BASELINE_DOC = JSON.stringify({
+  version: 1,
+  network: 'Test SDF Network ; September 2015',
+  signers: [
+    {
+      id: 'admin',
+      verifier: 'CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY',
+      key: `04${'11'.repeat(64)}`,
+    },
+  ],
+  rules: [{ name: 'admin', principals: { type: 'all', signers: ['admin'] }, scope: { type: 'self-admin' } }],
+});
 
 /**
- * @testnet — live probe for the account-wiring bug a captain live-test
- * caught on PR 206 (Enroll silently no-op'd because the account was wired to
- * a DIFFERENT, pre-existing controller).
+ * @testnet — live probe for the account-wiring fix (captain live-fail #1 on
+ * PR #206), RE-RUN after the factory fix for captain live-fail #3
+ * (`contracts/factory/src/contract.rs::deploy_account_contract` no longer
+ * unconditionally wires new accounts to the M1 `nido-zk-recovery` pool).
  *
- * ORIGINAL PLAN vs WHAT THIS PROBE ACTUALLY PROVES: this spec was first
- * written expecting a freshly created account to start UNWIRED
- * (`recovery_controller() == null`), matching `accountWiring.ts`'s
- * documented 'unwired' case. Running it live against testnet falsified that
- * assumption in the best possible way: the doc-only factory
- * (`CCJFOM6U…`) wires EVERY account it creates to the M1 pool
- * (`CAUZ6WFU…`) at construction — there is no such thing as a "fresh,
- * unwired" account from the current factory. That means the captain's bug
- * was not a one-off misconfiguration on his particular test account; it is
- * the UNIVERSAL state of every account this factory has ever minted. Only a
- * real 7-day `initiate_recovery_rule_removal` -> `execute_recovery_rule_removal`
- * wall-clock migration (`contracts/smart-account/src/contract.rs`) can ever
- * change that — not reproducible in a single test run, so this probe does
- * not attempt it (matches `accountWiring.ts`'s already-documented "Known
- * limit").
+ * HISTORY: this spec originally expected a freshly created account to start
+ * genuinely `unwired` (`recovery_controller() == null`). A live run
+ * falsified that at the time — the doc-only factory then in production
+ * wired EVERY new account to the M1 pool at construction, so the spec was
+ * rewritten to instead prove the mismatch-DETECTION path (Enroll correctly
+ * refusing on a wired-elsewhere account) rather than the happy path. The
+ * live-fail #3 fix removed that unconditional wiring (DEPLOYED.md's Factory
+ * entry, 2026-09-14 upgrade) — so THIS version returns to the originally
+ * intended assertion, now true: a fresh account really does start unwired,
+ * and `recover-v3`'s wire -> enroll flow completes end to end against it.
  *
- * So the live-reproducible, live-provable claim is the mismatch-detection
- * path itself — exactly the captain's scenario, on a brand-new account:
- *
- *  1. A freshly created account (doc-only factory) is ALREADY wired to the
- *     M1 pool, not the Stage 3 probe controller — `checkAccountWiring`
- *     reports 'wired-to-different-controller' with `currentControllerId`
- *     equal to the M1 pool address.
- *  2. The page's Enroll button is disabled in this state — no orphaned
- *     config can be written through the UI.
- *  3. Even if a caller forces the button enabled and clicks anyway (bypassing
- *     the UI-level gate), the click handler's OWN defensive re-check catches
- *     it and refuses before building/signing any transaction — the fix is
- *     not just a disabled attribute, it is enforced at the point of action.
- *  4. The Status panel's independent read-back agrees: `wiring.status` is
- *     `'wired-to-different-controller'`, and — since Enroll never ran —
- *     `config`/`configHash` are both null (nothing was ever written to the
- *     Stage 3 controller for this account).
+ * Live-probes:
+ *  1. A freshly created account (current, post-fix factory) reports
+ *     `checkAccountWiring` status `'unwired'`, NOT `'wired-to-different-
+ *     controller'` — the M1-pool pre-wiring is gone.
+ *  2. `recover-v3`'s "Wire account to controller" + Enroll (GuardianOnly)
+ *     both succeed, landing a real `RecoveryConfig` on the Stage 3
+ *     controller.
+ *  3. The Status panel's independent read-back shows `wiring.status ===
+ *     'wired-to-target'`, a non-null `config`, and a non-null `configHash`
+ *     — confirmed against real on-chain state via `stellar contract invoke`.
  */
 test.describe('@testnet recover-v3 account wiring', () => {
   test.describe.configure({ timeout: 180_000 });
 
-  test('fresh factory account is already wired to the M1 pool: Enroll is blocked, not a silent no-op', async ({
+  test('fresh (post factory-fix) account starts unwired: wire -> enroll succeeds end to end', async ({
     page,
     context,
   }) => {
@@ -69,51 +62,51 @@ test.describe('@testnet recover-v3 account wiring', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    const { cAddress, host } = await createAndDeployAs(page, PORT, 'stage3-wiring-probe');
+    const { cAddress, host } = await createAndDeployAs(page, PORT, 'stage3-wiring-probe-v2');
 
     await page.goto(`http://${host}/security/recover-v3/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#cfg-controller').fill(RECOVERY_CONTROLLER_ID);
 
-    // --- 1. Fresh account is already wired — to the M1 pool, not our controller ---
+    // --- 1. Fresh account starts genuinely unwired (the factory fix) ---
     await page.locator('#wiring-check').click();
-    await expect(page.locator('#wiring-status')).toContainText(/wired to a DIFFERENT controller/i, {
-      timeout: 30_000,
-    });
-    await expect(page.locator('#wiring-status')).toContainText(M1_POOL_ID);
+    await expect(page.locator('#wiring-status')).toContainText(/NOT wired/i, { timeout: 30_000 });
     await expect(page.locator('#cfg-enroll')).toBeDisabled();
-    await expect(page.locator('#wiring-wire')).toBeHidden();
+    await expect(page.locator('#wiring-wire')).toBeVisible();
 
-    // --- 2/3. Even a forced click (UI gate bypassed) is refused by the ---
-    //          handler's own defensive re-check, before any tx is built.
-    await page.evaluate(() => {
-      (document.getElementById('cfg-enroll') as HTMLButtonElement).disabled = false;
-    });
+    // --- 2. Wire the account to the Stage 3 controller ---
+    await page.locator('#wiring-wire').click();
+    await expect(page.locator('#wiring-status')).toContainText(/^Wired\. tx:/, { timeout: 60_000 });
+
+    await page.locator('#wiring-check').click();
+    await expect(page.locator('#wiring-status')).toContainText(/wired to this controller/i, { timeout: 30_000 });
+    await expect(page.locator('#cfg-enroll')).toBeEnabled();
+
+    // --- 3. Enroll (GuardianOnly, minimal config) ---
+    await page.locator('#cfg-mode').selectOption('GuardianOnly');
+    await page.locator('#cfg-guardians').fill(DUMMY_GUARDIAN);
+    await page.locator('#cfg-threshold').fill('1');
+    await page.locator('#cfg-baseline-doc').fill(BASELINE_DOC);
     await page.locator('#cfg-enroll').click();
-    await expect(page.locator('#cfg-status')).toContainText(/wired to a different controller/i, {
-      timeout: 15_000,
-    });
-    await expect(page.locator('#cfg-status')).toContainText(/inert no-op/i);
+    await expect(page.locator('#cfg-status')).toContainText(/^Enrolled\. tx:/, { timeout: 60_000 });
 
-    // --- 4. Status panel's independent read-back agrees ---
+    // --- 4. Status panel's independent read-back ---
     await page.locator('#status-refresh').click();
-    await expect(page.locator('#status-out')).toContainText('"wired-to-different-controller"', {
-      timeout: 30_000,
-    });
+    await expect(page.locator('#status-out')).toContainText('"wired-to-target"', { timeout: 30_000 });
     const statusJson = (await page.locator('#status-out').textContent())!.trim();
     const status = JSON.parse(statusJson) as {
       wiring: { status: string; currentControllerId: string | null };
       config: unknown;
       configHash: string | null;
     };
-    expect(status.wiring.status).toBe('wired-to-different-controller');
-    expect(status.wiring.currentControllerId).toBe(M1_POOL_ID);
-    expect(status.config).toBeNull();
-    expect(status.configHash).toBeNull();
+    expect(status.wiring.status).toBe('wired-to-target');
+    expect(status.wiring.currentControllerId).toBe(RECOVERY_CONTROLLER_ID);
+    expect(status.config).not.toBeNull();
+    expect(status.configHash).toMatch(/^[0-9a-f]{64}$/);
 
     expect(errors.filter((e) => /Buffer|is not defined|Unexpected token/.test(e))).toEqual([]);
 
     test.info().annotations.push({ type: 'cAddress', description: cAddress });
-    test.info().annotations.push({ type: 'probeController', description: RECOVERY_CONTROLLER_ID });
-    test.info().annotations.push({ type: 'actualWiredController', description: M1_POOL_ID });
+    test.info().annotations.push({ type: 'controller', description: RECOVERY_CONTROLLER_ID });
+    test.info().annotations.push({ type: 'configHash', description: status.configHash ?? '' });
   });
 });

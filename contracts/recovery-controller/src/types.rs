@@ -327,6 +327,30 @@ pub enum Error {
     Unauthorized = 22,
     TimelockNotElapsed = 23,
     RecoveryExpired = 24,
+
+    /// `reconfigure`: blocked while `has_pending(account)` is true — same
+    /// guard `enroll` would need if it could be called twice (§6.9).
+    ReconfigurePendingBlocked = 25,
+    /// `reconfigure`: the `(existing.mode, new_config.mode)` pair is not one
+    /// of the two allowed additive transitions (`GuardianOnly -> Combined`,
+    /// `ZkOnly -> Combined`), or the transition doesn't strictly ADD the
+    /// missing factor's fields while leaving the existing factor's fields
+    /// untouched.
+    ReconfigureNotAdditive = 26,
+    /// `reconfigure`: a field other than the mode/machinery-being-added
+    /// differs from the currently-stored config — reconfigure only ever
+    /// adds a missing evidence factor, never touches identity/baseline/
+    /// timing (§6.9).
+    ReconfigureFieldMismatch = 27,
+    /// `reconfigure` (`Profile::Protected` only): fewer than
+    /// `existing.guardian_threshold` DISTINCT, currently-enrolled guardians
+    /// nested-authorized this exact reconfigure call.
+    ReconfigureEvidenceInsufficient = 28,
+    /// `reconfigure` (`Profile::Protected`, existing mode `ZkOnly` only):
+    /// refused, not implemented — see the crate doc comment's "Known
+    /// limits" for exactly why a ZK reconfigure-evidence path needs a new
+    /// circuit binding this experiment does not add.
+    ReconfigureZkEvidenceUnsupported = 29,
 }
 
 #[contractevent(topics = ["recovery_attempt_begun"], data_format = "map")]
@@ -358,4 +382,11 @@ pub struct RecoveryCompleted<'a> {
     pub account: &'a Address,
     pub attempt_id: &'a u64,
     pub target_doc_hash: &'a BytesN<32>,
+}
+
+#[contractevent(topics = ["recovery_reconfigured"], data_format = "map")]
+pub struct RecoveryReconfigured<'a> {
+    #[topic]
+    pub account: &'a Address,
+    pub new_mode: &'a AuthMode,
 }

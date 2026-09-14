@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Buffer } from 'buffer';
 import { StrKey } from '@stellar/stellar-sdk';
 import type { ChainRule, LocalOverlay } from './types.js';
 import { RECOVERY_CONTROLLER_TESTNET_ID } from '../recoveryStage3/deployment.js';
@@ -42,6 +43,34 @@ vi.mock('@nidohq/smart-account', () => ({
 vi.mock('../assembledTx.js', () => ({
   extractXdrOperations: () => ['WIRE_OP_PLACEHOLDER'],
 }));
+
+// `buildInstall`'s 'wired-to-target' branch also reads
+// `RecoveryController::config` (`readRecoveryConfig`) to decide
+// enroll-vs-reconfigure — mock only that ONE instance method. `config.ts`'s
+// `buildEnroll`/`buildReconfigure` ALSO construct a `Client` from this same
+// module (for its embedded `.spec`, no RPC involved) — subclassing the REAL
+// Client (via `importOriginal`) rather than replacing it wholesale keeps
+// that working unmocked, since `.spec` is derived at construction from the
+// bindings package's static spec, not from a network call.
+//
+// The generated `ContractClient` base class attaches every contract method
+// (`config`, `enroll`, ...) as an OWN property on `this` inside its OWN
+// constructor — a subclass prototype method of the same name would never be
+// reached (own properties shadow the prototype chain), so the override must
+// itself reassign `this.config` AFTER `super(...)` has run.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockExistingConfig: any = null;
+vi.mock('@nidohq/recovery-controller', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nidohq/recovery-controller')>();
+  class MockClient extends actual.Client {
+    constructor(options: ConstructorParameters<typeof actual.Client>[0]) {
+      super(options);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this as any).config = async () => ({ result: mockExistingConfig });
+    }
+  }
+  return { ...actual, Client: MockClient };
+});
 
 const { multisigRecoveryModule } = await import('./multisigRecovery.js');
 
@@ -160,6 +189,7 @@ describe('multisigRecoveryModule', () => {
   describe('buildInstall', () => {
     beforeEach(() => {
       mockRecoveryController = null;
+      mockExistingConfig = null;
     });
 
     const block = { kind: 'multisig-recovery' as const, threshold: 1, friends: [{ address: F1, inputAs: F1 }] };
@@ -171,10 +201,55 @@ describe('multisigRecoveryModule', () => {
       expect(built.operations).toHaveLength(2);
     });
 
-    it('just enrolls an account already wired to the Stage 3 controller — one operation', async () => {
+    it('just enrolls an account already wired to the Stage 3 controller with no existing config — one operation', async () => {
       mockRecoveryController = RECOVERY_CONTROLLER_TESTNET_ID;
+      mockExistingConfig = null;
       const built = await multisigRecoveryModule.buildInstall(baseArgs);
       expect(built.operations).toHaveLength(1);
+    });
+
+    it('reconfigures (adds guardians) when ZK was already enrolled on this controller', async () => {
+      mockRecoveryController = RECOVERY_CONTROLLER_TESTNET_ID;
+      mockExistingConfig = {
+        mode: { tag: 'ZkOnly', values: undefined },
+        profile: { tag: 'Loss', values: undefined },
+        guardians: [],
+        guardian_threshold: 0,
+        verifier: StrKey.encodeContract(new Uint8Array(32).fill(0x04)),
+        zk_pool: StrKey.encodeContract(new Uint8Array(32).fill(0x05)),
+        network_passphrase: Buffer.from('Test SDF Network ; September 2015', 'utf8'),
+        baseline_doc_hash: Buffer.alloc(32),
+        delay_secs: 600n,
+        expiry_secs: 86_400n,
+        max_cancels: 3,
+        version: 1,
+        pending_activity_policy: { tag: 'Freeze', values: undefined },
+      };
+      const built = await multisigRecoveryModule.buildInstall(baseArgs);
+      expect(built.operations).toHaveLength(1);
+      expect(built.description).toMatch(/Combined/);
+    });
+
+    it('refuses to re-install when guardian-only recovery is already configured', async () => {
+      mockRecoveryController = RECOVERY_CONTROLLER_TESTNET_ID;
+      mockExistingConfig = {
+        mode: { tag: 'GuardianOnly', values: undefined },
+        profile: { tag: 'Loss', values: undefined },
+        guardians: [F2],
+        guardian_threshold: 1,
+        verifier: null,
+        zk_pool: null,
+        network_passphrase: Buffer.from('Test SDF Network ; September 2015', 'utf8'),
+        baseline_doc_hash: Buffer.alloc(32),
+        delay_secs: 600n,
+        expiry_secs: 86_400n,
+        max_cancels: 3,
+        version: 1,
+        pending_activity_policy: { tag: 'Freeze', values: undefined },
+      };
+      await expect(multisigRecoveryModule.buildInstall(baseArgs)).rejects.toThrow(
+        /already has guardian recovery configured/,
+      );
     });
 
     it('refuses (with an accurate, non-doc-schema error) an account wired to a different controller', async () => {

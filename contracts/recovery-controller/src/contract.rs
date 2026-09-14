@@ -18,9 +18,9 @@ use stellar_accounts::policies::Policy;
 use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
 
 use crate::types::{
-    Attempt, AttemptState, CancelTally, CommitmentAction, Error, Key, NullifierState,
-    PendingActivityPolicy, ProposalCommitment, RecoveryAction, RecoveryAttemptBegun,
-    RecoveryAuthorized, RecoveryCanceled, RecoveryCompleted, RecoveryConfig,
+    Attempt, AttemptState, AuthMode, CancelTally, CommitmentAction, Error, Key, NullifierState,
+    PendingActivityPolicy, Profile, ProposalCommitment, RecoveryAction, RecoveryAttemptBegun,
+    RecoveryAuthorized, RecoveryCanceled, RecoveryCompleted, RecoveryConfig, RecoveryReconfigured,
 };
 use crate::zk;
 
@@ -110,6 +110,67 @@ fn mode_has_guardians(mode: &crate::types::AuthMode) -> bool {
 
 fn mode_has_zk(mode: &crate::types::AuthMode) -> bool {
     !matches!(mode, crate::types::AuthMode::GuardianOnly)
+}
+
+/// The follow-up.md §5.2 HARD mode/machinery match + sane-threshold +
+/// no-unresolved-policy checks — shared by `enroll` (validating a brand
+/// new config) and `reconfigure` (validating the resulting config after an
+/// additive transition). Panics on any violation; never returns `Result`,
+/// matching `enroll`'s original panic-based style.
+fn validate_config(e: &Env, config: &RecoveryConfig) {
+    match config.mode {
+        AuthMode::GuardianOnly => {
+            if config.verifier.is_some() || config.zk_pool.is_some() {
+                panic_with_error!(e, Error::ModeConfigMismatch);
+            }
+            if config.guardians.is_empty() {
+                panic_with_error!(e, Error::ModeConfigMismatch);
+            }
+        }
+        AuthMode::ZkOnly => {
+            if !config.guardians.is_empty() {
+                panic_with_error!(e, Error::ModeConfigMismatch);
+            }
+            if config.verifier.is_none() || config.zk_pool.is_none() {
+                panic_with_error!(e, Error::ModeConfigMismatch);
+            }
+        }
+        AuthMode::Combined => {
+            if config.guardians.is_empty() || config.verifier.is_none() || config.zk_pool.is_none()
+            {
+                panic_with_error!(e, Error::ModeConfigMismatch);
+            }
+        }
+    }
+    if !config.guardians.is_empty() {
+        let n = config.guardians.len();
+        if config.guardian_threshold == 0 || config.guardian_threshold > n {
+            panic_with_error!(e, Error::InvalidThreshold);
+        }
+    }
+    if matches!(
+        config.pending_activity_policy,
+        PendingActivityPolicy::Restrict
+    ) {
+        panic_with_error!(e, Error::UnresolvedPolicyBranch);
+    }
+}
+
+/// The digest a guardian nested-authorizes to supply `Profile::Protected`
+/// reconfigure evidence (`Address::require_auth_for_args`) — binds this
+/// EXACT `(account, new_config)` pair, so a guardian's authorization can
+/// never be replayed against a different account or a different proposed
+/// config. Deliberately NOT the same mechanism `submit_guardian_approval`
+/// uses for initiation evidence (a multi-transaction tally accumulated over
+/// time via separate `require_auth` calls) — reconfigure is framed as a
+/// one-shot config mutation (not an attempt lifecycle), so ALL contributing
+/// guardians authorize the SAME transaction via nested sub-invocation auth
+/// entries instead, mirroring how `packages/frontend/src/lib/
+/// recoveryActions.ts`'s friend-rotation flow already collects multiple
+/// parties' signatures into one transaction.
+fn reconfigure_digest(e: &Env, account: &Address, new_config: &RecoveryConfig) -> BytesN<32> {
+    let xdr = (account.clone(), new_config.clone()).to_xdr(e);
+    e.crypto().sha256(&xdr).to_bytes()
 }
 
 fn initiation_satisfied(cfg: &RecoveryConfig, attempt: &Attempt) -> bool {
@@ -250,47 +311,135 @@ impl RecoveryController {
             panic_with_error!(&e, Error::AlreadyEnrolled);
         }
 
-        match config.mode {
-            crate::types::AuthMode::GuardianOnly => {
-                if config.verifier.is_some() || config.zk_pool.is_some() {
-                    panic_with_error!(&e, Error::ModeConfigMismatch);
-                }
-                if config.guardians.is_empty() {
-                    panic_with_error!(&e, Error::ModeConfigMismatch);
-                }
-            }
-            crate::types::AuthMode::ZkOnly => {
-                if !config.guardians.is_empty() {
-                    panic_with_error!(&e, Error::ModeConfigMismatch);
-                }
-                if config.verifier.is_none() || config.zk_pool.is_none() {
-                    panic_with_error!(&e, Error::ModeConfigMismatch);
-                }
-            }
-            crate::types::AuthMode::Combined => {
-                if config.guardians.is_empty()
-                    || config.verifier.is_none()
-                    || config.zk_pool.is_none()
-                {
-                    panic_with_error!(&e, Error::ModeConfigMismatch);
-                }
-            }
-        }
-        if !config.guardians.is_empty() {
-            let n = config.guardians.len();
-            if config.guardian_threshold == 0 || config.guardian_threshold > n {
-                panic_with_error!(&e, Error::InvalidThreshold);
-            }
-        }
-        if matches!(
-            config.pending_activity_policy,
-            PendingActivityPolicy::Restrict
-        ) {
-            panic_with_error!(&e, Error::UnresolvedPolicyBranch);
-        }
+        validate_config(&e, &config);
 
         e.storage().persistent().set(&key, &config);
         extend_persistent_max(&e, &key);
+    }
+
+    /// Changes an ALREADY-enrolled account's config — the ONE allowed
+    /// mutation, replacing the "no reconfigure entry point" limit this
+    /// crate previously carried (see the crate doc comment's "Known
+    /// limits" for the full design rationale and its remaining bound: no
+    /// ZK reconfigure-evidence path).
+    ///
+    /// Only two transitions are accepted, and ONLY as strict additions:
+    /// `GuardianOnly -> Combined` (adds `verifier`/`zk_pool`, `guardians`/
+    /// `guardian_threshold` untouched) or `ZkOnly -> Combined` (adds
+    /// `guardians`/`guardian_threshold`, `verifier`/`zk_pool` untouched).
+    /// Every other field of `RecoveryConfig` must byte-for-byte equal the
+    /// stored config, or this panics `ReconfigureFieldMismatch` —
+    /// reconfigure only ever adds a missing evidence factor, never touches
+    /// identity/baseline/timing (follow-up.md §6.9's "configuration
+    /// consistency": a live attempt's frozen commitment can never be
+    /// silently reinterpreted by a later config change, because nothing
+    /// the commitment binds to is ever allowed to change here).
+    ///
+    /// Blocked while `has_pending(account)` is true, same as every other
+    /// mutator. Authorization follows follow-up.md §2.1's table:
+    /// `Profile::Loss` needs only `account.require_auth()` (ordinary
+    /// admin); `Profile::Protected` additionally needs the CURRENTLY-
+    /// enrolled factor's evidence — for an existing `GuardianOnly` config,
+    /// `guardian_evidence` must list `>= guardian_threshold` DISTINCT
+    /// enrolled guardians, each of whom nested-authorizes THIS EXACT
+    /// `(account, new_config)` pair in the SAME transaction
+    /// (`reconfigure_digest` + `Address::require_auth_for_args` — NOT the
+    /// multi-transaction tally `submit_guardian_approval` uses, since this
+    /// is a one-shot mutation, not an attempt). For an existing `ZkOnly`
+    /// config this panics `ReconfigureZkEvidenceUnsupported` — see the
+    /// crate doc comment.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn reconfigure(
+        e: Env,
+        account: Address,
+        new_config: RecoveryConfig,
+        guardian_evidence: Vec<Address>,
+    ) {
+        account.require_auth();
+
+        let existing = config_or_panic(&e, &account);
+
+        if Self::has_pending(e.clone(), account.clone()) {
+            panic_with_error!(&e, Error::ReconfigurePendingBlocked);
+        }
+
+        match (&existing.mode, &new_config.mode) {
+            (AuthMode::GuardianOnly, AuthMode::Combined) => {
+                if new_config.guardians != existing.guardians
+                    || new_config.guardian_threshold != existing.guardian_threshold
+                    || existing.verifier.is_some()
+                    || existing.zk_pool.is_some()
+                    || new_config.verifier.is_none()
+                    || new_config.zk_pool.is_none()
+                {
+                    panic_with_error!(&e, Error::ReconfigureNotAdditive);
+                }
+            }
+            (AuthMode::ZkOnly, AuthMode::Combined) => {
+                if new_config.verifier != existing.verifier
+                    || new_config.zk_pool != existing.zk_pool
+                    || !existing.guardians.is_empty()
+                    || new_config.guardians.is_empty()
+                {
+                    panic_with_error!(&e, Error::ReconfigureNotAdditive);
+                }
+            }
+            _ => panic_with_error!(&e, Error::ReconfigureNotAdditive),
+        }
+
+        if new_config.profile != existing.profile
+            || new_config.network_passphrase != existing.network_passphrase
+            || new_config.baseline_doc_hash != existing.baseline_doc_hash
+            || new_config.delay_secs != existing.delay_secs
+            || new_config.expiry_secs != existing.expiry_secs
+            || new_config.max_cancels != existing.max_cancels
+            || new_config.pending_activity_policy != existing.pending_activity_policy
+            || new_config.version != existing.version
+        {
+            panic_with_error!(&e, Error::ReconfigureFieldMismatch);
+        }
+
+        // Belt and suspenders: never trust a caller-supplied config blindly,
+        // even though the additive-transition check above should already
+        // guarantee this holds.
+        validate_config(&e, &new_config);
+
+        if matches!(existing.profile, Profile::Protected) {
+            match existing.mode {
+                AuthMode::GuardianOnly => {
+                    let digest = reconfigure_digest(&e, &account, &new_config);
+                    let mut seen: Vec<Address> = Vec::new(&e);
+                    for g in guardian_evidence.iter() {
+                        if !existing.guardians.iter().any(|eg| eg == g) {
+                            panic_with_error!(&e, Error::NotAGuardian);
+                        }
+                        if seen.iter().any(|s| s == g) {
+                            panic_with_error!(&e, Error::DuplicateApproval);
+                        }
+                        g.require_auth_for_args(soroban_sdk::vec![&e, digest.clone().into()]);
+                        seen.push_back(g);
+                    }
+                    if seen.len() < existing.guardian_threshold {
+                        panic_with_error!(&e, Error::ReconfigureEvidenceInsufficient);
+                    }
+                }
+                AuthMode::ZkOnly => {
+                    panic_with_error!(&e, Error::ReconfigureZkEvidenceUnsupported);
+                }
+                AuthMode::Combined => unreachable!("existing config can never already be Combined here — validate_config/enroll never store Combined without both factors, and the transition match above only accepts GuardianOnly/ZkOnly as the FROM state"),
+            }
+        }
+
+        e.storage()
+            .persistent()
+            .set(&Key::Config(account.clone()), &new_config);
+        extend_persistent_max(&e, &Key::Config(account.clone()));
+
+        RecoveryReconfigured {
+            account: &account,
+            new_mode: &new_config.mode,
+        }
+        .publish(&e);
     }
 
     #[must_use]
@@ -921,6 +1070,20 @@ mod tests {
         )
     }
 
+    fn zk_only_config(env: &Env, verifier: Address, zk_pool: Address) -> RecoveryConfig {
+        let mut cfg = base_config(
+            env,
+            AuthMode::ZkOnly,
+            GuardianSet {
+                guardians: Vec::new(env),
+                threshold: 0,
+            },
+        );
+        cfg.verifier = Some(verifier);
+        cfg.zk_pool = Some(zk_pool);
+        cfg
+    }
+
     fn hash_of(env: &Env, byte: u8) -> BytesN<32> {
         BytesN::from_array(env, &[byte; 32])
     }
@@ -1378,5 +1541,369 @@ mod tests {
             client.config_hash(&other_account),
             "different configs must commit to different hashes"
         );
+    }
+
+    // --- reconfigure -----------------------------------------------------
+
+    #[test]
+    fn reconfigure_guardian_only_to_combined_adds_zk_and_leaves_guardians_untouched() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let cfg = guardian_only_config(&env, guardians.clone(), 1);
+        client.enroll(&account, &cfg);
+
+        let verifier = Address::generate(&env);
+        let pool = Address::generate(&env);
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.verifier = Some(verifier.clone());
+        combined.zk_pool = Some(pool.clone());
+
+        client.reconfigure(&account, &combined, &Vec::new(&env));
+
+        let stored = client.config(&account).expect("still enrolled");
+        assert_eq!(stored.mode, AuthMode::Combined);
+        assert_eq!(stored.guardians, guardians, "guardians must be untouched");
+        assert_eq!(stored.guardian_threshold, 1);
+        assert_eq!(stored.verifier, Some(verifier));
+        assert_eq!(stored.zk_pool, Some(pool));
+    }
+
+    #[test]
+    fn reconfigure_zk_only_to_combined_adds_guardians_and_leaves_zk_untouched() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let verifier = Address::generate(&env);
+        let pool = Address::generate(&env);
+        let cfg = zk_only_config(&env, verifier.clone(), pool.clone());
+        client.enroll(&account, &cfg);
+
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.guardians = guardians.clone();
+        combined.guardian_threshold = 1;
+
+        client.reconfigure(&account, &combined, &Vec::new(&env));
+
+        let stored = client.config(&account).expect("still enrolled");
+        assert_eq!(stored.mode, AuthMode::Combined);
+        assert_eq!(
+            stored.verifier,
+            Some(verifier),
+            "verifier must be untouched"
+        );
+        assert_eq!(stored.zk_pool, Some(pool), "zk_pool must be untouched");
+        assert_eq!(stored.guardians, guardians);
+        assert_eq!(stored.guardian_threshold, 1);
+    }
+
+    #[test]
+    fn reconfigure_rejects_combined_as_a_starting_point() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let mut cfg = guardian_only_config(&env, guardians, 1);
+        cfg.mode = AuthMode::Combined;
+        cfg.verifier = Some(Address::generate(&env));
+        cfg.zk_pool = Some(Address::generate(&env));
+        client.enroll(&account, &cfg);
+
+        assert!(
+            client
+                .try_reconfigure(&account, &cfg, &Vec::new(&env))
+                .is_err(),
+            "Combined -> anything must be refused, even a no-op reconfigure to itself"
+        );
+    }
+
+    #[test]
+    fn reconfigure_rejects_a_mode_swap_instead_of_addition() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let cfg = guardian_only_config(&env, guardians, 1);
+        client.enroll(&account, &cfg);
+
+        let mut swapped = cfg.clone();
+        swapped.mode = AuthMode::ZkOnly;
+        swapped.guardians = Vec::new(&env);
+        swapped.guardian_threshold = 0;
+        swapped.verifier = Some(Address::generate(&env));
+        swapped.zk_pool = Some(Address::generate(&env));
+
+        assert!(
+            client
+                .try_reconfigure(&account, &swapped, &Vec::new(&env))
+                .is_err(),
+            "GuardianOnly -> ZkOnly is a swap, not an addition -- must be refused"
+        );
+    }
+
+    #[test]
+    fn reconfigure_rejects_re_adding_an_already_present_factor() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian.clone());
+        let cfg = guardian_only_config(&env, guardians.clone(), 1);
+        client.enroll(&account, &cfg);
+
+        // "Reconfigure" into GuardianOnly again, just with a different
+        // guardian set -- looks like GuardianOnly -> GuardianOnly, which
+        // isn't one of the two allowed (GuardianOnly -> Combined /
+        // ZkOnly -> Combined) transitions at all.
+        let other_guardian = Address::generate(&env);
+        let mut other_guardians = Vec::new(&env);
+        other_guardians.push_back(other_guardian);
+        let mut resend = cfg.clone();
+        resend.guardians = other_guardians;
+
+        assert!(
+            client
+                .try_reconfigure(&account, &resend, &Vec::new(&env))
+                .is_err(),
+            "GuardianOnly -> GuardianOnly is not an allowed transition"
+        );
+    }
+
+    #[test]
+    fn reconfigure_rejects_changing_a_locked_field() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let cfg = guardian_only_config(&env, guardians, 1);
+        client.enroll(&account, &cfg);
+
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.verifier = Some(Address::generate(&env));
+        combined.zk_pool = Some(Address::generate(&env));
+        combined.delay_secs += 1; // locked field, must not be changeable
+
+        assert!(
+            client
+                .try_reconfigure(&account, &combined, &Vec::new(&env))
+                .is_err(),
+            "reconfigure must reject a change to any field other than the added factor"
+        );
+    }
+
+    #[test]
+    fn reconfigure_is_blocked_while_an_attempt_is_pending() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let cfg = guardian_only_config(&env, guardians, 1);
+        client.enroll(&account, &cfg);
+
+        client.begin_attempt(
+            &account,
+            &RecoveryAction::LostKey,
+            &hash_of(&env, 0x01),
+            &hash_of(&env, 0x02),
+            &Vec::new(&env),
+        );
+
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.verifier = Some(Address::generate(&env));
+        combined.zk_pool = Some(Address::generate(&env));
+
+        assert!(
+            client
+                .try_reconfigure(&account, &combined, &Vec::new(&env))
+                .is_err(),
+            "reconfigure must be blocked while has_pending is true, same as any other mutator"
+        );
+    }
+
+    #[test]
+    fn reconfigure_loss_profile_needs_only_account_auth() {
+        // Loss profile (the default the wallet's simplified forms use for
+        // both guardian and ZK enrollment) needs no evidence at all beyond
+        // account.require_auth() -- already exercised by the two success
+        // tests above (base_config defaults to Profile::Loss). This test
+        // just makes that property explicit by name.
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let cfg = guardian_only_config(&env, guardians, 1);
+        assert_eq!(cfg.profile, crate::types::Profile::Loss);
+        client.enroll(&account, &cfg);
+
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.verifier = Some(Address::generate(&env));
+        combined.zk_pool = Some(Address::generate(&env));
+        // Empty guardian_evidence -- Loss profile must not need any.
+        client.reconfigure(&account, &combined, &Vec::new(&env));
+        assert_eq!(client.config(&account).unwrap().mode, AuthMode::Combined);
+    }
+
+    #[test]
+    fn reconfigure_protected_guardian_only_needs_quorum_evidence() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let g2 = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(g1.clone());
+        guardians.push_back(g2.clone());
+        let mut cfg = guardian_only_config(&env, guardians, 2);
+        cfg.profile = crate::types::Profile::Protected;
+        client.enroll(&account, &cfg);
+
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.verifier = Some(Address::generate(&env));
+        combined.zk_pool = Some(Address::generate(&env));
+
+        // Insufficient evidence: only one of the two required guardians.
+        let mut one = Vec::new(&env);
+        one.push_back(g1.clone());
+        assert!(
+            client.try_reconfigure(&account, &combined, &one).is_err(),
+            "Protected profile must require the full guardian_threshold, not just one guardian"
+        );
+
+        // Sufficient evidence: both guardians (order doesn't matter).
+        let mut both = Vec::new(&env);
+        both.push_back(g1);
+        both.push_back(g2);
+        client.reconfigure(&account, &combined, &both);
+        assert_eq!(client.config(&account).unwrap().mode, AuthMode::Combined);
+    }
+
+    #[test]
+    fn reconfigure_protected_guardian_evidence_rejects_a_non_guardian() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(g1);
+        let mut cfg = guardian_only_config(&env, guardians, 1);
+        cfg.profile = crate::types::Profile::Protected;
+        client.enroll(&account, &cfg);
+
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.verifier = Some(Address::generate(&env));
+        combined.zk_pool = Some(Address::generate(&env));
+
+        let stranger = Address::generate(&env);
+        let mut evidence = Vec::new(&env);
+        evidence.push_back(stranger);
+        assert!(client
+            .try_reconfigure(&account, &combined, &evidence)
+            .is_err());
+    }
+
+    #[test]
+    fn reconfigure_protected_guardian_evidence_rejects_duplicate_guardian() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let g2 = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(g1.clone());
+        guardians.push_back(g2);
+        let mut cfg = guardian_only_config(&env, guardians, 2);
+        cfg.profile = crate::types::Profile::Protected;
+        client.enroll(&account, &cfg);
+
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.verifier = Some(Address::generate(&env));
+        combined.zk_pool = Some(Address::generate(&env));
+
+        // g1 listed twice can never satisfy a threshold of 2 DISTINCT guardians.
+        let mut evidence = Vec::new(&env);
+        evidence.push_back(g1.clone());
+        evidence.push_back(g1);
+        assert!(client
+            .try_reconfigure(&account, &combined, &evidence)
+            .is_err());
+    }
+
+    #[test]
+    fn reconfigure_protected_zk_only_evidence_is_explicitly_unsupported() {
+        // Documents the real, spec-relevant gap: a ZK reconfigure-evidence
+        // path would need a NEW circuit auth_hash binding (a `Reconfigure`
+        // commitment domain distinct from LostKey/Compromise/Cancel) that
+        // does not exist today -- refusing cleanly here, rather than
+        // reusing an existing domain's binding unsafely, or building a new
+        // circuit out of scope for this pass.
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let verifier = Address::generate(&env);
+        let pool = Address::generate(&env);
+        let mut cfg = zk_only_config(&env, verifier, pool);
+        cfg.profile = crate::types::Profile::Protected;
+        client.enroll(&account, &cfg);
+
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.guardians = guardians;
+        combined.guardian_threshold = 1;
+
+        assert!(client
+            .try_reconfigure(&account, &combined, &Vec::new(&env))
+            .is_err());
     }
 }

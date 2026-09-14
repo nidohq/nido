@@ -1,12 +1,19 @@
-import { sha256 } from '@noble/hashes/sha2.js';
 import type {
   ChainRule, LocalOverlay, MultisigRecoveryBlock,
   PolicyBlockModule, PolicyState, TxBuild,
 } from './types.js';
 import { registerPolicyBlockModule } from './registry.js';
-import { buildRecoveryConfig, buildEnroll } from '../recoveryStage3/config.js';
+import { buildRecoveryConfig, buildEnroll, buildReconfigure } from '../recoveryStage3/config.js';
 import { checkAccountWiring, buildWireAccountTx } from '../recoveryStage3/accountWiring.js';
+import { readRecoveryConfig } from '../recoveryStage3/reads.js';
 import { RECOVERY_CONTROLLER_TESTNET_ID } from '../recoveryStage3/deployment.js';
+import {
+  NO_BASELINE_DOC_SENTINEL,
+  PENDING_ACTIVITY_POLICY_DEFAULT,
+  DELAY_SECS_DEFAULT,
+  EXPIRY_SECS_DEFAULT,
+  MAX_CANCELS_DEFAULT,
+} from '../recoveryStage3/defaults.js';
 
 // Recovery *completion* (key rotation) lives in its own module; re-exported
 // here per the public-API layout (buildInstall/buildRevoke + buildRotation
@@ -27,52 +34,6 @@ export type {
 } from './multisigRotation.js';
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
-
-/** `RecoveryConfig.baseline_doc_hash` is only ever CHECKED against for a
- *  `Compromise`-action attempt (`begin_attempt` requires
- *  `target_doc_hash == config.baseline_doc_hash` exactly in that case —
- *  `contracts/recovery-controller/src/contract.rs`). This simplified
- *  "trusted friends" install form has no baseline-document concept at all
- *  (it only ever produces friends + a threshold, never a reviewed
- *  PolicyDoc) and the current UI never exposes a `Compromise` attempt
- *  either — only `LostKey` (device-loss) recovery, whose target is derived
- *  from the account's CURRENT live document/rules at `begin_attempt` time,
- *  never from this field. So this is a documented, inert placeholder, not
- *  a real commitment: `sha256("nido-guardian-only: no-baseline-doc")`.
- *  Wiring a genuine baseline (and a `Compromise` UI path) through this
- *  simplified form is out of scope here — use `recover-v3` for that, which
- *  collects a real baseline document. */
-const NO_BASELINE_DOC_SENTINEL = sha256(new TextEncoder().encode('nido-guardian-only: no-baseline-doc'));
-
-/** `enroll` requires an explicit `pending_activity_policy` — TRANSITION_SPEC.md
- *  §10 / follow-up.md §7 are explicit that NEITHER `Freeze` NOR `Continue`
- *  is spec-mandated as a default; a production release must resolve this
- *  gate deliberately. This simplified form has no UI surface to ask the
- *  question, so it makes an explicit, documented implementer choice —
- *  `Freeze` — as the more conservative of the two for a security-recovery
- *  feature: it blocks ordinary account-authorized rule/document writes
- *  while a friend-recovery attempt is pending, which favors NOT letting an
- *  attacker who still holds device access neutralize the recovery in
- *  progress, at the cost of also freezing the legitimate owner's ordinary
- *  activity during a real recovery. Revisit if that tradeoff proves wrong
- *  in practice — this is an implementer default, not a spec default; the
- *  full `recover-v3` form lets an operator choose explicitly.
- */
-const PENDING_ACTIVITY_POLICY_DEFAULT = 'Freeze' as const;
-
-// Testnet-appropriate defaults (ordinary tunables, NOT the §7-gated axis
-// above — TRANSITION_SPEC.md only withholds a default for
-// `pendingActivityPolicy`/`policyWriteConflictPolicy`). Mirrors the scale of
-// the pre-existing M1 module's testnet params (DEPLOYED.md: delay 60s
-// there) while giving guardians a more realistic window to actually
-// respond than 60s would: 10 minutes to collect approvals once initiated,
-// 24h before an unpromoted attempt expires, 3 cancels before the attempt is
-// permanently dead. Production values require the same deliberate-choice
-// treatment DEPLOYED.md already gives M1's mainnet spec numbers — not
-// invented here.
-const DELAY_SECS_DEFAULT = 600;
-const EXPIRY_SECS_DEFAULT = 86_400;
-const MAX_CANCELS_DEFAULT = 3;
 
 export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = {
   kind: 'multisig-recovery',
@@ -98,6 +59,47 @@ export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = 
           `RECOVERY_REMOVAL_DELAY_SECS, then execute_recovery_rule_removal), ` +
           `then enrolling again. There is no faster path today.`,
       );
+    }
+
+    const readArgs = { account, controllerId, rpcUrl, networkPassphrase: TESTNET_PASSPHRASE };
+    // A config can already exist here even for a `wired-to-target` account:
+    // ZK recovery may have been set up FIRST (the wallet's "Add ZK
+    // recovery" flow — see the frontend's `runZkEnrollment`), which wires
+    // the SAME Stage 3 controller and enrolls `ZkOnly`. In that case this
+    // is `reconfigure` (adding guardians -> `Combined`), never `enroll`
+    // (which would hit `Error::AlreadyEnrolled`).
+    const existing = wiring.status === 'wired-to-target' ? await readRecoveryConfig(readArgs) : null;
+
+    if (existing) {
+      if (existing.mode.tag !== 'GuardianOnly' && existing.mode.tag !== 'ZkOnly') {
+        throw new Error(
+          `multisig-recovery.buildInstall: this account's Stage 3 config is ` +
+            `already ${existing.mode.tag}, not a state guardian recovery can be ` +
+            `added on top of.`,
+        );
+      }
+      if (existing.mode.tag === 'GuardianOnly') {
+        throw new Error(
+          `multisig-recovery.buildInstall: this account already has guardian ` +
+            `recovery configured (${existing.guardian_threshold} of ` +
+            `${existing.guardians.length}) — use the recovery card's edit ` +
+            `flow, not install, to change the guardian set.`,
+        );
+      }
+      // existing.mode.tag === 'ZkOnly': ADD guardians via reconfigure,
+      // preserving every other field exactly (spread, don't rebuild) —
+      // reconfigure rejects any change to baseline/timing/policy/profile.
+      const reconfigured = buildReconfigure({
+        controllerId,
+        account,
+        config: {
+          ...existing,
+          mode: { tag: 'Combined', values: undefined },
+          guardians: block.friends.map((f) => f.address),
+          guardian_threshold: block.threshold,
+        },
+      });
+      return reconfigured;
     }
 
     const config = buildRecoveryConfig({
@@ -127,18 +129,18 @@ export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = 
       };
     }
 
-    // wiring.status === 'wired-to-target': already wired, just enroll.
+    // wiring.status === 'wired-to-target', no existing config: just enroll.
     return enroll;
   },
 
   async buildRevoke(args): Promise<TxBuild> {
     // No `enroll`-reversing entry point exists on `RecoveryController` —
-    // enrollment is one-shot by design (crate doc comment's "Known
-    // limits": "No `reconfigure` entry point"). There is no `uninstall`
-    // callable directly either; `Policy::uninstall` only runs as a
-    // cross-call from the account's own `remove_policy`/rule-removal path,
-    // which itself is gated by the real 7-day
-    // `initiate_recovery_rule_removal` -> `execute_recovery_rule_removal`
+    // `reconfigure` (crate doc comment's "Known limits") only ever ADDS a
+    // missing evidence factor, never removes one, and enrollment itself is
+    // otherwise one-shot. There is no `uninstall` callable directly either;
+    // `Policy::uninstall` only runs as a cross-call from the account's own
+    // `remove_policy`/rule-removal path, which itself is gated by the real
+    // 7-day `initiate_recovery_rule_removal` -> `execute_recovery_rule_removal`
     // flow (`contracts/smart-account/src/contract.rs`) — there is no
     // one-transaction revoke to build here at all.
     throw new Error(
@@ -161,9 +163,12 @@ export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = 
     // controller's own per-account RecoveryConfig (`policyChainFetch.ts`
     // shapes this from `RecoveryController::config`). Distinguished from
     // the legacy multisig-policy shape below by `ps.guardians` being
-    // present at all.
+    // present at all. A `ZkOnly` account's config has NO guardians
+    // (`ps.guardians` is a present-but-empty array) — that's not a
+    // guardian-recovery block at all, so this correctly returns null and
+    // lets a future zk-recovery-specific block module claim it instead.
     if (Array.isArray(ps.guardians)) {
-      if (typeof ps.threshold !== 'number') return null;
+      if (typeof ps.threshold !== 'number' || ps.guardians.length === 0) return null;
       return {
         kind: 'multisig-recovery',
         ruleId: rule.ruleId,

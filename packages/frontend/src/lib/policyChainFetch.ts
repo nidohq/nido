@@ -148,7 +148,15 @@ async function fetchRecoveryControllerState(account: string): Promise<PolicyStat
     const tx = await client.config({ account });
     const config = tx.result; // Option<RecoveryConfig>
     if (!config) return {};
-    if (config.mode.tag !== 'GuardianOnly') return {};
+    // `Combined` mode ALSO has guardians (in addition to verifier/zk_pool) —
+    // only `ZkOnly` has none. Restricting this to `GuardianOnly` specifically
+    // was a real bug caught live: after a guardian-first-then-ZK-second
+    // `reconfigure` lands the account in `Combined`, the Security page's
+    // "N of M friends can rotate..." block would silently vanish (this
+    // returned `{}`, so `fromChain` saw no guardians and fell through to
+    // "No trusted friends yet.") even though guardians were very much still
+    // configured and the on-chain config was correct.
+    if (config.mode.tag === 'ZkOnly') return {};
     return {
       guardians: config.guardians,
       threshold: config.guardian_threshold,

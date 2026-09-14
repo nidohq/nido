@@ -12,8 +12,17 @@
 export {
   buildRecoveryConfig,
   buildEnroll,
+  buildReconfigure,
 } from './config.js';
-export type { BuildEnrollArgs } from './config.js';
+export type { BuildEnrollArgs, BuildReconfigureArgs } from './config.js';
+
+export {
+  NO_BASELINE_DOC_SENTINEL,
+  PENDING_ACTIVITY_POLICY_DEFAULT,
+  DELAY_SECS_DEFAULT,
+  EXPIRY_SECS_DEFAULT,
+  MAX_CANCELS_DEFAULT,
+} from './defaults.js';
 
 export {
   buildLostKeyTargetDoc,

@@ -79,9 +79,17 @@
 //!    `auth_hash` binding `action = Cancel` — cryptographically distinct
 //!    from an initiation proof. No entry point accepts bare admin/account
 //!    authorization for cancellation at all.
-//! 9. **Configuration consistency** — no `reconfigure` path exists (Known
-//!    limits); the only "configuration change" possible is enrollment
-//!    itself, which is one-shot.
+//! 9. **Configuration consistency** — `reconfigure` (added after captain
+//!    live-fail #3 — see "Known limits") only ever ADDS a missing evidence
+//!    factor (`GuardianOnly -> Combined` / `ZkOnly -> Combined`); every
+//!    other field, including everything a live attempt's frozen commitment
+//!    binds to (`network_passphrase`, `baseline_doc_hash`, `delay_secs`,
+//!    `expiry_secs`, `version`), must match the stored config exactly or
+//!    `reconfigure` refuses. So a live attempt's commitment can never be
+//!    silently reinterpreted by a later config change — the property this
+//!    bullet originally described as achieved only by having NO
+//!    `reconfigure` path at all is now achieved by `reconfigure` being
+//!    load-bearing-field-locked instead.
 //! 10. **Continued recoverability** — `RevokedCredentials` is permanent,
 //!     checked at every `begin_attempt`; nullifiers are released (not
 //!     spent) on cancellation/supersede-of-stale-attempt, spent permanently
@@ -99,14 +107,53 @@
 //! # Known limits (explicit, per the brief's "document every limit"
 //! directive — none of these are silent gaps)
 //!
-//! - **No `reconfigure` entry point.** Enrollment is one-shot and
-//!   permanent; baseline updates, guardian-set rotation, mode/profile
-//!   changes, and verifier upgrades all require a FRESH account (or a
-//!   production implementation adding a properly-gated reconfigure path per
-//!   follow-up.md §2.1/§4.3 — Protected-profile changes need admin PLUS the
-//!   current recovery condition, using this same evidence machinery against
-//!   an `action = Reconfigure` commitment domain, which this experiment does
-//!   not implement).
+//! - **`reconfigure` exists now, but only for ONE narrow purpose: adding a
+//!   missing evidence factor.** Captain live-fail #3 on PR 206: the account
+//!   can enroll ZK recovery via the wallet's existing "Add ZK recovery"
+//!   flow, or 1-of-N guardian recovery via the "Set up recovery" flow (both
+//!   fixed by captain live-fails #1/#2) — but `enroll` is one-shot
+//!   (`Error::AlreadyEnrolled`), so whichever the account enrolls SECOND
+//!   used to be permanently refused, meaning ZK and guardian evidence could
+//!   never coexist on one controller — the exact feature `AuthMode::Combined`
+//!   already existed to express. `reconfigure(account, new_config,
+//!   guardian_evidence)` closes this specific gap: it accepts ONLY
+//!   `GuardianOnly -> Combined` (adds `verifier`/`zk_pool`, `guardians`/
+//!   `guardian_threshold` untouched) or `ZkOnly -> Combined` (the mirror),
+//!   rejects `Combined -> anything`, rejects a mode SWAP
+//!   (`GuardianOnly -> ZkOnly`), rejects re-adding an already-present
+//!   factor, and rejects ANY change to any other field (see property 9
+//!   above) — blocked while `has_pending` is true, same guard every other
+//!   mutator respects. This is deliberately NOT a general reconfigure path:
+//!   baseline updates, guardian-SET rotation once already present,
+//!   mode/profile downgrades, and verifier changes all still require a
+//!   fresh account, exactly as before.
+//!
+//!   Authorization follows follow-up.md §2.1's table: `Profile::Loss`
+//!   (what the wallet's simplified enroll forms default to) needs only
+//!   `account.require_auth()`. `Profile::Protected` additionally needs the
+//!   CURRENTLY-enrolled factor's evidence — for an existing `GuardianOnly`
+//!   config, `>= guardian_threshold` DISTINCT enrolled guardians must each
+//!   nested-authorize this EXACT `(account, new_config)` pair in the same
+//!   transaction (`Address::require_auth_for_args`, not
+//!   `submit_guardian_approval`'s multi-transaction tally — reconfigure is
+//!   a one-shot mutation, not an attempt lifecycle, so all evidence lands
+//!   in one transaction, mirroring how the wallet's friend-rotation flow
+//!   already collects multiple parties' signatures into one transaction).
+//!
+//!   **Remaining, deliberate gap: `Profile::Protected` + existing `ZkOnly`
+//!   refuses with `Error::ReconfigureZkEvidenceUnsupported`, not
+//!   implemented.** A real ZK reconfigure-evidence path needs its own
+//!   circuit `auth_hash` binding (a `Reconfigure` commitment domain,
+//!   cryptographically distinct from `LostKey`/`Compromise`/`Cancel` the
+//!   same way `Cancel` already is from initiation) — `circuits/
+//!   zk_recovery_doc` has no such binding today, and adding one is a new
+//!   circuit + fixtures + `bb prove` run, out of scope for this pass.
+//!   Reusing an EXISTING domain's binding for a different operation was
+//!   considered and rejected — that would be exactly the kind of
+//!   cross-domain replay hazard this whole module is otherwise careful to
+//!   avoid (see property 8's cancellation-domain-separation argument).
+//!   Live-probed and shipped for the reachable cases only: `Loss` profile
+//!   (both transition directions) and `Protected` + existing `GuardianOnly`.
 //! - **`policyWriteConflictPolicy` (Stage 1 spec) is not a separate axis.**
 //!   Only `pending_activity_policy` (`Freeze`/`Continue`) exists, applied to
 //!   the ONE guard hook that exists on the account (`apply_doc`'s
