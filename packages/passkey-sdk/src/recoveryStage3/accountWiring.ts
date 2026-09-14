@@ -26,6 +26,27 @@
  * page does not attempt to drive; `checkAccountWiring` reports that case as
  * `'wired-to-different-controller'` so callers can refuse cleanly instead of
  * writing orphaned controller state.
+ *
+ * CONFIRMED LIVE (not merely a hypothetical edge case): every account the
+ * doc-only factory (`CCJFOM6U…`, DEPLOYED.md) creates is wired to the M1
+ * `nido-zk-recovery` pool (`CAUZ6WFU…`) AT CONSTRUCTION — this is the
+ * genesis-insert behavior DEPLOYED.md's M2 section documents ("every account
+ * this factory creates now installs the zero-signer CallContract(self)
+ * recovery rule ... whether or not its owner ever uses recovery"). A live
+ * probe (`tests/e2e/testnet/recover-v3-wiring.testnet.spec.ts`) created a
+ * BRAND NEW account and confirmed its `recovery_controller()` was already
+ * `CAUZ6WFU…` before this module ever touched it. Practical consequence: on
+ * the CURRENT testnet deployment there is no such thing as a "fresh,
+ * unwired" account at all — the 'unwired' branch below is reachable only
+ * for an account built outside this factory (e.g. a raw
+ * `NidoSmartAccount::__constructor` call with `recovery_controller: None`),
+ * and the 'wired-to-different-controller' branch (the captain's exact bug)
+ * is the UNIVERSAL case for every account this factory has ever minted, not
+ * an occasional misconfiguration. Enrolling ANY current factory-made account
+ * into this Stage 3 controller therefore requires the real 7-day
+ * `RECOVERY_REMOVAL_DELAY_SECS` migration first — there is presently no
+ * faster path, by design (that delay is exactly what makes the removal safe
+ * against a stolen-key attacker racing to strip recovery protection).
  */
 import { Client as SmartAccountClient } from '@nidohq/smart-account';
 import { extractXdrOperations } from '../assembledTx.js';

@@ -198,6 +198,19 @@
 //!   either the account to pass proof of its own `recovery_controller`
 //!   value into `enroll`, or `enroll` itself to become account-authorized
 //!   and cross-call the account to verify wiring atomically.
+//!   **Confirmed live, not just hypothetical:** a probe
+//!   (`tests/e2e/testnet/recover-v3-wiring.testnet.spec.ts`) created a
+//!   BRAND NEW account via the doc-only factory and found it was ALREADY
+//!   wired to the M1 `nido-zk-recovery` pool at construction (DEPLOYED.md's
+//!   M2 genesis-insert behavior — every factory-made account gets this,
+//!   whether its owner ever uses recovery or not). So on the current
+//!   testnet deployment there is no such thing as a "fresh, unwired"
+//!   account at all: EVERY existing and newly-minted account is in the
+//!   `'wired-to-different-controller'` state relative to this controller,
+//!   and can only reach this controller after the account's own real 7-day
+//!   `initiate_recovery_rule_removal` -> `execute_recovery_rule_removal`
+//!   migration. The captain's bug was not an isolated misconfiguration on
+//!   one test account; it is the universal starting state.
 //! - **Recovery configuration is NOT embedded in the account's Perch
 //!   policy document**, despite follow-up.md §5.5 asking for "a reviewable
 //!   configuration ... with an accurate commitment." Investigated and
