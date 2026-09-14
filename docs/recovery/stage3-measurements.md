@@ -103,6 +103,21 @@ two `BytesN<32>` + a `u64`), but the exact XDR/fee delta was not measured.
   recovering user's own responsibility to retain (this experiment does not
   address secret backup/escrow — out of scope, same as the pre-existing
   `circuits/zk_recovery` module's enrollment model).
+- **Reviewable commitment (follow-up.md §5.5), and why it isn't in the
+  account's Perch doc:** investigated embedding `RecoveryConfig` in the
+  account's own policy document and confirmed it's unreachable today, not
+  merely unimplemented — perch's schema is `.strict()` (no extension
+  fields), nido's own doc-lowering throws for the one principal shape that
+  could plausibly carry it, and the deployed, pinned `perch-doc-compiler`'s
+  wire-level `CompiledRule` type has no field for an arbitrary policy
+  address at all (full reasoning: `contracts/recovery-controller/src/
+  lib.rs`'s "Known limits"). `RecoveryController::config_hash(account) ->
+  Option<BytesN<32>>` (`sha256(xdr(RecoveryConfig))`, on-chain,
+  deterministic) is the substitute: a real, recomputable commitment to the
+  full enrolled configuration, reviewable the same way `applied_doc_hash`
+  is, just not literally inside the doc's own JSON. Surfaced via
+  `packages/passkey-sdk/src/recoveryStage3/reads.ts::readConfigHash` and
+  the `recover-v3` Status panel.
 
 ## 7. Explicit limits
 
@@ -121,6 +136,22 @@ Summary, plus measurement-specific notes:
   `has_pending`-reporting controller says a recovery is pending under
   `Freeze` policy — see the crate doc comment for the full analysis.
 - `PendingActivityPolicy::Restrict` is refused at `enroll`, not implemented.
+- **Account wiring is a separate precondition from `enroll`, and is
+  currently unreachable for every existing testnet account.** `enroll`
+  only writes this controller's own storage; the ACCOUNT's own
+  `recovery_controller` field must independently equal this controller
+  before anything it stores matters (`Policy::enforce`/`has_pending` are
+  never cross-called otherwise). A captain live-test caught this as a
+  silent no-op on a real account; a live probe
+  (`tests/e2e/testnet/recover-v3-wiring.testnet.spec.ts`) then confirmed
+  it's not an edge case — every account the doc-only factory mints is
+  ALREADY wired to the M1 `nido-zk-recovery` pool at construction
+  (DEPLOYED.md's M2 genesis-insert behavior), so reaching this controller
+  needs the account's own real 7-day `initiate_recovery_rule_removal` →
+  `execute_recovery_rule_removal` migration first — no faster path exists,
+  by design. `packages/passkey-sdk/src/recoveryStage3/accountWiring.ts`'s
+  `checkAccountWiring` makes the mismatch explicit and `recover-v3` refuses
+  Enroll until it's resolved, rather than writing orphaned config.
 - **This PR's circuit isolation:** `circuits/zk_recovery_doc` is a NEW,
   separate circuit crate, not an in-place edit of the pre-existing
   `circuits/zk_recovery` (M1). The first approach attempted an in-place
