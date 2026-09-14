@@ -360,7 +360,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   // `factory`/`zk-recovery` to a hardcoded preview pair instead of the
   // shared production registry entries — this page needs no branch of its
   // own for that any more (`create_account`/`create_account_v2` are
-  // behaviorally identical since the factory fix for captain live-fail #3;
+  // behaviorally identical since the factory fix for the ZK/guardian convergence fix;
   // `deploy()` below always calls `create_account` regardless of mode). See
   // DEPLOYED.md's "Preview (factory-v2)" section.
 
@@ -956,8 +956,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
    * Wires + enrolls the just-created account into Stage 3's
    * `RecoveryController` (`ZkOnly` mode), then registers the ZK secret's
    * Merkle-leaf commitment in the shared `nido-zk-recovery` pool — same
-   * three-step flow as `security/index.astro::runZkEnrollment` (captain
-   * live-fail #3 fix), not the old direct `enroll_zk_recovery(pool)` call
+   * three-step flow as `security/index.astro::runZkEnrollment`, not the
+   * old direct `enroll_zk_recovery(pool)` call
    * that used to wire straight to the M1 pool. The account here is brand
    * new (just deployed this same request, always `recovery_controller:
    * None` per the factory's own fix — `contracts/factory/src/contract.rs
@@ -1123,7 +1123,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // Deploy only — always `create_account`, regardless of preview mode.
       // `create_account_v2`'s atomic genesis-insert (fold enrollment into
       // the creation tx via a commitment argument) was removed from the
-      // factory (captain live-fail #3 —
+      // factory (the ZK/guardian convergence fix —
       // `contracts/factory/src/contract.rs::deploy_account_contract`'s doc
       // comment: every account now mints with `recovery_controller: None`,
       // and `create_account_v2`'s commitment argument is ignored). The two

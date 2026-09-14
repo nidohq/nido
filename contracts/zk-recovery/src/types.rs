@@ -103,7 +103,7 @@ pub enum RecoveryKey {
     // ledger timestamp of an account's most recent successful cancel, for
     // the 24h cooldown check (spec §2.4).
     LastCancel(Address),
-    // SPIKE (doc-only apply_doc): appended at the end for XDR-ordinal
+    // Doc-only `apply_doc` completion: appended at the end for XDR-ordinal
     // stability. TEMPORARY-storage marker written by `Policy::enforce` at
     // the moment it consumes a pending (the completion transaction), holding
     // the ledger SEQUENCE of consumption. The doc-only smart account's

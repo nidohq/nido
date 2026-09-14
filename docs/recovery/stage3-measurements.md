@@ -1,13 +1,11 @@
 # Perch/Nido recovery — Stage 3 measurements
 
-**Status:** Spike. Stage 3 of the staged plan in
-`firstmate/data/perch-zk-recovery-scout-p5/follow-up.md` §8 ("Complete the
-experimental Nido flow"). This document is the measurements deliverable for
-that stage: proof generation time, proof size, verification cost, transaction
-construction, fees, and restoration behavior — measured against the real
-contracts and (where noted) the real adapted circuit in this PR, on this
-machine, explicitly labeled as such rather than a "realistic replacement
-device."
+**Status:** Measurements record. Proof generation time, proof size,
+verification cost, transaction construction, fees, and restoration behavior
+for the guardian/ZK/combined recovery controller (`contracts/recovery-controller`)
+— measured against the real contracts and (where noted) the real adapted
+circuit, on this development machine, explicitly labeled as such rather
+than a "realistic replacement device."
 
 **Source of truth:** `firstmate/data/perch-zk-recovery-scout-p5/follow-up.md`
 §8 Stage 3, building on the Stage 1 transition spec (PR #204,

@@ -352,7 +352,7 @@ impl ZkRecovery {
             .is_some_and(|pending| now < pending.expires_at)
     }
 
-    /// SPIKE (doc-only) view: `true` iff a recovery completion for
+    /// Doc-only completion view: `true` iff a recovery completion for
     /// `account` was consumed by `Policy::enforce` in THIS ledger (see
     /// `RecoveryKey::CompletionGrant`). The doc-only smart account's
     /// `add_context_rule` gate accepts `has_pending || completion_granted`:

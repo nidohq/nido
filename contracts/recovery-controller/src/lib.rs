@@ -79,8 +79,8 @@
 //!    `auth_hash` binding `action = Cancel` — cryptographically distinct
 //!    from an initiation proof. No entry point accepts bare admin/account
 //!    authorization for cancellation at all.
-//! 9. **Configuration consistency** — `reconfigure` (added after captain
-//!    live-fail #3 — see "Known limits") only ever ADDS a missing evidence
+//! 9. **Configuration consistency** — `reconfigure` (see "Known limits")
+//!    only ever ADDS a missing evidence
 //!    factor (`GuardianOnly -> Combined` / `ZkOnly -> Combined`); every
 //!    other field, including everything a live attempt's frozen commitment
 //!    binds to (`network_passphrase`, `baseline_doc_hash`, `delay_secs`,
@@ -108,10 +108,10 @@
 //! directive — none of these are silent gaps)
 //!
 //! - **`reconfigure` exists now, but only for ONE narrow purpose: adding a
-//!   missing evidence factor.** Captain live-fail #3 on PR 206: the account
+//!   missing evidence factor.** The ZK/guardian convergence fix: the account
 //!   can enroll ZK recovery via the wallet's existing "Add ZK recovery"
 //!   flow, or 1-of-N guardian recovery via the "Set up recovery" flow (both
-//!   fixed by captain live-fails #1/#2) — but `enroll` is one-shot
+//!   fixed by the wiring-precondition and legacy-stub fixes) — but `enroll` is one-shot
 //!   (`Error::AlreadyEnrolled`), so whichever the account enrolls SECOND
 //!   used to be permanently refused, meaning ZK and guardian evidence could
 //!   never coexist on one controller — the exact feature `AuthMode::Combined`

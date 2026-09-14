@@ -1,11 +1,12 @@
 # Perch/Nido recovery — Stage 2 findings: completion mechanism comparison
 
-**Status:** Spike. Stage 2 of the staged plan in
-`firstmate/data/perch-zk-recovery-scout-p5/follow-up.md` §8 ("Compare
-completion mechanisms in a bounded experiment"). This document and the
-integration tests under `crates/integration-tests/tests/it/recovery_stage2_*.rs`
-are the deliverable for that stage only — no circuits, guardian adapters, or
-UI are included, and this is not authorization to proceed to Stage 3.
+**Status:** Design decision record. This document compares two ways to
+complete a doc-hash-committed recovery attempt against the doc-only smart
+account and records why Variant A (authorizing the existing `apply_doc`, no
+smart-account code changes) was adopted — see `contracts/recovery-controller`
+for where that decision is implemented, and the integration tests under
+`crates/integration-tests/tests/it/recovery_stage2_*.rs` for the comparison
+itself.
 
 **Source of truth:** `firstmate/data/perch-zk-recovery-scout-p5/follow-up.md`
 (§3.1, §5.1, §5.3, §6, §8) and the Stage 1 deliverable

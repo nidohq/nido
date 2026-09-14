@@ -8,8 +8,8 @@ import { seedCredential } from '../../support/auth/seed';
 const PORT = Number(process.env.E2E_PORT || 4399);
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const DUMMY_SOURCE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
-// Stage 3 recovery-controller v2 (adds reconfigure/config_hash — captain
-// live-fail #3 fix). See packages/passkey-sdk/src/recoveryStage3/deployment.ts.
+// Stage 3 recovery-controller v2 (adds reconfigure/config_hash — the
+// ZK/guardian convergence fix). See packages/passkey-sdk/src/recoveryStage3/deployment.ts.
 const RECOVERY_CONTROLLER_ID = 'CBYSWPHNWAHYUBZO5TBTO5MCW2ZC45F2C3L4JSUZXYQFNMHTOBOCCHZU';
 const DUMMY_FRIEND = 'GAMPJROHOAW662FINQ4XQOY2ULX5IEGYXCI4SMZYE75EHQBR6PSTJG3M';
 
@@ -171,7 +171,7 @@ async function enrollGuardianViaForm(page: import('@playwright/test').Page): Pro
 }
 
 /**
- * @testnet — live probe for captain live-fail #3 (003.msg): ZK recovery
+ * @testnet — live probe for the ZK/guardian convergence fix: ZK recovery
  * (via `/security/`'s "Add ZK recovery") and guardian recovery (via
  * `/security/`'s "Set up recovery") must be able to coexist on ONE
  * `RecoveryController` instance regardless of which is added first —

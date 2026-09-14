@@ -1,5 +1,5 @@
 /**
- * SPIKE (doc-only): the ONE apply route — the SDK half of the smart
+ * Doc-only: the ONE apply route — the SDK half of the smart
  * account's `apply_doc` entry point (contracts/smart-account/src/doc.rs),
  * the account's sole policy write path.
  *

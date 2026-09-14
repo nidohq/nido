@@ -75,7 +75,7 @@ pub enum NidoSmartAccountError {
     UpgradeNotAnnounced = 8,
     /// `execute_upgrade` was called before the announced 7-day delay elapsed.
     UpgradeDelayNotElapsed = 9,
-    // --- SPIKE: `apply_doc` (see `doc.rs`). 10 is the doc layer's own
+    // --- `apply_doc` (see `doc.rs`). 10 is the doc layer's own
     // refusal; 11–15 mirror perch's `DocCompilerError` variants 1–5 (offset
     // +10 so the two error spaces can't collide in this contract's codes);
     // 16 is the fail-closed cross-call fallback. ---
@@ -113,7 +113,7 @@ pub enum NidoSmartAccountError {
     /// is the sole policy write path; `add_context_rule` survives only as
     /// the completion vehicle while a recovery is live-pending.
     DocOnlyWritePath = 19,
-    // --- STAGE 2 SPIKE (Variant B): `complete_recovery` (see below). ---
+    // --- Variant B: `complete_recovery` (see below). ---
     /// `complete_recovery` was called but the recovery controller has no
     /// live completion grant for this account -- either nothing is pending,
     /// or this specific call's own authorization did not resolve through the
@@ -149,13 +149,13 @@ pub enum NidoSmartAccountError {
 #[contractclient(name = "RecoveryControllerClient")]
 trait RecoveryController {
     fn has_pending(e: Env, account: Address) -> bool;
-    // SPIKE (doc-only): true iff a completion was consumed for `account`
+    // Doc-only completion: true iff a completion was consumed for `account`
     // in THIS ledger — `Policy::enforce` runs during the completing
     // `add_context_rule`'s `__check_auth` and removes the pending, so the
     // entry point's body can no longer see it; the grant is the body's
     // window signal (see `add_context_rule`'s gate).
     fn completion_granted(e: Env, account: Address) -> bool;
-    // STAGE 2 SPIKE (Variant B): reads and deletes a value-bound completion
+    // Variant B: reads and deletes a value-bound completion
     // grant `Policy::enforce` wrote during THIS call's own `__check_auth`
     // (see `complete_recovery` below and
     // `nido_recovery_doc_completion::Key::CompletionGrant`). Not implemented
@@ -610,7 +610,7 @@ impl NidoSmartAccount {
     }
 
     // -----------------------------------------------------------------
-    // SPIKE: perch apply_doc, hybrid-additive (see `doc.rs` for the full
+    // perch apply_doc, hybrid-additive (see `doc.rs` for the full
     // story and the deliberately-deferred decisions).
     // -----------------------------------------------------------------
 
@@ -647,7 +647,7 @@ impl NidoSmartAccount {
     }
 
     // -----------------------------------------------------------------
-    // STAGE 2 SPIKE (Variant B): a dedicated recovery completion entry
+    // Variant B: a dedicated recovery completion entry
     // point, compared against Variant A (recovery completing through the
     // EXISTING `apply_doc` above with no code changes at all) in
     // `firstmate/data/perch-zk-recovery-scout-p5/follow-up.md` §8 Stage 2.

@@ -233,7 +233,7 @@ impl Contract {
     }
 
     /// Deploy an account contract and add its initial passkey signer.
-    /// Mints with `recovery_controller: None` (captain live-fail #3 fix —
+    /// Mints with `recovery_controller: None` (the ZK/guardian convergence fix —
     /// see `deploy_account_contract`'s doc comment for why the previous
     /// unconditional M1 genesis-wiring was removed). Recovery is opt-in
     /// only, via the account's own `enroll_zk_recovery` /
@@ -378,7 +378,7 @@ impl Contract {
     }
 
     /// Deploys the account contract at `get_c_address(salt)` with
-    /// `recovery_controller: None` — captain live-fail #3 (follow-up.md
+    /// `recovery_controller: None` — the ZK/guardian convergence fix (follow-up.md
     /// §2.1/§5.2): this factory used to install the M1 `nido-zk-recovery`
     /// controller as EVERY new account's recovery rule unconditionally
     /// (`resolve_recovery` + a genesis Merkle-leaf `insert`, M2 Task 5),
@@ -995,7 +995,7 @@ mod test {
     #[contractclient(name = "ProbeClient")]
     trait Probe {
         fn recovery_rule_id(e: Env) -> Option<u32>;
-        // SPIKE (apply_doc): the doc-layer views the new smart-account wasm
+        // `apply_doc`: the doc-layer views the new smart-account wasm
         // exports — probed below to prove the factory's embedded wasm ships
         // the perch doc surface to every newly created account.
         fn applied_doc_hash(e: Env) -> Option<BytesN<32>>;
@@ -1007,7 +1007,7 @@ mod test {
     /// registered under `"zk-recovery"`, alongside a trivial `"verifier"`
     /// stub (`StubController`, reused purely for its
     /// `batch_canonicalize_key`). The pool is no longer cross-called by
-    /// `create_account`/`create_account_v2` at all (captain live-fail #3 —
+    /// `create_account`/`create_account_v2` at all (the ZK/guardian convergence fix —
     /// see `deploy_account_contract`'s doc comment); it's kept registered
     /// here only so `resolve(e, "zk-recovery")`/`resolve_recovery`-adjacent
     /// tests (the admin-override getter/setter pair) still have a real
@@ -1071,8 +1071,8 @@ mod test {
 
     /// `create_account_v2` deploys to `get_c_address(salt)`, mints with
     /// `recovery_controller: None`, and its `commitment` argument is
-    /// IGNORED — no pool cross-call happens at all any more (captain
-    /// live-fail #3; see `deploy_account_contract`'s doc comment). A real
+    /// IGNORED — no pool cross-call happens at all any more (see
+    /// `deploy_account_contract`'s doc comment). A real
     /// commitment argument must not accidentally cause a leaf to appear
     /// anywhere in the registry-resolved pool.
     #[test]
@@ -1148,7 +1148,7 @@ mod test {
     /// Legacy `create_account` deploys to `get_c_address(salt)` and mints
     /// with `recovery_controller: None` — the deterministic DUMMY-commitment
     /// genesis-insert this used to perform (M2 Task 5) was removed alongside
-    /// the recovery-controller wiring (captain live-fail #3; see
+    /// the recovery-controller wiring (the ZK/guardian convergence fix; see
     /// `deploy_account_contract`'s doc comment). `dummy_commitment` itself
     /// is still exercised as a pure function by the tests below it.
     #[test]
@@ -1322,7 +1322,7 @@ mod test {
         );
     }
 
-    /// SPIKE (`apply_doc`): the factory needs NO code change to ship the doc
+    /// `apply_doc`: the factory needs NO code change to ship the doc
     /// layer — it embeds the smart-account wasm at build time
     /// (`smart_account::WASM`), so rebuilding + republishing the factory is
     /// the whole deploy story for new accounts. This test proves the

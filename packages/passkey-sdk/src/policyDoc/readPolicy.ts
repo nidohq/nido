@@ -1,5 +1,5 @@
 /**
- * SPIKE (doc-only): the two-tier policy read for accounts whose sole policy
+ * Doc-only: the two-tier policy read for accounts whose sole policy
  * write path is `apply_doc` (contracts/smart-account/src/doc.rs):
  *
  *   a. `doc-verified` — a document read from the on-chain copy

@@ -424,7 +424,7 @@ import Nest from '../../components/Nest.astro';
   }
 
   /**
-   * Retry-safe Stage 3 ZK enrollment (captain live-fail #3 fix — this used
+   * Retry-safe Stage 3 ZK enrollment (the ZK/guardian convergence fix — this used
    * to wire the account directly to the M1 pool via `enroll_zk_recovery`,
    * a DIFFERENT controller from the guardian-recovery flow's Stage 3
    * `RecoveryController`, so ZK-first-then-guardian (or the reverse) could

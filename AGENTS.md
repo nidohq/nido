@@ -67,33 +67,40 @@ Pages whose UI lives inside `class="hidden"` mode containers need their primary
 state revealed; the script's `reveal` map handles this (currently un-hides
 `#home-mode` on the account page). Add an entry there if another page exports blank.
 
-## Recovery spec (Stage 1) + completion experiment (Stage 2) + end-to-end spike (Stage 3)
+## Account recovery (guardian quorum + ZK)
 
-`docs/recovery/TRANSITION_SPEC.md` + `packages/recovery-spec/` are a Stage 1
-spike (transition spec + executable reference state machine + adversarial
-tests) for Perch/Nido ZK+guardian recovery, per
-`firstmate/data/perch-zk-recovery-scout-p5/follow-up.md`. No contracts or
-circuits — read the spec doc before extending recovery design elsewhere.
+Guardian-quorum and ZK-proof account recovery for doc-only smart accounts,
+built in three layers that are still visible in the code/doc layout:
 
-Stage 2 (`docs/recovery/stage2-findings.md`, `contracts/recovery-doc-completion`,
-`crates/integration-tests/tests/it/recovery_stage2_*.rs`) compares two ways to
-complete a doc-hash-committed recovery attempt against the doc-only smart
-account: authorizing the existing `apply_doc` (recommended — no smart-account
-code changes) vs. a dedicated `complete_recovery` entry point sharing the same
-internal pipeline. Read the findings doc's call-ordering section before adding
-any recovery completion vehicle — it explains why a value-bound, single-use
-completion grant (not a boolean/ledger flag) is required for any DEDICATED
-entry point, and why the existing `apply_doc` needs no such mechanism at all.
+**Transition spec** (`docs/recovery/TRANSITION_SPEC.md` +
+`packages/recovery-spec/`) — the state-machine transition spec, an
+executable reference model, and adversarial tests for Perch/Nido ZK+guardian
+recovery, per `firstmate/data/perch-zk-recovery-scout-p5/follow-up.md`. No
+contracts or circuits here — read the spec doc before extending recovery
+design elsewhere.
 
-Stage 3 (`contracts/recovery-controller`, `contracts/recovery-verifier`,
-`circuits/zk_recovery_doc`, `crates/integration-tests/tests/it/recovery_stage3_*.rs`,
-`docs/recovery/stage3-measurements.md`) is the end-to-end experiment: a
-SHARED controller implementing guardian-only, ZK-only, and combined evidence
-paths against the Stage 1 proposal model, completing via Stage 2's Variant A.
-Read `contracts/recovery-controller/src/lib.rs`'s crate doc comment FIRST —
-it is the authoritative architecture summary AND the canonical "Known
-limits" list (what's NOT implemented and why) before extending or reviewing
-this code.
+**Completion mechanism** (`docs/recovery/stage2-findings.md`,
+`contracts/recovery-doc-completion`,
+`crates/integration-tests/tests/it/recovery_stage2_*.rs`) compares two ways
+to complete a doc-hash-committed recovery attempt against the doc-only smart
+account: authorizing the existing `apply_doc` (Variant A, adopted — no
+smart-account code changes) vs. a dedicated `complete_recovery` entry point
+sharing the same internal pipeline (Variant B). Read the findings doc's
+call-ordering section before adding any recovery completion vehicle — it
+explains why a value-bound, single-use completion grant (not a
+boolean/ledger flag) is required for any DEDICATED entry point, and why
+`apply_doc` needs no such mechanism at all.
+
+**Controller + circuit** (`contracts/recovery-controller`,
+`contracts/recovery-verifier`, `circuits/zk_recovery_doc`,
+`crates/integration-tests/tests/it/recovery_stage3_*.rs`,
+`docs/recovery/stage3-measurements.md`) is the shared controller
+implementing guardian-only, ZK-only, and combined evidence paths against the
+transition spec's proposal model, completing via the mechanism above's
+Variant A. Read `contracts/recovery-controller/src/lib.rs`'s crate doc
+comment FIRST — it is the authoritative architecture summary AND the
+canonical "Known limits" list (what's NOT implemented and why) before
+extending or reviewing this code.
 
 **`circuits/zk_recovery_doc` is a separate circuit crate from the
 pre-existing `circuits/zk_recovery` (M1's raw-signer-rotation circuit) —

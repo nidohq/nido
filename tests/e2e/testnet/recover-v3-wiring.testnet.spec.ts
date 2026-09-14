@@ -4,8 +4,8 @@ import { createAndDeployAs } from '../../support/recovery';
 
 const PORT = Number(process.env.E2E_PORT || 4399);
 
-// Stage 3 recovery-controller v2 (adds reconfigure/config_hash — captain
-// live-fail #3 fix). See packages/passkey-sdk/src/recoveryStage3/deployment.ts.
+// Stage 3 recovery-controller v2 (adds reconfigure/config_hash — the
+// ZK/guardian convergence fix). See packages/passkey-sdk/src/recoveryStage3/deployment.ts.
 const RECOVERY_CONTROLLER_ID = 'CBYSWPHNWAHYUBZO5TBTO5MCW2ZC45F2C3L4JSUZXYQFNMHTOBOCCHZU';
 // Any well-formed G-address — GuardianOnly mode just needs a nonempty
 // guardian list; this probe doesn't drive a real recovery attempt.
@@ -24,8 +24,8 @@ const BASELINE_DOC = JSON.stringify({
 });
 
 /**
- * @testnet — live probe for the account-wiring fix (captain live-fail #1 on
- * PR #206), RE-RUN after the factory fix for captain live-fail #3
+ * @testnet — live probe for the account-wiring fix (the account-wiring fix (on
+ * PR #206), RE-RUN after the factory fix for the ZK/guardian convergence fix
  * (`contracts/factory/src/contract.rs::deploy_account_contract` no longer
  * unconditionally wires new accounts to the M1 `nido-zk-recovery` pool).
  *
@@ -35,7 +35,7 @@ const BASELINE_DOC = JSON.stringify({
  * wired EVERY new account to the M1 pool at construction, so the spec was
  * rewritten to instead prove the mismatch-DETECTION path (Enroll correctly
  * refusing on a wired-elsewhere account) rather than the happy path. The
- * live-fail #3 fix removed that unconditional wiring (DEPLOYED.md's Factory
+ * ZK/guardian convergence fix removed that unconditional wiring (DEPLOYED.md's Factory
  * entry, 2026-09-14 upgrade) — so THIS version returns to the originally
  * intended assertion, now true: a fresh account really does start unwired,
  * and `recover-v3`'s wire -> enroll flow completes end to end against it.

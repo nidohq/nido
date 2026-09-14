@@ -1,12 +1,14 @@
 # Perch/Nido recovery — Stage 1 transition specification
 
-**Status:** Spike. Stage 1 of the staged plan in
+**Status:** Design reference. This is the transition specification for
+Perch/Nido account recovery, per
 `firstmate/data/perch-zk-recovery-scout-p5/follow-up.md` §8 ("Specify the
 transition before freezing the API"). This document and the executable
-reference model in `packages/recovery-spec/` are the deliverable for that
-stage only — **no contracts, circuits, or production code are included or
-implied.** Stage 2 ("Compare completion mechanisms") and later stages are
-explicitly out of scope here.
+reference model in `packages/recovery-spec/` capture the state machine and
+its invariants; the contracts and circuits implementing it live under
+`contracts/recovery-controller`, `contracts/recovery-verifier`, and
+`circuits/zk_recovery_doc` (see AGENTS.md's "Account recovery" section for
+the full layer breakdown).
 
 **Source of truth:** `firstmate/data/perch-zk-recovery-scout-p5/follow-up.md`
 ("the follow-up") is authoritative wherever it disagrees with the earlier

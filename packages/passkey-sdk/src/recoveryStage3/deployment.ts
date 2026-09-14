@@ -9,7 +9,7 @@
 //! interface` output before being recorded here).
 
 /** `contracts/recovery-controller`, testnet — v2 (adds `reconfigure`/
- *  `config_hash`, captain live-fail #3 fix). This controller is
+ *  `config_hash`, the ZK/guardian convergence fix). This controller is
  *  constructorless with no upgrade/admin entry point at all (by design —
  *  see the crate doc comment), so adding `reconfigure` to the source could
  *  not update the already-deployed v1 instance in place; v2 is a genuinely

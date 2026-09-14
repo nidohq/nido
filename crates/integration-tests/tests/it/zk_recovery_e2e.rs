@@ -497,7 +497,7 @@ fn setup_factory_and_pool(env: &Env) -> (Address, Address) {
     (factory_addr, pool_addr)
 }
 
-/// **Test 2** (rewritten for captain live-fail #3 — see
+/// **Test 2** (rewritten for the ZK/guardian convergence fix — see
 /// `contracts/factory/src/contract.rs::deploy_account_contract`'s doc
 /// comment). This test used to prove `create_account` (dummy commitment)
 /// and `create_account_v2` (real commitment) were indistinguishable

@@ -20,8 +20,8 @@ const IDENTITY_LABEL = 'stage3-fresh-probe';
 const DUMMY_FRIEND = 'GAMPJROHOAW662FINQ4XQOY2ULX5IEGYXCI4SMZYE75EHQBR6PSTJG3M';
 
 /**
- * @testnet — live probe for captain issue #2 (002.msg): the REAL production
- * "Set up recovery" flow on `/security/` (NOT the recover-v3 spike page)
+ * @testnet — live probe for the friend-recovery routing fix: the REAL production
+ * "Set up recovery" flow on `/security/` (NOT the recover-v3 experimental page)
  * previously routed to a dead stub (`multisigRecoveryModule.buildInstall`
  * unconditionally threw `DOC_ONLY_ERROR`). Proves the fix end to end against
  * real testnet:

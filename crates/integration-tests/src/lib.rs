@@ -36,7 +36,7 @@ pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
 pub const FACTORY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
 
-/// SPIKE (`apply_doc`): the CANONICAL perch doc-compiler + interpreter as
+/// `apply_doc`: the CANONICAL perch doc-compiler + interpreter as
 /// deployed on testnet — fetched from chain (`stellar contract fetch`) and
 /// committed, so the e2e exercises the exact builds live accounts talk to.
 /// `apply_doc.rs`'s pin tests assert sha256 of these bytes equals the
@@ -82,7 +82,7 @@ trait SmartAccountInterface {
     // M2 Task 6: the migration path for a NEW-wasm account deployed with
     // `recovery_controller: None` (`contract.rs::enroll_zk_recovery`).
     fn enroll_zk_recovery(env: soroban_sdk::Env, recovery_controller: soroban_sdk::Address);
-    // SPIKE: perch apply_doc (hybrid) + its views
+    // perch apply_doc (hybrid) + its views
     // (`contract.rs`/`doc.rs`). `apply_doc` is declared with the success
     // type only — the deployed contract's `Result<BytesN<32>, _>` returns
     // the Ok value on success and traps with the typed code otherwise,
@@ -91,7 +91,7 @@ trait SmartAccountInterface {
     fn applied_doc_hash(env: soroban_sdk::Env) -> Option<soroban_sdk::BytesN<32>>;
     fn get_applied_doc(env: soroban_sdk::Env) -> Option<soroban_sdk::Bytes>;
     fn doc_rule_ids(env: soroban_sdk::Env) -> soroban_sdk::Vec<u32>;
-    // STAGE 2 SPIKE (Variant B, recovery Stage 2): the dedicated recovery
+    // Variant B (recovery completion, `docs/recovery/stage2-findings.md`): the dedicated recovery
     // completion entry point (`contracts/smart-account/src/contract.rs`),
     // compared against Variant A (completing through `apply_doc` above with
     // no smart-account changes) in `docs/recovery/stage2-findings.md`.
