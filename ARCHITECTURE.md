@@ -143,34 +143,69 @@ Cross-contract integration tests (crates/integration-tests/) using synthetic P-2
 ```mermaid
 graph TB
     subgraph "Cloudflare"
-        Worker["Cloudflare Worker<br/>*.nido.fyi proxy"]
+        Proxy["Worker: nido-proxy<br/>*.nido.fyi/*"]
+        Resolver["Worker: nido-resolver<br/>.well-known/nido.json"]
+        RecoveryRelay["Worker: recovery-relay<br/>relay.nido.fyi"]
+        PoolIndexer["Worker: pool-indexer<br/>pool-indexer.nido.fyi"]
         Pages["Cloudflare Pages<br/>Astro Static Site"]
-        Worker --> Pages
+        Proxy --> Pages
+    end
+
+    subgraph "Fly.io"
+        Relayer["OpenZeppelin Relayer<br/>nido.fly.dev"]
+        Redis["nido-redis"]
+        Relayer --> Redis
     end
 
     subgraph "Browser"
         WebAuthn["WebAuthn API<br/>navigator.credentials"]
         SDK["@nidohq/passkey-sdk"]
-        Bindings["Contract Bindings<br/>factory / smart-account / verifier"]
+        Bindings["Contract Bindings"]
         StellarSDK["@stellar/stellar-sdk"]
         SDK --> StellarSDK
         Bindings --> StellarSDK
     end
 
     subgraph "Stellar Network"
-        Factory["nido-factory"]
-        SmartAccount["nido-smart-account"]
-        Verifier["nido-webauthn-verifier"]
+        Registry["Stellar Registry<br/>(unverified)"]
+        NameRegistry["nido-name-registry"]
+
+        subgraph "Core Account"
+            Factory["nido-factory"]
+            SmartAccount["nido-smart-account"]
+            Verifier["nido-webauthn-verifier"]
+        end
+
+        subgraph "Policies"
+            Multisig["multisig-policy"]
+            SpendLimit["spending-limit-policy"]
+            Sweep["preauth-sweep-policy"]
+        end
+
+        subgraph "ZK Recovery"
+            ZkRecovery["zk-recovery<br/>(pool + controller)"]
+            ZkVerifier["zk-verifier<br/>(UltraHonk)"]
+        end
+
+        Factory -- "resolves verifier/<br/>zk-recovery via" --> Registry
         Factory -- "deploys" --> SmartAccount
-        Factory -- "lazy-deploys" --> Verifier
         SmartAccount -- "verify()" --> Verifier
+        SmartAccount -.->|policies AND-ed| Multisig
+        SmartAccount -.->|policies AND-ed| SpendLimit
+        SmartAccount -.->|policies AND-ed| Sweep
+        SmartAccount -.->|recovery rule policy| ZkRecovery
+        ZkRecovery -- "verify_proof()" --> ZkVerifier
     end
 
     Pages --> SDK
     Pages --> Bindings
     Pages --> WebAuthn
+    Pages -- "sponsored tx" --> Relayer
+    Relayer -- "submits" --> Factory
     StellarSDK -- "RPC" --> Factory
     StellarSDK -- "RPC" --> SmartAccount
+    PoolIndexer -- "scans events" --> ZkRecovery
+    Resolver -- "reads" --> NameRegistry
 ```
 
 ### Flow 1: Onboarding (G → C Migration)
@@ -180,18 +215,18 @@ sequenceDiagram
     actor User
     participant Wallet as nido.fyi
     participant WebAuthn as WebAuthn API
-    participant Stellar as Stellar Network
+    participant Relayer as Relayer (Fly.io)
     participant Factory as nido-factory
     participant SA as SmartAccount
-    participant WV as WebAuthn Verifier
+    participant Sweep as preauth-sweep-policy
 
     User->>Wallet: Open wallet
     Wallet->>Wallet: Generate ephemeral keypair (G_temp)
     Wallet-->>User: Display G-address for funding
 
-    User->>Stellar: Fund G_temp (Friendbot / CEX / etc.)
+    User->>User: Fund G_temp (Friendbot / CEX / etc.)
 
-    Wallet->>Factory: get_c_address(G_temp)
+    Wallet->>Factory: get_c_address(salt)
     Factory-->>Wallet: Deterministic C-address
 
     Wallet-->>User: Redirect to <C-addr>.nido.fyi/new-account/
@@ -200,15 +235,20 @@ sequenceDiagram
     WebAuthn-->>Wallet: Registration response (P-256 public key)
 
     Wallet->>Wallet: Extract 65-byte uncompressed pubkey
-    Wallet->>Wallet: Build TX: Factory.create_account(G_temp, pubkey)
-    Wallet->>Stellar: Simulate + Assemble + Sign with G_temp + Submit
+    Wallet->>Relayer: create_account_v2(salt, pubkey, commitment)
 
-    Stellar->>Factory: create_account(G_temp, pubkey)
-    Factory->>WV: Try verify() — deploy if absent
-    Factory->>SA: Deploy with passkey as External signer
+    Relayer->>Relayer: Sponsor fee, submit transaction
+    Relayer->>Factory: create_account_v2(salt, pubkey, commitment)
+    Factory->>Factory: Resolve verifier + zk-recovery<br/>controller (registry, or admin pin)
+    Factory->>SA: Deploy with passkey as External signer<br/>+ zero-signer recovery rule
+    Factory->>Factory: Insert genesis Merkle leaf<br/>(real or dummy commitment)
 
-    Stellar-->>Wallet: TX confirmed
-    Wallet-->>User: Redirect to <C-addr>.nido.fyi/account/
+    Relayer-->>Wallet: Transaction confirmed
+
+    Wallet->>Sweep: Trigger G -> C sweep<br/>(no signature required)
+    Sweep->>Sweep: transfer_from(spender=C, from=G, to=C)<br/>— bounded to this G/C pair only
+
+    Wallet-->>User: Redirect to <C-addr>.nido.fyi/account/<br/>(G_temp key discarded)
 ```
 
 ### Flow 2: dApp Signature Request
@@ -217,21 +257,30 @@ sequenceDiagram
 sequenceDiagram
     actor User
     participant dApp as dApp (any origin)
-    participant Wallet as <C-addr>.nido.fyi/account/
+    participant Module as NidoModule<br/>(Stellar Wallets Kit)
+    participant Popup as <C-addr>.nido.fyi/sign/
     participant WebAuthn as WebAuthn API
+    participant Relayer as Relayer
 
-    dApp->>dApp: Construct transaction hash
-    dApp->>Wallet: Redirect: ?sign=<hash>&callback=<dapp-url>
+    dApp->>Module: signTransaction(xdr) /<br/>signMessage / signAuthEntry
+    Module->>Popup: Open popup with payload,<br/>network passphrase, dApp origin, return URL
 
-    Wallet-->>User: Display signature request
-    User->>WebAuthn: navigator.credentials.get()<br/>challenge = hash
-    WebAuthn-->>Wallet: Assertion (authenticatorData,<br/>clientDataJSON, signature)
+    Popup-->>User: Display signature request
+    User->>WebAuthn: navigator.credentials.get()
+    WebAuthn-->>Popup: Assertion (authenticatorData,<br/>clientDataJSON, signature)
 
-    Wallet->>Wallet: Convert DER signature to compact (r‖s)
-    Wallet->>dApp: Redirect to callback with query params:<br/>authenticatorData, clientDataJSON,<br/>signature, publicKey
+    alt kind = tx
+        Popup->>Relayer: Submit signed transaction
+        Relayer-->>Popup: On-chain confirmation (hash)
+    else kind = message / authEntry
+        Popup->>Popup: Assemble signed artifact only
+    end
 
-    dApp->>dApp: Inject signature into TX auth entries
-    dApp->>Stellar: Submit signed transaction
+    Popup->>Module: postMessage(result) targeted at dApp origin
+    Popup->>Popup: Close popup
+    Module-->>dApp: Resolve with tx hash, or<br/>signed message/authEntry
+
+    Note over Module,dApp: Cancel → reject normally.<br/>Switch account → clear cached account,<br/>reject with ACCOUNT_SWITCH_REQUESTED
 ```
 
 ### Flow 3: On-Chain Auth
@@ -253,7 +302,7 @@ sequenceDiagram
     WV->>WV: Validate secp256r1 signature<br/>against authData + clientData + challenge
     WV-->>OZ: Valid / Invalid
 
-    OZ->>OZ: Enforce context rules<br/>(contracts, limits, time windows)
+    OZ->>OZ: Enforce context rule scope<br/>(target contract, valid_until,<br/>attached policies — AND-ed)
     OZ-->>SA: Auth result
     SA-->>Stellar: Auth result
     Stellar->>Stellar: Execute transaction ops
@@ -263,22 +312,33 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    subgraph "One-time Setup"
-        Install["stellar contract install<br/>(WASM → hashes)"]
-        Deploy["Deploy nido-factory<br/>(hardcoded WASM hashes)"]
-        Install --> Deploy
+    subgraph "Build & Publish"
+        BuildRs["build.rs stages the built<br/>nido_smart_account.wasm"]
+        Embed["Factory embeds the wasm bytes<br/>via include_bytes!"]
+        Hash["sha256(wasm) computed<br/>+ cached at runtime"]
+        Install["Install/publish policy +<br/>verifier + registry wasm"]
+        BuildRs --> Embed --> Hash
+    end
+
+    subgraph "Registry"
+        Registry["Stellar Registry<br/>(unverified)"]
+        Pin["Admin pin override<br/>set_registry_pins()"]
     end
 
     subgraph "Per-User (via Factory)"
-        Funder["G_temp (funder)"]
         FactoryC["nido-factory"]
-        CAddr["SmartAccount<br/>at deterministic C-address"]
-        VerifierC["WebAuthn Verifier<br/>(shared singleton)"]
+        CAddr["SmartAccount<br/>at get_c_address(salt)"]
+        VerifierC["nido-webauthn-verifier"]
+        ZkRecoveryC["zk-recovery<br/>controller"]
 
-        Funder -- "create_account(funder, pubkey)" --> FactoryC
-        FactoryC -- "deploy_v2<br/>salt=0x00..00" --> CAddr
-        FactoryC -- "lazy-deploy<br/>(try-invoke pattern)" --> VerifierC
+        FactoryC -- "deploy_v2(hash, salt)" --> CAddr
+        FactoryC -- "install recovery rule +<br/>insert genesis leaf" --> ZkRecoveryC
     end
 
-    Deploy --> FactoryC
+    Hash --> FactoryC
+    Install --> Registry
+    Registry -. "resolve('verifier'/'zk-recovery')<br/>if unpinned" .-> FactoryC
+    Pin -. "bypasses registry<br/>if pinned" .-> FactoryC
+    FactoryC -- "resolves to" --> VerifierC
+    FactoryC -- "resolves to" --> ZkRecoveryC
 ```
