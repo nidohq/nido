@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@nidohq/multisig-policy": "^0.1.0",
+    "@nidohq/recovery-controller": "^0.1.0",
     "@nidohq/smart-account": "^0.1.0",
     "@nidohq/spending-limit-policy": "^0.1.0",
     "@nidohq/zk-recovery": "^0.1.0",
