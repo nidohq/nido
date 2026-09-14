@@ -90,6 +90,14 @@ trait SmartAccountInterface {
     fn applied_doc_hash(env: soroban_sdk::Env) -> Option<soroban_sdk::BytesN<32>>;
     fn get_applied_doc(env: soroban_sdk::Env) -> Option<soroban_sdk::Bytes>;
     fn doc_rule_ids(env: soroban_sdk::Env) -> soroban_sdk::Vec<u32>;
+    // STAGE 2 SPIKE (Variant B, recovery Stage 2): the dedicated recovery
+    // completion entry point (`contracts/smart-account/src/contract.rs`),
+    // compared against Variant A (completing through `apply_doc` above with
+    // no smart-account changes) in `docs/recovery/stage2-findings.md`.
+    fn complete_recovery(
+        env: soroban_sdk::Env,
+        doc_json: soroban_sdk::Bytes,
+    ) -> soroban_sdk::BytesN<32>;
 }
 
 // ---------------------------------------------------------------------

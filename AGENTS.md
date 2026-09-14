@@ -64,13 +64,23 @@ Pages whose UI lives inside `class="hidden"` mode containers need their primary
 state revealed; the script's `reveal` map handles this (currently un-hides
 `#home-mode` on the account page). Add an entry there if another page exports blank.
 
-## Recovery spec (Stage 1 spike)
+## Recovery spec (Stage 1 spike) + completion mechanism experiment (Stage 2 spike)
 
 `docs/recovery/TRANSITION_SPEC.md` + `packages/recovery-spec/` are a Stage 1
 spike (transition spec + executable reference state machine + adversarial
 tests) for Perch/Nido ZK+guardian recovery, per
 `firstmate/data/perch-zk-recovery-scout-p5/follow-up.md`. No contracts or
 circuits — read the spec doc before extending recovery design elsewhere.
+
+Stage 2 (`docs/recovery/stage2-findings.md`, `contracts/recovery-doc-completion`,
+`crates/integration-tests/tests/it/recovery_stage2_*.rs`) compares two ways to
+complete a doc-hash-committed recovery attempt against the doc-only smart
+account: authorizing the existing `apply_doc` (recommended — no smart-account
+code changes) vs. a dedicated `complete_recovery` entry point sharing the same
+internal pipeline. Read the findings doc's call-ordering section before adding
+any recovery completion vehicle — it explains why a value-bound, single-use
+completion grant (not a boolean/ledger flag) is required for any DEDICATED
+entry point, and why the existing `apply_doc` needs no such mechanism at all.
 
 ## Testing Notes
 

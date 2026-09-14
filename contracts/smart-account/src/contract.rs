@@ -113,6 +113,23 @@ pub enum NidoSmartAccountError {
     /// is the sole policy write path; `add_context_rule` survives only as
     /// the completion vehicle while a recovery is live-pending.
     DocOnlyWritePath = 19,
+    // --- STAGE 2 SPIKE (Variant B): `complete_recovery` (see below). ---
+    /// `complete_recovery` was called but the recovery controller has no
+    /// live completion grant for this account -- either nothing is pending,
+    /// or this specific call's own authorization did not resolve through the
+    /// recovery policy's `enforce` (e.g. an ordinary admin-authorized call
+    /// using the account's own signing rule instead of the zero-signer
+    /// recovery rule). Reuses `DocOnlyWritePath`'s meaning ("no legitimate
+    /// write path is open right now") for the analogous dedicated-entry-point
+    /// gate.
+    RecoveryCompletionNotGranted = 20,
+    /// `complete_recovery` was called with a live completion grant, but the
+    /// submitted `doc_json` does not hash to the document the recovery
+    /// controller actually granted -- the grant is value-bound (see
+    /// `nido_recovery_doc_completion::Key::CompletionGrant`'s doc comment),
+    /// so this can only happen if the caller supplies different bytes than
+    /// what `enforce` authorized for this exact completion.
+    RecoveryCompletionMismatch = 21,
 }
 
 /// Minimal cross-call stub for `nido-zk-recovery`'s `has_pending` view.
@@ -138,6 +155,15 @@ trait RecoveryController {
     // entry point's body can no longer see it; the grant is the body's
     // window signal (see `add_context_rule`'s gate).
     fn completion_granted(e: Env, account: Address) -> bool;
+    // STAGE 2 SPIKE (Variant B): reads and deletes a value-bound completion
+    // grant `Policy::enforce` wrote during THIS call's own `__check_auth`
+    // (see `complete_recovery` below and
+    // `nido_recovery_doc_completion::Key::CompletionGrant`). Not implemented
+    // by the production `nido-zk-recovery` controller or by this crate's own
+    // `StubRecoveryPolicy` test double -- only ever cross-called against a
+    // Stage 2 `nido-recovery-doc-completion` controller from
+    // `complete_recovery`, so no existing controller needs to export it.
+    fn take_completion_grant(e: Env, account: Address) -> Option<BytesN<32>>;
 }
 
 /// Cross-calls `controller`'s `has_pending` view for this account. Pure
@@ -617,6 +643,75 @@ impl NidoSmartAccount {
     pub fn apply_doc(e: &Env, doc_json: Bytes) -> Result<BytesN<32>, NidoSmartAccountError> {
         e.current_contract_address().require_auth();
         guard_no_pending(e);
+        crate::doc::apply(e, &doc_json)
+    }
+
+    // -----------------------------------------------------------------
+    // STAGE 2 SPIKE (Variant B): a dedicated recovery completion entry
+    // point, compared against Variant A (recovery completing through the
+    // EXISTING `apply_doc` above with no code changes at all) in
+    // `firstmate/data/perch-zk-recovery-scout-p5/follow-up.md` §8 Stage 2.
+    // See `docs/recovery/stage2-findings.md` for the full comparison and
+    // recommendation.
+    // -----------------------------------------------------------------
+
+    /// The Variant B completion vehicle: calls the exact same internal
+    /// parse/validate/compile/install/commit pipeline [`Self::apply_doc`]
+    /// uses ([`crate::doc::apply`]) -- shared private pipeline, no separate
+    /// raw mutator (follow-up.md §5.1). Requires this account's own auth,
+    /// exactly like `apply_doc`; the recovery controller's zero-signer
+    /// `CallContract(self)` rule can satisfy that auth (via its `Policy`,
+    /// gating this exact call -- see
+    /// `nido_recovery_doc_completion::Policy::enforce`), but so can the
+    /// account's ordinary admin rule, since `require_auth()` alone cannot
+    /// tell the entry point's body WHICH rule authorized this specific call.
+    ///
+    /// That is the one structural difference from `apply_doc`: `apply_doc`'s
+    /// own guard (`guard_no_pending`, block-while-pending) happens to end up
+    /// correct no matter which rule authorized the call, because by the time
+    /// its body runs, a legitimate completion has already cleared the
+    /// pending as a side effect of its OWN `enforce` -- there is nothing left
+    /// to distinguish. A DEDICATED, recovery-only entry point needs the
+    /// opposite polarity ("permit only when completing"), and that state is
+    /// exactly what `enforce` consumed before this body could read it
+    /// (`docs/recovery/stage2-findings.md`'s call-ordering section). So this
+    /// body independently cross-calls the controller's
+    /// `take_completion_grant`, which returns the target document hash
+    /// `enforce` bound to THIS exact call (or `None` if this call's own auth
+    /// did not resolve through the recovery policy at all) -- a single-use,
+    /// value-bound hand-off, not the general boolean/ledger flag
+    /// follow-up.md §3.1 and §5.1 warn against: it can authorize nothing
+    /// beyond the one document it was granted for, and it is consumed the
+    /// instant this body reads it.
+    ///
+    /// # Errors
+    ///
+    /// `RecoveryCompletionNotGranted` if no controller is configured or this
+    /// call's own authorization did not resolve through the recovery
+    /// policy's `enforce` (no live grant). `RecoveryCompletionMismatch` if a
+    /// grant exists but `doc_json` does not hash to the document it was
+    /// granted for. Otherwise, the same typed refusals as
+    /// [`Self::apply_doc`] (`crate::doc::apply`'s pipeline).
+    // `#[contractimpl]` entry point; SDK ABI requires an owned `Bytes`.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn complete_recovery(
+        e: &Env,
+        doc_json: Bytes,
+    ) -> Result<BytesN<32>, NidoSmartAccountError> {
+        e.current_contract_address().require_auth();
+
+        let controller = recovery_controller_or_panic(e);
+        let granted_hash = RecoveryControllerClient::new(e, &controller)
+            .take_completion_grant(&e.current_contract_address())
+            .unwrap_or_else(|| {
+                panic_with_error!(e, NidoSmartAccountError::RecoveryCompletionNotGranted)
+            });
+
+        let submitted_hash = e.crypto().sha256(&doc_json).to_bytes();
+        if submitted_hash != granted_hash {
+            panic_with_error!(e, NidoSmartAccountError::RecoveryCompletionMismatch);
+        }
+
         crate::doc::apply(e, &doc_json)
     }
 

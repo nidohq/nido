@@ -1120,6 +1120,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "nido-preauth-sweep-policy",
+ "nido-recovery-doc-completion",
  "nido-smart-account",
  "nido-zk-recovery",
  "p256",
@@ -1151,6 +1152,14 @@ dependencies = [
 
 [[package]]
 name = "nido-preauth-sweep-policy"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "stellar-accounts",
+]
+
+[[package]]
+name = "nido-recovery-doc-completion"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
