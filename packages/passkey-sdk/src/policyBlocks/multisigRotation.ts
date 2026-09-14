@@ -20,10 +20,8 @@
 import { Buffer } from 'buffer';
 import type { xdr } from '@stellar/stellar-sdk';
 import type { Spec } from '@stellar/stellar-sdk/contract';
-import { Client as SmartAccountClient } from '@nidohq/smart-account';
 import { Client as MultisigPolicyClient } from '@nidohq/multisig-policy';
 import type { Signer } from '@nidohq/smart-account';
-import { extractXdrOperations } from '../assembledTx.js';
 import type { TxBuild } from './types.js';
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
@@ -252,45 +250,18 @@ export interface RotationTxBuild extends TxBuild {
  * per-op `auth_digest = sha256(signature_payload || [recoveryRuleId].to_xdr())`,
  * collects friend signatures over it, and injects them before submitting.
  */
-export async function buildRotation(args: BuildRotationArgs): Promise<RotationTxBuild> {
-  const plan = planRotation(args.request);
-
-  const client = new SmartAccountClient({
-    contractId: args.account,
-    networkPassphrase: TESTNET_PASSPHRASE,
-    rpcUrl: args.rpcUrl,
-  });
-
-  const operations: RotationTxBuild['operations'] = [];
-  for (const call of plan.calls) {
-    let tx;
-    if (call.method === 'add_signer') {
-      tx = await client.add_signer({
-        context_rule_id: call.contextRuleId,
-        signer: call.signer,
-      });
-    } else if (call.method === 'remove_signer') {
-      tx = await client.remove_signer({
-        context_rule_id: call.contextRuleId,
-        signer_id: call.signerId,
-      });
-    } else {
-      tx = await client.add_policy({
-        context_rule_id: call.contextRuleId,
-        policy: call.policyAddress,
-        // The binding erases the install param to `any` (it is a Val on chain);
-        // hand it a pre-encoded ScVal. Build it through the policy bindings'
-        // Spec so it shares the smart-account bindings' stellar-base copy in
-        // browser bundles — see thresholdInstallParam (#72).
-        install_param: thresholdInstallParam(call.threshold),
-      });
-    }
-    operations.push(...extractXdrOperations(tx, 'multisig-rotation'));
-  }
-
-  return {
-    operations,
-    contextRuleIds: operations.map(() => args.recoveryRuleId),
-    description: describeRotation(plan),
-  };
+export async function buildRotation(_args: BuildRotationArgs): Promise<RotationTxBuild> {
+  // DOC-ONLY (spike): the rotation calls this executor used to build
+  // (add_signer / remove_signer / add_policy) are no longer entry points on
+  // the account — apply_doc is the sole policy write path, and its one
+  // exception (add_context_rule inside the zk-recovery completion window)
+  // does not cover friend-multisig rotation. Friend recovery therefore has
+  // NO completion route under doc-only until either doc v1 grows M-of-N
+  // principals + a recovery-scoped apply, or a rotation-shaped completion
+  // vehicle is added; a headline cost recorded in the spike PR.
+  // `planRotation`/`describeRotation` stay: they are pure planners the UI
+  // still uses for display.
+  throw new Error(
+    'doc-only: friend-multisig rotation has no on-chain route (the account exports no rule mutators); see the apply_doc spike PR',
+  );
 }

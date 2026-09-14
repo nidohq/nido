@@ -4,21 +4,50 @@ Current set of contracts the frontend talks to.
 
 | Name | Address | Notes |
 |---|---|---|
-| Factory | `CBQKB6GYPO7P2CGDKN7KYLEFEBBN6FY5NXZJ7HNR43ZK2DDOU5N7NCV5` | Random-salt account factory. `create_account(salt, key)` deploys v0.7 smart accounts through the relayer. Registered as `unverified/factory`. Embeds smart-account wasm hash `00825acd…`. |
+| Factory | `CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG` | **Doc-only deploy (2026-09-10), in-place upgraded 2026-09-14**: random-salt account factory; `create_account(salt, key)`/`create_account_v2(salt, key, commitment)` deploy doc-only smart accounts (`apply_doc` sole policy write path, `get_applied_doc` lossless read). Registered as `unverified/factory` (repointed). Embeds smart-account wasm hash `fe3b1878…` (caps live: compiler 0.2.1 pins) — unchanged by the 2026-09-14 upgrade, confirmed by fetching the exact live smart-account bytes before rebuilding the factory (avoids re-embedding a build-non-deterministic re-compile of unchanged smart-account source under a different hash). **2026-09-14 upgrade (wasm hash `04aab9e7…`, in-place `upgrade` + `refresh_account_wasm_hash`, both confirmed via a fresh live probe):** removed the unconditional M1 `nido-zk-recovery` pool genesis-wiring/insert `create_account`/`create_account_v2` used to perform on EVERY new account (`recovery_controller: Some(M1 pool)`, atomic Merkle-leaf insert) — a live probe (`tests/e2e/testnet/recover-v3-wiring.testnet.spec.ts`, PR 206) proved this made it IMPOSSIBLE for any freshly-minted account to ever reach the Stage 3 `RecoveryController` below without a real 7-day migration. New accounts now mint with `recovery_controller: None`; `create_account_v2`'s `commitment` argument is ignored (kept only for ABI compatibility with existing callers — `contracts/factory/src/contract.rs::create_account_v2`'s doc comment). Recovery (guardian, ZK, or both via Stage 3) is opt-in only, driven by the wallet's `runZkEnrollment`/`multisig-recovery.buildInstall`. Live-verified post-upgrade: a freshly `create_account`-minted account (`CBEJVBQ6CLK6EXISO3NFSFZW6T2RYHK5XV4PCQYLMKBXQVNOQI25ERDE`) reads `recovery_controller() == null`, `get_context_rules_count() == 1`. The `unverified/smart-account` registry LABEL could not be updated — that wasm-name is owned by a different author key than `theahaco`, see PR 201. Admin `GAMPJROH…` (theahaco). Previous factory `CBQKB6GYPO7P2CGDKN7KYLEFEBBN6FY5NXZJ7HNR43ZK2DDOU5N7NCV5` (embedded hash `00825acd…`) remains on-chain; accounts it minted predate the doc surface. |
 | WebAuthn verifier | `CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY` | Registered as `unverified/verifier`. Implements `canonicalize_key` / `batch_canonicalize_key` per current OZ `Verifier` trait. |
 | Multisig policy | `CCSDKJYOFCPTCCGQZPF73RJNHFC7TPO532Q36N3M2VBYZFWQOTDB7J7G` | Registered as `unverified/multisig-policy`. Built against soroban-sdk 26 + OZ stellar-contracts main — accepts v0.7 `ContextRule` (with `signer_ids`/`policy_ids`). |
 | Spending-limit policy | `CCJMCPGADKMVKYOIZXMV7UWH62XYDAIT6GJRNJPQSZ2CHPOF4K2AU2QC` | Registered as `unverified/spending-limit-policy`. Built against soroban-sdk 26 + OZ stellar-contracts rev `637c53a` — wraps `policies::spending_limit` (rolling window, meters SAC `transfer`). |
 | Stellar Registry (unverified) | `CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S` | The registry the factory queries via `Self::resolve(env, name)`. |
 | Name registry | `CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX` | Human-readable account names. Independent of the policy-builder set. |
 | Status Message demo | `CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV` | Hardcoded in `packages/frontend/src/pages/status-message/index.astro`. Predates the policy-builder work. |
+| Stage 3 recovery controller (v2) | `CBYSWPHNWAHYUBZO5TBTO5MCW2ZC45F2C3L4JSUZXYQFNMHTOBOCCHZU` | `contracts/recovery-controller` (PR #206), deployed 2026-09-14. Shared, constructorless controller — guardian-only/ZK-only/combined recovery against one proposal-commitment model, completing via the account's existing `apply_doc`. **v2 adds `reconfigure`/`config_hash`** (lets an account enrolled in one evidence factor add the other, converging on `Combined`, without the "no reconfigure entry point" limit v1 shipped with). Constructorless design means there is no admin/upgrade entry point at all — adding `reconfigure` to the source could not update v1 in place, so v2 is a genuinely new, separately-deployed address ("explicit upgrade = a new immutable artifact, not a rewrite", the same philosophy already documented for the verifier below, exercised here for the first time on the controller itself). Not registry-resolvable yet (crate doc comment's "Known limits") — hardcoded as `RECOVERY_CONTROLLER_TESTNET_ID` in `packages/passkey-sdk/src/recoveryStage3/deployment.ts`, which `packages/passkey-sdk/src/policyBlocks/multisigRecovery.ts` (the friend/guardian recovery UI's `buildInstall`), `packages/frontend/src/pages/security/index.astro`'s `runZkEnrollment` (ZK enrollment), and `packages/frontend/src/lib/policyChainFetch.ts` (`fetchPolicyState`'s Stage-3 branch) all import. Interface verified via `stellar contract info interface` (`reconfigure`/`config_hash` both present) before being recorded here. **Superseded:** `CDXVWS4FLZKI65NX2CXBUTKEUGSIQN4SMU2OLKSSJNWPT62A4OKFHXDW` (v1 — no `reconfigure`/`config_hash`). v1 is NOT orphan-free: this repo's own `security-recovery-install.testnet.spec.ts` probe enrolled a throwaway test account (`CCVXSIAVMOI4APBONN6CDHBONC7CYOJUM7VGVGCG7CJXRIIQCZN3M222`) against v1 before v2 existed — not a real user's account, left orphaned deliberately. |
+| Stage 3 recovery verifier | `CCQZ774YVDHRQSXT6KQLTBQ2TAIZYE3XW2Y6MJ7CDZKHTD47CLZUNRCV` | `contracts/recovery-verifier` (PR #206). Constructorless UltraHonk verifier, VK baked in at compile time. Only needed for `ZkOnly`/`Combined` mode enrollment — the friend/guardian recovery UI only drives `GuardianOnly`, so nothing currently references this address at runtime; recorded here for completeness/future use. `RECOVERY_VERIFIER_TESTNET_ID` in the same `deployment.ts`. |
 
-## ZK Recovery (M1 — not yet deployed)
+## Perch canonical deployment (testnet)
+
+Contracts of the perch policy layer (<https://github.com/stellar-registry/perch>).
+These are **not nido-owned deploys**: they come from perch's content-addressed
+"stateless" subregistry, which deploys each contract with
+`salt = sha256(wasm)`. Every address below is therefore derivable offline from
+the registry id plus the pinned wasm hash — the SDK does exactly that
+(`perchTestnetAddresses()` in `packages/passkey-sdk/src/policyDoc/deployment.ts`,
+pins asserted in `deployment.test.ts`) instead of hardcoding addresses at call
+sites. Mirrors perch's CI-guarded `crates/integration-tests/tests/testnet_pins.rs`
+(perch rev `f5676a6`, perch-interpreter 0.1.2).
+
+| Name | Address | Notes |
+|---|---|---|
+| Perch stateless registry (NEW, 0.2.1 era) | `CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7` | The deployer perch's release CI publishes to as of doc-compiler 0.2.1; content-addresses every instance below. The previous registry `CC6ELNH6…` holds only the pre-cap builds. |
+| Perch doc-compiler 0.2.1 (cap-capable) | `CDWBJPDMBORIZERIFVMTGJFND6ZTAQJIVDNYST4SV33YBQP47BPKOHR6` | Stateless `compile_doc`; wasm `35f248f0…` (publish receipt on perch's `perch-doc-compiler-v0.2.1` release). The smart account cross-calls it from `apply_doc`. |
+| Perch interpreter | `CDR2OTZIZYTAHEHHH5MBOL6RKLWKIEN5KLPIVOG7FVBVTFET552NTWL2` | OZ `Policy` evaluating perch constraint programs. Wasm `f63cae53…` (0.2.1 generation, NEW registry). Bindings: `@stellar-registry/perch-interpreter` (npm, upstream-published). |
+
+## ZK Recovery (M1 — deployed to testnet 2026-09-10, testnet params)
 
 Passkey-secretless recovery via a depth-24 Merkle pool + UltraHonk proof
 verification (`contracts/zk-recovery`, `contracts/zk-verifier`,
-`circuits/zk_recovery`). Design/implementation complete through M1 Task 8;
-**not yet deployed to testnet** — this section is the pre-deploy budget
-confirmation plus placeholders to fill in once it is.
+`circuits/zk_recovery`). Design/implementation complete through M1 Task 8; **deployed to testnet
+2026-09-10** as part of the doc-only apply_doc rollout (PR 201) — the new
+factory's `create_account` genesis-inserts unconditionally, so the pool had
+to exist. Testnet-tuned params (delay 60s, window 7d, max-cancels 2,
+floor 0s — NOT the mainnet spec values):
+
+| Name | Address | Notes |
+|---|---|---|
+| ZK recovery pool/controller | `CAUZ6WFUTTZCJQNNL5D3BNZSG7FYYGX46BDJE6G2XVVCGN76RKE5ESAR` | `contracts/zk-recovery`. Constructor: factory = the doc-only factory above, verifier = zk-verifier below, webauthn = the deployed WebAuthn verifier, admin `GAMPJROH…` (theahaco). NOT registry-registered — the factory reaches it via its admin `set_recovery_pool` override. Includes the doc-only `CompletionGrant` view. |
+| ZK proof verifier (UltraHonk) | `CDMNKDMPSBUUOHCP6QKFLRP76TLYFCYBM7SICE77BQGFJTRL7MXOSIRD` | `contracts/zk-verifier`, constructed with the committed depth-24 vk (`crates/integration-tests/fixtures/zk/vk`). Admin `GAMPJROH…`. |
+
+The remainder of this section is the pre-deploy budget confirmation.
 
 ### Real, metered CPU cost (GO/NO-GO gates)
 
@@ -205,12 +234,12 @@ before `enroll_zk_recovery` existed in the bytecode); Soroban contract wasm
 is immutable once deployed. See
 `crates/integration-tests/tests/it/zk_recovery_migration.rs`.
 
-### Deploy addresses (placeholder — fill in at real deploy time)
+### Deploy addresses (testnet, doc-only deploy 2026-09-10)
 
 | Name | Address | Notes |
 |---|---|---|
-| Smart-account v2 wasm hash | _TBD_ | sha256 of the deployed `nido_smart_account.wasm` embedding the M2 guard/migration/constructor changes — the factory's `account_wasm_hash()` derives this at runtime from its own embedded copy, so this must match exactly. |
-| Factory (v2, `create_account_v2`) | _TBD_ | `contracts/factory` — resolves both `verifier` and `zk-recovery` from the registry at deploy time; embeds the smart-account v2 wasm hash above. |
+| Smart-account wasm hash (doc-only) | `fe3b187891c149b8d92ff25329fc886d27e5fd703b46a06603daf90bce308e59` | sha256 of the deployed `nido_smart_account.wasm` — doc-only build (PR 201), wire types aligned to the DEPLOYED perch compiler (5-field `CompiledRule`; supersedes `f962dc8e…`, which trapped decoding the compiler's return). Live-verified: an add-admin document applied end to end on probe account `CD5X4AWM…7JQI` (doc hash `4fb7ae94…`, lossless `get_applied_doc` read, recovery rule preserved). |
+| Factory (doc-only) | `CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG` | See the main table above — same instance; resolves `verifier` from the registry, reaches the pool via `set_recovery_pool`. |
 
 ## Pre-v0.7 contracts (do not use)
 

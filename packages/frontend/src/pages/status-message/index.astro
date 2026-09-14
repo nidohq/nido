@@ -210,7 +210,7 @@ import Icon from "../../components/Icon.astro";
     fetchRegistryAddress,
   } from "@nidohq/passkey-sdk";
   import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
-  import { startDelegation, readDelegationReturn, consumePendingDelegation } from "../../lib/delegationHandover.js";
+  import { startDelegation, readDelegationReturn, consumePendingDelegation, writePendingDelegation } from "../../lib/delegationHandover.js";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
   import { defineNidoWalletButton, WALLET_CHANGED_EVENT } from "../../components/nido-wallet-button.js";
   import { signTransaction as kitSignTransaction, isNidoWallet, type WalletSession } from "../../lib/walletConnect.js";
@@ -283,6 +283,15 @@ import Icon from "../../components/Icon.astro";
     $contractInput.value = contractParam;
   }
 
+  // Pending-delegation label marking the DOC-based scoped-session-key flow
+  // (vs the passkey delegate flow), so the return handler can tell them apart.
+  const DOC_SESSION_LABEL = "status-doc-session";
+
+  // Set when the user just returned from a successful DOC-based session-key
+  // grant — the delegation banner then links straight to the wallet's policy
+  // page, where the applied document renders losslessly.
+  let docGrantInstalled = false;
+
   // If we just came back from the wallet's delegate flow, surface the
   // outcome and clean the URL so reloads don't re-trigger the banner.
   {
@@ -298,10 +307,16 @@ import Icon from "../../components/Icon.astro";
       if (pending?.account && !$contractInput.value) {
         $contractInput.value = pending.account;
       }
+      const docFlow = pending?.label === DOC_SESSION_LABEL;
+      if (docFlow && ret === "ok") docGrantInstalled = true;
       alert(
         ret === "ok"
-          ? "Delegation succeeded. The dApp will now sign in-page for this contract."
-          : "Delegation cancelled. Local session-key material was kept; the next attempt will overwrite it.",
+          ? docFlow
+            ? "Scoped session key installed as a policy document. Open your wallet's Policy page to see the lossless document — names and all."
+            : "Delegation succeeded. The dApp will now sign in-page for this contract."
+          : docFlow
+            ? "Request cancelled. Nothing was installed."
+            : "Delegation cancelled. Local session-key material was kept; the next attempt will overwrite it.",
       );
       // Drop ?delegation but keep the account in the URL so a reload stays on
       // this contract (the pending record is single-use and already consumed).
@@ -314,6 +329,12 @@ import Icon from "../../components/Icon.astro";
   }
 
   // --- Delegation status banner ---
+
+  /** The wallet origin for `acc` (same derivation the delegate flow uses). */
+  function walletOriginFor(acc: string): string {
+    const path = accountUrl(window.location.host, acc, "/");
+    return new URL(`${window.location.protocol}${path}`).origin;
+  }
 
   function updateDelegationBanner(account: string) {
     const $status = document.getElementById("delegation-status")!;
@@ -351,12 +372,31 @@ import Icon from "../../components/Icon.astro";
            can't sign for you. Each action still needs a biometric/device
            unlock here, just not a full wallet detour.
          </p>`;
+    // Showcase: the DOC-based scoped-session-key request. The dApp's local
+    // G keypair (the same friendbot-funded key this page already holds)
+    // becomes a DELEGATED signer on the smart account, restricted to this
+    // contract's note function via a perch policy document — so the wallet's
+    // Policy page can show the grant losslessly, names and all.
+    const docGrantLine = docGrantInstalled
+      ? `<p style="margin:10px 0 0;font-size:13px;line-height:1.55;color:var(--good)">
+           <strong>Policy document applied.</strong>
+           <a class="link" href="${walletOriginFor(account)}/account/policy/" target="_blank" rel="noopener">
+             See the lossless policy on your wallet's Policy page →
+           </a>
+         </p>`
+      : "";
     $status.innerHTML = `
       <div class="card sm-card" style="background:var(--paper-3);margin-bottom:16px">
         ${delegatedBanner}
-        <button id="delegate-button" class="btn soft">
-          ${material ? "Re-delegate this dApp →" : "Delegate this dApp →"}
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="delegate-button" class="btn soft">
+            ${material ? "Re-delegate this dApp →" : "Delegate this dApp →"}
+          </button>
+          <button id="delegate-doc-button" class="btn soft">
+            Request a scoped session key (policy doc) →
+          </button>
+        </div>
+        ${docGrantLine}
       </div>`;
     if (material) {
       document.getElementById("forget-delegation")!.addEventListener("click", () => {
@@ -395,6 +435,35 @@ import Icon from "../../components/Icon.astro";
           alert(`Delegation failed: ${msg}`);
         }
       });
+    // Doc-based scoped-session-key request: no passkey creation here — the
+    // dApp's existing local G keypair is the delegated signer; the wallet
+    // builds and applies the policy document, then sends the user back.
+    document.getElementById("delegate-doc-button")?.addEventListener("click", async () => {
+      const acc = $contractInput.value.trim();
+      if (!acc) {
+        alert("Enter your smart account address first.");
+        return;
+      }
+      try {
+        const kp = await keypairReady;
+        // Same single-use return record the passkey flow writes, with the
+        // doc label so the return handler knows which flow finished.
+        writePendingDelegation({ account: acc, target: STATUS_CONTRACT, label: DOC_SESSION_LABEL });
+        const url = new URL(`${walletOriginFor(acc)}/security/delegate-doc/`);
+        url.searchParams.set("origin", window.location.origin);
+        url.searchParams.set("target", STATUS_CONTRACT);
+        url.searchParams.set("signer", kp.publicKey());
+        // The contract's real entry point (historical typo and all).
+        url.searchParams.set("functions", "udpate_message");
+        url.searchParams.set("duration", "24h");
+        url.searchParams.set("label", "status-note-session");
+        url.searchParams.set("return", window.location.href);
+        window.location.href = url.toString();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        alert(`Session-key request failed: ${msg}`);
+      }
+    });
   }
 
   // --- Header navigation links ---

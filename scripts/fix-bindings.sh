@@ -70,6 +70,12 @@ for ms in "$BINDINGS_DIR"/*/src/index.ts; do
     [ -f "$ms" ] || continue
     # Only packages whose generated code references the bare `Context` type.
     grep -q 'context: Context' "$ms" || continue
+    # Newer CLI generators (>= 23.x seen with stellar 27) emit their own
+    # `export type Context = …` union; shimming there is a duplicate identifier.
+    if grep -q '^export type Context = ' "$ms"; then
+        echo "  $ms: generator defines Context itself, no shim needed"
+        continue
+    fi
     if grep -q '^type Context = unknown;' "$ms"; then
         echo "  $ms: Context shim already present"
     else

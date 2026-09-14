@@ -30,13 +30,13 @@
 //! at the rule scope), plus an auxiliary value-movement check that the SAC
 //! `transfer_from` actually moves funds G -> C.
 
-use nido_integration_tests::{deploy_smart_account, PREAUTH_SWEEP_POLICY_WASM};
+use nido_integration_tests::{
+    deploy_smart_account, install_rule_direct, PREAUTH_SWEEP_POLICY_WASM,
+};
 use nido_preauth_sweep_policy::{PreauthSweepParams, SweepError};
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{
-    symbol_short, token, vec, Address, Bytes, Env, IntoVal, Map, String, Symbol, Val,
-};
+use soroban_sdk::{symbol_short, token, vec, Address, Bytes, Env, IntoVal, Map, Symbol, Val};
 use stellar_accounts::smart_account::{do_check_auth, AuthPayload, ContextRuleType};
 
 /// The passkey Default rule is id 0; the sweep rule is installed second, so it
@@ -83,7 +83,7 @@ fn setup() -> World {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, account, _verifier, _passkey) = deploy_smart_account(&env);
+    let (_client, account, _verifier, _passkey) = deploy_smart_account(&env);
     let sac = env
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
@@ -96,10 +96,14 @@ fn setup() -> World {
     // accepts an empty signer set as long as at least one policy is present
     // (OZ's `validate_signers_and_policies` only rejects when signers AND
     // policies are both empty).
-    client.add_context_rule(
+    // DOC-ONLY: staged via the library backdoor (no add_context_rule
+    // outside the recovery-completion window).
+    let _ = install_rule_direct(
+        &env,
+        &account,
         &ContextRuleType::CallContract(sac.clone()),
-        &String::from_str(&env, "onboarding-sweep"),
-        &None,
+        "onboarding-sweep",
+        None,
         &vec![&env], // permissionless: zero signers
         &preauth_sweep_install_map(&env, &policy_addr, &source_g),
     );
