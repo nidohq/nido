@@ -1,0 +1,528 @@
+---
+// EXPERIMENTAL — Stage 3 recovery spike.
+//
+// A genuinely plain, linear exercise page for `contracts/recovery-controller`
+// (guardian-only / ZK-only / combined-mode recovery against one
+// proposal-commitment model, completing via the account's existing
+// `apply_doc`). Firstmate brief for this task: "Reuse 202's doc UI patterns
+// where they fit; experimental pages may be plain" — correctness and real
+// on-chain calls matter far more here than visual polish.
+//
+// Does NOT touch, retrofit, or replace `/security/recover/` (the polished
+// M1 raw-signer-rotation page) — that page and its whole script/lib stack
+// (`recoveryActions.ts`, `recoveryForm.ts`, `zkRecoveryActions.ts`,
+// `walletRecoverySign.ts`, `MultisigRecoveryCard.ts`) are UNTOUCHED. This is
+// an entirely separate route exercising an entirely separate, newer
+// contract. There is no `reconfigure` flow here — the contract has no such
+// entry point (one-shot enrollment only; see
+// `contracts/recovery-controller/src/lib.rs`'s "Known limits").
+//
+// Every contract address (controller, verifier, zk pool) is a manual input
+// — Stage 3 isn't wired into the on-chain name registry yet, so there is
+// nothing to auto-resolve.
+import NidoLayout from '../../../layouts/NidoLayout.astro';
+import Toast from '../../../components/Toast.astro';
+import Icon from '../../../components/Icon.astro';
+---
+<NidoLayout title="Recovery spike (Stage 3)">
+  <div class="col-scroll scroll-hide screen-in">
+    <div class="topbar">
+      <a href="/security/" class="btn ghost sm" style="width:40px;height:40px;padding:0;border-radius:12px;" aria-label="Back">
+        <Icon name="back" size={18} />
+      </a>
+      <h1 class="disp" style="font-weight:800;font-size:17px;">Recovery spike</h1>
+      <span style="width:40px;"></span>
+    </div>
+
+    <div class="pad" style="padding-top:8px;">
+      <div class="alert" role="note" style="margin-bottom:16px;">
+        <Icon name="info" size={18} class="alert-ico" />
+        <div>
+          <strong>Experimental — Stage 3 recovery spike.</strong> Plain,
+          unpolished, for exercising <code>contracts/recovery-controller</code>'s
+          real on-chain lifecycle only. Not the account's real recovery UI —
+          see <a href="/security/recover/" class="link">Get back in</a> for that.
+        </div>
+      </div>
+
+      <p class="mut" id="account-line" style="font-size:12.5px;margin:0 0 18px;"></p>
+
+      <!-- 1. Enroll -->
+      <section class="card" style="padding:16px;margin-bottom:16px;">
+        <div class="disp" style="font-weight:800;font-size:15px;margin-bottom:10px;">1. Enroll</div>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Controller address (C...)
+          <input id="cfg-controller" class="input" placeholder="C..." style="margin-top:4px;" />
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Mode
+          <select id="cfg-mode" class="input" style="margin-top:4px;">
+            <option value="GuardianOnly">GuardianOnly</option>
+            <option value="ZkOnly">ZkOnly</option>
+            <option value="Combined">Combined</option>
+          </select>
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Guardians (comma-separated G/C addresses; empty for ZkOnly)
+          <input id="cfg-guardians" class="input" placeholder="G..., G..." style="margin-top:4px;" />
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Guardian threshold
+          <input id="cfg-threshold" class="input" type="number" value="1" style="margin-top:4px;" />
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Verifier address (ZkOnly/Combined only)
+          <input id="cfg-verifier" class="input" placeholder="C..." style="margin-top:4px;" />
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          ZK pool address (ZkOnly/Combined only)
+          <input id="cfg-zkpool" class="input" placeholder="C..." style="margin-top:4px;" />
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Baseline document JSON (a valid PolicyDoc)
+          <textarea id="cfg-baseline-doc" class="input" rows="4" style="margin-top:4px;font-family:var(--mono);font-size:11px;"></textarea>
+        </label>
+        <div style="display:flex;gap:12px;">
+          <label class="mut" style="font-size:12px;flex:1;">
+            Delay (s)
+            <input id="cfg-delay" class="input" type="number" value="60" style="margin-top:4px;" />
+          </label>
+          <label class="mut" style="font-size:12px;flex:1;">
+            Expiry (s)
+            <input id="cfg-expiry" class="input" type="number" value="3600" style="margin-top:4px;" />
+          </label>
+          <label class="mut" style="font-size:12px;flex:1;">
+            Max cancels
+            <input id="cfg-maxcancels" class="input" type="number" value="3" style="margin-top:4px;" />
+          </label>
+        </div>
+        <label class="mut" style="font-size:12px;display:block;margin:10px 0;">
+          Pending activity policy
+          <select id="cfg-policy" class="input" style="margin-top:4px;">
+            <option value="Freeze">Freeze</option>
+            <option value="Continue">Continue</option>
+          </select>
+        </label>
+        <div style="margin:14px 0;padding:10px;border:1px solid var(--border, #333);border-radius:8px;">
+          <div class="mut" style="font-size:12px;margin-bottom:8px;">
+            Account wiring — the account's own <code>recovery_controller</code>
+            field must equal the controller address above, or Enroll writes
+            state nobody will ever cross-call (see <code>accountWiring.ts</code>).
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button id="wiring-check" class="btn ghost sm" type="button">Check wiring</button>
+            <button id="wiring-wire" class="btn ghost sm" type="button" style="display:none;">Wire account to controller</button>
+          </div>
+          <p id="wiring-status" class="mut" style="font-size:12px;margin-top:8px;"></p>
+        </div>
+        <button id="cfg-enroll" class="btn acc" type="button" disabled>Enroll</button>
+        <p id="cfg-status" class="mut" style="font-size:12px;margin-top:10px;"></p>
+      </section>
+
+      <!-- 2. Status -->
+      <section class="card" style="padding:16px;margin-bottom:16px;">
+        <div class="disp" style="font-weight:800;font-size:15px;margin-bottom:10px;">2. Status</div>
+        <button id="status-refresh" class="btn ghost sm" type="button">Refresh config / attempt / has_pending</button>
+        <pre id="status-out" class="mut" style="font-size:11px;white-space:pre-wrap;word-break:break-all;margin-top:10px;"></pre>
+      </section>
+
+      <!-- 3. Begin attempt (target-doc preview + diff) -->
+      <section class="card" style="padding:16px;margin-bottom:16px;">
+        <div class="disp" style="font-weight:800;font-size:15px;margin-bottom:10px;">3. Begin attempt</div>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Action
+          <select id="att-action" class="input" style="margin-top:4px;">
+            <option value="LostKey">LostKey (current live doc + replacements)</option>
+            <option value="Compromise">Compromise (enrolled baseline + replacements)</option>
+          </select>
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Source document JSON (current live doc for LostKey, or the SAME
+          baseline doc entered above for Compromise)
+          <textarea id="att-source-doc" class="input" rows="4" style="margin-top:4px;font-family:var(--mono);font-size:11px;"></textarea>
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Replacements JSON: <code>[{"{"}"signerId":"a","newSigner":{"{"}"verifier":"C...","key":"04.."{"}"}{"}"}]</code>
+          <textarea id="att-replacements" class="input" rows="3" style="margin-top:4px;font-family:var(--mono);font-size:11px;">[]</textarea>
+        </label>
+        <button id="att-preview" class="btn ghost sm" type="button">Preview target doc + diff</button>
+        <pre id="att-diff-out" class="mut" style="font-size:11px;white-space:pre-wrap;word-break:break-all;margin-top:10px;"></pre>
+        <button id="att-begin" class="btn acc" type="button" style="margin-top:10px;" disabled>Begin attempt (permissionless submit)</button>
+        <p id="att-status" class="mut" style="font-size:12px;margin-top:10px;"></p>
+      </section>
+
+      <!-- 4. Guardian evidence -->
+      <section class="card" style="padding:16px;margin-bottom:16px;">
+        <div class="disp" style="font-weight:800;font-size:15px;margin-bottom:10px;">4. Guardian evidence</div>
+        <button id="wallet-connect" class="btn ghost sm" type="button">Connect guardian wallet</button>
+        <p id="wallet-line" class="mut" style="font-size:12px;margin:8px 0;"></p>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Attempt id
+          <input id="ev-guardian-attempt" class="input" type="number" style="margin-top:4px;" />
+        </label>
+        <div style="display:flex;gap:10px;">
+          <button id="ev-guardian-approve" class="btn acc sm" type="button">Submit approval</button>
+          <button id="ev-guardian-cancel" class="btn ghost sm" type="button">Submit cancellation</button>
+        </div>
+        <p id="ev-guardian-status" class="mut" style="font-size:12px;margin-top:10px;"></p>
+      </section>
+
+      <!-- 5. ZK evidence -->
+      <section class="card" style="padding:16px;margin-bottom:16px;">
+        <div class="disp" style="font-weight:800;font-size:15px;margin-bottom:10px;">5. ZK evidence</div>
+        <p class="mut" style="font-size:12px;margin:0 0 10px;">
+          Paste the <code>result.json</code> produced by
+          <code>node scripts/generate-recovery-proof.mjs</code> (repo root) —
+          this page never generates a proof itself.
+        </p>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Attempt id
+          <input id="ev-zk-attempt" class="input" type="number" style="margin-top:4px;" />
+        </label>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          result.json
+          <textarea id="ev-zk-result" class="input" rows="4" style="margin-top:4px;font-family:var(--mono);font-size:11px;"></textarea>
+        </label>
+        <div style="display:flex;gap:10px;">
+          <button id="ev-zk-submit" class="btn acc sm" type="button">Submit ZK proof</button>
+          <button id="ev-zk-cancel" class="btn ghost sm" type="button">Submit ZK cancellation</button>
+        </div>
+        <p id="ev-zk-status" class="mut" style="font-size:12px;margin-top:10px;"></p>
+      </section>
+
+      <!-- 6. Complete -->
+      <section class="card" style="padding:16px;margin-bottom:16px;">
+        <div class="disp" style="font-weight:800;font-size:15px;margin-bottom:10px;">6. Complete</div>
+        <p class="mut" style="font-size:12px;margin:0 0 10px;">
+          Ordinary <code>apply_doc</code> once the attempt is
+          <code>AuthorizedPending</code> and the timelock has elapsed — this
+          reuses the EXISTING <code>buildApplyDocTx</code>, unchanged.
+        </p>
+        <label class="mut" style="font-size:12px;display:block;margin-bottom:10px;">
+          Target document JSON (must hash to the attempt's committed
+          <code>target_doc_hash</code>)
+          <textarea id="complete-doc" class="input" rows="4" style="margin-top:4px;font-family:var(--mono);font-size:11px;"></textarea>
+        </label>
+        <button id="complete-apply" class="btn acc" type="button">Complete (apply_doc)</button>
+        <p id="complete-status" class="mut" style="font-size:12px;margin-top:10px;"></p>
+      </section>
+    </div>
+  </div>
+
+  <Toast />
+</NidoLayout>
+
+<script>
+  import { Buffer } from 'buffer';
+  import {
+    contractIdFromHostname,
+    parsePolicyDocJson,
+    canonicalJson,
+    buildRecoveryConfig,
+    buildEnroll,
+    buildBeginAttempt,
+    buildSubmitGuardianApproval,
+    buildSubmitGuardianCancel,
+    buildSubmitZkProof,
+    buildSubmitZkCancel,
+    readRecoveryConfig,
+    readAttempt,
+    readHasPending,
+    readConfigHash,
+    checkAccountWiring,
+    buildWireAccountTx,
+    buildLostKeyTargetDoc,
+    buildCompromiseTargetDoc,
+    targetDocHash,
+    diffPolicyDocs,
+    credentialIdForSigner,
+    buildApplyDocTx,
+    type CredentialReplacement,
+    type RecoveryActionInput,
+  } from '@nidohq/passkey-sdk';
+  import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
+  import { signAndSubmit } from '../../../lib/primaryPasskeySigner.js';
+  import { submitPermissionlessOp, submitGuardianOp } from '../../../lib/recoverStage3Actions.js';
+  import { initWalletKit, connect, getSession } from '../../../lib/walletConnect.js';
+  import { toast } from '../../../lib/toast.js';
+
+  const account = contractIdFromHostname(window.location.hostname);
+  const accountLine = document.getElementById('account-line')!;
+  accountLine.textContent = account
+    ? `Account: ${account}`
+    : 'This page must be opened on an account subdomain.';
+
+  function val(id: string): string {
+    return (document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement).value.trim();
+  }
+  function requireAccount(): string {
+    if (!account) throw new Error('This page must be opened on an account subdomain.');
+    return account;
+  }
+
+  // --- 1. Enroll -------------------------------------------------------
+  // Account wiring: `enroll` (below) only writes into the CONTROLLER's own
+  // storage. Unless the ACCOUNT's own `recovery_controller` field also
+  // equals this controller, enrolling is a complete no-op — the bug a
+  // captain live-test caught on a real testnet account. Check (and, for a
+  // fresh account, fix) that BEFORE letting Enroll run.
+  const enrollBtn = document.getElementById('cfg-enroll') as HTMLButtonElement;
+  const wiringStatus = document.getElementById('wiring-status')!;
+  const wiringWireBtn = document.getElementById('wiring-wire') as HTMLButtonElement;
+
+  async function checkWiring() {
+    try {
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      if (!controllerId) {
+        wiringStatus.textContent = 'Enter the controller address above first.';
+        return null;
+      }
+      const check = await checkAccountWiring({ account: acc, controllerId, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      if (check.status === 'wired-to-target') {
+        wiringStatus.textContent = 'Account is wired to this controller. Enroll is safe.';
+        wiringWireBtn.style.display = 'none';
+        enrollBtn.disabled = false;
+      } else if (check.status === 'unwired') {
+        wiringStatus.textContent = 'Account is NOT wired to any recovery controller yet — wire it before enrolling.';
+        wiringWireBtn.style.display = '';
+        enrollBtn.disabled = true;
+      } else {
+        wiringStatus.textContent =
+          `Account is wired to a DIFFERENT controller (${check.currentControllerId}). ` +
+          'Enrolling against the controller above would write orphaned state nobody will ever cross-call. ' +
+          'This experimental page does not support migrating away from an existing controller — that needs ' +
+          "the account's own announce-then-execute rule-removal flow with a genuine wall-clock delay. " +
+          'Use a fresh, unwired account instead.';
+        wiringWireBtn.style.display = 'none';
+        enrollBtn.disabled = true;
+      }
+      return check.status;
+    } catch (e) {
+      wiringStatus.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      return null;
+    }
+  }
+  document.getElementById('wiring-check')!.addEventListener('click', () => { void checkWiring(); });
+  document.getElementById('wiring-wire')!.addEventListener('click', async () => {
+    try {
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      wiringStatus.textContent = 'Building wire transaction…';
+      const built = await buildWireAccountTx({ account: acc, controllerId, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      wiringStatus.textContent = 'Sign with your passkey…';
+      const result = await signAndSubmit({ account: acc, operation: built.operations[0] });
+      wiringStatus.textContent = `Wired. tx: ${result.hash}`;
+      toast('Account wired to recovery controller');
+      await checkWiring();
+    } catch (e) {
+      wiringStatus.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+
+  document.getElementById('cfg-enroll')!.addEventListener('click', async () => {
+    const status = document.getElementById('cfg-status')!;
+    try {
+      status.textContent = 'Checking account wiring…';
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      const wiring = await checkAccountWiring({ account: acc, controllerId, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      if (wiring.status !== 'wired-to-target') {
+        throw new Error(
+          wiring.status === 'unwired'
+            ? 'Account is not wired to this controller yet — click "Wire account to controller" above first.'
+            : `Account is wired to a different controller (${wiring.currentControllerId}); enrolling here would be an inert no-op.`,
+        );
+      }
+      status.textContent = 'Building enroll transaction…';
+      const guardians = val('cfg-guardians')
+        ? val('cfg-guardians').split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+      const baselineDoc = parsePolicyDocJson(val('cfg-baseline-doc'));
+      const config = buildRecoveryConfig({
+        mode: val('cfg-mode') as 'GuardianOnly' | 'ZkOnly' | 'Combined',
+        profile: 'Loss',
+        guardians,
+        guardianThreshold: Number(val('cfg-threshold') || '1'),
+        verifier: val('cfg-verifier') || undefined,
+        zkPool: val('cfg-zkpool') || undefined,
+        networkPassphrase: NETWORK_PASSPHRASE,
+        baselineDocHash: targetDocHash(baselineDoc),
+        delaySecs: Number(val('cfg-delay')),
+        expirySecs: Number(val('cfg-expiry')),
+        maxCancels: Number(val('cfg-maxcancels')),
+        pendingActivityPolicy: val('cfg-policy') as 'Freeze' | 'Continue',
+      });
+      const built = buildEnroll({ controllerId, account: acc, config });
+      status.textContent = 'Sign with your passkey…';
+      const result = await signAndSubmit({ account: acc, operation: built.operations[0] });
+      status.textContent = `Enrolled. tx: ${result.hash}`;
+      toast('Enrolled in Stage 3 recovery');
+    } catch (e) {
+      status.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+
+  // --- 2. Status ---------------------------------------------------------
+  document.getElementById('status-refresh')!.addEventListener('click', async () => {
+    const out = document.getElementById('status-out')!;
+    try {
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      if (!controllerId) throw new Error('Enter the controller address above first.');
+      const readArgs = { controllerId, account: acc, networkPassphrase: NETWORK_PASSPHRASE, rpcUrl: RPC_URL };
+      const wiring = await checkAccountWiring({ account: acc, controllerId, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      const [config, attempt, hasPending, configHash] = await Promise.all([
+        readRecoveryConfig(readArgs),
+        readAttempt(readArgs),
+        readHasPending(readArgs),
+        readConfigHash(readArgs),
+      ]);
+      out.textContent = JSON.stringify({ wiring, config, attempt, hasPending, configHash }, (_k, v) =>
+        typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v,
+      2);
+    } catch (e) {
+      out.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+
+  // --- 3. Begin attempt --------------------------------------------------
+  let lastTargetDoc: ReturnType<typeof parsePolicyDocJson> | null = null;
+  document.getElementById('att-preview')!.addEventListener('click', () => {
+    const out = document.getElementById('att-diff-out')!;
+    const beginBtn = document.getElementById('att-begin') as HTMLButtonElement;
+    try {
+      const sourceDoc = parsePolicyDocJson(val('att-source-doc'));
+      const replacements = JSON.parse(val('att-replacements') || '[]') as CredentialReplacement[];
+      const action = val('att-action') as RecoveryActionInput;
+      lastTargetDoc =
+        action === 'LostKey'
+          ? buildLostKeyTargetDoc(sourceDoc, replacements)
+          : buildCompromiseTargetDoc(sourceDoc, replacements);
+      const diff = diffPolicyDocs(sourceDoc, lastTargetDoc);
+      out.textContent = JSON.stringify(
+        { targetDocHash: targetDocHash(lastTargetDoc), diff, targetDocJson: canonicalJson(lastTargetDoc) },
+        null,
+        2,
+      );
+      beginBtn.disabled = false;
+    } catch (e) {
+      out.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      lastTargetDoc = null;
+      beginBtn.disabled = true;
+    }
+  });
+
+  document.getElementById('att-begin')!.addEventListener('click', async () => {
+    const status = document.getElementById('att-status')!;
+    try {
+      if (!lastTargetDoc) throw new Error('Preview the target doc first.');
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      const action = val('att-action') as RecoveryActionInput;
+      const sourceDoc = parsePolicyDocJson(val('att-source-doc'));
+      const replacements = JSON.parse(val('att-replacements') || '[]') as CredentialReplacement[];
+      const sourceOrBaselineHash = targetDocHash(sourceDoc);
+      // Client-declared bookkeeping only (see targetDoc.ts's doc comment) —
+      // the OLD credential at each replaced signer id, derived the same way
+      // on every call so revocation checks stay consistent.
+      const replacedCredentialIds = replacements
+        .map((r) => sourceDoc.signers.find((s) => s.id === r.signerId))
+        .filter((s): s is NonNullable<typeof s> => s !== undefined)
+        .map((s) => credentialIdForSigner(s));
+      const built = buildBeginAttempt({
+        controllerId,
+        account: acc,
+        action,
+        targetDocHash: targetDocHash(lastTargetDoc),
+        sourceOrBaselineHash,
+        replacedCredentialIds,
+      });
+      status.textContent = 'Submitting (permissionless)…';
+      const { hash } = await submitPermissionlessOp(built.operations[0]);
+      status.textContent = `Attempt begun. tx: ${hash}`;
+      toast('Recovery attempt begun');
+    } catch (e) {
+      status.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+
+  // --- 4. Guardian evidence ----------------------------------------------
+  await initWalletKit().catch(() => {});
+  const walletLine = document.getElementById('wallet-line')!;
+  function refreshWalletLine() {
+    const session = getSession();
+    walletLine.textContent = session ? `Connected: ${session.walletAddress}` : 'No wallet connected.';
+  }
+  refreshWalletLine();
+  document.getElementById('wallet-connect')!.addEventListener('click', async () => {
+    try {
+      await connect();
+      refreshWalletLine();
+    } catch (e) {
+      walletLine.textContent = `Connect failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+
+  async function submitGuardianEvidence(kind: 'approve' | 'cancel') {
+    const status = document.getElementById('ev-guardian-status')!;
+    try {
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      const session = getSession();
+      if (!session) throw new Error('Connect a guardian wallet first.');
+      const attemptId = BigInt(val('ev-guardian-attempt') || '0');
+      const built =
+        kind === 'approve'
+          ? buildSubmitGuardianApproval({ controllerId, account: acc, attemptId, guardian: session.walletAddress })
+          : buildSubmitGuardianCancel({ controllerId, account: acc, attemptId, guardian: session.walletAddress });
+      status.textContent = 'Signing with the connected wallet…';
+      const { hash } = await submitGuardianOp(built.operations[0], session.walletAddress);
+      status.textContent = `Submitted. tx: ${hash}`;
+      toast(kind === 'approve' ? 'Guardian approval submitted' : 'Guardian cancellation submitted');
+    } catch (e) {
+      status.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  document.getElementById('ev-guardian-approve')!.addEventListener('click', () => submitGuardianEvidence('approve'));
+  document.getElementById('ev-guardian-cancel')!.addEventListener('click', () => submitGuardianEvidence('cancel'));
+
+  // --- 5. ZK evidence ------------------------------------------------------
+  async function submitZkEvidence(kind: 'proof' | 'cancel') {
+    const status = document.getElementById('ev-zk-status')!;
+    try {
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      const attemptId = BigInt(val('ev-zk-attempt') || '0');
+      const result = JSON.parse(val('ev-zk-result')) as { root: string; nullifier: string; proof: string };
+      const built =
+        kind === 'proof'
+          ? buildSubmitZkProof({ controllerId, account: acc, attemptId, root: result.root, nullifier: result.nullifier, proof: result.proof })
+          : buildSubmitZkCancel({ controllerId, account: acc, attemptId, root: result.root, nullifier: result.nullifier, proof: result.proof });
+      status.textContent = 'Submitting (permissionless)…';
+      const { hash } = await submitPermissionlessOp(built.operations[0]);
+      status.textContent = `Submitted. tx: ${hash}`;
+      toast(kind === 'proof' ? 'ZK proof submitted' : 'ZK cancellation submitted');
+    } catch (e) {
+      status.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  document.getElementById('ev-zk-submit')!.addEventListener('click', () => submitZkEvidence('proof'));
+  document.getElementById('ev-zk-cancel')!.addEventListener('click', () => submitZkEvidence('cancel'));
+
+  // --- 6. Complete -----------------------------------------------------
+  document.getElementById('complete-apply')!.addEventListener('click', async () => {
+    const status = document.getElementById('complete-status')!;
+    try {
+      const acc = requireAccount();
+      const doc = parsePolicyDocJson(val('complete-doc'));
+      const built = await buildApplyDocTx(doc, { account: acc, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      status.textContent = 'Sign with your passkey…';
+      const result = await signAndSubmit({ account: acc, operation: built.operations[0] });
+      status.textContent = `Completed. tx: ${result.hash}`;
+      toast('Recovery completed');
+    } catch (e) {
+      status.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+</script>

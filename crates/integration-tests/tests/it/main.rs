@@ -1,3 +1,4 @@
+mod apply_doc;
 mod contract_verifier;
 mod default_rule_threshold;
 mod drift;
@@ -7,6 +8,13 @@ mod multisig_recovery;
 mod name_registry;
 mod name_registry_passkey_auth;
 mod preauth_sweep_policy;
+mod recovery_stage2_common;
+mod recovery_stage2_variant_a;
+mod recovery_stage2_variant_b;
+mod recovery_stage3_combined;
+mod recovery_stage3_common;
+mod recovery_stage3_guardian_only;
+mod recovery_stage3_zk_only;
 mod scoped_session_key;
 mod smart_account_auth;
 mod smart_account_setup;

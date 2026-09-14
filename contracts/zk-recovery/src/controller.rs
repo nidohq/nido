@@ -352,6 +352,25 @@ impl ZkRecovery {
             .is_some_and(|pending| now < pending.expires_at)
     }
 
+    /// SPIKE (doc-only) view: `true` iff a recovery completion for
+    /// `account` was consumed by `Policy::enforce` in THIS ledger (see
+    /// `RecoveryKey::CompletionGrant`). The doc-only smart account's
+    /// `add_context_rule` gate accepts `has_pending || completion_granted`:
+    /// enforce consumes the pending during `__check_auth`, before the entry
+    /// point's body runs, so the grant is how the body still recognizes the
+    /// completion transaction. Temporary storage + the same-sequence check
+    /// keep the window one ledger wide.
+    #[must_use]
+    // `env`/`account` are conventionally by-value for `#[contractimpl]`
+    // entry points.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn completion_granted(env: Env, account: Address) -> bool {
+        env.storage()
+            .temporary()
+            .get::<_, u32>(&RecoveryKey::CompletionGrant(account))
+            .is_some_and(|seq| seq == env.ledger().sequence())
+    }
+
     /// View: the next nonce `initiate_recovery` will accept for `account`.
     #[must_use]
     // `env`/`account` are conventionally by-value for `#[contractimpl]`

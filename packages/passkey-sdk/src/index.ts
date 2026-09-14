@@ -93,6 +93,8 @@ export { extractXdrOperations } from './assembledTx.js';
 
 export * from './policyBlocks/index.js';
 
+export * from './policyDoc/index.js';
+
 export * from './resolveFriendInput.js';
 
 export * from './sessionKey.js';
@@ -102,3 +104,5 @@ export * from './syntheticAssertion.js';
 export * from './friendSigning.js';
 
 export * from './zkRecovery/index.js';
+
+export * from './recoveryStage3/index.js';

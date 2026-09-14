@@ -244,14 +244,6 @@ fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
         "constructor must store the recovery controller"
     );
 
-    // A second, throwaway signer on the Default rule -- purely so the
-    // post-recovery guard-release check below can remove the ORIGINAL
-    // webauthn signer without leaving the rule with zero signers AND zero
-    // policies (which OZ's `add_context_rule`/`remove_signer` rejects with
-    // `NoSignersAndPolicies`, unrelated to anything this test is about).
-    let spare_signer_addr = Address::generate(&env);
-    account.add_signer(&0, &Signer::Delegated(spare_signer_addr));
-
     // --- Genesis-insert the fixture leaf via the pool. ---
     let secret = BytesN::from_array(&env, &hex32(fixture.secret_hex));
     let commitment = leaf_inner(&env, &secret);
@@ -282,28 +274,28 @@ fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
         "a real fixture proof through initiate_recovery must create a live pending"
     );
 
-    // --- The guard, during the pending window: remove_signer blocked
-    // (REAL cross-call into the deployed controller's has_pending), and the
-    // recovery rule itself unremovable directly. ---
-    let default_rule = account.get_context_rule(&0);
-    let orig_signer_id = default_rule
-        .signer_ids
-        .first()
-        .expect("Default rule must have the one signer just installed");
-
-    let res = account.try_remove_signer(&0, &orig_signer_id);
+    // --- The guard, during the pending window (DOC-ONLY surface):
+    // initiate_upgrade blocked via the REAL cross-call into the deployed
+    // controller's has_pending; the recovery rule is protected
+    // structurally -- its removal entry point no longer exists at all. ---
+    let placeholder = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    let res = account.try_initiate_upgrade(&placeholder);
     assert_eq!(
         error_code(&res),
         NidoSmartAccountError::RecoveryPendingBlocked as u32,
-        "remove_signer while a REAL pending exists must be blocked by the in-account guard"
+        "initiate_upgrade while a REAL pending exists must be blocked by the in-account guard"
     );
 
-    let res = account.try_remove_context_rule(&rule_id);
-    assert_eq!(
-        error_code(&res),
-        NidoSmartAccountError::RecoveryRuleProtected as u32,
-        "the recovery rule can never be removed via remove_context_rule directly"
+    let res = env.try_invoke_contract::<soroban_sdk::Val, soroban_sdk::Error>(
+        &account_addr,
+        &soroban_sdk::Symbol::new(&env, "remove_context_rule"),
+        soroban_sdk::vec![&env],
     );
+    assert!(
+        res.is_err(),
+        "remove_context_rule must not be an entry point under doc-only"
+    );
+    let _ = rule_id;
 
     // --- Advance the ledger past the timelock. ---
     env.ledger().with_mut(|li| {
@@ -376,16 +368,12 @@ fn constructor_installed_rule_drives_real_proof_completion_and_guard() {
         "the pending's nullifier must be permanently Spent after completion"
     );
 
-    // --- Post-recovery: the guard releases -- remove_signer on a
-    // non-recovery rule now succeeds, proving the account is usable again. ---
+    // --- Post-recovery: the guard releases -- the announce path (same
+    // guard_live_pending cross-call the pending window blocked above) now
+    // succeeds, proving the account is usable again once no pending
+    // recovery remains. ---
     env.mock_all_auths();
-    account.remove_signer(&0, &orig_signer_id);
-    let default_rule_after = account.get_context_rule(&0);
-    assert!(
-        !default_rule_after.signer_ids.contains(&orig_signer_id),
-        "remove_signer must have actually removed the original signer once no \
-         pending recovery remained"
-    );
+    account.initiate_recovery_rule_removal();
 }
 
 // ---------------------------------------------------------------------
@@ -509,16 +497,17 @@ fn setup_factory_and_pool(env: &Env) -> (Address, Address) {
     (factory_addr, pool_addr)
 }
 
-/// **Test 2.** Deploys one account via `create_account_v2` (a real,
-/// caller-supplied commitment) and one via the legacy `create_account`
-/// (the factory's own deterministic dummy commitment), and asserts that
-/// nothing observable on-chain distinguishes them: both have a recovery
-/// rule installed, same shape (zero signers, one policy pointing at the
-/// same controller, same `name/valid_until`), and the pool gained exactly one
-/// genesis leaf per account. The one real difference -- whether the
-/// account's owner actually knows a secret behind their leaf -- never
-/// touches the chain; it lives entirely off-chain in whichever party
-/// generated the commitment.
+/// **Test 2** (rewritten for captain live-fail #3 — see
+/// `contracts/factory/src/contract.rs::deploy_account_contract`'s doc
+/// comment). This test used to prove `create_account` (dummy commitment)
+/// and `create_account_v2` (real commitment) were indistinguishable
+/// on-chain BECAUSE both unconditionally installed a recovery rule and
+/// genesis-inserted a leaf (M2 Task 5's anonymity-set property). That
+/// property was removed along with the unconditional M1 wiring it depended
+/// on: neither entry point touches the pool or installs a recovery rule at
+/// all any more, so the uniformity claim is now simpler and STRONGER —
+/// both paths produce identical, fully UNWIRED accounts, and
+/// `create_account_v2`'s `commitment` argument is inert.
 #[test]
 fn dummy_and_real_enrollment_are_indistinguishable_on_chain() {
     let env = Env::default();
@@ -537,17 +526,12 @@ fn dummy_and_real_enrollment_are_indistinguishable_on_chain() {
     assert_eq!(pool.next_index(), 0, "sanity: pool starts empty");
 
     let dummy_account_addr = factory.create_account(&salt_dummy, &key_dummy);
-    assert_eq!(
-        pool.next_index(),
-        1,
-        "create_account (dummy path) must insert exactly one genesis leaf"
-    );
-
     let real_account_addr = factory.create_account_v2(&salt_real, &key_real, &real_commitment);
     assert_eq!(
         pool.next_index(),
-        2,
-        "create_account_v2 (real path) must insert exactly one more genesis leaf"
+        0,
+        "neither create_account nor create_account_v2 (even with a real commitment) may \
+         insert anything into the pool any more"
     );
 
     let dummy_account = SmartAccountClient::new(&env, &dummy_account_addr);
@@ -557,44 +541,24 @@ fn dummy_and_real_enrollment_are_indistinguishable_on_chain() {
     assert_eq!(dummy_account_addr, factory.get_c_address(&salt_dummy));
     assert_eq!(real_account_addr, factory.get_c_address(&salt_real));
 
-    // Both must have a recovery rule installed, pointing at the same
-    // controller.
-    let dummy_rule_id = dummy_account
-        .recovery_rule_id()
-        .expect("create_account (dummy) must still install the recovery rule");
-    let real_rule_id = real_account
-        .recovery_rule_id()
-        .expect("create_account_v2 (real) must install the recovery rule");
+    // Neither has a recovery rule/controller installed -- both mint unwired.
     assert_eq!(
-        dummy_rule_id, real_rule_id,
-        "both paths install the recovery rule at the same rule id (same construction order)"
+        dummy_account.recovery_rule_id(),
+        None,
+        "create_account (dummy) must mint unwired"
     );
-    assert_eq!(dummy_account.recovery_controller(), Some(pool_addr.clone()));
-    assert_eq!(real_account.recovery_controller(), Some(pool_addr.clone()));
+    assert_eq!(
+        real_account.recovery_rule_id(),
+        None,
+        "create_account_v2 (real commitment) must mint unwired too -- the commitment \
+         argument is ignored"
+    );
+    assert_eq!(dummy_account.recovery_controller(), None);
+    assert_eq!(real_account.recovery_controller(), None);
 
-    // Same rule SHAPE: zero signers, exactly one policy (the controller),
-    // same name/valid_until. The only thing distinguishing the two
-    // `ContextRuleType::CallContract(..)` values is each account's own
-    // address (unavoidable self-reference), never anything about
-    // enrollment status.
-    let dummy_rule = dummy_account.get_context_rule(&dummy_rule_id);
-    let real_rule = real_account.get_context_rule(&real_rule_id);
-    assert_eq!(dummy_rule.name, real_rule.name);
-    assert_eq!(dummy_rule.valid_until, real_rule.valid_until);
-    assert!(dummy_rule.signers.is_empty());
-    assert!(real_rule.signers.is_empty());
-    assert_eq!(dummy_rule.policies.len(), 1);
-    assert_eq!(real_rule.policies.len(), 1);
-    assert_eq!(dummy_rule.policies, real_rule.policies);
-    match (&dummy_rule.context_type, &real_rule.context_type) {
-        (ContextRuleType::CallContract(d), ContextRuleType::CallContract(r)) => {
-            assert_eq!(*d, dummy_account_addr);
-            assert_eq!(*r, real_account_addr);
-        }
-        other => panic!("expected CallContract(self) rules on both accounts, got {other:?}"),
-    }
-
-    // Same Default-rule shape too: one signer each, no policies.
+    // Same Default-rule shape: one signer each, no policies -- unaffected by
+    // any of the above, confirming the commitment argument's only remaining
+    // effect anywhere is exactly nothing.
     let dummy_default = dummy_account.get_context_rule(&0);
     let real_default = real_account.get_context_rule(&0);
     assert_eq!(dummy_default.signer_ids.len(), 1);
@@ -602,13 +566,11 @@ fn dummy_and_real_enrollment_are_indistinguishable_on_chain() {
     assert!(dummy_default.policies.is_empty());
     assert!(real_default.policies.is_empty());
 
-    // Nothing above depended on the 32-byte commitment values themselves --
-    // an on-chain observer sees two structurally identical deploys, each
-    // with one opaque leaf. Only the off-chain secret-holder can tell them
-    // apart.
     assert_ne!(
         real_commitment,
         BytesN::from_array(&env, &[0u8; 32]),
-        "sanity: the real commitment is a genuine Poseidon2 output, not a placeholder"
+        "sanity: the (now-ignored) real commitment is still a genuine Poseidon2 output, \
+         not a placeholder -- confirms the uniformity above isn't just because the input \
+         was trivial"
     );
 }

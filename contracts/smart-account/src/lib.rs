@@ -10,3 +10,8 @@
 // `#[no_mangle]`-export collision this crate's own `Cargo.toml` documents
 // for depending on `nido-zk-recovery`.
 pub mod contract;
+// SPIKE: perch apply_doc (hybrid-additive). `pub` for the same reason as
+// `contract` above: `nido-integration-tests` reaches the doc-layer helpers
+// (`compiler_address`/`interpreter_address`/event type) to bootstrap the
+// perch infra at the exact derived addresses the account resolves.
+pub mod doc;
