@@ -32,6 +32,8 @@ jobs:
           - factory
           - multisig-policy
           - name-registry
+          - recovery-controller
+          - recovery-verifier
           - smart-account
           - spending-limit-policy
           - status-message
