@@ -193,8 +193,28 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   #limit-none { accent-color: var(--acc); }
 </style>
 
+<style is:global>
+  /* Doc-update diff panel — injected at runtime via innerHTML, so these
+     must be global (Astro's scoped styles only reach static template
+     nodes). Markup shared with the policy page's builder. */
+  .pol-diff { display: grid; gap: 8px; }
+  .pol-diff-row { display: flex; gap: 10px; align-items: flex-start; }
+  .pol-diff-row .pol-badge { flex: 0 0 auto; margin-top: 2px; }
+  .pol-diff-changes { margin: 4px 0 0; padding-left: 16px; font-size: 12px; line-height: 1.5; }
+  .pol-badge {
+    font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+    background: var(--soft, rgba(0,0,0,0.06)); color: var(--ink, inherit); white-space: nowrap;
+  }
+  .pol-badge.primary { background: rgba(64, 132, 88, 0.16); color: #2f6b45; }
+  .pol-badge.gated { background: rgba(180, 120, 20, 0.16); color: #8a5a10; }
+  .pol-badge.danger { background: rgba(190, 60, 60, 0.16); color: #a13030; }
+  .pol-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; }
+</style>
+
 <script>
-  import { contractIdFromHostname } from '@nidohq/passkey-sdk';
+  import { contractIdFromHostname, docHash, parsePolicyDocJson } from '@nidohq/passkey-sdk';
+  import { diffPolicyDocs } from '../../lib/policy/docDiff.js';
+  import { renderDocDiffHtml } from '../../components/PolicyInspector.js';
   import { loadCredential, loadAccountName, lookupName, resolveName } from '@nidohq/passkey-sdk';
   import { avatarBackground } from '../../lib/avatarStyle';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
@@ -204,7 +224,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { shortAddr } from '../../lib/address';
   import { describeTransaction, describeOperation, type OpSummary } from '../../lib/transfer/txSummary.js';
   import { buildOperation } from '../../lib/signing/operationBuilders.js';
-  import { renderTransferReview, renderGenericOp, renderNameRegister, renderSessionGrant, type TransferView } from '../../lib/transfer/review.js';
+  import { renderTransferReview, renderGenericOp, renderNameRegister, renderSessionGrant, renderDocSessionGrant, type TransferView } from '../../lib/transfer/review.js';
   import { probeSep41Token } from '../../lib/assets/balances.js';
   import { NATIVE_SAC_ID, RPC_URL, NETWORK_PASSPHRASE } from '../../lib/network.js';
   import { fetchRegistryAddress } from '../../lib/policyChainFetch.js';
@@ -493,6 +513,85 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         limitPeriod.addEventListener('change', syncLimitControls);
         syncLimitControls();
         $limitEdit.classList.remove('hidden');
+      }
+    } else if (op.type === 'apply-policy-doc') {
+      // Doc-based session grant — the document IS what gets approved, so the
+      // review card renders straight from its canonical JSON (rule name,
+      // signer, functions, cap, doc_hash), and the technical-details toggle
+      // shows the JSON itself. Nothing here is editable: the delegate-doc
+      // page already offered the duration/cap controls before the handoff.
+      payload = op.docJson; // non-empty so validate() passes
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      const docOrigin =
+        req.returnTarget.type === 'dapp' ? req.returnTarget.origin : (req.subtitle ?? '');
+      let docCardHtml: string;
+      try {
+        const doc = parsePolicyDocJson(op.docJson);
+        // Doc-update diff: apply_doc REPLACES the applied document, so show
+        // exactly what changes vs the previous one (carried in the
+        // descriptor; absent = first apply, rendered as all-new).
+        let diffHtml = '';
+        try {
+          const prev = op.prevDocJson !== undefined ? parsePolicyDocJson(op.prevDocJson) : null;
+          diffHtml = renderDocDiffHtml(diffPolicyDocs(prev, doc));
+        } catch {
+          diffHtml = '';
+        }
+        const rule = doc.rules[0];
+        const signerDecl = doc.signers[0];
+        const cap = rule?.cap;
+        const periodMap: Array<[number, LimitPeriod]> = [
+          [17280, 'day'], [120960, 'week'], [518400, '30d'],
+        ];
+        docCardHtml = renderDocSessionGrant({
+          origin: docOrigin,
+          ruleName: rule?.name ?? '(unnamed)',
+          target: rule?.scope.type === 'contract' ? rule.scope.address : (account ?? ''),
+          signer: signerDecl && 'address' in signerDecl ? signerDecl.address : '(passkey)',
+          functions: rule?.functions !== undefined ? [...rule.functions] : null,
+          expiryLabel:
+            op.expiryLabel ??
+            (rule?.['not-after-ledger'] != null ? `Ledger ${rule['not-after-ledger']}` : 'Until revoked'),
+          capStroops: cap !== undefined ? cap.limit : null,
+          capPeriod: cap !== undefined
+            ? (periodMap.find(([l]) => l === cap['period-ledgers'])?.[1] ?? 'day')
+            : 'day',
+          docHash: docHash(doc),
+        }) + (diffHtml ? `<div class="card" style="padding:14px 16px;margin-top:10px;">${diffHtml}</div>` : '');
+      } catch {
+        // Unparseable doc JSON — fall back to showing the raw payload row
+        // rather than a half-empty card (approve would fail in
+        // buildOperation with the same parse error anyway).
+        docCardHtml = '';
+      }
+      if (docCardHtml) {
+        $detail.innerHTML = docCardHtml;
+        $detail.classList.remove('hidden');
+        // Technical details: the canonical document JSON, verbatim.
+        const $toggleDoc = document.getElementById('toggle-raw') as HTMLButtonElement;
+        $toggleDoc.classList.remove('hidden');
+        $toggleDoc.textContent = 'Show the document';
+        let docShown = false;
+        $toggleDoc.addEventListener('click', () => {
+          docShown = !docShown;
+          if (docShown) {
+            const pre = document.createElement('pre');
+            pre.style.cssText =
+              'font-family:var(--mono);font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;background:var(--paper-3);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0;';
+            pre.textContent = op.docJson;
+            $detail.replaceChildren(pre);
+            $toggleDoc.textContent = 'Hide the document';
+          } else {
+            $detail.innerHTML = docCardHtml;
+            $toggleDoc.textContent = 'Show the document';
+          }
+        });
+      } else {
+        document.getElementById('payload-row')!.classList.remove('hidden');
+        document.getElementById('payload-label')!.textContent = 'Policy document JSON';
+        document.getElementById('payload-text')!.textContent = op.docJson;
       }
     } else if (op.type === 'remove-context-rule') {
       // Session-revoke descriptor — render the human-readable revoke line

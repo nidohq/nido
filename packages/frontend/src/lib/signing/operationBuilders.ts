@@ -10,18 +10,20 @@
  *
  *   register          → account/index.astro runNameClaim (invokeContractFunction)
  *   transfer          → lib/transfer/buildSend.ts buildSendOperation
- *   add-context-rule  → security/delegate/index.astro approveBtn handler
- *   remove-context-rule → passkey-sdk policyBlocks/scopedSessionKey.ts buildRevoke
- *                         (via SmartAccountClient.remove_context_rule)
+ *   apply-policy-doc  → the ONE policy write (buildApplyDocTx); both
+ *                       delegate pages and the policy builder route here
+ *
+ * DOC-ONLY: the add-context-rule / remove-context-rule descriptors THROW —
+ * the account has no general rule mutators (add_context_rule is hard-gated
+ * to the zk-recovery completion window), so a stale stashed request must
+ * fail with guidance here rather than as Error(Contract, #19) on-chain.
  */
 
 import { Address, Operation, Networks, nativeToScVal, xdr } from "@stellar/stellar-sdk";
-import { Client as SmartAccountClient } from "@nidohq/smart-account";
-import { extractXdrOperations, hex2buf } from "@nidohq/passkey-sdk";
+import { buildApplyDocTx, parsePolicyDocJson } from "@nidohq/passkey-sdk";
 import type { OperationDescriptor } from "./signRequest";
 import { buildSendOperation } from "../transfer/buildSend.js";
 import { fetchRegistryAddress } from "../policyChainFetch.js";
-import { spendingLimitParamsScVal } from "../spendingLimitParams.js";
 import { RPC_URL } from "../network.js";
 
 const NETWORK_PASSPHRASE = Networks.TESTNET;
@@ -69,42 +71,30 @@ export async function buildOperation(
     }
 
     case "add-context-rule": {
-      // Mirror: security/delegate/index.astro approveBtn handler (~lines 296-314).
-      // Constructs the SmartAccountClient and calls add_context_rule with the
-      // same shape: context_type CallContract, External signer, optional policies.
-      const client = new SmartAccountClient({
-        contractId: account,
-        networkPassphrase: NETWORK_PASSPHRASE,
+      // DOC-ONLY: the account has no general add_context_rule (it is
+      // hard-gated to the zk-recovery completion window — DocOnlyWritePath,
+      // Error(Contract, #19) on-chain). Session grants are policy-document
+      // updates: /security/delegate/ composes them via
+      // buildSessionGrantOperation → apply-policy-doc. Reaching this branch
+      // means a STALE stashed SignRequest from before the doc-only rewrite.
+      throw new Error(
+        "doc-only: session grants are policy-document updates (apply_doc), not add_context_rule — restart the delegation from the dApp",
+      );
+    }
+
+    case "apply-policy-doc": {
+      // Mirror: components/PolicyBuilder.ts submit. The doc is parsed fresh
+      // from the canonical JSON in the descriptor (never trusted as a live
+      // object) and applied through the account's `apply_doc` surface —
+      // the ONLY policy write path (doc-only ruling; the per-rule
+      // add_context_rule lowering for docs is gone).
+      const doc = parsePolicyDocJson(d.docJson);
+      const tx = await buildApplyDocTx(doc, {
+        account,
         rpcUrl: RPC_URL,
+        networkPassphrase: NETWORK_PASSPHRASE,
       });
-
-      // Spending limit: non-null `limit` → policies map with one entry.
-      // No limit (null/undefined) → empty map (byte-identical to pre-limit behavior).
-      let policies = new Map<string, ReturnType<typeof spendingLimitParamsScVal>>();
-      if (d.limit != null) {
-        const policyAddr = await fetchRegistryAddress("spending-limit-policy");
-        policies = new Map([
-          [policyAddr, spendingLimitParamsScVal(BigInt(d.limit.stroops), d.limit.periodLedgers)],
-        ]);
-      }
-
-      const assembled = await client.add_context_rule({
-        context_type: { tag: "CallContract", values: [d.target] as readonly [string] },
-        name: d.label ?? "session-key",
-        valid_until: d.validUntil ?? undefined,
-        signers: [
-          {
-            tag: "External" as const,
-            values: [d.verifierAddress, hex2buf(d.signerPublicKeyHex) as Buffer] as readonly [
-              string,
-              Buffer,
-            ],
-          },
-        ],
-        policies,
-      });
-
-      return extractXdrOperations(assembled, "add-context-rule")[0]!;
+      return tx.operations[0]!;
     }
 
     case "remove-context-rule": {

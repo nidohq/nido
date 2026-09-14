@@ -14,6 +14,24 @@ export type OperationDescriptor =
       expiryLabel?: string;
     }
   | { type: "remove-context-rule"; ruleId: number; target: string }
+  | {
+      /** Apply a perch policy document (the doc-based session-grant flow).
+       *  The doc is the source of truth — scope, signers, functions, expiry,
+       *  and cap all live in `docJson`, so nothing here is editable at /sign/
+       *  (adjustments happen on the delegate-doc page, before the handoff).
+       *  Every policy write is an `apply_doc` — a whole-document REPLACE —
+       *  so `docJson` is the full updated document, and `prevDocJson` lets
+       *  /sign/ show exactly what changes vs the currently applied one. */
+      type: "apply-policy-doc";
+      /** Canonical doc JSON — the exact bytes `apply_doc` receives (and the
+       *  bytes whose sha256 is the doc_hash shown to the user). */
+      docJson: string;
+      /** Canonical JSON of the CURRENTLY applied document at request-build
+       *  time; absent on a first apply. Display-only (the diff panel). */
+      prevDocJson?: string;
+      /** Human-readable expiry label (e.g. "24 hours"), as for add-context-rule. */
+      expiryLabel?: string;
+    }
   | { type: "raw-xdr"; xdr: string };
 
 export type SignKind =
