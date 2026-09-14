@@ -42,6 +42,8 @@ export type { RecoveryReadArgs } from './reads.js';
 export { checkAccountWiring, buildWireAccountTx } from './accountWiring.js';
 export type { AccountWiringArgs, AccountWiringStatus, AccountWiringCheck } from './accountWiring.js';
 
+export { RECOVERY_CONTROLLER_TESTNET_ID, RECOVERY_VERIFIER_TESTNET_ID } from './deployment.js';
+
 export {
   computeDocAuthHash,
   assembleDocPublicInputs,
