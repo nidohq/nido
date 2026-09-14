@@ -36,8 +36,11 @@ export {
 } from './evidence.js';
 export type { GuardianEvidenceArgs, ZkEvidenceArgs } from './evidence.js';
 
-export { readRecoveryConfig, readAttempt, readHasPending } from './reads.js';
+export { readRecoveryConfig, readAttempt, readHasPending, readConfigHash } from './reads.js';
 export type { RecoveryReadArgs } from './reads.js';
+
+export { checkAccountWiring, buildWireAccountTx } from './accountWiring.js';
+export type { AccountWiringArgs, AccountWiringStatus, AccountWiringCheck } from './accountWiring.js';
 
 export {
   computeDocAuthHash,

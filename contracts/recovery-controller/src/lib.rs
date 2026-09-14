@@ -172,6 +172,64 @@
 //!   that promotes an attempt without the required approvals/proof simply
 //!   because time has passed; an under-evidenced attempt just expires
 //!   unpromoted).
+//! - **`enroll` does not, and cannot, wire the account to this controller.**
+//!   `enroll` only writes `Key::Config(account)` in THIS contract's own
+//!   storage. For that configuration to matter at all, the ACCOUNT's own
+//!   `recovery_controller` field (`contracts/smart-account`) must
+//!   separately equal this controller's address — set once at account
+//!   construction, or afterward via the account's own
+//!   `enroll_zk_recovery`. `enroll` cannot establish that itself: it is a
+//!   cross-call arriving FROM the account (or an equivalent caller), with
+//!   no `require_auth`-clean way to reach back and mutate the caller's own
+//!   wiring field as a side effect. A caller that enrolls against a
+//!   controller the account was never wired to (or was wired to a
+//!   DIFFERENT, earlier controller) gets a config that is stored but
+//!   inert — nothing ever cross-calls `has_pending`/`Policy::enforce` on
+//!   it. This is exactly the bug a captain live-test caught on a real
+//!   testnet account (wired to an earlier, unrelated recovery pool; this
+//!   controller's `enroll` silently "succeeded" and did nothing). Fixed at
+//!   the SDK/UI layer, not here: `packages/passkey-sdk/src/recoveryStage3/
+//!   accountWiring.ts`'s `checkAccountWiring` must be called — and must
+//!   report `'wired-to-target'` — before `enroll` is ever submitted; the
+//!   experimental page (`recover-v3`) now enforces this both as a disabled
+//!   button and as a defensive re-check inside the click handler itself.
+//!   There remains no contract-level enforcement that `enroll` matches the
+//!   account's actual wiring — a production implementation would need
+//!   either the account to pass proof of its own `recovery_controller`
+//!   value into `enroll`, or `enroll` itself to become account-authorized
+//!   and cross-call the account to verify wiring atomically.
+//! - **Recovery configuration is NOT embedded in the account's Perch
+//!   policy document**, despite follow-up.md §5.5 asking for "a reviewable
+//!   configuration ... with an accurate commitment." Investigated and
+//!   confirmed unreachable, not merely unimplemented: (1) `@stellar-
+//!   registry/perch`'s `policyDocSchema` is Zod `.strict()` — no top-level
+//!   extension fields, so a `recovery` key cannot simply be added to the
+//!   doc shape client-side; (2) the schema DOES have a `self-authenticating`
+//!   principal shape that could plausibly carry an arbitrary policy
+//!   address, but nido's own lowering
+//!   (`packages/passkey-sdk/src/policyDoc/lower.ts::lowerRule`)
+//!   unconditionally throws for it (`"self-authenticating rules need a
+//!   policy-call op not in program v1"`) — never reaches the wire; (3) the
+//!   decisive blocker: the REAL doc compiler is not nido code at all — it
+//!   is a separately deployed, version-pinned `perch-doc-compiler` Soroban
+//!   contract that `contracts/smart-account/src/doc.rs::apply` cross-calls.
+//!   Its wire-level `CompiledRule` type (`doc.rs`) has exactly six fields —
+//!   `cap`, `install` (hardwired to the fixed interpreter's own policy-
+//!   install program), `name`, `scope`, `signers`, `valid_until` — with NO
+//!   field capable of carrying an arbitrary policy contract address, let
+//!   alone a `RecoveryConfig`. `doc.rs`'s own `DOC_RIDS` comment states
+//!   plainly that rules installed via `apply_doc` never include the
+//!   recovery rule. Embedding recovery configuration in the doc would
+//!   require changing that EXTERNAL, pinned dependency's wire protocol —
+//!   out of scope for an experiment working against nido's own crates only.
+//!   Addressed instead with an equivalent, independently verifiable
+//!   substitute: `RecoveryController::config_hash(account) ->
+//!   Option<BytesN<32>>`, `sha256(xdr(RecoveryConfig))` using Soroban's own
+//!   `ToXdr` (deterministic canonical serialization) — a real, on-chain,
+//!   recomputable commitment to the FULL enrolled configuration, reviewable
+//!   the same way `applied_doc_hash` is, just not literally inside the
+//!   doc's own JSON. `packages/passkey-sdk/src/recoveryStage3/reads.ts::
+//!   readConfigHash` and the `recover-v3` Status panel surface it.
 
 pub mod contract;
 pub mod types;

@@ -3,6 +3,7 @@
 //! `packages/frontend/src/lib/policyChainFetch.ts::fetchSpendingLimit`):
 //! `await client.method({...})` simulates and decodes via `.result`, no
 //! signing, no submission.
+import { Buffer } from 'buffer';
 import { Client as RecoveryControllerClient, type Attempt, type RecoveryConfig } from '@nidohq/recovery-controller';
 
 export interface RecoveryReadArgs {
@@ -40,4 +41,16 @@ export async function readAttempt(args: RecoveryReadArgs): Promise<Attempt | nul
 export async function readHasPending(args: RecoveryReadArgs): Promise<boolean> {
   const tx = await client(args).has_pending({ account: args.account });
   return tx.result;
+}
+
+/** Lowercase-hex `sha256(xdr(RecoveryConfig))` — follow-up.md §5.5's
+ *  reviewable configuration commitment, computed on-chain
+ *  (`RecoveryController::config_hash`). `null` for an unenrolled account.
+ *  See `accountWiring.ts`'s module doc comment for why this is NOT the same
+ *  as the account's `applied_doc_hash` — recovery configuration cannot be
+ *  embedded in the account's own Perch policy document today (a deployed,
+ *  pinned external dependency's limit, not a gap in this contract). */
+export async function readConfigHash(args: RecoveryReadArgs): Promise<string | null> {
+  const tx = await client(args).config_hash({ account: args.account });
+  return tx.result ? Buffer.from(tx.result).toString('hex') : null;
 }

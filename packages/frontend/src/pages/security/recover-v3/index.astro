@@ -103,7 +103,19 @@ import Icon from '../../../components/Icon.astro';
             <option value="Continue">Continue</option>
           </select>
         </label>
-        <button id="cfg-enroll" class="btn acc" type="button">Enroll</button>
+        <div style="margin:14px 0;padding:10px;border:1px solid var(--border, #333);border-radius:8px;">
+          <div class="mut" style="font-size:12px;margin-bottom:8px;">
+            Account wiring — the account's own <code>recovery_controller</code>
+            field must equal the controller address above, or Enroll writes
+            state nobody will ever cross-call (see <code>accountWiring.ts</code>).
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button id="wiring-check" class="btn ghost sm" type="button">Check wiring</button>
+            <button id="wiring-wire" class="btn ghost sm" type="button" style="display:none;">Wire account to controller</button>
+          </div>
+          <p id="wiring-status" class="mut" style="font-size:12px;margin-top:8px;"></p>
+        </div>
+        <button id="cfg-enroll" class="btn acc" type="button" disabled>Enroll</button>
         <p id="cfg-status" class="mut" style="font-size:12px;margin-top:10px;"></p>
       </section>
 
@@ -216,6 +228,9 @@ import Icon from '../../../components/Icon.astro';
     readRecoveryConfig,
     readAttempt,
     readHasPending,
+    readConfigHash,
+    checkAccountWiring,
+    buildWireAccountTx,
     buildLostKeyTargetDoc,
     buildCompromiseTargetDoc,
     targetDocHash,
@@ -246,12 +261,80 @@ import Icon from '../../../components/Icon.astro';
   }
 
   // --- 1. Enroll -------------------------------------------------------
+  // Account wiring: `enroll` (below) only writes into the CONTROLLER's own
+  // storage. Unless the ACCOUNT's own `recovery_controller` field also
+  // equals this controller, enrolling is a complete no-op — the bug a
+  // captain live-test caught on a real testnet account. Check (and, for a
+  // fresh account, fix) that BEFORE letting Enroll run.
+  const enrollBtn = document.getElementById('cfg-enroll') as HTMLButtonElement;
+  const wiringStatus = document.getElementById('wiring-status')!;
+  const wiringWireBtn = document.getElementById('wiring-wire') as HTMLButtonElement;
+
+  async function checkWiring() {
+    try {
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      if (!controllerId) {
+        wiringStatus.textContent = 'Enter the controller address above first.';
+        return null;
+      }
+      const check = await checkAccountWiring({ account: acc, controllerId, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      if (check.status === 'wired-to-target') {
+        wiringStatus.textContent = 'Account is wired to this controller. Enroll is safe.';
+        wiringWireBtn.style.display = 'none';
+        enrollBtn.disabled = false;
+      } else if (check.status === 'unwired') {
+        wiringStatus.textContent = 'Account is NOT wired to any recovery controller yet — wire it before enrolling.';
+        wiringWireBtn.style.display = '';
+        enrollBtn.disabled = true;
+      } else {
+        wiringStatus.textContent =
+          `Account is wired to a DIFFERENT controller (${check.currentControllerId}). ` +
+          'Enrolling against the controller above would write orphaned state nobody will ever cross-call. ' +
+          'This experimental page does not support migrating away from an existing controller — that needs ' +
+          "the account's own announce-then-execute rule-removal flow with a genuine wall-clock delay. " +
+          'Use a fresh, unwired account instead.';
+        wiringWireBtn.style.display = 'none';
+        enrollBtn.disabled = true;
+      }
+      return check.status;
+    } catch (e) {
+      wiringStatus.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      return null;
+    }
+  }
+  document.getElementById('wiring-check')!.addEventListener('click', () => { void checkWiring(); });
+  document.getElementById('wiring-wire')!.addEventListener('click', async () => {
+    try {
+      const acc = requireAccount();
+      const controllerId = val('cfg-controller');
+      wiringStatus.textContent = 'Building wire transaction…';
+      const built = await buildWireAccountTx({ account: acc, controllerId, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      wiringStatus.textContent = 'Sign with your passkey…';
+      const result = await signAndSubmit({ account: acc, operation: built.operations[0] });
+      wiringStatus.textContent = `Wired. tx: ${result.hash}`;
+      toast('Account wired to recovery controller');
+      await checkWiring();
+    } catch (e) {
+      wiringStatus.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+
   document.getElementById('cfg-enroll')!.addEventListener('click', async () => {
     const status = document.getElementById('cfg-status')!;
     try {
-      status.textContent = 'Building enroll transaction…';
+      status.textContent = 'Checking account wiring…';
       const acc = requireAccount();
       const controllerId = val('cfg-controller');
+      const wiring = await checkAccountWiring({ account: acc, controllerId, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      if (wiring.status !== 'wired-to-target') {
+        throw new Error(
+          wiring.status === 'unwired'
+            ? 'Account is not wired to this controller yet — click "Wire account to controller" above first.'
+            : `Account is wired to a different controller (${wiring.currentControllerId}); enrolling here would be an inert no-op.`,
+        );
+      }
+      status.textContent = 'Building enroll transaction…';
       const guardians = val('cfg-guardians')
         ? val('cfg-guardians').split(',').map((s) => s.trim()).filter(Boolean)
         : [];
@@ -288,12 +371,14 @@ import Icon from '../../../components/Icon.astro';
       const controllerId = val('cfg-controller');
       if (!controllerId) throw new Error('Enter the controller address above first.');
       const readArgs = { controllerId, account: acc, networkPassphrase: NETWORK_PASSPHRASE, rpcUrl: RPC_URL };
-      const [config, attempt, hasPending] = await Promise.all([
+      const wiring = await checkAccountWiring({ account: acc, controllerId, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
+      const [config, attempt, hasPending, configHash] = await Promise.all([
         readRecoveryConfig(readArgs),
         readAttempt(readArgs),
         readHasPending(readArgs),
+        readConfigHash(readArgs),
       ]);
-      out.textContent = JSON.stringify({ config, attempt, hasPending }, (_k, v) =>
+      out.textContent = JSON.stringify({ wiring, config, attempt, hasPending, configHash }, (_k, v) =>
         typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v,
       2);
     } catch (e) {

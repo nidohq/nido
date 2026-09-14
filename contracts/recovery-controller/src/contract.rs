@@ -10,8 +10,9 @@
 
 use soroban_sdk::{
     auth::{Context, ContractContext},
-    contract, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN, Env, Symbol,
-    TryFromVal, Val, Vec,
+    contract, contractimpl, contracttype, panic_with_error,
+    xdr::ToXdr,
+    Address, Bytes, BytesN, Env, Symbol, TryFromVal, Val, Vec,
 };
 use stellar_accounts::policies::Policy;
 use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
@@ -296,6 +297,25 @@ impl RecoveryController {
     #[allow(clippy::needless_pass_by_value)]
     pub fn config(e: Env, account: Address) -> Option<RecoveryConfig> {
         e.storage().persistent().get(&Key::Config(account))
+    }
+
+    /// A reviewable, on-chain-computable commitment to `account`'s enrolled
+    /// `RecoveryConfig` — `sha256(xdr(config))`, Soroban's own `ToXdr`
+    /// serialization (deterministic for a given value: same `RecoveryConfig`
+    /// always encodes to the same bytes). This is follow-up.md §5.5's
+    /// "document commitment must cover all authority-bearing recovery
+    /// configuration" property, satisfied WITHOUT embedding recovery
+    /// configuration in the account's own Perch policy document — see the
+    /// crate doc comment's "Known limits" for exactly why that embedding is
+    /// blocked by the DEPLOYED, pinned `perch-doc-compiler`'s wire protocol
+    /// (an external dependency this experiment does not control), not by a
+    /// gap in this contract. `None` if `account` is not enrolled.
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn config_hash(e: Env, account: Address) -> Option<BytesN<32>> {
+        let cfg: RecoveryConfig = e.storage().persistent().get(&Key::Config(account))?;
+        let xdr = cfg.to_xdr(&e);
+        Some(e.crypto().sha256(&xdr).to_bytes())
     }
 
     #[must_use]
@@ -1314,5 +1334,49 @@ mod tests {
         let cfg = guardian_only_config(&env, guardians, 1);
         client.enroll(&account, &cfg);
         assert_eq!(client.config(&account), Some(cfg));
+    }
+
+    #[test]
+    fn config_hash_is_deterministic_and_none_before_enrollment() {
+        // Follow-up.md §5.5's "document commitment" property, satisfied via
+        // an on-chain-computable RecoveryConfig commitment rather than doc
+        // embedding (blocked by the deployed perch-doc-compiler's wire
+        // protocol -- see the crate doc comment's Known Limits).
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        assert_eq!(
+            client.config_hash(&account),
+            None,
+            "unenrolled account has no commitment"
+        );
+
+        let g1 = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(g1);
+        let cfg = guardian_only_config(&env, guardians, 1);
+        client.enroll(&account, &cfg);
+
+        let hash1 = client.config_hash(&account);
+        assert!(hash1.is_some());
+        let hash2 = client.config_hash(&account);
+        assert_eq!(
+            hash1, hash2,
+            "the commitment must be deterministic across reads"
+        );
+
+        let other_account = Address::generate(&env);
+        let g2 = Address::generate(&env);
+        let mut guardians2 = Vec::new(&env);
+        guardians2.push_back(g2);
+        let cfg2 = guardian_only_config(&env, guardians2, 1);
+        client.enroll(&other_account, &cfg2);
+        assert_ne!(
+            hash1,
+            client.config_hash(&other_account),
+            "different configs must commit to different hashes"
+        );
     }
 }
