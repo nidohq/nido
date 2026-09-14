@@ -1,0 +1,23 @@
+[package]
+name = "nido-recovery-controller"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true, features = ["hazmat-address"] }
+stellar-accounts = { workspace = true }
+# Poseidon2 host hashing for `zk::compute_doc_auth_hash` — same pin as
+# `nido-zk-recovery`'s Cargo.toml (Poseidon2 parity is byte-critical vs the
+# circuit). This crate deliberately does NOT depend on `nido-zk-recovery`
+# itself: see `src/zk.rs`'s doc comment for why the Poseidon2 plumbing is
+# duplicated here instead of reused as a library dependency.
+soroban-poseidon = { git = "https://github.com/stellar/rs-soroban-poseidon", tag = "v27.0.0" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils", "hazmat-address"] }

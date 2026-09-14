@@ -64,7 +64,7 @@ Pages whose UI lives inside `class="hidden"` mode containers need their primary
 state revealed; the script's `reveal` map handles this (currently un-hides
 `#home-mode` on the account page). Add an entry there if another page exports blank.
 
-## Recovery spec (Stage 1 spike) + completion mechanism experiment (Stage 2 spike)
+## Recovery spec (Stage 1) + completion experiment (Stage 2) + end-to-end spike (Stage 3)
 
 `docs/recovery/TRANSITION_SPEC.md` + `packages/recovery-spec/` are a Stage 1
 spike (transition spec + executable reference state machine + adversarial
@@ -81,6 +81,29 @@ internal pipeline. Read the findings doc's call-ordering section before adding
 any recovery completion vehicle — it explains why a value-bound, single-use
 completion grant (not a boolean/ledger flag) is required for any DEDICATED
 entry point, and why the existing `apply_doc` needs no such mechanism at all.
+
+Stage 3 (`contracts/recovery-controller`, `contracts/recovery-verifier`,
+`circuits/zk_recovery_doc`, `crates/integration-tests/tests/it/recovery_stage3_*.rs`,
+`docs/recovery/stage3-measurements.md`) is the end-to-end experiment: a
+SHARED controller implementing guardian-only, ZK-only, and combined evidence
+paths against the Stage 1 proposal model, completing via Stage 2's Variant A.
+Read `contracts/recovery-controller/src/lib.rs`'s crate doc comment FIRST —
+it is the authoritative architecture summary AND the canonical "Known
+limits" list (what's NOT implemented and why) before extending or reviewing
+this code.
+
+**`circuits/zk_recovery_doc` is a separate circuit crate from the
+pre-existing `circuits/zk_recovery` (M1's raw-signer-rotation circuit) —
+NOT an in-place edit.** They share domain constants and Merkle/nullifier
+logic but bind a different `auth_hash` field list (target-doc-hash instead
+of a raw pubkey). Do not merge them or edit one expecting it to affect the
+other: `circuits/zk_recovery`'s own fixtures/tests
+(`crates/integration-tests/tests/it/zk_recovery_*.rs`, `multisig_recovery.rs`)
+pin real `bb`-proved proofs against ITS `auth_hash` formula and would break
+if that circuit's witness shape changed. Similarly,
+`contracts/recovery-controller/src/zk.rs` deliberately duplicates
+(not depends on) `contracts/zk-recovery/src/hash.rs`'s Poseidon2 host-side
+reconstruction — same reason.
 
 ## Testing Notes
 

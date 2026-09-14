@@ -60,3 +60,12 @@ perch-ir = { workspace = true }
 # `nido-zk-recovery` above) — a plain `rlib` dev-dependency, same
 # no-wasm-export-collision reasoning as the other crates in this list.
 nido-recovery-doc-completion = { path = "../../contracts/recovery-doc-completion" }
+# Recovery Stage 3 (firstmate/data/perch-zk-recovery-scout-p5/follow-up.md
+# §8): the shared guardian+ZK recovery controller, registered as a NATIVE
+# contract (like `nido-zk-recovery` above) -- same no-wasm-export-collision
+# reasoning as the other crates in this list.
+nido-recovery-controller = { path = "../../contracts/recovery-controller" }
+# Stage 3's constructorless UltraHonk verifier, registered as a NATIVE
+# contract (no constructor args needed) -- same no-wasm-export-collision
+# reasoning as the other crates in this list.
+nido-recovery-verifier = { path = "../../contracts/recovery-verifier" }

@@ -9,6 +9,7 @@ use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
 
 pub mod zk_fixture;
+pub mod zk_recovery_doc_fixture;
 
 pub const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_smart_account.wasm");
