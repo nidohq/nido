@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "network": "Test SDF Network ; September 2015",
+  "signers": [
+    {
+      "id": "admin",
+      "verifier": "CD4IF75DNQJKCT35PAJAQDPW3K337EK6SJZDMQEVLXAH65K7ZVZMLXYN",
+      "key": "045e2a7589b73c19d5341cf12ac0c5f6c45c298d4c20002c794daadafdb83f35f5be23963648d7aaccf5e273803f2fec7a8f0eb4d4845c9b89a972b4a09298b17e"
+    },
+    {
+      "id": "ci",
+      "verifier": "CCYWLNWRYDCAEM2A2EMTWAMIGWESQGUJNDTRRFIOS5CBPRO54EZ27ABG",
+      "key": "1ce6040b0d03232ac6c911b0c375f1a52ebdefff56fd361d13680e23ca578a17"
+    }
+  ],
+  "rules": [
+    {
+      "name": "admin",
+      "scope": { "type": "self-admin" },
+      "principals": { "type": "all", "signers": ["admin"] }
+    },
+    {
+      "name": "ci-publish",
+      "scope": {
+        "type": "contract",
+        "address": "CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL"
+      },
+      "principals": { "type": "all", "signers": ["ci"] },
+      "functions": ["publish", "publish_hash"],
+      "args": [
+        { "index": 1, "pred": { "type": "is-self" } }
+      ],
+      "not-after-ledger": 55000000
+    }
+  ]
+}

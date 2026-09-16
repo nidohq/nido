@@ -21,7 +21,10 @@
   "dependencies": {
     "@nidohq/multisig-policy": "^0.1.0",
     "@nidohq/smart-account": "^0.1.0",
+    "@nidohq/spending-limit-policy": "^0.1.0",
     "@nidohq/zk-recovery": "^0.1.0",
+    "@stellar-registry/perch": "^0.2.0",
+    "@stellar-registry/perch-interpreter": "^0.1.0",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/bip39": "^2.2.0",
