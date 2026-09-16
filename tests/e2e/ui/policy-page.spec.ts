@@ -1,0 +1,150 @@
+import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// UI-only assertions for the policy inspector + doc builder page (the perch
+// policy-doc showcase). No chain, no passkey — like account-ui.spec.ts these
+// rely on the playwright.config webServer serving packages/frontend/dist,
+// plus client-side validation/merging that runs before any network call.
+
+const PORT = Number(process.env.E2E_PORT || 4399);
+const DIST_DIR = join(process.cwd(), 'packages/frontend/dist');
+
+// Deterministic fake C-address (valid strkey) — the page derives the account
+// from the subdomain via contractIdFromHostname().
+const FAKE_CONTRACT_ID = 'CDLZFC2SYJYDZT7K7VJRL2CU7LQV6AFZ2K2QJLY7QV53KIGWXJOANPYY';
+const POLICY_URL = `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/account/policy/`;
+
+const SIGNER_G = 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ';
+const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
+
+test.describe('policy page — UI only (no chain) @fast', () => {
+  test('built HTML contains the inspector + doc sections @fast', () => {
+    const html = readFileSync(join(DIST_DIR, 'account/policy/index.html'), 'utf-8');
+    expect(html).toContain('id="pol-doc-section"');
+    expect(html).toContain('id="pol-doc"');
+    expect(html).toContain('id="pol-rules"');
+    expect(html).toContain('id="pol-builder"');
+  });
+
+  test('page loads without fatal JS errors and mounts the doc builder @fast', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+
+    await page.goto(POLICY_URL, { waitUntil: 'networkidle' });
+
+    // The doc-only builder mounts synchronously; its template form and the
+    // what-changes panel prove the client script booted.
+    await expect(page.locator('input[name="doc-signer"]')).toBeVisible();
+    await expect(page.locator('#pol-doc-prev-diff')).toBeVisible();
+
+    const fatal = errors.filter(
+      (e) => e.includes('Buffer') || e.includes('is not defined') || e.includes('Unexpected token'),
+    );
+    expect(fatal).toEqual([]);
+  });
+
+  test('template validates input before any network call @fast', async ({ page }) => {
+    await page.goto(POLICY_URL, { waitUntil: 'networkidle' });
+    await expect(page.locator('input[name="doc-signer"]')).toBeVisible();
+
+    await page.locator('input[name="doc-signer"]').fill('not-an-address');
+    await page.locator('input[name="doc-contract"]').fill('also-wrong');
+    await page.locator('#pol-doc-submit').click();
+
+    await expect(page.locator('#pol-doc-errors')).toBeVisible();
+    await expect(page.locator('#pol-doc-errors')).toContainText('Session key');
+    await expect(page.locator('#pol-doc-errors')).toContainText('Target contract');
+  });
+
+  test('the admin-keys tab mounts and fails closed without a baseline @fast', async ({ page }) => {
+    await page.goto(POLICY_URL, { waitUntil: 'networkidle' });
+    await expect(page.locator('#pol-tab-admin')).toBeVisible();
+
+    await page.locator('#pol-tab-admin').click();
+    // The add form and the new-passkey/paste choice render; the session
+    // form hides while the admin tab is active.
+    await expect(page.locator('input[name="adm-name"]')).toBeVisible();
+    await expect(page.locator('input[name="adm-source"][value="new-passkey"]')).toBeChecked();
+    await expect(page.locator('input[name="doc-signer"]')).toBeHidden();
+    // Doc-only writes fail closed offline: the what-changes panel carries
+    // the baseline refusal, same as the session tab.
+    await expect(page.locator('#pol-adm-prev-diff')).toContainText('no policy-document surface');
+  });
+
+  test('the builder fails closed when the policy baseline is unreadable @fast', async ({ page }) => {
+    await page.goto(POLICY_URL, { waitUntil: 'networkidle' });
+    await expect(page.locator('input[name="doc-signer"]')).toBeVisible();
+
+    await page.locator('input[name="doc-signer"]').fill(SIGNER_G);
+    await page.locator('input[name="doc-contract"]').fill(TARGET);
+    await page.locator('input[name="doc-functions"]').fill('udpate_message');
+
+    // With no reachable doc surface (offline / fake account) the builder
+    // must refuse to compose an update — apply_doc replaces the whole
+    // document, so composing over an unknown baseline is never safe. The
+    // first-apply preview happy path is covered by the pure diff/merge unit
+    // tests (docDiff.test.ts).
+    await expect(page.locator('#pol-doc-prev-diff')).toContainText('no policy-document surface');
+    await expect(page.locator('#pol-doc-prev-hash')).toHaveText('—');
+  });
+});
+
+test.describe('delegate page (passkey grant, doc-only) — UI only (no chain) @fast', () => {
+  const PUBKEY = '04' + 'b0'.repeat(64);
+
+  test('rejects an invalid session public key @fast', async ({ page }) => {
+    await page.goto(
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate/` +
+        `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&pubkey=nope` +
+        `&duration=24h&return=https%3A%2F%2Fdapp.example%2F`,
+      { waitUntil: 'networkidle' },
+    );
+    await expect(page.locator('#status')).toContainText('Invalid session public key');
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+
+  test('renders a well-formed request but fails closed without the doc baseline @fast', async ({ page }) => {
+    await page.goto(
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate/` +
+        `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&pubkey=${PUBKEY}` +
+        `&duration=24h&return=https%3A%2F%2Fdapp.example%2Fpage`,
+      { waitUntil: 'networkidle' },
+    );
+    await expect(page.locator('#origin-text')).toHaveText('https://dapp.example');
+    await expect(page.locator('#pubkey-text')).toHaveText(PUBKEY);
+    // Doc-only: the passkey grant is a document update too — no baseline,
+    // no grant (this page must never fall back to add_context_rule).
+    await expect(page.locator('#status')).toContainText('cannot accept this request');
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+});
+
+test.describe('delegate-doc page — UI only (no chain) @fast', () => {
+  test('rejects a request with a missing origin @fast', async ({ page }) => {
+    await page.goto(
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate-doc/` +
+        `?target=${TARGET}&signer=${SIGNER_G}&return=https%3A%2F%2Fdapp.example%2F`,
+      { waitUntil: 'networkidle' },
+    );
+    await expect(page.locator('#status')).toContainText('Missing origin');
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+
+  test('renders a well-formed request but fails closed without the doc baseline @fast', async ({ page }) => {
+    await page.goto(
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate-doc/` +
+        `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&signer=${SIGNER_G}` +
+        `&functions=udpate_message&duration=24h&label=status-note-session` +
+        `&return=https%3A%2F%2Fdapp.example%2Fpage`,
+      { waitUntil: 'networkidle' },
+    );
+    await expect(page.locator('#origin-text')).toHaveText('https://dapp.example');
+    await expect(page.locator('#signer-text')).toHaveText(SIGNER_G);
+    await expect(page.locator('#functions-text')).toContainText('udpate_message');
+    // Doc-only writes need the applied-document baseline; with no reachable
+    // doc surface the page must refuse rather than build a blind update.
+    await expect(page.locator('#status')).toContainText('cannot accept this request');
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+});
