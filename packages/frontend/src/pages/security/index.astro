@@ -164,7 +164,7 @@ import Nest from '../../components/Nest.astro';
 </NidoLayout>
 
 <script>
-  import { rpc, Contract, Address, scValToNative } from '@stellar/stellar-sdk';
+  import { rpc, Contract, scValToNative } from '@stellar/stellar-sdk';
   import {
     contractIdFromHostname,
     nameFromHostname,
@@ -179,6 +179,19 @@ import Nest from '../../components/Nest.astro';
     loadCredential,
     buf2base64url,
     deriveSecretM1,
+    checkAccountWiring,
+    buildWireAccountTx,
+    readRecoveryConfig,
+    buildRecoveryConfig,
+    buildEnroll,
+    buildReconfigure,
+    RECOVERY_CONTROLLER_TESTNET_ID,
+    RECOVERY_VERIFIER_TESTNET_ID,
+    NO_BASELINE_DOC_SENTINEL,
+    PENDING_ACTIVITY_POLICY_DEFAULT,
+    DELAY_SECS_DEFAULT,
+    EXPIRY_SECS_DEFAULT,
+    MAX_CANCELS_DEFAULT,
     type Fr,
   } from '@nidohq/passkey-sdk';
   import { generateMnemonic } from '@scure/bip39';
@@ -411,32 +424,102 @@ import Nest from '../../components/Nest.astro';
   }
 
   /**
-   * Retry-safe migration enrollment (T3 review finding): a prior attempt may
-   * have installed the recovery rule (`enroll_zk_recovery`) but failed before
-   * `insert_for` landed (network blip, closed tab, etc). Probe first --
-   * SKIP `enroll_zk_recovery` when already enrolled, and defensively catch
-   * `RecoveryAlreadyEnrolled` too (probe/enroll race), so a retry always
-   * finishes with just the missing `insert_for` rather than erroring out on
-   * an already-installed rule.
+   * Retry-safe Stage 3 ZK enrollment (the ZK/guardian convergence fix — this used
+   * to wire the account directly to the M1 pool via `enroll_zk_recovery`,
+   * a DIFFERENT controller from the guardian-recovery flow's Stage 3
+   * `RecoveryController`, so ZK-first-then-guardian (or the reverse) could
+   * never land on one controller's `Combined` mode). Three steps, each
+   * retry-safe on its own:
+   *
+   *  1. Wiring: `checkAccountWiring` against the Stage 3 controller (same
+   *     precondition check `multisig-recovery.buildInstall` uses) — wires
+   *     a fresh account, refuses accurately for one wired elsewhere, is a
+   *     no-op if already wired.
+   *  2. Stage 3 config: `enroll` (`ZkOnly`) if the account has no config
+   *     yet, or `reconfigure` (-> `Combined`, preserving every other field
+   *     from the existing config exactly) if guardian-only was set up
+   *     FIRST — keyed off `RecoveryController::config(account)`, not just
+   *     `recovery_rule_id()` (which can't distinguish "has some rule" from
+   *     "has a Stage 3 ZkOnly/Combined config").
+   *  3. `insert_for` — the ZK secret's Merkle-leaf registration in the
+   *     SHARED `nido-zk-recovery` pool. UNCHANGED: this never moved: which
+   *     controller governs completion is a separate question from which
+   *     pool the secret's commitment lives in.
+   *
+   * A prior attempt may have completed step 1 or 2 but failed before step
+   * 3 (network blip, closed tab, etc) — each step's own precondition check
+   * (wiring status / config presence) makes a retry skip whatever already
+   * landed, same retry-safety property the original T3 review finding
+   * established.
    */
   async function runZkEnrollment(account: string, secret: Fr, status: HTMLElement): Promise<void> {
-    const alreadyEnrolled = await zkAlreadyEnrolled(account);
-    if (!alreadyEnrolled) {
-      status.textContent = 'Installing the recovery rule…';
+    const readArgs = {
+      account,
+      controllerId: RECOVERY_CONTROLLER_TESTNET_ID,
+      rpcUrl: RPC_URL,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    };
+
+    const wiring = await checkAccountWiring(readArgs);
+    if (wiring.status === 'wired-to-different-controller') {
+      throw new Error(
+        `This account is already wired to a different recovery controller ` +
+          `(${wiring.currentControllerId}). Reaching Stage 3 recovery requires ` +
+          `the account's own real 7-day migration ` +
+          `(initiate_recovery_rule_removal -> execute_recovery_rule_removal) first.`,
+      );
+    }
+    if (wiring.status === 'unwired') {
+      status.textContent = 'Wiring your account to recovery…';
+      const wire = await buildWireAccountTx(readArgs);
       try {
-        const controllerId = await fetchRegistryAddress('zk-recovery');
-        const enrollOp = new Contract(account).call(
-          'enroll_zk_recovery',
-          Address.fromString(controllerId).toScVal(),
-        );
-        await signAndSubmit({ account, operation: enrollOp });
+        await signAndSubmit({ account, operation: wire.operations[0] });
       } catch (e) {
         if (!isRecoveryAlreadyEnrolledError(e)) throw e;
-        // Someone/something already installed it (probe raced, or an
-        // earlier attempt's enroll call actually landed) -- fall through to
-        // insert_for, which is exactly the retry-safe path.
+        // Raced with another wire attempt landing first — fine, continue.
       }
     }
+
+    status.textContent = 'Installing ZK recovery…';
+    const zkPoolId = await fetchRegistryAddress('zk-recovery');
+    const existing = await readRecoveryConfig(readArgs);
+    if (!existing) {
+      const config = buildRecoveryConfig({
+        mode: 'ZkOnly',
+        profile: 'Loss',
+        guardians: [],
+        guardianThreshold: 0,
+        verifier: RECOVERY_VERIFIER_TESTNET_ID,
+        zkPool: zkPoolId,
+        networkPassphrase: NETWORK_PASSPHRASE,
+        baselineDocHash: NO_BASELINE_DOC_SENTINEL,
+        delaySecs: DELAY_SECS_DEFAULT,
+        expirySecs: EXPIRY_SECS_DEFAULT,
+        maxCancels: MAX_CANCELS_DEFAULT,
+        pendingActivityPolicy: PENDING_ACTIVITY_POLICY_DEFAULT,
+      });
+      const built = buildEnroll({ controllerId: RECOVERY_CONTROLLER_TESTNET_ID, account, config });
+      await signAndSubmit({ account, operation: built.operations[0] });
+    } else if (existing.mode.tag === 'GuardianOnly') {
+      // Guardian recovery was set up FIRST -- ADD zk machinery via
+      // reconfigure, preserving every other field from the existing config
+      // exactly (spread, don't rebuild -- reconfigure rejects any change
+      // to baseline/timing/policy/profile).
+      const built = buildReconfigure({
+        controllerId: RECOVERY_CONTROLLER_TESTNET_ID,
+        account,
+        config: {
+          ...existing,
+          mode: { tag: 'Combined', values: undefined },
+          verifier: RECOVERY_VERIFIER_TESTNET_ID,
+          zk_pool: zkPoolId,
+        },
+      });
+      await signAndSubmit({ account, operation: built.operations[0] });
+    }
+    // else: existing.mode is already 'ZkOnly' or 'Combined' -- idempotent,
+    // nothing to enroll/reconfigure; fall through to insert_for.
+
     status.textContent = 'Adding your recovery secret to the pool…';
     const built = await buildMigrationEnrollTx(account, secret);
     await signAndSubmit({ account, operation: built.operations[0] });

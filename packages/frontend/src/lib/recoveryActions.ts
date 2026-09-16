@@ -92,19 +92,26 @@ export async function installRecovery(
   const built = await multisigRecoveryModule.buildInstall({
     account,
     block,
-    factoryAddress: '', // unused in architecture C
+    factoryAddress: '', // unused — Stage 3 controller address is a fixed constant
     rpcUrl: RPC_URL,
     policyAddress: (name) =>
       fetchRegistryAddress(name === 'multisig' ? 'multisig-policy' : name),
     verifierAddress: () => fetchVerifierAddress(account),
   });
 
+  // Stage 3's `buildInstall` returns TWO operations (wire, then enroll) for
+  // an account that isn't yet wired to the controller — Soroban allows one
+  // InvokeHostFunction op per transaction, so submit sequentially, both
+  // self-authed by the same passkey (mirrors recover-v3's separate
+  // Wire/Enroll button clicks, just automated into one flow here).
   const verifierAddr = await fetchVerifierAddress(account);
-  await signAndSubmit({
-    account,
-    operation: built.operations[0],
-    verifierAddress: verifierAddr,
-  });
+  for (const operation of built.operations) {
+    await signAndSubmit({
+      account,
+      operation,
+      verifierAddress: verifierAddr,
+    });
+  }
 
   // Persist overlay metadata only after successful submission.
   for (const f of block.friends) {
