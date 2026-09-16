@@ -16,8 +16,8 @@
 //!     (the order `planRotation` emits) never passes through a bricked state.
 
 use nido_integration_tests::{
-    build_contract_assertion, compute_auth_digest, deploy_multisig_policy, deploy_smart_account,
-    test_key, SmartAccountClient,
+    add_policy_direct, add_signer_direct, build_contract_assertion, compute_auth_digest,
+    deploy_multisig_policy, deploy_smart_account, test_key, SmartAccountClient,
 };
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
@@ -94,7 +94,13 @@ fn deploy_two_signer_account(
     let (client, account_addr, verifier_addr, key1) = deploy_smart_account(env);
     env.mock_all_auths();
     let key2 = test_key(7);
-    client.add_signer(&0u32, &external_signer(env, &verifier_addr, &key2));
+    // DOC-ONLY: staged via the library backdoor (no add_signer entry point).
+    let _ = add_signer_direct(
+        env,
+        &account_addr,
+        0,
+        &external_signer(env, &verifier_addr, &key2),
+    );
     (client, account_addr, verifier_addr, key1, key2)
 }
 
@@ -135,11 +141,11 @@ fn policyless_two_signer_default_rule_accepts_both_signatures() {
 #[test]
 fn threshold_policy_repair_restores_single_signature() {
     let env = Env::default();
-    let (client, account_addr, verifier_addr, key1, key2) = deploy_two_signer_account(&env);
+    let (_client, account_addr, verifier_addr, key1, key2) = deploy_two_signer_account(&env);
 
     let policy_addr = deploy_multisig_policy(&env);
     let install: Val = SimpleThresholdAccountParams { threshold: 1 }.into_val(&env);
-    client.add_policy(&0u32, &policy_addr, &install);
+    let _ = add_policy_direct(&env, &account_addr, 0, &policy_addr, install);
 
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0x89; 32]));
     let s1 = rule0_signature(&env, &verifier_addr, &key1, &hash);
@@ -165,7 +171,7 @@ fn policy_first_rotation_never_bricks() {
     // one signer.
     let policy_addr = deploy_multisig_policy(&env);
     let install: Val = SimpleThresholdAccountParams { threshold: 1 }.into_val(&env);
-    client.add_policy(&0u32, &policy_addr, &install);
+    let _ = add_policy_direct(&env, &account_addr, 0, &policy_addr, install);
 
     let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0x8B; 32]));
     let s1 = rule0_signature(&env, &verifier_addr, &key1, &hash);
@@ -174,7 +180,12 @@ fn policy_first_rotation_never_bricks() {
 
     // Step 2: add the second passkey. The rule is now 1-of-2, not 2-of-2.
     let key2 = test_key(8);
-    client.add_signer(&0u32, &external_signer(&env, &verifier_addr, &key2));
+    let _ = add_signer_direct(
+        &env,
+        &account_addr,
+        0,
+        &external_signer(&env, &verifier_addr, &key2),
+    );
 
     let rule: stellar_accounts::smart_account::ContextRule = client.get_context_rule(&0u32);
     assert_eq!(rule.signers.len(), 2, "rule 0 must now carry both passkeys");

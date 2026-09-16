@@ -31,7 +31,8 @@
 //! unrelated failure.
 
 use nido_integration_tests::{
-    test_key, zk_fixture, SmartAccountClient, SMART_ACCOUNT_WASM, WEBAUTHN_VERIFIER_WASM,
+    install_rule_direct, test_key, zk_fixture, SmartAccountClient, SMART_ACCOUNT_WASM,
+    WEBAUTHN_VERIFIER_WASM,
 };
 use nido_zk_recovery::hash::leaf_inner;
 use nido_zk_recovery::pool::{ZkRecovery, ZkRecoveryClient};
@@ -157,13 +158,31 @@ fn deploy(env: &Env) -> CompletionSetup<'_> {
         controller_addr.clone(),
         ZkRecoveryInstallParams { version: 1 }.into_val(env),
     );
-    let rule = account.add_context_rule(
+    // DOC-ONLY: staged via the library backdoor — this file installs the
+    // recovery rule MANUALLY (vs the constructor path zk_recovery_e2e
+    // proves), which is no longer an entry-point operation.
+    let rule = install_rule_direct(
+        env,
+        &account_addr,
         &ContextRuleType::CallContract(account_addr.clone()),
-        &String::from_str(env, "zk-recovery"),
-        &None,
+        "zk-recovery",
+        None,
         &soroban_sdk::vec![env],
         &policy_map,
     );
+    // DOC-ONLY: the account's `add_context_rule` completion gate reads the
+    // RECOVERY_CONTROLLER bookkeeping the constructor/enroll paths write;
+    // a manually-staged rule must stage that too or the gate can never
+    // recognize the completion window (mirrors
+    // `contract.rs::install_recovery_rule`'s storage writes).
+    env.as_contract(&account_addr, || {
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::symbol_short!("RCVR_ID"), &rule.id);
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::symbol_short!("RCVR_CTRL"), &controller_addr);
+    });
 
     // --- Insert the fixture leaf; cross-check the on-chain root. ---
     let secret = BytesN::from_array(env, &hex32(fixture.secret_hex));
