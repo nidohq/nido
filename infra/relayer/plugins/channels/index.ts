@@ -33,6 +33,5 @@ import { handler as channelsHandler } from '@openzeppelin/relayer-plugin-channel
 * Wrapped plugin handler exported for OpenZeppelin Relayer.
  */
 export async function handler(context: PluginContext): Promise<any> {
-  gateRequest(context);
   return channelsHandler(context);
 }
