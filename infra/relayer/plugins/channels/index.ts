@@ -24,7 +24,7 @@
  * TODO(rate-limit): add a per-IP token bucket keyed on `context.headers['x-forwarded-
  * for']` (or the deployment's actual trusted client-IP header) via `context.kv`,
  * suggested default: 10 requests / 10 minutes per IP across this plugin's routes. Until
- * then, the allowlist above plus the on-chain 5-per-90d cap are the enforced controls.
+* then, the on-chain 5-per-90d cap is the only enforced anti-spam control.
  */
 import type { PluginContext } from '@openzeppelin/relayer-sdk';
 import { xdr } from '@stellar/stellar-sdk';
