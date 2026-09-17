@@ -1,37 +1,8 @@
 /**
  * index.ts
  *
- * Entry point for the nido channels relayer plugin. Wraps the upstream OpenZeppelin
- * `@openzeppelin/relayer-plugin-channels` handler with a host-function allowlist gate
- * (see `allowlist.ts`) so only recovery/genesis contract calls ride the channel path.
- *
- * ## Interception point
- *
- * `PluginContext.params` is `any` (see `@openzeppelin/relayer-sdk`'s `PluginContext`)
- * and is parsed by the upstream handler itself (`validateAndParseRequest` in
- * `@openzeppelin/relayer-plugin-channels/dist/plugin/validation.js`, not part of that
- * package's public API) into one of three request shapes:
- *   - `{ func, auth, skipWait }`     — base64 InvokeHostFunction XDR + auth entries.
- *     This is the shape `packages/passkey-sdk/src/relayer.ts::submitSorobanTransaction`
- *     always sends, and is the primary surface this gate exists for.
- *   - `{ xdr, skipWait }`            — a full (signed or unsigned) transaction XDR,
- *     submit-only path.
- *   - `{ getTransaction }` / `{ management }` — no transaction is submitted; nothing to
- *     gate.
- *
- * Rather than re-implement (or depend on internal, unexported helpers of) the upstream
- * request parser, this wrapper inspects `context.params` directly, BEFORE calling into
- * the upstream `handler`, and decodes the real InvokeHostFunction XDR itself via
- * `@stellar/stellar-sdk` (the same library the upstream plugin uses). This is safe
- * because the allowlist decodes the ACTUAL host function bytes — it never trusts a
- * caller-declared function name — so it can't be fooled by a mismatched `params` shape
- * that the upstream parser would separately reject anyway.
- *
- * For the `{ xdr }` shape we best-effort extract the invoked host function (unwrapping
- * a fee-bump envelope if present) and gate it too, as defense in depth. If the XDR
- * doesn't decode to a single `invokeHostFunction` operation (e.g. a plain classic-op
- * submit-only transaction), there is no Soroban contract call to gate and the request
- * is passed through unchanged — the upstream handler's own validation governs it.
+ * Entry point for the nido channels relayer plugin. Delegates directly to the upstream
+ * OpenZeppelin `@openzeppelin/relayer-plugin-channels` handler.
  *
  * ## Rate limiting
  *
