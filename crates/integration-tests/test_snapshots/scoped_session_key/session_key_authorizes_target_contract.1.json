@@ -58,7 +58,7 @@
                           "address": "CBRIAA73VOIKPZYM5G3LGPF3NGCFXLR3IW22MKEYJAB3QBOMTUTRCASK"
                         },
                         {
-                          "bytes": "04226fafd2dfbc8a1d3b52a921eff92bd6b74cb63f1d997168931c099bb66aeb617e07f34e2bc7912e1f47e010eb003c68c30d4598f75278872c07dade6d5da993"
+                          "bytes": "040b3aaffe9c227c74c6d4c72e522528434099c55c27e2bfb01a81ffd78d93c79658293cf235b92685790f753f704c9a73593a0df463956cb4f67ba9c40bb97760"
                         }
                       ]
                     }
@@ -320,7 +320,7 @@
                           "address": "CBRIAA73VOIKPZYM5G3LGPF3NGCFXLR3IW22MKEYJAB3QBOMTUTRCASK"
                         },
                         {
-                          "bytes": "04226fafd2dfbc8a1d3b52a921eff92bd6b74cb63f1d997168931c099bb66aeb617e07f34e2bc7912e1f47e010eb003c68c30d4598f75278872c07dade6d5da993"
+                          "bytes": "040b3aaffe9c227c74c6d4c72e522528434099c55c27e2bfb01a81ffd78d93c79658293cf235b92685790f753f704c9a73593a0df463956cb4f67ba9c40bb97760"
                         }
                       ]
                     }
@@ -400,7 +400,7 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "189f19fdbdf09ad27a8c3344846aeff0175a115df2a61e73d12c68c0ba1bacde"
+                    "bytes": "66181b42b25183d05b717ef98e231249b0edec4f76852807dc6604b591d10b3e"
                   }
                 ]
               },

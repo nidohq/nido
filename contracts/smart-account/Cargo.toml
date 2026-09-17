@@ -19,7 +19,7 @@ contract = true
 soroban-sdk = { workspace = true }
 stellar-accounts = { workspace = true }
 # scerr composition for the doc-compiler error relay (`doc.rs`'s
-# `NidoSmartAccountError::DocCompiler`) — see that type's doc comment.
+# `ApplyDocError::DocCompiler`) — see that type's doc comment.
 soroban-sdk-tools = { workspace = true }
 # `apply_doc`: no perch crate dependency — the compiler wire types are
 # mirrored from the DEPLOYED artifact's spec in `doc.rs` (see the note
