@@ -30,8 +30,7 @@ import type { PluginContext } from '@openzeppelin/relayer-sdk';
 import { handler as channelsHandler } from '@openzeppelin/relayer-plugin-channels';
 
 /**
- * Wrapped plugin handler exported for OpenZeppelin Relayer. Gates on the allowlist
- * before delegating to the upstream channels handler.
+* Wrapped plugin handler exported for OpenZeppelin Relayer.
  */
 export async function handler(context: PluginContext): Promise<any> {
   gateRequest(context);
