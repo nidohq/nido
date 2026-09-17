@@ -53,10 +53,12 @@
 // than repeated per method.
 #![allow(clippy::used_underscore_binding)]
 
-use nido_integration_tests::{compute_auth_digest, deploy_smart_account, SmartAccountClient};
+use nido_integration_tests::{
+    compute_auth_digest, deploy_smart_account, install_rule_direct, SmartAccountClient,
+};
 use soroban_sdk::auth::{Context, ContractContext};
 use soroban_sdk::{
-    contract, contractimpl, vec, Address, Bytes, Env, IntoVal, Map, String, Symbol, Val, Vec,
+    contract, contractimpl, vec, Address, Bytes, Env, IntoVal, Map, Symbol, Val, Vec,
 };
 use stellar_accounts::policies::Policy;
 use stellar_accounts::smart_account::{
@@ -136,17 +138,22 @@ impl Policy for DenyPolicy {
 /// need. Returns the new rule's ID.
 fn install_zero_signer_policy_rule(
     env: &Env,
-    client: &SmartAccountClient<'_>,
+    _client: &SmartAccountClient<'_>,
     account_addr: &Address,
     policy_addr: &Address,
 ) -> u32 {
     env.mock_all_auths();
     let mut policies: Map<Address, Val> = Map::new(env);
     policies.set(policy_addr.clone(), 0u32.into_val(env));
-    let rule = client.add_context_rule(
+    // DOC-ONLY: staged via the library backdoor (this spike test simulates
+    // the completion SHAPE without a live pending, so the gated entry point
+    // is not usable here).
+    let rule = install_rule_direct(
+        env,
+        account_addr,
         &ContextRuleType::CallContract(account_addr.clone()),
-        &String::from_str(env, "zk-completion"),
-        &None,
+        "zk-completion",
+        None,
         &vec![env], // zero signers — authorization comes solely from the policy
         &policies,
     );

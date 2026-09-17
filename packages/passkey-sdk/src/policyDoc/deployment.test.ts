@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { derivePerchContractId, perchTestnetAddresses, PERCH_STATELESS_REGISTRY_TESTNET, PERCH_WASM_HASHES, TESTNET_PASSPHRASE } from './deployment.js';
 
-// The canonical addresses these pins must derive to, mirrored from perch's
-// CI-guarded crates/integration-tests/tests/testnet_pins.rs. If this test
-// fails after re-pinning PERCH_WASM_HASHES, update these to the new canonical
+// The canonical addresses these pins must derive to — the 0.2.1 generation
+// on the NEW registry (compiler address cross-checked against the
+// perch-doc-compiler-v0.2.1 publish receipt). If this test fails after
+// re-pinning PERCH_WASM_HASHES, update these to the new canonical
 // deployment (and DEPLOYED.md) in the same change.
 const PINNED = {
-  interpreter: 'CBYWKTO6IALDRI7LQM2IBHK7SDKXKO5JTMJCVQVKEI4XMJ724ZVJI2YM',
+  interpreter: 'CDR2OTZIZYTAHEHHH5MBOL6RKLWKIEN5KLPIVOG7FVBVTFET552NTWL2',
+  docCompiler: 'CDWBJPDMBORIZERIFVMTGJFND6ZTAQJIVDNYST4SV33YBQP47BPKOHR6',
 };
 
 describe('perch canonical deployment', () => {
