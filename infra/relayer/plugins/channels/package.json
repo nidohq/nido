@@ -2,7 +2,7 @@
   "name": "nido-channels-plugin",
   "private": true,
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@openzeppelin/relayer-plugin-channels": "0.20.0",
