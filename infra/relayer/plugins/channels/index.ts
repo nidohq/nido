@@ -27,7 +27,6 @@
 * then, the on-chain 5-per-90d cap is the only enforced anti-spam control.
  */
 import type { PluginContext } from '@openzeppelin/relayer-sdk';
-import { xdr } from '@stellar/stellar-sdk';
 import { handler as channelsHandler } from '@openzeppelin/relayer-plugin-channels';
 import { assertAllowedOrReject } from './allowlist';
 
