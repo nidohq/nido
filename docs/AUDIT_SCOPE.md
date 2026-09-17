@@ -39,7 +39,7 @@ proof-system verification), separate from a general Soroban/Rust reviewer.
 
 ### 3. Off-chain infrastructure
 
-- `infra/relayer/` — tx sponsor/submitter (Fly.io), allowlist plugin, key custody.
+- `infra/relayer/` — tx sponsor/submitter (Fly.io), channels plugin, key custody.
 - `infra/pool-indexer/`, `infra/nido-resolver/`, `infra/recovery-relay/` — Cloudflare
   workers.
 
