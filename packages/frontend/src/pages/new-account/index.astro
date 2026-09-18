@@ -317,7 +317,18 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     stripSubdomain,
     deriveSecretM1,
     commitmentForCreation,
-    dummyCommitment,
+    checkAccountWiring,
+    buildWireAccountTx,
+    readRecoveryConfig,
+    buildRecoveryConfig,
+    buildEnroll,
+    RECOVERY_CONTROLLER_TESTNET_ID,
+    RECOVERY_VERIFIER_TESTNET_ID,
+    NO_BASELINE_DOC_SENTINEL,
+    PENDING_ACTIVITY_POLICY_DEFAULT,
+    DELAY_SECS_DEFAULT,
+    EXPIRY_SECS_DEFAULT,
+    MAX_CANCELS_DEFAULT,
     type Fr,
   } from "@nidohq/passkey-sdk";
   // Use the frontend's fetchRegistryAddress (NOT the SDK's) so PUBLIC_ZK_PREVIEW
@@ -344,15 +355,14 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const FRIENDBOT_URL = "https://friendbot.stellar.org";
   const TESTNET_TOPUP_STROOPS = 99_900_000_000n;
 
-  // ZK preview mode (PR-preview builds only, testnet): when set, `deploy()`
-  // below calls the preview factory's `create_account_v2(salt, key,
-  // commitment)` in a single tx for ALL three enrollment choices (uniform tx
-  // shape — on-chain invisibility), instead of the production
-  // `create_account` + separate post-create enrollment. `fetchRegistryAddress`
-  // (policyChainFetch.ts) resolves `factory`/`zk-recovery` to the hardcoded
-  // preview pair while this is set. Production (unset/falsy) is unchanged.
-  // See DEPLOYED.md's "Preview (factory-v2)" section.
-  const ZK_PREVIEW_ENABLED = Boolean(import.meta.env.PUBLIC_ZK_PREVIEW);
+  // ZK preview mode (PR-preview builds only, testnet): PUBLIC_ZK_PREVIEW
+  // makes `fetchRegistryAddress` (policyChainFetch.ts) resolve
+  // `factory`/`zk-recovery` to a hardcoded preview pair instead of the
+  // shared production registry entries — this page needs no branch of its
+  // own for that any more (`create_account`/`create_account_v2` are
+  // behaviorally identical since the factory fix for the ZK/guardian convergence fix;
+  // `deploy()` below always calls `create_account` regardless of mode). See
+  // DEPLOYED.md's "Preview (factory-v2)" section.
 
   // --- State ---
 
@@ -942,15 +952,63 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   // (Task 4), but an unnecessary (and, as configured, build-breaking —
   // rollup's worker output rejects code-split "iife" format) dependency for
   // this page, which only ever needs the commitment, never a proof.
+  /**
+   * Wires + enrolls the just-created account into Stage 3's
+   * `RecoveryController` (`ZkOnly` mode), then registers the ZK secret's
+   * Merkle-leaf commitment in the shared `nido-zk-recovery` pool — same
+   * three-step flow as `security/index.astro::runZkEnrollment`, not the
+   * old direct `enroll_zk_recovery(pool)` call
+   * that used to wire straight to the M1 pool. The account here is brand
+   * new (just deployed this same request, always `recovery_controller:
+   * None` per the factory's own fix — `contracts/factory/src/contract.rs
+   * ::deploy_account_contract`), so `existing` is only checked
+   * defensively for a retry race, not because a prior enrollment is
+   * expected.
+   */
   async function enrollRecoveryPostCreate(account: string, secret: Fr): Promise<void> {
+    const readArgs = {
+      account,
+      controllerId: RECOVERY_CONTROLLER_TESTNET_ID,
+      rpcUrl: RPC_URL,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    };
+
+    const wiring = await checkAccountWiring(readArgs);
+    if (wiring.status === "wired-to-different-controller") {
+      throw new Error(
+        `This account is already wired to a different recovery controller ` +
+          `(${wiring.currentControllerId}).`,
+      );
+    }
+    if (wiring.status === "unwired") {
+      const wire = await buildWireAccountTx(readArgs);
+      await signAndSubmit({ account, operation: wire.operations[0] });
+    }
+
+    const existing = await readRecoveryConfig(readArgs);
+    if (!existing) {
+      const zkPoolId = await fetchRegistryAddress("zk-recovery");
+      const config = buildRecoveryConfig({
+        mode: "ZkOnly",
+        profile: "Loss",
+        guardians: [],
+        guardianThreshold: 0,
+        verifier: RECOVERY_VERIFIER_TESTNET_ID,
+        zkPool: zkPoolId,
+        networkPassphrase: NETWORK_PASSPHRASE,
+        baselineDocHash: NO_BASELINE_DOC_SENTINEL,
+        delaySecs: DELAY_SECS_DEFAULT,
+        expirySecs: EXPIRY_SECS_DEFAULT,
+        maxCancels: MAX_CANCELS_DEFAULT,
+        pendingActivityPolicy: PENDING_ACTIVITY_POLICY_DEFAULT,
+      });
+      const built = buildEnroll({ controllerId: RECOVERY_CONTROLLER_TESTNET_ID, account, config });
+      await signAndSubmit({ account, operation: built.operations[0] });
+    }
+    // else: a retry raced with an earlier attempt's enroll landing — fine,
+    // fall through to insert_for.
+
     const controllerId = await fetchRegistryAddress("zk-recovery");
-
-    const enrollOp = new Contract(account).call(
-      "enroll_zk_recovery",
-      Address.fromString(controllerId).toScVal(),
-    );
-    await signAndSubmit({ account, operation: enrollOp });
-
     const commitment = commitmentForCreation(secret);
     const insertOp = new Contract(controllerId).call(
       "insert_for",
@@ -1062,19 +1120,18 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
       const sourceAccount = await waitForSourceAccount(server, simulationSource);
 
-      // ZK preview mode: fold enrollment into the creation tx itself via
-      // `create_account_v2(salt, key, commitment)` — the SAME call shape for
-      // all three choices (seed/wallet use the real enrollment commitment,
-      // skip uses the deterministic dummy), so the three flows are
-      // indistinguishable on-chain (genesis-insert; see DEPLOYED.md). This
-      // replaces the separate post-create `enroll_zk_recovery`+`insert_for`
-      // step below, which only runs when preview mode is off.
-      const previewCommitment: Uint8Array | null = ZK_PREVIEW_ENABLED
-        ? enrollMethod && enrollMethod !== "skip" && enrollSecret !== null
-          ? commitmentForCreation(enrollSecret)
-          : dummyCommitment(saltBytes())
-        : null;
-
+      // Deploy only — always `create_account`, regardless of preview mode.
+      // `create_account_v2`'s atomic genesis-insert (fold enrollment into
+      // the creation tx via a commitment argument) was removed from the
+      // factory (the ZK/guardian convergence fix —
+      // `contracts/factory/src/contract.rs::deploy_account_contract`'s doc
+      // comment: every account now mints with `recovery_controller: None`,
+      // and `create_account_v2`'s commitment argument is ignored). The two
+      // entry points are now behaviorally identical, so there is no reason
+      // to prefer v2 even in preview mode. `ZK_PREVIEW_ENABLED` still
+      // matters for `fetchRegistryAddress`'s address resolution below
+      // (preview factory/pool pair vs production) — just not for which
+      // factory function this call uses.
       const simTxn = new TransactionBuilder(sourceAccount, {
         fee: "100",
         networkPassphrase: Networks.TESTNET,
@@ -1082,17 +1139,11 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         .addOperation(
           Operation.invokeContractFunction({
             contract: await fetchRegistryAddress("factory"),
-            function: ZK_PREVIEW_ENABLED ? "create_account_v2" : "create_account",
-            args: ZK_PREVIEW_ENABLED
-              ? [
-                  xdr.ScVal.scvBytes(Buffer.from(saltBytes())),
-                  xdr.ScVal.scvBytes(Buffer.from(passkeyPublicKey)),
-                  xdr.ScVal.scvBytes(Buffer.from(previewCommitment!)),
-                ]
-              : [
-                  xdr.ScVal.scvBytes(Buffer.from(saltBytes())),
-                  xdr.ScVal.scvBytes(Buffer.from(passkeyPublicKey)),
-                ],
+            function: "create_account",
+            args: [
+              xdr.ScVal.scvBytes(Buffer.from(saltBytes())),
+              xdr.ScVal.scvBytes(Buffer.from(passkeyPublicKey)),
+            ],
           })
         )
         .setTimeout(0)
@@ -1145,22 +1196,15 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       }
 
       // Recovery enrollment (seed/wallet choices only) — deliberately a
-      // separate, account-authed step here, AFTER the account exists. The
-      // production testnet factory is v1 (no `create_account_v2`), so the
-      // `create_account` call above stays byte-identical for all three
-      // choices; only seed/wallet then run two more account-authed calls
-      // (`enroll_zk_recovery` + the pool's `insert_for`), each its own
-      // WebAuthn ceremony. A failure here does NOT unwind the (already
-      // successful) account creation — it's surfaced softly on the recovery
-      // card instead. Skip performs no enrollment call at all.
-      //
-      // ZK preview mode skips this entirely: `create_account_v2` above already
-      // enrolled the account atomically via genesis-insert (real commitment for
-      // seed/wallet, dummy for skip), so a post-create enroll call here would
-      // be redundant (and `enroll_zk_recovery` would panic
-      // `RecoveryAlreadyEnrolled` since the constructor already installed the
-      // recovery rule).
-      if (!ZK_PREVIEW_ENABLED && enrollMethod && enrollMethod !== "skip" && enrollSecret !== null) {
+      // separate, account-authed step here, AFTER the account exists (the
+      // `create_account` call above always mints unwired now, so this runs
+      // the same way in every mode, preview included): `enrollRecoveryPostCreate`
+      // wires the account to Stage 3, enrolls ZkOnly, then registers the
+      // secret's commitment in the pool via `insert_for` — three account-authed
+      // calls, each its own WebAuthn ceremony. A failure here does NOT unwind
+      // the (already successful) account creation — it's surfaced softly on
+      // the recovery card instead. Skip performs no enrollment call at all.
+      if (enrollMethod && enrollMethod !== "skip" && enrollSecret !== null) {
         try {
           await enrollRecoveryPostCreate(contractId!, enrollSecret);
         } catch (enrollErr) {

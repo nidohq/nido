@@ -9,6 +9,7 @@ use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
 
 pub mod zk_fixture;
+pub mod zk_recovery_doc_fixture;
 
 pub const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_smart_account.wasm");
@@ -90,6 +91,14 @@ trait SmartAccountInterface {
     fn applied_doc_hash(env: soroban_sdk::Env) -> Option<soroban_sdk::BytesN<32>>;
     fn get_applied_doc(env: soroban_sdk::Env) -> Option<soroban_sdk::Bytes>;
     fn doc_rule_ids(env: soroban_sdk::Env) -> soroban_sdk::Vec<u32>;
+    // Variant B (recovery completion, `docs/recovery/stage2-findings.md`): the dedicated recovery
+    // completion entry point (`contracts/smart-account/src/contract.rs`),
+    // compared against Variant A (completing through `apply_doc` above with
+    // no smart-account changes) in `docs/recovery/stage2-findings.md`.
+    fn complete_recovery(
+        env: soroban_sdk::Env,
+        doc_json: soroban_sdk::Bytes,
+    ) -> soroban_sdk::BytesN<32>;
 }
 
 // ---------------------------------------------------------------------
