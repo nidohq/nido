@@ -20,6 +20,9 @@
 #      alias to `unknown` after the imports compiles cleanly and lets the rest
 #      of the bindings type-check.
 #
+#   3. Package `name`. The generator emits a bare package `name` (e.g.
+#      `factory`) without including the npm org package namespace, `@nidohq/<dir>`.
+#
 # Usage:
 #   ./scripts/fix-bindings.sh
 #
@@ -105,6 +108,26 @@ open(path, 'w').write(new)
 print(f"  {path}: inserted Context shim")
 PY
     fi
+done
+
+# --- 3. Enforce the `@nidohq/<dir>` npm scope on package `name` ---------
+
+for pkg in "$BINDINGS_DIR"/*/package.json; do
+    namespaced_pkg="@nidohq/$(basename "$(dirname "$pkg")")"
+    python3 - "$pkg" "$namespaced_pkg" <<'PY'
+import json, sys
+path, namespaced_pkg = sys.argv[1], sys.argv[2]
+p = json.load(open(path))
+if p.get("name") == namespaced_pkg:
+    print(f"  {path}: already {namespaced_pkg}")
+else:
+    old = p.get("name")
+    p["name"] = namespaced_pkg
+    with open(path, "w") as f:
+        json.dump(p, f, indent=2)
+        f.write("\n")
+    print(f"  {path}: {old} → {namespaced_pkg}")
+PY
 done
 
 echo "Done."
