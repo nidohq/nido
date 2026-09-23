@@ -58,7 +58,7 @@
                           "address": "CBRIAA73VOIKPZYM5G3LGPF3NGCFXLR3IW22MKEYJAB3QBOMTUTRCASK"
                         },
                         {
-                          "bytes": "04c3c5348eb4f3d6f95f9d1e5f184005d8a1c24c41bcd6e2273d3eb35a26c584741fac4ae44735399299616ee7e718a989793125c78431b6f1b773a9aeae19b977"
+                          "bytes": "04227084d4f9b86b7a486271d56fe600d9dc342a1a116973fbb2710ba39ce212aa2bbeea6b5c5a72e16af1f1c8bbefb06a868302ed66fda5f00924b6aad8357987"
                         }
                       ]
                     }
@@ -502,7 +502,7 @@
                           "address": "CBRIAA73VOIKPZYM5G3LGPF3NGCFXLR3IW22MKEYJAB3QBOMTUTRCASK"
                         },
                         {
-                          "bytes": "04c3c5348eb4f3d6f95f9d1e5f184005d8a1c24c41bcd6e2273d3eb35a26c584741fac4ae44735399299616ee7e718a989793125c78431b6f1b773a9aeae19b977"
+                          "bytes": "04227084d4f9b86b7a486271d56fe600d9dc342a1a116973fbb2710ba39ce212aa2bbeea6b5c5a72e16af1f1c8bbefb06a868302ed66fda5f00924b6aad8357987"
                         }
                       ]
                     }
@@ -582,13 +582,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "f0a97eee1a3714bf150695cace0f71e204d34e5cc5fb0de5a9a3536b963b1004"
+                    "bytes": "29b4f86e352a8eef973f6b7f3404cdadb156a97631ab61e029179e5dd9ca8ede"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 1
+                "u32": 0
               }
             }
           },
@@ -609,13 +609,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "f1511c6b963ef6694713658cef319f5a5bc68ac262686b6c4dfc8d9c0ee6c7e3"
+                    "bytes": "f0a97eee1a3714bf150695cace0f71e204d34e5cc5fb0de5a9a3536b963b1004"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 0
+                "u32": 1
               }
             }
           },
