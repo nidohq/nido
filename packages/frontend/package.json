@@ -25,7 +25,7 @@
     "@nidohq/stellar-wallets-kit-module": "*",
     "@stellar-registry/perch-interpreter": "^0.1.0",
     "@stellar/stellar-sdk": "^15.1.0",
-    "astro": "^5.3.0",
+    "astro": "^7.2.1",
     "buffer": "^6.0.3"
   },
   "devDependencies": {
