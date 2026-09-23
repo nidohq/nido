@@ -10,8 +10,12 @@ import {
   xdr,
 } from '@stellar/stellar-sdk';
 import type { ChainRule, ChainSigner, PolicyState } from '@nidohq/passkey-sdk';
-import { fetchRegistryAddress as sdkFetchRegistryAddress } from '@nidohq/passkey-sdk';
+import {
+  fetchRegistryAddress as sdkFetchRegistryAddress,
+  RECOVERY_CONTROLLER_TESTNET_ID,
+} from '@nidohq/passkey-sdk';
 import { Client as SpendingLimitPolicyClient } from '@nidohq/spending-limit-policy';
+import { Client as RecoveryControllerClient } from '@nidohq/recovery-controller';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = Networks.TESTNET;
@@ -126,10 +130,48 @@ export async function fetchAllChainRules(account: string): Promise<ChainRule[]> 
   return out;
 }
 
+/** Read the Stage 3 `RecoveryController`'s enrolled config for `account`
+ *  and shape it as `{ guardians, threshold }` — the shape
+ *  `multisigRecovery.ts::fromChain` recognizes as the Stage 3 rule variant
+ *  (distinguished from the legacy multisig-policy shape by `guardians`
+ *  being present at all). Returns `{}` (not thrown) on any read failure or
+ *  when the account isn't enrolled in ANY mode this block can render
+ *  (ZkOnly has no guardians at all) — same tolerant-read convention as the
+ *  rest of this function. */
+async function fetchRecoveryControllerState(account: string): Promise<PolicyState[string]> {
+  try {
+    const client = new RecoveryControllerClient({
+      contractId: RECOVERY_CONTROLLER_TESTNET_ID,
+      networkPassphrase: NETWORK_PASSPHRASE,
+      rpcUrl: RPC_URL,
+    });
+    const tx = await client.config({ account });
+    const config = tx.result; // Option<RecoveryConfig>
+    if (!config) return {};
+    // `Combined` mode ALSO has guardians (in addition to verifier/zk_pool) —
+    // only `ZkOnly` has none. Restricting this to `GuardianOnly` specifically
+    // was a real bug caught live: after a guardian-first-then-ZK-second
+    // `reconfigure` lands the account in `Combined`, the Security page's
+    // "N of M friends can rotate..." block would silently vanish (this
+    // returned `{}`, so `fromChain` saw no guardians and fell through to
+    // "No trusted friends yet.") even though guardians were very much still
+    // configured and the on-chain config was correct.
+    if (config.mode.tag === 'ZkOnly') return {};
+    return {
+      guardians: config.guardians,
+      threshold: config.guardian_threshold,
+    };
+  } catch {
+    return {};
+  }
+}
+
 /** For each policy address attached to a rule, fetch its per-(account,rule)
  *  state. The multisig policy yields `{ threshold }` (via its `get_threshold`
  *  view); the spending-limit policy yields `{ spendingLimit }` (via
- *  `fetchSpendingLimit`). Unknown / unreadable policies yield `{}`. */
+ *  `fetchSpendingLimit`); the Stage 3 recovery controller yields
+ *  `{ guardians, threshold }` (via `fetchRecoveryControllerState`). Unknown /
+ *  unreadable policies yield `{}`. */
 export async function fetchPolicyState(
   account: string,
   rule: ChainRule,
@@ -144,6 +186,10 @@ export async function fetchPolicyState(
       // policy, so an unreadable limit must not make the whole block vanish
       // from the UI (and with it the only Revoke path).
       state[policyAddr] = limit ? { spendingLimit: limit } : { spendingLimit: 'unreadable' };
+      continue;
+    }
+    if (policyAddr === RECOVERY_CONTROLLER_TESTNET_ID) {
+      state[policyAddr] = await fetchRecoveryControllerState(account);
       continue;
     }
     try {

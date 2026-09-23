@@ -1120,6 +1120,9 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "nido-preauth-sweep-policy",
+ "nido-recovery-controller",
+ "nido-recovery-doc-completion",
+ "nido-recovery-verifier",
  "nido-smart-account",
  "nido-zk-recovery",
  "p256",
@@ -1156,6 +1159,32 @@ version = "0.1.0"
 dependencies = [
  "soroban-sdk",
  "stellar-accounts",
+]
+
+[[package]]
+name = "nido-recovery-controller"
+version = "0.1.0"
+dependencies = [
+ "soroban-poseidon",
+ "soroban-sdk",
+ "soroban-sdk-tools",
+ "stellar-accounts",
+]
+
+[[package]]
+name = "nido-recovery-doc-completion"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "stellar-accounts",
+]
+
+[[package]]
+name = "nido-recovery-verifier"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "ultrahonk_soroban_verifier",
 ]
 
 [[package]]

@@ -89,14 +89,11 @@ mod registry {
 /// symbols — so it does not collide. Mirrors the exact pattern
 /// `contracts/smart-account/src/contract.rs`'s `RecoveryControllerClient`
 /// uses for the same reason (M2 Task 4).
-mod zk_recovery {
-    use soroban_sdk::*;
-    #[contractclient(name = "ZkRecoveryClient")]
-    pub trait ZkRecoveryInterface {
-        fn insert(e: Env, account: Address, commitment: BytesN<32>) -> u32;
-    }
-}
-
+///
+/// The `zk_recovery::ZkRecoveryClient` local stub this comment originally
+/// described was removed alongside the genesis-insert it existed for
+/// (`deploy_account_contract`'s doc comment) — this paragraph is kept only
+/// to explain the pattern for whatever local client stub is added next.
 #[contractstorage]
 pub struct Config {
     account: InstanceItem<BytesN<32>>,
@@ -123,9 +120,11 @@ pub struct Config {
     /// Admin-pinned address for the `"zk-recovery"` registry name (plan B2).
     /// Same semantics as `pinned_verifier`: `None` = unpinned; once set,
     /// `resolve("zk-recovery")` returns this address directly (registry
-    /// bypassed), so the recovery controller installed into every new account
-    /// (and handed the genesis `insert`) is fixed to the pin and cannot be
-    /// swapped -- or knocked out -- by a registry repoint.
+    /// bypassed). NOT consulted at account-creation time any more
+    /// (`deploy_account_contract`'s doc comment — no controller is installed
+    /// at construction) — this pin now only affects the (currently unused)
+    /// `resolve_recovery` read path, kept for whatever future caller needs
+    /// "the pinned zk-recovery pool address" without touching the registry.
     pinned_zk_recovery: InstanceItem<Address>,
 }
 
@@ -234,42 +233,55 @@ impl Contract {
         Config::get_pinned_zk_recovery(e)
     }
 
-    /// Deploy an account contract and add its initial passkey signer. Legacy
-    /// entry point, kept for existing callers -- routes through the exact
-    /// same deploy+genesis-insert path as `create_account_v2`, using a
-    /// DETERMINISTIC DUMMY commitment (`dummy_commitment`) instead of a real
-    /// one. This is the anonymity-set property (M2 Task 5): every account
-    /// this factory creates gets exactly one genesis leaf inserted into the
-    /// recovery pool, atomically with its own deployment, whether or not its
-    /// owner actually enrolled in ZK recovery -- so an observer of the pool
-    /// (or of the factory's transaction shapes) cannot distinguish an
-    /// enrolled account from a non-enrolled one.
+    /// Deploy an account contract and add its initial passkey signer.
+    /// Mints with `recovery_controller: None` (the ZK/guardian convergence fix —
+    /// see `deploy_account_contract`'s doc comment for why the previous
+    /// unconditional M1 genesis-wiring was removed). Recovery is opt-in
+    /// only, via the account's own `enroll_zk_recovery` /
+    /// `RecoveryController::enroll`, exactly matching the "No
+    /// factory/registry wiring" limit `contracts/recovery-controller`
+    /// already documented as the intended path.
     // `#[contractimpl]` entry point; SDK ABI requires owned `BytesN<65>`.
     #[allow(clippy::needless_pass_by_value)]
     pub fn create_account(e: &Env, salt: &BytesN<32>, key: BytesN<65>) -> Address {
-        let dummy = Self::dummy_commitment(e, salt);
-        Self::deploy_and_insert(e, salt, key.to_bytes(), &dummy)
+        Self::deploy_account_contract(e, salt, key.to_bytes())
     }
 
-    /// Deploy an account contract, add its initial passkey signer, AND
-    /// insert `commitment` as its genesis leaf in the recovery pool --
-    /// atomically with the deploy, in the same transaction (M2 Task 5). If
-    /// the insert fails (pool unresolvable, tree full, wrong `commitment`,
-    /// ...) the whole call reverts, so there is never an account without a
-    /// leaf, nor a leaf without an account. Returns the deployed account's
-    /// address, which is always `get_c_address(salt)` -- the deterministic
-    /// address depends only on the deployer (this factory) and `salt`, never
-    /// on the constructor args or the genesis insert added here.
+    /// Deploy an account contract, add its initial passkey signer. Same
+    /// unwired-at-mint behavior as `create_account` (see that fn's doc
+    /// comment) — kept as a SEPARATE entry point only for ABI compatibility
+    /// with existing callers of the v1/v2 pair, not because it still does
+    /// anything `create_account` doesn't.
+    ///
+    /// `commitment` IS NOW IGNORED: this used to be the real ZK-recovery
+    /// Merkle-leaf commitment `create_account_v2` inserted into the
+    /// `nido-zk-recovery` pool atomically with deploy (M2 Task 5). That
+    /// genesis-insert was removed alongside the recovery-controller wiring
+    /// — there is no controller installed at construction for an insert to
+    /// be "for" anymore, and a leaf in a pool the account isn't wired to
+    /// would be a dangling, useless artifact. A caller that wants real ZK
+    /// enrollment must do it post-creation through the account's own
+    /// `enroll_zk_recovery`/`RecoveryController::enroll` +
+    /// `ZkRecoveryClient::insert_for`, same as guardian recovery's install
+    /// flow (`packages/frontend/src/pages/security/index.astro
+    /// ::runZkEnrollment`) — not through this parameter. A future cleanup
+    /// could drop this entry point/parameter entirely; kept for now as the
+    /// smaller, more reversible change (no caller-visible ABI break).
     // `#[contractimpl]` entry point; SDK ABI requires owned `BytesN<65>`/
-    // `BytesN<32>`.
-    #[allow(clippy::needless_pass_by_value)]
+    // `BytesN<32>`. Kept named `commitment` (not `_commitment`) even though
+    // unused: the contract spec/generated-bindings argument NAME is part of
+    // this entry point's public ABI (`packages/contract-bindings/factory`'s
+    // TS client calls it as `{salt, key, commitment}`) — renaming it would
+    // be a real, avoidable breaking change on top of the value now being
+    // ignored.
+    #[allow(clippy::needless_pass_by_value, unused_variables)]
     pub fn create_account_v2(
         e: &Env,
         salt: &BytesN<32>,
         key: BytesN<65>,
         commitment: BytesN<32>,
     ) -> Address {
-        Self::deploy_and_insert(e, salt, key.to_bytes(), &commitment)
+        Self::deploy_account_contract(e, salt, key.to_bytes())
     }
 
     pub fn get_c_address(e: &Env, salt: &BytesN<32>) -> Address {
@@ -350,13 +362,15 @@ impl Contract {
         }
     }
 
-    /// Resolves the recovery-pool/controller address for newly-deployed
-    /// accounts: the admin-set override (`set_recovery_pool`) if one has
-    /// been set, otherwise the registry-resolved `"zk-recovery"` entry --
-    /// the default, unchanged production path. Since no factory has ever
-    /// called `set_recovery_pool` in production, `Config::get_recovery_pool`
-    /// is always `None` there, so this is behaviorally identical to the old
-    /// `Self::resolve(e, "zk-recovery")` call it replaces.
+    /// Resolves the recovery-pool/controller address the admin-set override
+    /// (`set_recovery_pool`) points at, if one has been set. NOT called by
+    /// `deploy_account_contract` any more (see that fn's doc comment) —
+    /// retained only as the read side of `set_recovery_pool`/`recovery_pool`
+    /// (still real, admin-gated config storage; simply no longer consulted
+    /// at account-creation time). A future caller that needs "the pool a
+    /// preview/test instance overrode" (e.g. an operational script) can
+    /// still read it here.
+    #[allow(dead_code)]
     fn resolve_recovery(e: &Env) -> Address {
         if let Some(pool) = Config::get_recovery_pool(e) {
             return pool;
@@ -364,50 +378,43 @@ impl Contract {
         Self::resolve(e, "zk-recovery")
     }
 
-    /// Deploys the account contract at `get_c_address(salt)`, installing the
-    /// resolved recovery controller as its recovery rule. Returns
-    /// `(account_address, recovery_controller_address)` so callers can
-    /// immediately cross-call the controller's genesis `insert` (M2 Task 5)
-    /// without re-resolving "zk-recovery" a second time.
-    fn deploy_account_contract(e: &Env, salt: &BytesN<32>, key: Bytes) -> (Address, Address) {
+    /// Deploys the account contract at `get_c_address(salt)` with
+    /// `recovery_controller: None` — the ZK/guardian convergence fix: this
+    /// factory used to install the M1 `nido-zk-recovery` controller as
+    /// EVERY new account's recovery rule unconditionally (`resolve_recovery`
+    /// + a genesis Merkle-leaf `insert`, M2 Task 5), which meant no fresh
+    /// account could ever reach the newer `RecoveryController`
+    /// (`contracts/recovery-controller`) without first running the
+    /// account's own real 7-day `initiate_recovery_rule_removal` ->
+    /// `execute_recovery_rule_removal` migration — confirmed live via a
+    /// testnet probe (`tests/e2e/testnet/recover-v3-wiring.testnet.spec.ts`)
+    /// before this fix. Recovery (guardian, ZK, or both, via
+    /// `RecoveryController`) is now opt-in only, exactly like
+    /// `contracts/recovery-controller`'s own "No
+    /// factory/registry wiring" limit already described as the intended
+    /// path: `enroll_zk_recovery`/`RecoveryController::enroll` (or
+    /// `::reconfigure` for the second evidence factor), self-authed,
+    /// visible on-chain, driven by the wallet's `runZkEnrollment` /
+    /// `multisig-recovery.buildInstall`.
+    ///
+    /// This ALSO removes the M2-era atomic genesis-Merkle-leaf-insert
+    /// (`ZkRecoveryClient::insert`) entirely — there is no controller
+    /// installed at construction for an insert to be "for" any more, and
+    /// the anonymity-set property that insert existed for (every account
+    /// indistinguishable in the M1 pool, enrolled or not) only mattered
+    /// while every account WAS unconditionally wired to that one pool.
+    /// `create_account_v2`'s `commitment` parameter is consequently unused
+    /// — see that entry point's doc comment.
+    fn deploy_account_contract(e: &Env, salt: &BytesN<32>, key: Bytes) -> Address {
         let verifier_addr = Self::resolve(e, "verifier");
         let signer = Signer::External(verifier_addr, key);
         let signers = soroban_sdk::vec![e, signer];
         let policies: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val> =
             soroban_sdk::Map::new(e);
-        // Production deploys always install the M1 zk-recovery controller as
-        // the account's recovery rule policy (uniform across the anonymity
-        // set) — resolved via `resolve_recovery`, which defaults to the same
-        // cached registry lookup as "verifier" unless a preview instance has
-        // set an override via `set_recovery_pool`.
-        let recovery_controller = Self::resolve_recovery(e);
-        let account = Self::deployer(e, salt).deploy_v2(
+        Self::deployer(e, salt).deploy_v2(
             Self::account_wasm_hash(e),
-            (&signers, &policies, &Some(recovery_controller.clone())),
-        );
-        (account, recovery_controller)
-    }
-
-    /// Shared tail of `create_account`/`create_account_v2` (M2 Task 5):
-    /// deploy the account contract, then -- in the SAME transaction --
-    /// cross-call the resolved recovery controller's genesis `insert` to
-    /// bind `commitment` to the freshly deployed account. `insert` requires
-    /// the pool's configured `factory` to authorize; since this factory
-    /// contract is the direct caller, that auth is satisfied via "invoker
-    /// contract auth" (no signature needed) as long as the pool was
-    /// configured with THIS factory's address. If the insert fails for any
-    /// reason (wrong factory configured, non-canonical commitment, tree
-    /// full, ...) the whole call -- including the just-deployed account --
-    /// reverts atomically: there is never an account without a leaf.
-    fn deploy_and_insert(
-        e: &Env,
-        salt: &BytesN<32>,
-        key: Bytes,
-        commitment: &BytesN<32>,
-    ) -> Address {
-        let (account, controller) = Self::deploy_account_contract(e, salt, key);
-        zk_recovery::ZkRecoveryClient::new(e, &controller).insert(&account, commitment);
-        account
+            (&signers, &policies, &Option::<Address>::None),
+        )
     }
 
     /// The BN254 scalar field order `r`, identical to
@@ -486,9 +493,9 @@ mod test {
 
     use super::*;
     use soroban_sdk::auth::Context;
-    use soroban_sdk::testutils::{Address as _, Events as _};
+    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{
-        contract, contractclient, contractimpl, contracttype, Env, Event, IntoVal, TryFromVal,
+        contract, contractclient, contractimpl, contracttype, Env, IntoVal, TryFromVal,
     };
     use stellar_accounts::policies::Policy;
     use stellar_accounts::smart_account::ContextRule;
@@ -1001,12 +1008,12 @@ mod test {
     /// Deploys a factory + a REAL `nido-zk-recovery` pool/controller,
     /// registered under `"zk-recovery"`, alongside a trivial `"verifier"`
     /// stub (`StubController`, reused purely for its
-    /// `batch_canonicalize_key`). The pool's configured `factory` authority
-    /// is the deployed factory's own address UNLESS `wrong_factory` is
-    /// `true`, in which case it's an unrelated generated address -- used by
-    /// the atomicity test to prove `insert`'s factory-auth check actually
-    /// gates the genesis insert (rather than everything just being mocked
-    /// through). No `mock_all_auths()`/`mock_auths` is used anywhere in this
+    /// `batch_canonicalize_key`). The pool is no longer cross-called by
+    /// `create_account`/`create_account_v2` at all (the ZK/guardian convergence fix —
+    /// see `deploy_account_contract`'s doc comment); it's kept registered
+    /// here only so `resolve(e, "zk-recovery")`/`resolve_recovery`-adjacent
+    /// tests (the admin-override getter/setter pair) still have a real
+    /// address to exercise. No `mock_all_auths()`/`mock_auths` is used anywhere in this
     /// block of tests: every real auth check along the deploy+insert path
     /// (the recovery policy's `install`, the pool's genesis `insert`) is
     /// satisfied purely via "invoker contract auth" (the direct caller IS
@@ -1016,26 +1023,21 @@ mod test {
     /// mocked-through) in the failure path.
     ///
     /// Returns `(factory_addr, pool_addr)`.
-    fn setup_factory_and_pool(env: &Env, wrong_factory: bool) -> (Address, Address) {
+    fn setup_factory_and_pool(env: &Env) -> (Address, Address) {
         let admin = Address::generate(env);
         let factory_addr = env.register(Contract, (admin,));
 
-        let configured_factory = if wrong_factory {
-            Address::generate(env)
-        } else {
-            factory_addr.clone()
-        };
-
         // The pool's OWN "verifier" (for real recovery proofs, unrelated to
         // the smart-account's passkey verifier below) and webauthn verifier
-        // are never exercised by `insert` -- placeholder addresses suffice.
+        // are never exercised now that nothing cross-calls `insert` --
+        // placeholder addresses suffice.
         let pool_proof_verifier = Address::generate(env);
         let webauthn_verifier = Address::generate(env);
         let network_passphrase = Bytes::from_slice(env, b"Test SDF Network ; September 2015");
         let pool_addr = env.register(
             nido_zk_recovery::pool::ZkRecovery,
             (
-                configured_factory,
+                factory_addr.clone(),
                 pool_proof_verifier,
                 3u64 * 24 * 3600,
                 7u64 * 24 * 3600,
@@ -1069,13 +1071,16 @@ mod test {
         BytesN::from_array(env, &bytes)
     }
 
-    /// `create_account_v2` deploys to `get_c_address(salt)`, and -- in the
-    /// SAME transaction -- inserts `wrap_leaf(account, commitment)` as the
-    /// pool's genesis leaf (index 0, `next_index` now `1`).
+    /// `create_account_v2` deploys to `get_c_address(salt)`, mints with
+    /// `recovery_controller: None`, and its `commitment` argument is
+    /// IGNORED — no pool cross-call happens at all any more (see
+    /// `deploy_account_contract`'s doc comment). A real
+    /// commitment argument must not accidentally cause a leaf to appear
+    /// anywhere in the registry-resolved pool.
     #[test]
     fn create_account_v2_inserts_real_genesis_leaf_at_deterministic_address() {
         let env = Env::default();
-        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env);
         let client = ContractClient::new(&env, &factory_addr);
         let pool_client = nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &pool_addr);
 
@@ -1086,31 +1091,23 @@ mod test {
         let predicted = client.get_c_address(&salt);
         let account = client.create_account_v2(&salt, &key, &commitment);
 
-        // Captured immediately after the call under test -- `Env::events()`
-        // reflects only the MOST RECENT top-level invocation, so any
-        // further client calls (`next_index`, `is_known_root`, ...) below
-        // would otherwise clobber it before we get to inspect it.
-        let pool_events = env.events().all().filter_by_contract(&pool_addr);
-
         assert_eq!(
             account, predicted,
-            "create_account_v2 must deploy to get_c_address(salt) -- the commitment/insert \
-             must not affect the deployer-derived address"
+            "create_account_v2 must deploy to get_c_address(salt) -- the ignored \
+             commitment argument must not affect the deployer-derived address"
         );
-        assert_eq!(pool_client.next_index(), 1);
-
-        let expected_leaf = nido_zk_recovery::hash::wrap_leaf(&env, &account, &commitment);
-        let expected_event = nido_zk_recovery::types::LeafInserted {
-            index: &0,
-            leaf: &expected_leaf,
-        };
+        let probe = ProbeClient::new(&env, &account);
         assert_eq!(
-            pool_events,
-            [expected_event.to_xdr(&env, &pool_addr)],
-            "create_account_v2 must insert wrap_leaf(account, real commitment) as the \
-             genesis leaf"
+            probe.recovery_rule_id(),
+            None,
+            "create_account_v2 must mint unwired -- the commitment argument no longer \
+             installs any recovery controller/rule"
         );
-        assert!(pool_client.is_known_root(&pool_client.current_root()));
+        assert_eq!(
+            pool_client.next_index(),
+            0,
+            "the ignored commitment must not insert a leaf into the registry-resolved pool"
+        );
     }
 
     /// Salt-reuse / double-deploy: a salt deterministically fixes the account
@@ -1119,23 +1116,18 @@ mod test {
     /// already-occupied address and the host rejects the re-deploy. This is
     /// the anti-collision invariant -- a salt can only ever mint ONE account,
     /// so an attacker cannot re-deploy over (and thus hijack / reset) an
-    /// existing account by replaying its salt. The first account's genesis
-    /// leaf must also remain the pool's only leaf (the rejected second call is
-    /// atomic: no extra leaf inserted).
+    /// existing account by replaying its salt.
     #[test]
     fn create_account_v2_twice_with_same_salt_is_rejected() {
         let env = Env::default();
-        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, _pool_addr) = setup_factory_and_pool(&env);
         let client = ContractClient::new(&env, &factory_addr);
-        let pool_client = nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &pool_addr);
 
         let salt = BytesN::from_array(&env, &[7; 32]);
         let key = BytesN::from_array(&env, &[4; 65]);
         let commitment = small_commitment(&env, 13);
 
-        // First deploy succeeds and inserts the genesis leaf (index 0).
         let account = client.create_account_v2(&salt, &key, &commitment);
-        assert_eq!(pool_client.next_index(), 1);
 
         // Second deploy at the SAME salt -> same deterministic address ->
         // host rejects the re-deploy. A different key/commitment is used to
@@ -1148,13 +1140,6 @@ mod test {
             "re-deploying an account at an already-used salt must be rejected"
         );
 
-        // Atomicity: the rejected second call inserted no extra leaf, and the
-        // original account is still the one resolvable at that salt.
-        assert_eq!(
-            pool_client.next_index(),
-            1,
-            "the rejected re-deploy must not have inserted a second genesis leaf"
-        );
         assert_eq!(
             client.get_c_address(&salt),
             account,
@@ -1162,88 +1147,16 @@ mod test {
         );
     }
 
-    /// Deploys a second REAL `nido-zk-recovery` pool, configured with
-    /// `factory_addr` as its authority (same as the registry-registered pool
-    /// `setup_factory_and_pool` sets up), but registered NOWHERE in the
-    /// registry -- reachable only via `set_recovery_pool`'s override. Used to
-    /// prove `resolve_recovery` prefers an admin-set override over the
-    /// registry-resolved `"zk-recovery"` entry.
-    fn deploy_unregistered_pool(env: &Env, factory_addr: &Address) -> Address {
-        let pool_proof_verifier = Address::generate(env);
-        let webauthn_verifier = Address::generate(env);
-        let network_passphrase = Bytes::from_slice(env, b"Test SDF Network ; September 2015");
-        env.register(
-            nido_zk_recovery::pool::ZkRecovery,
-            (
-                factory_addr.clone(),
-                pool_proof_verifier,
-                3u64 * 24 * 3600,
-                7u64 * 24 * 3600,
-                3u32,
-                24u64 * 3600,
-                network_passphrase,
-                webauthn_verifier,
-                Address::generate(env), // pool upgrade admin (unused by this test)
-            ),
-        )
-    }
-
-    /// With an admin-set override in place, `create_account_v2` cross-calls
-    /// the OVERRIDE pool's genesis `insert` -- NOT the registry-resolved
-    /// `"zk-recovery"` pool `setup_factory_and_pool` registers. This is the
-    /// property the whole override exists for: a preview factory instance
-    /// can be pointed at an isolated preview pool without touching the
-    /// shared production registry mapping.
-    #[test]
-    fn create_account_v2_uses_recovery_pool_override_when_set() {
-        let env = Env::default();
-        let (factory_addr, registry_pool_addr) = setup_factory_and_pool(&env, false);
-        let client = ContractClient::new(&env, &factory_addr);
-
-        let override_pool_addr = deploy_unregistered_pool(&env, &factory_addr);
-
-        // Admin sets the override. `mock_all_auths` is used only for this
-        // call (auth details are covered by the dedicated
-        // `set_recovery_pool_requires_admin_auth` test above); the
-        // subsequent deploy+insert still succeeds via plain invoker-contract
-        // auth, exactly as in the other pool tests in this section.
-        env.mock_all_auths();
-        client.set_recovery_pool(&override_pool_addr);
-        assert_eq!(client.recovery_pool(), Some(override_pool_addr.clone()));
-
-        let salt = BytesN::from_array(&env, &[31; 32]);
-        let key = BytesN::from_array(&env, &[9; 65]);
-        let commitment = small_commitment(&env, 7);
-
-        client.create_account_v2(&salt, &key, &commitment);
-
-        let override_pool_client =
-            nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &override_pool_addr);
-        let registry_pool_client =
-            nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &registry_pool_addr);
-
-        assert_eq!(
-            override_pool_client.next_index(),
-            1,
-            "the override pool must receive the genesis insert"
-        );
-        assert_eq!(
-            registry_pool_client.next_index(),
-            0,
-            "the registry-resolved zk-recovery pool must NOT receive the insert once an \
-             override is set"
-        );
-    }
-
-    /// Legacy `create_account` routes through the exact same deploy+insert
-    /// path, but with the deterministic DUMMY commitment
-    /// (`sha256("nido-zk-dummy" || salt) mod r`) instead of a caller-supplied
-    /// real one. Same shape: deploys to `get_c_address(salt)`, inserts
-    /// exactly one genesis leaf.
+    /// Legacy `create_account` deploys to `get_c_address(salt)` and mints
+    /// with `recovery_controller: None` — the deterministic DUMMY-commitment
+    /// genesis-insert this used to perform (M2 Task 5) was removed alongside
+    /// the recovery-controller wiring (the ZK/guardian convergence fix; see
+    /// `deploy_account_contract`'s doc comment). `dummy_commitment` itself
+    /// is still exercised as a pure function by the tests below it.
     #[test]
     fn create_account_inserts_dummy_genesis_leaf_at_deterministic_address() {
         let env = Env::default();
-        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env);
         let client = ContractClient::new(&env, &factory_addr);
         let pool_client = nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &pool_addr);
 
@@ -1253,36 +1166,20 @@ mod test {
         let predicted = client.get_c_address(&salt);
         let account = client.create_account(&salt, &key);
 
-        // Captured immediately -- see the note in the `create_account_v2`
-        // test above on why this must happen before any further client call.
-        let pool_events = env.events().all().filter_by_contract(&pool_addr);
-
         assert_eq!(
             account, predicted,
             "legacy create_account must still deploy to get_c_address(salt)"
         );
-        assert_eq!(pool_client.next_index(), 1);
-
-        let dummy = Contract::dummy_commitment(&env, &salt);
-        let field_order = U256::from_be_bytes(
-            &env,
-            &Bytes::from_array(&env, &Contract::DUMMY_FIELD_ORDER_BE),
-        );
-        let dummy_value = U256::from_be_bytes(&env, &Bytes::from_array(&env, &dummy.to_array()));
-        assert!(
-            dummy_value < field_order,
-            "dummy commitment must be canonical (< r), or the real pool would reject it"
-        );
-
-        let expected_leaf = nido_zk_recovery::hash::wrap_leaf(&env, &account, &dummy);
-        let expected_event = nido_zk_recovery::types::LeafInserted {
-            index: &0,
-            leaf: &expected_leaf,
-        };
+        let probe = ProbeClient::new(&env, &account);
         assert_eq!(
-            pool_events,
-            [expected_event.to_xdr(&env, &pool_addr)],
-            "legacy create_account must insert wrap_leaf(account, dummy) as the genesis leaf"
+            probe.recovery_rule_id(),
+            None,
+            "create_account must mint unwired -- no recovery controller/rule installed"
+        );
+        assert_eq!(
+            pool_client.next_index(),
+            0,
+            "no genesis leaf is inserted any more"
         );
     }
 
@@ -1321,17 +1218,17 @@ mod test {
         }
     }
 
-    /// Byte-shape uniformity (M2 Task 5's whole point): `create_account`
-    /// (dummy) and `create_account_v2` (real) both deploy an account and
-    /// insert EXACTLY one genesis leaf via the identical `wrap_leaf(account,
-    /// commitment)` construction -- the only thing that differs between the
-    /// two calls is the 32-byte commitment value itself, not the shape of
-    /// what happens on-chain (one deploy, one insert, one `LeafInserted`
-    /// event each).
+    /// Byte-shape uniformity, post pool-removal: `create_account`
+    /// and `create_account_v2` are now fully uniform, not just "uniform
+    /// except commitment" — since neither one wires a recovery controller
+    /// or touches the pool at all any more (`deploy_account_contract`'s doc
+    /// comment), `create_account_v2`'s `commitment` argument makes NO
+    /// observable difference whatsoever. Both mint unwired, zero pool
+    /// events, identical context-rule shape.
     #[test]
     fn create_account_and_create_account_v2_are_uniform_except_commitment() {
         let env = Env::default();
-        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env);
         let client = ContractClient::new(&env, &factory_addr);
 
         let salt_dummy = BytesN::from_array(&env, &[21; 32]);
@@ -1340,39 +1237,23 @@ mod test {
         let key_real = BytesN::from_array(&env, &[8; 65]);
         let real_commitment = small_commitment(&env, 99);
 
-        // Each call's events are captured immediately, before the next
-        // top-level client call -- `Env::events()` reflects only the most
-        // recent invocation (see the note in the tests above).
         let dummy_account = client.create_account(&salt_dummy, &key_dummy);
-        let dummy_events = env.events().all().filter_by_contract(&pool_addr);
-
         let real_account = client.create_account_v2(&salt_real, &key_real, &real_commitment);
-        let real_events = env.events().all().filter_by_contract(&pool_addr);
 
-        let dummy_commitment = Contract::dummy_commitment(&env, &salt_dummy);
-        let dummy_leaf = nido_zk_recovery::hash::wrap_leaf(&env, &dummy_account, &dummy_commitment);
-        let real_leaf = nido_zk_recovery::hash::wrap_leaf(&env, &real_account, &real_commitment);
-
+        let dummy_probe = ProbeClient::new(&env, &dummy_account);
+        let real_probe = ProbeClient::new(&env, &real_account);
+        assert_eq!(dummy_probe.recovery_rule_id(), None);
         assert_eq!(
-            dummy_events,
-            [nido_zk_recovery::types::LeafInserted {
-                index: &0,
-                leaf: &dummy_leaf,
-            }
-            .to_xdr(&env, &pool_addr)],
-            "create_account (dummy) must emit exactly one LeafInserted event, shaped \
-             identically to create_account_v2's"
+            real_probe.recovery_rule_id(),
+            None,
+            "the real commitment argument must not install any recovery rule either"
         );
+
+        let pool_client = nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &pool_addr);
         assert_eq!(
-            real_events,
-            [nido_zk_recovery::types::LeafInserted {
-                index: &1,
-                leaf: &real_leaf,
-            }
-            .to_xdr(&env, &pool_addr)],
-            "create_account_v2 (real) must emit exactly one LeafInserted event, shaped \
-             identically to create_account's -- the only difference between the two \
-             calls' effect on the pool is the commitment byte value inside `leaf`"
+            pool_client.next_index(),
+            0,
+            "neither call may insert anything into the pool any more"
         );
     }
 
@@ -1417,7 +1298,7 @@ mod test {
     #[test]
     fn dummy_field_order_matches_pool_behavior() {
         let env = Env::default();
-        let (_factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let (_factory_addr, pool_addr) = setup_factory_and_pool(&env);
         env.mock_all_auths();
         let pool_client = nido_zk_recovery::pool::ZkRecoveryClient::new(&env, &pool_addr);
         let account = Address::generate(&env);
@@ -1443,38 +1324,6 @@ mod test {
         );
     }
 
-    /// Atomicity: if the pool is configured with a DIFFERENT factory than
-    /// the one actually calling it, the genesis `insert`'s
-    /// `config.factory.require_auth()` fails (no invoker-auth match, no
-    /// mocked signature) -- and because that failure happens inside the
-    /// SAME top-level `create_account` invocation as the account deploy,
-    /// the WHOLE call reverts: no account is left behind at
-    /// `get_c_address(salt)` either.
-    #[test]
-    fn create_account_reverts_atomically_when_pool_factory_mismatched() {
-        let env = Env::default();
-        let (factory_addr, _pool_addr) = setup_factory_and_pool(&env, true);
-        let client = ContractClient::new(&env, &factory_addr);
-
-        let salt = BytesN::from_array(&env, &[13; 32]);
-        let key = BytesN::from_array(&env, &[6; 65]);
-        let predicted = client.get_c_address(&salt);
-
-        let result = client.try_create_account(&salt, &key);
-        assert!(
-            result.is_err(),
-            "create_account must revert when the pool's configured factory != this factory"
-        );
-
-        // No contract landed at the predicted address: any cross-call into
-        // it fails.
-        let probe = ProbeClient::new(&env, &predicted);
-        assert!(
-            probe.try_recovery_rule_id().is_err(),
-            "no account should be deployed at get_c_address(salt) after the reverted call"
-        );
-    }
-
     /// `apply_doc`: the factory needs NO code change to ship the doc
     /// layer — it embeds the smart-account wasm at build time
     /// (`smart_account::WASM`), so rebuilding + republishing the factory is
@@ -1484,7 +1333,7 @@ mod test {
     #[test]
     fn created_account_exposes_apply_doc_surface() {
         let env = Env::default();
-        let (factory_addr, _pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, _pool_addr) = setup_factory_and_pool(&env);
         let client = ContractClient::new(&env, &factory_addr);
 
         let salt = BytesN::from_array(&env, &[21; 32]);
@@ -1586,7 +1435,7 @@ mod test {
     #[test]
     fn create_account_v2_succeeds_when_pins_match_registry() {
         let env = Env::default();
-        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env);
         let client = ContractClient::new(&env, &factory_addr);
 
         // Capture the address the registry currently resolves "verifier" to,
@@ -1615,7 +1464,7 @@ mod test {
     #[test]
     fn create_account_v2_uses_pins_when_registry_repointed() {
         let env = Env::default();
-        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env);
         let client = ContractClient::new(&env, &factory_addr);
 
         // The correct addresses the registry resolves today (a real verifier
@@ -1649,7 +1498,7 @@ mod test {
     #[test]
     fn pinned_resolve_never_consults_registry() {
         let env = Env::default();
-        let (factory_addr, pool_addr) = setup_factory_and_pool(&env, false);
+        let (factory_addr, pool_addr) = setup_factory_and_pool(&env);
         let client = ContractClient::new(&env, &factory_addr);
 
         let verifier = env.as_contract(&factory_addr, || Contract::resolve(&env, "verifier"));

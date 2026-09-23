@@ -58,3 +58,16 @@ nido-preauth-sweep-policy = { path = "../../contracts/preauth-sweep-policy" }
 # trap this replaced). perch-ir gives the test the same canonicalize+hash
 # the compiler uses.
 perch-ir = { workspace = true }
+# The recovery-completion controller compared in
+# `docs/recovery/stage2-findings.md`, registered as a NATIVE contract (like
+# `nido-zk-recovery` above) — a plain `rlib` dev-dependency, same
+# no-wasm-export-collision reasoning as the other crates in this list.
+nido-recovery-doc-completion = { path = "../../contracts/recovery-doc-completion" }
+# The shared guardian+ZK recovery controller (`contracts/recovery-controller`),
+# registered as a NATIVE contract (like `nido-zk-recovery` above) -- same
+# no-wasm-export-collision reasoning as the other crates in this list.
+nido-recovery-controller = { path = "../../contracts/recovery-controller" }
+# The recovery controller's constructorless UltraHonk verifier, registered as
+# a NATIVE contract (no constructor args needed) -- same no-wasm-export-collision
+# reasoning as the other crates in this list.
+nido-recovery-verifier = { path = "../../contracts/recovery-verifier" }

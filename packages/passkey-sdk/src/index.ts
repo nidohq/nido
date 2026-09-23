@@ -104,3 +104,5 @@ export * from './syntheticAssertion.js';
 export * from './friendSigning.js';
 
 export * from './zkRecovery/index.js';
+
+export * from './recoveryStage3/index.js';
