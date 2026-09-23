@@ -234,12 +234,15 @@ bindings name:
 # Regenerate ALL bindings (assumes wasms in target/) and apply post-gen
 # fixes once at the end.
 bindings-all:
-    @for name in smart-account factory multisig-policy webauthn-verifier; do \
-        wasm="target/wasm32v1-none/contract/nido_$$(echo $$name | tr - _).wasm"; \
-        echo "→ $$name ($$wasm)"; \
+    @for dir in contracts/*/; do \
+        [ -d "$dir" ] || continue; \
+        name=$(basename "$dir"); \
+        [ "$name" = "vendor" ] && continue; \
+        wasm="target/wasm32v1-none/contract/nido_$(echo $name | tr - _).wasm"; \
+        echo "→ $name ($wasm)"; \
         stellar contract bindings typescript --overwrite \
-            --output-dir packages/contract-bindings/$$name \
-            --wasm "$$wasm"; \
+            --output-dir packages/contract-bindings/$name \
+            --wasm "$wasm"; \
     done
     ./scripts/fix-bindings.sh
 
