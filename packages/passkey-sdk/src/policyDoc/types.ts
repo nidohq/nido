@@ -11,7 +11,7 @@
  */
 
 import type { PolicyDoc, Rule, SignerDecl } from '@stellar-registry/perch';
-import type { ChainRule, ChainSigner, TxBuild } from '../policyBlocks/types.js';
+import type { ChainRule, ChainSigner } from '../policyBlocks/types.js';
 
 /** Ops of the interpreter's postfix constraint program, in the generated
  *  bindings' `{tag, values}` union shape (see `@stellar-registry/perch-interpreter`). */
@@ -69,13 +69,6 @@ export interface LoweredDoc {
   usesInterpreter: boolean;
   /** True iff any rule attaches the spending-limit policy. */
   usesSpendingLimit: boolean;
-}
-
-/** One install transaction of a plan: an `add_context_rule` invocation the
- *  existing signing flow (`signAndSubmit`) can execute. */
-export interface DocInstallStep extends TxBuild {
-  /** The doc rule this step installs. */
-  ruleName: string;
 }
 
 /** Result of decompiling one chain rule: either a perch doc-rule view, or a

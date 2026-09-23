@@ -18,6 +18,9 @@ doctest = false
 # recovery proof's `auth_hash` binds.
 soroban-sdk = { workspace = true, features = ["testutils", "hazmat-address"] }
 stellar-accounts = { workspace = true }
+# `ContractError::into_code()` for `apply_doc.rs`'s error-code assertions
+# against `nido-smart-account`'s scerr-composed `ApplyDocError`.
+soroban-sdk-tools = { workspace = true }
 
 # Crypto
 p256 = { version = "0.13", features = ["ecdsa"] }
@@ -47,3 +50,11 @@ nido-smart-account = { path = "../../contracts/smart-account" }
 # a `#[contract]`/cdylib so there is no wasm-export collision, and the policy
 # under test is still deployed from `PREAUTH_SWEEP_POLICY_WASM` bytes.
 nido-preauth-sweep-policy = { path = "../../contracts/preauth-sweep-policy" }
+# `apply_doc` e2e: the perch compiler + interpreter under test are the
+# FETCHED ON-CHAIN BYTES (fixtures/perch/*.wasm, sha256-pinned to the
+# account's derived-address pins), registered at the exact content addresses
+# the account derives — so the e2e exercises the DEPLOYED builds, not a
+# source rev that may be newer than what testnet runs (the wire-type-skew
+# trap this replaced). perch-ir gives the test the same canonicalize+hash
+# the compiler uses.
+perch-ir = { workspace = true }

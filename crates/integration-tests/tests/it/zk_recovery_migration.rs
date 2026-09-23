@@ -190,14 +190,6 @@ fn migrated_account_gets_full_recovery_and_guard() {
     );
     let _ = expected_leaf;
 
-    // The Default rule's (only) signer -- the target of the guarded
-    // `remove_signer` call below.
-    let default_rule = account.get_context_rule(&0);
-    let signer_id = default_rule
-        .signer_ids
-        .first()
-        .expect("Default rule must have the one signer just installed");
-
     // Sanity: no pending yet.
     assert!(
         !zk.has_pending(&account_addr),
@@ -225,23 +217,29 @@ fn migrated_account_gets_full_recovery_and_guard() {
          initiate_recovery on a migrated account"
     );
 
-    // --- The guard: remove_signer on the migrated account must now panic
-    // RecoveryPendingBlocked -- proving enroll_zk_recovery's stored
-    // RECOVERY_CONTROLLER makes the guard apply just like a
-    // construction-time-enrolled account. ---
-    let res = account.try_remove_signer(&0, &signer_id);
+    // --- The guard (DOC-ONLY surface): initiate_upgrade on the migrated
+    // account must now panic RecoveryPendingBlocked -- proving
+    // enroll_zk_recovery's stored RECOVERY_CONTROLLER makes the guard
+    // apply just like a construction-time-enrolled account. ---
+    let placeholder = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    let res = account.try_initiate_upgrade(&placeholder);
     assert_eq!(
         error_code(&res),
         NidoSmartAccountError::RecoveryPendingBlocked as u32,
-        "remove_signer while a REAL pending exists must be blocked by the \
+        "initiate_upgrade while a REAL pending exists must be blocked by the \
          in-account guard on a MIGRATED account too"
     );
 
-    // And the protected recovery rule, same as the construction-time path.
-    let rule_id = account.recovery_rule_id().expect("recovery rule installed");
-    let res = account.try_remove_context_rule(&rule_id);
-    assert_eq!(
-        error_code(&res),
-        NidoSmartAccountError::RecoveryRuleProtected as u32
+    // The protected recovery rule needs no per-op check under doc-only:
+    // the mutation entry points are gone and `apply_doc` structurally
+    // skips the recovery rule.
+    let res = env.try_invoke_contract::<soroban_sdk::Val, soroban_sdk::Error>(
+        &account_addr,
+        &soroban_sdk::Symbol::new(&env, "remove_context_rule"),
+        soroban_sdk::vec![&env],
+    );
+    assert!(
+        res.is_err(),
+        "remove_context_rule must not be an entry point under doc-only"
     );
 }
