@@ -24,13 +24,13 @@
  * TODO(rate-limit): add a per-IP token bucket keyed on `context.headers['x-forwarded-
  * for']` (or the deployment's actual trusted client-IP header) via `context.kv`,
  * suggested default: 10 requests / 10 minutes per IP across this plugin's routes. Until
- * then, the on-chain 5-per-90d cap is the only enforced anti-spam control.
+* then, the on-chain 5-per-90d cap is the only enforced anti-spam control.
  */
 import type { PluginContext } from '@openzeppelin/relayer-sdk';
 import { handler as channelsHandler } from '@openzeppelin/relayer-plugin-channels';
 
 /**
- * Wrapped plugin handler exported for OpenZeppelin Relayer.
+* Wrapped plugin handler exported for OpenZeppelin Relayer.
  */
 export async function handler(context: PluginContext): Promise<any> {
   return channelsHandler(context);
