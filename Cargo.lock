@@ -1330,7 +1330,7 @@ dependencies = [
 [[package]]
 name = "perch-ir"
 version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch.git?rev=f5676a6cfb7ae02e9ae487be18cf6247653124b0#f5676a6cfb7ae02e9ae487be18cf6247653124b0"
+source = "git+https://github.com/stellar-registry/perch.git?rev=bf416804fdbf1a6a16618c2054ccd8f0a8352c58#bf416804fdbf1a6a16618c2054ccd8f0a8352c58"
 dependencies = [
  "hex",
  "hifijson",

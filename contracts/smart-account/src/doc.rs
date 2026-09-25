@@ -125,6 +125,84 @@ pub struct CompiledRule {
 pub struct CompiledDoc {
     pub doc_hash: BytesN<32>,
     pub rules: Vec<CompiledRule>,
+    pub recovery: Vec<CompiledRecoveryConfig>,
+}
+
+// Wire form of [`perch_ir::RecoveryConfig`]: resolved addresses and decoded
+/// bytes, exactly as [`CompiledRule`] is to [`perch_ir::Rule`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledRecoveryConfig {
+    pub profile: RecoveryProfile,
+    pub mode: CompiledRecoveryMode,
+    pub controller: Address,
+    /// `Some` ⇒ suspected-compromise recovery is enrolled, restoring the
+    /// document this hash names. A plain `Option`, unlike
+    /// [`CompiledRule::install`]/`cap`/[`CompiledDoc::recovery`] above:
+    /// `BytesN<32>` is a host-builtin type (its own direct `ScVal`
+    /// conversion), not a `#[contracttype]` struct, so the derive-macro
+    /// limitation those fields work around doesn't apply here.
+    pub baseline: Option<BytesN<32>>,
+    /// Fingerprint of each replaceable signer's *physical credential*
+    /// (`sha256` of a tagged encoding of its `SignerMethod` — verifier+key for
+    /// `external`, the address for `delegated`), resolved from
+    /// `doc.signers` at compile time — not the document-local signer id
+    /// string. Revocation must survive the id being reused for a different
+    /// physical key in a later document, so the controller tracks the
+    /// credential itself.
+    pub replaceable: Vec<BytesN<32>>,
+    pub delay_ledgers: u32,
+    pub expiry_ledgers: u32,
+    pub max_cancels: u32,
+    pub pending_activity: PendingActivityPolicy,
+}
+
+/// Wire form of [`perch_ir::RecoveryProfile`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RecoveryProfile {
+    Loss,
+    Protected,
+}
+
+/// Wire form of [`perch_ir::PendingActivityPolicy`]. No default, same as the
+/// document-level type — see its doc comment.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PendingActivityPolicy {
+    Freeze,
+    Continue,
+}
+
+/// Wire form of [`perch_ir::RecoveryMode`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum CompiledRecoveryMode {
+    GuardianOnly(CompiledGuardianSet),
+    ZkOnly(CompiledZkVerifierConfig),
+    Combined(CompiledGuardianSet, CompiledZkVerifierConfig),
+}
+
+/// Wire form of [`perch_ir::GuardianSet`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledGuardianSet {
+    pub guardians: Vec<Address>,
+    pub quorum: u32,
+}
+
+/// Wire form of [`perch_ir::ZkVerifierConfig`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledZkVerifierConfig {
+    pub verifier: Address,
+    /// Decoded from the document's hex `circuit-id`.
+    pub circuit_id: Bytes,
+    /// A membership-pool contract's address, for ZK schemes that prove
+    /// knowledge of one fixed secret against a set the pool contract tracks;
+    /// `None` for schemes with no pool. `Address` is a host-builtin type, so
+    /// (unlike [`CompiledRule::install`]/`cap`) a plain `Option` works here.
+    pub pool: Option<Address>,
 }
 
 /// Cross-contract client for the deployed compiler's single entry point.
@@ -136,29 +214,50 @@ trait DocCompilerInterface {
 
 use crate::contract::ApplyDocError;
 
-/// Perch's content-addressed "stateless" registry on testnet — the deployer
-/// of every canonical perch contract instance. This is the NEW registry the
-/// perch release CI publishes to as of doc-compiler 0.2.1 (publish receipt
-/// on the `perch-doc-compiler-v0.2.1` GitHub release); the previous registry
-/// `CC6ELNH6…` holds only the pre-cap builds. Same pin as the SDK's
+/// Perch's `constructorless` registry on testnet (perch's own name for it —
+/// confirmed via `perch-derive-id CASB2M4J… constructorless <network passphrase>`,
+/// name-salted off perch's root registry `CASB2M4J…`) — the deployer of
+/// every canonical, currently-active perch infra contract, and the
+/// "versioned CI release target" perch's own release process actually
+/// publishes to. NOT the same thing as a differently-named, separate
+/// `stateless` registry (`CC6ELNH6…`) that predates this one: perch's own
+/// build tooling (`scripts/fetch-infra-wasm.sh`, `testnet_pins.rs`) is
+/// still wired to that registry as of the 0.3.0/recovery release,
+/// and resolving infra through it silently returns a pre-cap (pre-0.2.0)
+/// build instead of anything current. Same pin as the SDK's
 /// `PERCH_STATELESS_REGISTRY_TESTNET` (`policyDoc/deployment.ts`).
 pub const PERCH_STATELESS_REGISTRY: &str =
     "CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7";
 
-/// sha256 of the pinned `perch-doc-compiler` wasm — v0.2.1, the CAP-CAPABLE
-/// build (publish receipt on the `perch-doc-compiler-v0.2.1` GitHub release:
-/// registry `CDX2DMYM…`, deployed instance `CDWBJPDM…`). Hex:
-/// `35f248f0bcbf3d888bc1e6178707e90dbae37989b0efc3f43c85ce8b491506f5`.
+/// sha256 of the pinned `perch-doc-compiler` wasm — the 0.3.0 build
+/// (recovery/"Stage 4" support). Obtained via a live call to the registry's
+/// own `fetch_hash` method — NOT via `perch-derive-id`'s name-salt
+/// derivation or perch's `fetch-infra-wasm.sh`, both of which resolve
+/// through the stale `stateless` registry above and return the old
+/// pre-cap build instead:
+///
+/// ```sh
+/// stellar contract invoke --network testnet \
+///   --id CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7 \
+///   --source-account <any> --send=no -- \
+///   fetch_hash --wasm_name perch-doc-compiler
+/// ```
+///
+/// Hex: `6b73841894cb8de5d0a0d960f5248430b5d3b6c735bad6119595872d0e159e77`.
 pub const PERCH_DOC_COMPILER_WASM_HASH: [u8; 32] = [
-    0x35, 0xf2, 0x48, 0xf0, 0xbc, 0xbf, 0x3d, 0x88, 0x8b, 0xc1, 0xe6, 0x17, 0x87, 0x07, 0xe9, 0x0d,
-    0xba, 0xe3, 0x79, 0x89, 0xb0, 0xef, 0xc3, 0xf4, 0x3c, 0x85, 0xce, 0x8b, 0x49, 0x15, 0x06, 0xf5,
+    0x6b, 0x73, 0x84, 0x18, 0x94, 0xcb, 0x8d, 0xe5, 0xd0, 0xa0, 0xd9, 0x60, 0xf5, 0x24, 0x84, 0x30,
+    0xb5, 0xd3, 0xb6, 0xc7, 0x35, 0xba, 0xd6, 0x11, 0x95, 0x95, 0x87, 0x2d, 0x0e, 0x15, 0x9e, 0x77,
 ];
 
-/// sha256 of the pinned `perch-interpreter` wasm — the build published to
-/// the NEW registry alongside compiler 0.2.1 (same generation as the
-/// programs that compiler emits); deployed instance `CDR2OTZI…`. Same pin
-/// as the SDK's `PERCH_WASM_HASHES.interpreter`. Hex:
-/// `f63cae53fff084183181a220121de3394442ac4a2704e78896c07af8196f3651`.
+/// sha256 of the pinned `perch-interpreter` wasm. UNCHANGED from the prior
+/// (0.2.1-generation) pin — re-verified live via the same `fetch_hash`
+/// method as the compiler above (`--wasm_name perch-interpreter`) while
+/// moving to the 0.3.0 compiler. Recovery support never touches the
+/// interpreter (recovery config never lowers to an interpreter-evaluated
+/// op — see perch's own `docs/recovery/formal-verification-impact.md`), so
+/// there is no new interpreter build to pin. Same pin as the SDK's
+/// `PERCH_WASM_HASHES.interpreter`.
+/// Hex: `f63cae53fff084183181a220121de3394442ac4a2704e78896c07af8196f3651`.
 pub const PERCH_INTERPRETER_WASM_HASH: [u8; 32] = [
     0xf6, 0x3c, 0xae, 0x53, 0xff, 0xf0, 0x84, 0x18, 0x31, 0x81, 0xa2, 0x20, 0x12, 0x1d, 0xe3, 0x39,
     0x44, 0x42, 0xac, 0x4a, 0x27, 0x04, 0xe7, 0x88, 0x96, 0xc0, 0x7a, 0xf8, 0x19, 0x6f, 0x36, 0x51,
