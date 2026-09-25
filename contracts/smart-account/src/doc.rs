@@ -125,6 +125,84 @@ pub struct CompiledRule {
 pub struct CompiledDoc {
     pub doc_hash: BytesN<32>,
     pub rules: Vec<CompiledRule>,
+    pub recovery: Vec<CompiledRecoveryConfig>,
+}
+
+// Wire form of [`perch_ir::RecoveryConfig`]: resolved addresses and decoded
+/// bytes, exactly as [`CompiledRule`] is to [`perch_ir::Rule`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledRecoveryConfig {
+    pub profile: RecoveryProfile,
+    pub mode: CompiledRecoveryMode,
+    pub controller: Address,
+    /// `Some` ⇒ suspected-compromise recovery is enrolled, restoring the
+    /// document this hash names. A plain `Option`, unlike
+    /// [`CompiledRule::install`]/`cap`/[`CompiledDoc::recovery`] above:
+    /// `BytesN<32>` is a host-builtin type (its own direct `ScVal`
+    /// conversion), not a `#[contracttype]` struct, so the derive-macro
+    /// limitation those fields work around doesn't apply here.
+    pub baseline: Option<BytesN<32>>,
+    /// Fingerprint of each replaceable signer's *physical credential*
+    /// (`sha256` of a tagged encoding of its `SignerMethod` — verifier+key for
+    /// `external`, the address for `delegated`), resolved from
+    /// `doc.signers` at compile time — not the document-local signer id
+    /// string. Revocation must survive the id being reused for a different
+    /// physical key in a later document, so the controller tracks the
+    /// credential itself.
+    pub replaceable: Vec<BytesN<32>>,
+    pub delay_ledgers: u32,
+    pub expiry_ledgers: u32,
+    pub max_cancels: u32,
+    pub pending_activity: PendingActivityPolicy,
+}
+
+/// Wire form of [`perch_ir::RecoveryProfile`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RecoveryProfile {
+    Loss,
+    Protected,
+}
+
+/// Wire form of [`perch_ir::PendingActivityPolicy`]. No default, same as the
+/// document-level type — see its doc comment.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PendingActivityPolicy {
+    Freeze,
+    Continue,
+}
+
+/// Wire form of [`perch_ir::RecoveryMode`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum CompiledRecoveryMode {
+    GuardianOnly(CompiledGuardianSet),
+    ZkOnly(CompiledZkVerifierConfig),
+    Combined(CompiledGuardianSet, CompiledZkVerifierConfig),
+}
+
+/// Wire form of [`perch_ir::GuardianSet`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledGuardianSet {
+    pub guardians: Vec<Address>,
+    pub quorum: u32,
+}
+
+/// Wire form of [`perch_ir::ZkVerifierConfig`].
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledZkVerifierConfig {
+    pub verifier: Address,
+    /// Decoded from the document's hex `circuit-id`.
+    pub circuit_id: Bytes,
+    /// A membership-pool contract's address, for ZK schemes that prove
+    /// knowledge of one fixed secret against a set the pool contract tracks;
+    /// `None` for schemes with no pool. `Address` is a host-builtin type, so
+    /// (unlike [`CompiledRule::install`]/`cap`) a plain `Option` works here.
+    pub pool: Option<Address>,
 }
 
 /// Cross-contract client for the deployed compiler's single entry point.
