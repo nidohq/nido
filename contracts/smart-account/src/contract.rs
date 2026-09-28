@@ -15,7 +15,7 @@ use stellar_accounts::smart_account::{
     SmartAccountError,
 };
 
-use crate::doc::DocCompilerError;
+use crate::types::DocCompilerError;
 
 /// Nido-specific errors for the in-account recovery guard (M2 Task 4).
 /// Separate from OZ's `SmartAccountError` (which this crate does not own

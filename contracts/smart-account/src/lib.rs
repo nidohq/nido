@@ -15,3 +15,4 @@ pub mod contract;
 // (`compiler_address`/`interpreter_address`/event type) to bootstrap the
 // perch infra at the exact derived addresses the account resolves.
 pub mod doc;
+pub mod types;

@@ -41,169 +41,16 @@
 //! doc-only apart from the preserved recovery rule and the completion gate.
 
 use soroban_sdk::{
-    contractclient, contractevent, contracttype, symbol_short, Address, Bytes, BytesN, Env,
-    IntoVal, Map, String, Symbol, Val, Vec,
+    contractclient, contractevent, symbol_short, Address, Bytes, BytesN, Env,
+    IntoVal, Map, Symbol, Val, Vec,
 };
 use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{
-    add_context_rule, remove_context_rule, ContextRule, ContextRuleType, Signer,
+    add_context_rule, remove_context_rule, ContextRule, ContextRuleType,
     SmartAccountStorageKey,
 };
-
-// ---------------------------------------------------------------------
-// Wire types of the DEPLOYED canonical doc-compiler — mirrored from the
-// on-chain artifact itself, NOT from perch source. The live testnet
-// compiler (wasm `3645bd0d…`, the registry's LATEST publish) predates
-// perch's cap-lowering (#54): its `CompiledRule` has FIVE fields (no
-// `cap`), and its error enum carries `CapUnsupported = 6` — it refuses
-// capped documents at compile rather than lowering them. Consuming the
-// perch-doc-compiler CRATE at a source rev gave this account SIX-field
-// types and made every live `apply_doc` trap with
-// `Error(Object, UnexpectedSize)` while decoding the compiler's return —
-// masked locally because the e2e registered the NATIVE (source-rev)
-// compiler at the derived address. These mirrors are transcribed from
-// `stellar contract fetch` + `stellar contract info interface` of the
-// deployed wasm; the fixtures under
-// `crates/integration-tests/fixtures/perch/` ARE those fetched bytes,
-// sha256-pinned to the hashes below and registered in the e2e, so a
-// type/artifact skew now fails locally. When perch publishes its
-// cap-capable compiler, bump the pin + re-add `cap` here (the lowering
-// branch exists in this branch's history).
-// ---------------------------------------------------------------------
-
-/// Everything the deployed compiler can refuse (its exact error spec).
-#[soroban_sdk_tools::scerr]
-pub enum DocCompilerError {
-    /// The submitted document bytes are not UTF-8.
-    DocNotUtf8,
-    /// The document failed fail-closed parsing.
-    DocParse,
-    /// The document failed semantic validation.
-    DocInvalid,
-    /// The document names no network, or one that is not this chain.
-    WrongNetwork,
-    /// The document cannot be lowered to rules.
-    DocCompile,
-}
-
-/// Where a compiled rule applies (deployed spec).
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuleScope {
-    SelfAdmin,
-    Contract(Address),
-}
-
-/// A cumulative spend cap (deployed 0.2.1 spec), lowered onto OZ
-/// `SpendingLimitAccountParams` at install time.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledCap {
-    pub period_ledgers: u32,
-    pub spending_limit: i128,
-}
-
-/// One compiled rule, as the deployed 0.2.1 compiler returns it — six
-/// fields including `cap`. `install` is deliberately `Vec<Val>` rather than
-/// a mirrored `InstallParams`: this account only passes the value through
-/// to the interpreter's policy-install map, so the raw `Val` avoids
-/// mirroring the interpreter's whole program type surface.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledRule {
-    pub cap: Vec<CompiledCap>,
-    pub install: Vec<Val>,
-    pub name: String,
-    pub scope: RuleScope,
-    pub signers: Vec<Signer>,
-    pub valid_until: Option<u32>,
-}
-
-/// A compiled document (deployed spec).
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledDoc {
-    pub doc_hash: BytesN<32>,
-    pub rules: Vec<CompiledRule>,
-    pub recovery: Vec<CompiledRecoveryConfig>,
-}
-
-// Wire form of [`perch_ir::RecoveryConfig`]: resolved addresses and decoded
-/// bytes, exactly as [`CompiledRule`] is to [`perch_ir::Rule`].
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledRecoveryConfig {
-    pub profile: RecoveryProfile,
-    pub mode: CompiledRecoveryMode,
-    pub controller: Address,
-    /// `Some` ⇒ suspected-compromise recovery is enrolled, restoring the
-    /// document this hash names. A plain `Option`, unlike
-    /// [`CompiledRule::install`]/`cap`/[`CompiledDoc::recovery`] above:
-    /// `BytesN<32>` is a host-builtin type (its own direct `ScVal`
-    /// conversion), not a `#[contracttype]` struct, so the derive-macro
-    /// limitation those fields work around doesn't apply here.
-    pub baseline: Option<BytesN<32>>,
-    /// Fingerprint of each replaceable signer's *physical credential*
-    /// (`sha256` of a tagged encoding of its `SignerMethod` — verifier+key for
-    /// `external`, the address for `delegated`), resolved from
-    /// `doc.signers` at compile time — not the document-local signer id
-    /// string. Revocation must survive the id being reused for a different
-    /// physical key in a later document, so the controller tracks the
-    /// credential itself.
-    pub replaceable: Vec<BytesN<32>>,
-    pub delay_ledgers: u32,
-    pub expiry_ledgers: u32,
-    pub max_cancels: u32,
-    pub pending_activity: PendingActivityPolicy,
-}
-
-/// Wire form of [`perch_ir::RecoveryProfile`].
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum RecoveryProfile {
-    Loss,
-    Protected,
-}
-
-/// Wire form of [`perch_ir::PendingActivityPolicy`]. No default, same as the
-/// document-level type — see its doc comment.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum PendingActivityPolicy {
-    Freeze,
-    Continue,
-}
-
-/// Wire form of [`perch_ir::RecoveryMode`].
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum CompiledRecoveryMode {
-    GuardianOnly(CompiledGuardianSet),
-    ZkOnly(CompiledZkVerifierConfig),
-    Combined(CompiledGuardianSet, CompiledZkVerifierConfig),
-}
-
-/// Wire form of [`perch_ir::GuardianSet`].
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledGuardianSet {
-    pub guardians: Vec<Address>,
-    pub quorum: u32,
-}
-
-/// Wire form of [`perch_ir::ZkVerifierConfig`].
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledZkVerifierConfig {
-    pub verifier: Address,
-    /// Decoded from the document's hex `circuit-id`.
-    pub circuit_id: Bytes,
-    /// A membership-pool contract's address, for ZK schemes that prove
-    /// knowledge of one fixed secret against a set the pool contract tracks;
-    /// `None` for schemes with no pool. `Address` is a host-builtin type, so
-    /// (unlike [`CompiledRule::install`]/`cap`) a plain `Option` works here.
-    pub pool: Option<Address>,
-}
+use crate::contract::ApplyDocError;
+use crate::types::{ CompiledDoc, DocCompilerError, RuleScope, CompiledRule  };
 
 /// Cross-contract client for the deployed compiler's single entry point.
 #[allow(unused)]
@@ -212,7 +59,6 @@ trait DocCompilerInterface {
     fn compile_doc(e: &Env, doc_json: Bytes) -> Result<CompiledDoc, DocCompilerError>;
 }
 
-use crate::contract::ApplyDocError;
 
 /// Perch's `constructorless` registry on testnet (perch's own name for it —
 /// confirmed via `perch-derive-id CASB2M4J… constructorless <network passphrase>`,
