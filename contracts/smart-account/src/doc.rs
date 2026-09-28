@@ -40,7 +40,9 @@
 //! actually consumable today. The rule-set semantics now match upstream
 //! doc-only apart from the preserved recovery rule and the completion gate.
 
-use crate::contract::ApplyDocError;
+use crate::contract::{
+    install_recovery_rule, ApplyDocError, NidoSmartAccount, RecoveryControllerClient,
+};
 use crate::types::{
     AuthMode, CompiledDoc, CompiledPendingActivityPolicy, CompiledRecoveryConfig,
     CompiledRecoveryMode, CompiledRule, DocCompilerError, PendingActivityPolicy, Profile,
@@ -304,6 +306,16 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, ApplyDocError> {
     let mut installed: Vec<u32> = Vec::new(e);
     for rule in compiled.rules.iter() {
         installed.push_back(install_rule(e, &interpreter, &rule).id);
+    }
+
+    // First time recovery enrollment outside of being added on deployment (reapply/reconfig is a later step). The compiled `recovery.controller` is the only source for both the `enroll` call and the rule installation below. This is done in the same atomic transaction, so they can never point to different controllers.
+    if let Some(compiled_recovery) = compiled.recovery.first() {
+        if NidoSmartAccount::recovery_rule_id(e).is_none() {
+            let config = recovery_config_from_compiled(e, &compiled_recovery);
+            RecoveryControllerClient::new(e, &compiled_recovery.controller)
+                .enroll(&e.current_contract_address(), &config);
+            install_recovery_rule(e, &compiled_recovery.controller);
+        }
     }
 
     e.storage().instance().set(&DOC_RIDS, &installed);

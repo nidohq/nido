@@ -23,9 +23,10 @@ use nido_integration_tests::{
 };
 use nido_smart_account::contract::ApplyDocError;
 use nido_smart_account::doc::{
-    compiler_address, interpreter_address, DocApplied, DocCompilerError,
+    compiler_address, interpreter_address, DocApplied,
     NIDO_SPENDING_LIMIT_POLICY, PERCH_DOC_COMPILER_WASM_HASH, PERCH_INTERPRETER_WASM_HASH,
 };
+use nido_smart_account::types::DocCompilerError;
 use sha2::{Digest, Sha256};
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, Event, String as SString};

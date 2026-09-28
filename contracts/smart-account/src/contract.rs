@@ -15,7 +15,7 @@ use stellar_accounts::smart_account::{
     SmartAccountError,
 };
 
-use crate::types::DocCompilerError;
+use crate::types::{DocCompilerError, RecoveryConfig};
 
 /// Nido-specific errors for the in-account recovery guard (M2 Task 4).
 /// Separate from OZ's `SmartAccountError` (which this crate does not own
@@ -214,7 +214,8 @@ impl soroban_sdk::SpecShakingMarker for ApplyDocError {
 /// alongside the real, associated-type-bearing `Policy` trait, because
 /// `#[contractclient]` doesn't support associated types).
 #[contractclient(name = "RecoveryControllerClient")]
-trait RecoveryController {
+pub trait RecoveryController {
+    fn enroll(e: Env, account: Address, config: RecoveryConfig);
     fn has_pending(e: Env, account: Address) -> bool;
     // True iff a completion was consumed for `account`
     // in THIS ledger — `Policy::enforce` runs during the completing
@@ -348,7 +349,7 @@ pub struct ZkRecoveryInstallParams {
 /// and `enroll_zk_recovery` (M2 Task 6's post-deploy migration path, below)
 /// -- both must install exactly the same rule shape, so this is the single
 /// place that shape is defined.
-fn install_recovery_rule(e: &Env, controller: &Address) -> u32 {
+pub(crate) fn install_recovery_rule(e: &Env, controller: &Address) -> u32 {
     let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(e);
     let mut recovery_policies: Map<Address, Val> = Map::new(e);
     recovery_policies.set(controller.clone(), install);
@@ -566,6 +567,8 @@ impl NidoSmartAccount {
     /// reachable at all. Do not read this method as a general legacy-account
     /// migration story -- it only covers the "deployed with the new code,
     /// but skipped recovery at construction time" case.
+    /// NOTE: This fn will eventually be deprecated an instead the recovery enrollment
+    /// and the recovery rule install both happen in doc.rs apply().
     #[allow(clippy::needless_pass_by_value)]
     pub fn enroll_zk_recovery(e: &Env, recovery_controller: Address) {
         e.current_contract_address().require_auth();
