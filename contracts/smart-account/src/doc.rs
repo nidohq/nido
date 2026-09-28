@@ -40,17 +40,20 @@
 //! actually consumable today. The rule-set semantics now match upstream
 //! doc-only apart from the preserved recovery rule and the completion gate.
 
+use crate::contract::ApplyDocError;
+use crate::types::{
+    AuthMode, CompiledDoc, CompiledPendingActivityPolicy, CompiledRecoveryConfig,
+    CompiledRecoveryMode, CompiledRule, DocCompilerError, PendingActivityPolicy, Profile,
+    RecoveryConfig, RecoveryProfile, RuleScope,
+};
 use soroban_sdk::{
-    contractclient, contractevent, symbol_short, Address, Bytes, BytesN, Env,
-    IntoVal, Map, Symbol, Val, Vec,
+    contractclient, contractevent, symbol_short, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol,
+    Val, Vec,
 };
 use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{
-    add_context_rule, remove_context_rule, ContextRule, ContextRuleType,
-    SmartAccountStorageKey,
+    add_context_rule, remove_context_rule, ContextRule, ContextRuleType, SmartAccountStorageKey,
 };
-use crate::contract::ApplyDocError;
-use crate::types::{ CompiledDoc, DocCompilerError, RuleScope, CompiledRule  };
 
 /// Cross-contract client for the deployed compiler's single entry point.
 #[allow(unused)]
@@ -58,7 +61,6 @@ use crate::types::{ CompiledDoc, DocCompilerError, RuleScope, CompiledRule  };
 trait DocCompilerInterface {
     fn compile_doc(e: &Env, doc_json: Bytes) -> Result<CompiledDoc, DocCompilerError>;
 }
-
 
 /// Perch's `constructorless` registry on testnet (perch's own name for it —
 /// confirmed via `perch-derive-id CASB2M4J… constructorless <network passphrase>`,
@@ -108,6 +110,12 @@ pub const PERCH_INTERPRETER_WASM_HASH: [u8; 32] = [
     0xf6, 0x3c, 0xae, 0x53, 0xff, 0xf0, 0x84, 0x18, 0x31, 0x81, 0xa2, 0x20, 0x12, 0x1d, 0xe3, 0x39,
     0x44, 0x42, 0xac, 0x4a, 0x27, 0x04, 0xe7, 0x88, 0x96, 0xc0, 0x7a, 0xf8, 0x19, 0x6f, 0x36, 0x51,
 ];
+
+/// This account's network passphrase — hardcoded for the same reason the
+/// compiler/interpreter pins above are: this account is already a
+/// per-network wasm build (see `PERCH_STATELESS_REGISTRY`), so network
+/// identity is baked in at compile time, not deployment time.
+const NETWORK_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 
 /// Instance storage key for the canonical `doc_hash` of the currently
 /// applied policy document. Absent until the first successful `apply_doc`.
@@ -353,4 +361,76 @@ fn install_rule(e: &Env, interpreter: &Address, rule: &CompiledRule) -> ContextR
         &rule.signers,
         &policies,
     )
+}
+
+const AVG_LEDGER_CLOSE_SECS: u64 = 5;
+
+// Open questions:
+// - we are using an approximation of the number of seconds it takes a ledger to close for delay_secs and expiry_secs since perch returns these values as ledgers, not seconds
+
+/// converts perch's recovery config output into a recovery config useable by nido's recovery controller
+fn recovery_config_from_compiled(e: &Env, compiled: &CompiledRecoveryConfig) -> RecoveryConfig {
+    let profile = match compiled.profile {
+        RecoveryProfile::Loss => Profile::Loss,
+        RecoveryProfile::Protected => Profile::Protected,
+    };
+    let (mode, guardians, quorum, verifier, pool) = match &compiled.mode {
+        CompiledRecoveryMode::GuardianOnly(compiled_guardian_set) => (
+            AuthMode::GuardianOnly,
+            compiled_guardian_set.guardians.clone(),
+            compiled_guardian_set.quorum,
+            None,
+            None,
+        ),
+        CompiledRecoveryMode::ZkOnly(compiled_zk_verifier_config) => (
+            AuthMode::ZkOnly,
+            Vec::new(e),
+            0,
+            Some(compiled_zk_verifier_config.verifier.clone()),
+            compiled_zk_verifier_config.pool.clone(),
+        ),
+        CompiledRecoveryMode::Combined(compiled_guardian_set, compiled_zk_verifier_config) => (
+            AuthMode::Combined,
+            compiled_guardian_set.guardians.clone(),
+            compiled_guardian_set.quorum,
+            Some(compiled_zk_verifier_config.verifier.clone()),
+            compiled_zk_verifier_config.pool.clone(),
+        ),
+    };
+
+    let network_passphrase = Bytes::from_slice(e, NETWORK_PASSPHRASE.as_bytes());
+
+    // compiled.baseline is None when the doc doesn't enroll compromise recovery.
+    // An all zero array here is a safe stand-in: no real doc_hash can ever equal it (so
+    // compromise recovery just stays unreachable), and nothing validates
+    // this field anyway.
+
+    let baseline_doc_hash = compiled
+        .baseline
+        .clone()
+        .unwrap_or_else(|| BytesN::from_array(e, &[0u8; 32]));
+
+    let delay_secs = u64::from(compiled.delay_ledgers) * AVG_LEDGER_CLOSE_SECS;
+    let expiry_secs = u64::from(compiled.expiry_ledgers) * AVG_LEDGER_CLOSE_SECS;
+
+    let pending_activity_policy = match &compiled.pending_activity {
+        CompiledPendingActivityPolicy::Freeze => PendingActivityPolicy::Freeze,
+        CompiledPendingActivityPolicy::Continue => PendingActivityPolicy::Continue,
+    };
+
+    RecoveryConfig {
+        mode: mode,
+        profile: profile,
+        guardians: guardians,
+        guardian_threshold: quorum,
+        verifier: verifier,
+        zk_pool: pool,
+        network_passphrase: network_passphrase,
+        baseline_doc_hash: baseline_doc_hash,
+        delay_secs: delay_secs,
+        expiry_secs: expiry_secs,
+        max_cancels: compiled.max_cancels,
+        version: 1, // see comment in recovery-controller/src/types.rs
+        pending_activity_policy: pending_activity_policy,
+    }
 }

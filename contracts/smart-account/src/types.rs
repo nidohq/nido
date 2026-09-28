@@ -11,6 +11,8 @@
 //! other half — concrete Rust shapes the compiler needs to encode/decode
 //! values against those stubs, kept in sync by hand.
 //!
+//! Naming convention: Compiled* are from perch's compiler
+//!
 //! Two groups of mirrored types, matching two different contracts:
 //!
 //! - **Perch's compiler output** (`DocCompilerError` through
@@ -121,7 +123,7 @@ pub struct CompiledRecoveryConfig {
     pub delay_ledgers: u32,
     pub expiry_ledgers: u32,
     pub max_cancels: u32,
-    pub pending_activity: PendingActivityPolicy,
+    pub pending_activity: CompiledPendingActivityPolicy,
 }
 
 /// Wire form of [`perch_ir::RecoveryProfile`].
@@ -136,7 +138,7 @@ pub enum RecoveryProfile {
 /// document-level type — see its doc comment.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
-pub enum PendingActivityPolicy {
+pub enum CompiledPendingActivityPolicy {
     Freeze,
     Continue,
 }
@@ -170,4 +172,47 @@ pub struct CompiledZkVerifierConfig {
     /// `None` for schemes with no pool. `Address` is a host-builtin type, so
     /// (unlike [`CompiledRule::install`]/`cap`) a plain `Option` works here.
     pub pool: Option<Address>,
+}
+
+// --- Nido's recovery-controller wire types---
+// See contracts/recovery-controller/src/types.rs
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthMode {
+    GuardianOnly,
+    ZkOnly,
+    Combined,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Profile {
+    Loss,
+    Protected,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PendingActivityPolicy {
+    Freeze,
+    Continue,
+    Restrict,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecoveryConfig {
+    pub mode: AuthMode,
+    pub profile: Profile,
+    pub guardians: Vec<Address>,
+    pub guardian_threshold: u32,
+    pub verifier: Option<Address>,
+    pub zk_pool: Option<Address>,
+    pub network_passphrase: Bytes,
+    pub baseline_doc_hash: BytesN<32>,
+    pub delay_secs: u64,
+    pub expiry_secs: u64,
+    pub max_cancels: u32,
+    pub version: u32,
+    pub pending_activity_policy: PendingActivityPolicy,
 }
