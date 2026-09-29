@@ -568,7 +568,7 @@ impl NidoSmartAccount {
     /// migration story -- it only covers the "deployed with the new code,
     /// but skipped recovery at construction time" case.
     /// NOTE: This fn will eventually be deprecated an instead the recovery enrollment
-    /// and the recovery rule install both happen in doc.rs apply().
+    /// and the recovery rule install both happen in `doc.rs`'s `apply()`.
     #[allow(clippy::needless_pass_by_value)]
     pub fn enroll_zk_recovery(e: &Env, recovery_controller: Address) {
         e.current_contract_address().require_auth();

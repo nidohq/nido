@@ -386,7 +386,7 @@ fn recovery_config_from_compiled(e: &Env, compiled: &CompiledRecoveryConfig) -> 
         RecoveryProfile::Loss => Profile::Loss,
         RecoveryProfile::Protected => Profile::Protected,
     };
-    let (mode, guardians, quorum, verifier, pool) = match &compiled.mode {
+    let (mode, guardians, guardian_threshold, verifier, zk_pool) = match &compiled.mode {
         CompiledRecoveryMode::GuardianOnly(compiled_guardian_set) => (
             AuthMode::GuardianOnly,
             compiled_guardian_set.guardians.clone(),
@@ -431,18 +431,18 @@ fn recovery_config_from_compiled(e: &Env, compiled: &CompiledRecoveryConfig) -> 
     };
 
     RecoveryConfig {
-        mode: mode,
-        profile: profile,
-        guardians: guardians,
-        guardian_threshold: quorum,
-        verifier: verifier,
-        zk_pool: pool,
-        network_passphrase: network_passphrase,
-        baseline_doc_hash: baseline_doc_hash,
-        delay_secs: delay_secs,
-        expiry_secs: expiry_secs,
+        mode,
+        profile,
+        guardians,
+        guardian_threshold,
+        verifier,
+        zk_pool,
+        network_passphrase,
+        baseline_doc_hash,
+        delay_secs,
+        expiry_secs,
         max_cancels: compiled.max_cancels,
         version: 1, // see comment in recovery-controller/src/types.rs
-        pending_activity_policy: pending_activity_policy,
+        pending_activity_policy,
     }
 }
