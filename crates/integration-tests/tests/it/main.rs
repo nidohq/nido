@@ -8,6 +8,7 @@ mod multisig_recovery;
 mod name_registry;
 mod name_registry_passkey_auth;
 mod preauth_sweep_policy;
+mod recovery_perch_enrollment;
 mod recovery_stage2_common;
 mod recovery_stage2_variant_a;
 mod recovery_stage2_variant_b;
