@@ -310,34 +310,42 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, ApplyDocError> {
 
     // First time recovery enrollment outside of being added on deployment (reapply/reconfig is a later step). The compiled `recovery.controller` is the only source for both the `enroll` call and the rule installation below. This is done in the same atomic transaction, so they can never point to different controllers.
     if let Some(compiled_recovery) = compiled.recovery.first() {
-        if NidoSmartAccount::recovery_rule_id(e).is_none() {
-            // this is the first time the account has enrolled in recovery
-            let config = recovery_config_from_compiled(e, &compiled_recovery);
-            RecoveryControllerClient::new(e, &compiled_recovery.controller)
-                .enroll(&e.current_contract_address(), &config);
-            install_recovery_rule(e, &compiled_recovery.controller);
-        } else {
-            // the account is already enrolled, and this is reconfiguring the recovery config
-            let recovery_controller_client =
-                RecoveryControllerClient::new(e, &compiled_recovery.controller);
+        let recovery_controller_client =
+            RecoveryControllerClient::new(e, &compiled_recovery.controller);
+        let current_recovery_config =
+            recovery_controller_client.config(&e.current_contract_address());
+        let recovery_rule_id = NidoSmartAccount::recovery_rule_id(e);
 
-            let current_config = recovery_controller_client.config(&e.current_contract_address());
-
-            let new_config = recovery_config_from_compiled(e, &compiled_recovery);
-
-            // This only works for a Loss profile right now
-            // FIX ME so this wrks for Protected profile!&
-            let guardian_evidence: Vec<Address> = Vec::new(e);
-
-            if current_config != Some(new_config.clone()) {
-                recovery_controller_client.reconfigure(
-                    &e.current_contract_address(),
-                    &new_config,
-                    &guardian_evidence,
-                );
+        match (recovery_rule_id, current_recovery_config) {
+            (None, None) => {
+                // This is a fresh account without a recovery rule installed nor a recovery config enrolled on the recovery controller
+                let new_config = recovery_config_from_compiled(e, &compiled_recovery);
+                recovery_controller_client.enroll(&e.current_contract_address(), &new_config);
+                install_recovery_rule(e, &compiled_recovery.controller);
             }
-
-            // if the user is trying to do a downgrade which is not allowed by nido's rules, let reconfigure panic propogate and rever whole apply doc
+            (Some(_recovery_rule_id), None) => {
+                // The rule is already installed (likely by the constructor), but was never
+                // enrolled in the recovery controller. Still treating this as an enrollment.
+                let new_config = recovery_config_from_compiled(e, &compiled_recovery);
+                recovery_controller_client.enroll(&e.current_contract_address(), &new_config);
+            }
+            (Some(_recovery_rule_id), Some(current_config)) => {
+                // the account has recovery installed and configured, and they are trying to reconfigure
+                // This only works for a Loss profile right now
+                // FIX ME so this wrks for Protected profile!&
+                let new_config = recovery_config_from_compiled(e, &compiled_recovery);
+                let guardian_evidence: Vec<Address> = Vec::new(e);
+                if current_config != new_config.clone() {
+                    recovery_controller_client.reconfigure(
+                        &e.current_contract_address(),
+                        &new_config,
+                        &guardian_evidence,
+                    );
+                }
+            }
+            (None, Some(_current_config)) => {
+                return Err(ApplyDocError::RecoveryConfigWithoutWiring);
+            }
         }
     }
 

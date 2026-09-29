@@ -361,3 +361,119 @@ fn apply_doc_with_non_additive_recovery_change_reverts_the_whole_apply() {
         cfg.mode
     );
 }
+
+#[test]
+fn apply_doc_enrolls_a_constructor_wired_but_unenrolled_account() {
+    let env = Env::default();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_infra(&env);
+
+    let controller_addr = env.register(RecoveryController, ());
+
+    // Constructor wires the rule (recovery_controller: Some), but never
+    // calls enroll — exactly the gap this arm exists to handle.
+    let (account, account_addr, verifier_addr, signing_key) =
+        deploy_smart_account_with_recovery(&env, Some(&controller_addr));
+    assert!(
+        account.recovery_rule_id().is_some(),
+        "constructor must install the rule when Some(controller) is passed"
+    );
+
+    let controller_client =
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
+    assert!(
+        controller_client.config(&account_addr).is_none(),
+        "constructor must NOT call enroll"
+    );
+
+    let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
+    let guardian1 = addr_str(&Address::generate(&env));
+    let guardian2 = addr_str(&Address::generate(&env));
+    let doc = recovery_enrollment_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+    );
+    let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
+
+    // Must NOT panic — before the fix, this would wrongly try to reconfigure
+    // a config that doesn't exist yet.
+    account.apply_doc(&doc_bytes);
+
+    let cfg = controller_client
+        .config(&account_addr)
+        .expect("apply_doc must have enrolled");
+    assert!(matches!(cfg.mode, AuthMode::GuardianOnly));
+
+    // The rule must NOT have been installed a second time.
+    assert_eq!(
+        account.get_context_rules_count(),
+        2, // admin + the ONE recovery rule, from the constructor
+        "install_recovery_rule must not run twice"
+    );
+}
+
+#[test]
+fn apply_doc_refuses_when_config_exists_without_wiring() {
+    let env = Env::default();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_infra(&env);
+
+    let controller_addr = env.register(RecoveryController, ());
+    let (account, account_addr, verifier_addr, signing_key) =
+        deploy_smart_account_with_recovery(&env, None);
+    assert!(account.recovery_rule_id().is_none());
+
+    // Engineer the weird state: enroll a config directly on the controller
+    // for this account, WITHOUT ever wiring the account to it — simulating
+    // an out-of-band enroll() call that bypassed apply_doc entirely.
+    let mut out_of_band_guardians = soroban_sdk::Vec::new(&env);
+    out_of_band_guardians.push_back(Address::generate(&env));
+    out_of_band_guardians.push_back(Address::generate(&env));
+    let out_of_band_config = nido_recovery_controller::types::RecoveryConfig {
+        mode: AuthMode::GuardianOnly,
+        profile: Profile::Loss,
+        guardians: out_of_band_guardians,
+        guardian_threshold: 1,
+        verifier: None,
+        zk_pool: None,
+        network_passphrase: Bytes::from_slice(&env, TESTNET_PASSPHRASE.as_bytes()),
+        baseline_doc_hash: soroban_sdk::BytesN::from_array(&env, &[0u8; 32]),
+        delay_secs: 500,
+        expiry_secs: 500,
+        max_cancels: 3,
+        version: 1,
+        pending_activity_policy: nido_recovery_controller::types::PendingActivityPolicy::Freeze,
+    };
+    let controller_client =
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
+    controller_client.enroll(&account_addr, &out_of_band_config);
+
+    // Confirmed the weird state: unwired, but a config exists.
+    assert!(account.recovery_rule_id().is_none());
+    assert!(controller_client.config(&account_addr).is_some());
+
+    let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
+    let guardian1 = addr_str(&Address::generate(&env));
+    let guardian2 = addr_str(&Address::generate(&env));
+    let doc = recovery_enrollment_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+    );
+    let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
+
+    let res = account.try_apply_doc(&doc_bytes);
+    assert!(
+        res.is_err(),
+        "must refuse rather than silently reconfigure an unwired account"
+    );
+}

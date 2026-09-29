@@ -147,6 +147,13 @@ pub enum ApplyDocError {
     /// later once an expiring admin rule's `valid_until` passes); refused
     /// before touching anything.
     DocAdminLockout,
+    /// A recovery config already exists on the doc-named controller, but
+    /// this account has no recovery rule installed pointing at it (or
+    /// points elsewhere) — reachable only via some out-of-band `enroll()`
+    /// call that bypassed this doc-driven path entirely. Refused rather
+    /// than silently treated as a reconfigure: we haven't verified this
+    /// account is actually wired to listen to that config at all.
+    RecoveryConfigWithoutWiring,
 }
 
 // `soroban-sdk-tools` 0.1.3's `#[scerr]` predates `soroban-sdk` 27's
