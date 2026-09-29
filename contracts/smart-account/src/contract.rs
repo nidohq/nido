@@ -199,7 +199,7 @@ impl soroban_sdk::SpecShakingMarker for ApplyDocError {
     }
 }
 
-/// Minimal cross-call stub for `nido-zk-recovery`'s `has_pending` view.
+/// Minimal cross-call stub for `nido-zk-recovery`.
 ///
 /// This crate deliberately does NOT depend on `nido-zk-recovery` as a
 /// normal Cargo dependency (see `Cargo.toml`'s note and
@@ -232,6 +232,13 @@ pub trait RecoveryController {
     // `nido-recovery-doc-completion` controller from
     // `complete_recovery`, so no existing controller needs to export it.
     fn take_completion_grant(e: Env, account: Address) -> Option<BytesN<32>>;
+    fn config(e: Env, account: Address) -> Option<RecoveryConfig>;
+    fn reconfigure(
+        e: Env,
+        account: Address,
+        new_config: RecoveryConfig,
+        guardian_evidence: Vec<Address>,
+    );
 }
 
 /// Cross-calls `controller`'s `has_pending` view for this account. Pure
