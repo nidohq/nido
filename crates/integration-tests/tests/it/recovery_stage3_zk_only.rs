@@ -116,12 +116,13 @@ fn setup(env: &Env) -> ZkOnlySetup<'_> {
         verifier: Some(verifier_addr),
         zk_pool: Some(pool_addr),
         network_passphrase: Bytes::from_slice(env, fixture.network_passphrase.as_bytes()),
-        baseline_doc_hash: BytesN::from_array(env, &zk_recovery_doc_fixture::BASELINE),
+        baseline_doc_hash: Some(BytesN::from_array(env, &zk_recovery_doc_fixture::BASELINE)),
         delay_secs: DELAY_SECS,
         expiry_secs: EXPIRY_SECS,
         max_cancels: 3,
         version: 1,
         pending_activity_policy: PendingActivityPolicy::Freeze,
+        replaceable: SVec::new(&env),
     };
     controller.enroll(&account_addr, &cfg);
 

@@ -209,10 +209,11 @@ pub struct RecoveryConfig {
     pub verifier: Option<Address>,
     pub zk_pool: Option<Address>,
     pub network_passphrase: Bytes,
-    pub baseline_doc_hash: BytesN<32>,
+    pub baseline_doc_hash: Option<BytesN<32>>,
     pub delay_secs: u64,
     pub expiry_secs: u64,
     pub max_cancels: u32,
     pub version: u32,
     pub pending_activity_policy: PendingActivityPolicy,
+    pub replaceable: Vec<BytesN<32>>,
 }

@@ -155,12 +155,13 @@ pub struct RecoveryConfig {
     /// The approved baseline document's canonical hash.
     /// `Compromise` attempts MUST target `baseline_doc_hash` plus
     /// replacements — never the live document — enforced at `begin_attempt`.
-    pub baseline_doc_hash: BytesN<32>,
+    pub baseline_doc_hash: Option<BytesN<32>>,
     pub delay_secs: u64,
     pub expiry_secs: u64,
     pub max_cancels: u32,
     pub version: u32,
     pub pending_activity_policy: PendingActivityPolicy,
+    pub replaceable: Vec<BytesN<32>>,
 }
 
 #[contracttype]
@@ -353,6 +354,14 @@ pub enum Error {
     /// limits" for exactly why a ZK reconfigure-evidence path needs a new
     /// circuit binding this crate does not add.
     ReconfigureZkEvidenceUnsupported = 29,
+    /// `begin_attempt`: `Compromise` action attempted, but
+    /// `config.baseline_doc_hash` is `None` — this account never enrolled
+    /// compromise recovery.
+    CompromiseRecoveryNotEnrolled = 30,
+    /// `begin_attempt`: a declared `replaced_credential_id` is not in
+    /// `config.replaceable` — the account's enrolled policy never authorized
+    /// replacing that credential.
+    CredentialNotReplaceable = 31,
 }
 
 #[contractevent(topics = ["recovery_attempt_begun"], data_format = "map")]

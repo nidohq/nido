@@ -458,11 +458,6 @@ fn recovery_config_from_compiled(e: &Env, compiled: &CompiledRecoveryConfig) -> 
     // compromise recovery just stays unreachable), and nothing validates
     // this field anyway.
 
-    let baseline_doc_hash = compiled
-        .baseline
-        .clone()
-        .unwrap_or_else(|| BytesN::from_array(e, &[0u8; 32]));
-
     let delay_secs = u64::from(compiled.delay_ledgers) * AVG_LEDGER_CLOSE_SECS;
     let expiry_secs = u64::from(compiled.expiry_ledgers) * AVG_LEDGER_CLOSE_SECS;
 
@@ -479,11 +474,12 @@ fn recovery_config_from_compiled(e: &Env, compiled: &CompiledRecoveryConfig) -> 
         verifier,
         zk_pool,
         network_passphrase,
-        baseline_doc_hash,
+        baseline_doc_hash: compiled.baseline.clone(),
         delay_secs,
         expiry_secs,
         max_cancels: compiled.max_cancels,
         version: 1, // see comment in recovery-controller/src/types.rs
         pending_activity_policy,
+        replaceable: compiled.replaceable.clone(),
     }
 }

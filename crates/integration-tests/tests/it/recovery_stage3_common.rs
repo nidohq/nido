@@ -93,12 +93,13 @@ pub fn setup_guardian_only(
         verifier: None,
         zk_pool: None,
         network_passphrase: Bytes::from_slice(env, TESTNET_PASSPHRASE.as_bytes()),
-        baseline_doc_hash: baseline_doc_hash.clone(),
+        baseline_doc_hash: Some(baseline_doc_hash.clone()),
         delay_secs: 1000,
         expiry_secs: 1000,
         max_cancels: 3,
         version: 1,
         pending_activity_policy: PendingActivityPolicy::Freeze,
+        replaceable: SVec::new(&env),
     };
     controller.enroll(&account_addr, &cfg);
 

@@ -517,10 +517,13 @@ impl RecoveryController {
     ) -> u64 {
         let cfg = config_or_panic(&e, &account);
 
-        if matches!(action, RecoveryAction::Compromise)
-            && source_or_baseline_hash != cfg.baseline_doc_hash
-        {
-            panic_with_error!(&e, Error::BaselineMismatch);
+        if matches!(action, RecoveryAction::Compromise) {
+            let Some(config_baseline_doc_hash) = cfg.baseline_doc_hash else {
+                panic_with_error!(&e, Error::CompromiseRecoveryNotEnrolled);
+            };
+            if source_or_baseline_hash != config_baseline_doc_hash {
+                panic_with_error!(&e, Error::BaselineMismatch);
+            }
         }
 
         let now = e.ledger().timestamp();
@@ -538,6 +541,9 @@ impl RecoveryController {
         for id in replaced_credential_ids.iter() {
             if revoked.iter().any(|r| r == id) {
                 panic_with_error!(&e, Error::RevokedCredentialRevived);
+            }
+            if !cfg.replaceable.contains(id) {
+                panic_with_error!(&e, Error::CredentialNotReplaceable);
             }
         }
 
@@ -1070,12 +1076,13 @@ mod tests {
             verifier: None,
             zk_pool: None,
             network_passphrase: Bytes::from_slice(env, b"Test SDF Network ; September 2015"),
-            baseline_doc_hash: BytesN::from_array(env, &[0x42; 32]),
+            baseline_doc_hash: Some(BytesN::from_array(env, &[0x42; 32])),
             delay_secs: 1000,
             expiry_secs: 1000,
             max_cancels: 3,
             version: 1,
             pending_activity_policy: PendingActivityPolicy::Freeze,
+            replaceable: Vec::new(&env),
         }
     }
 
@@ -1313,14 +1320,71 @@ mod tests {
             )
             .is_err());
 
+        let Some(config_baseline_doc_hash) = cfg.baseline_doc_hash else {
+            return;
+        };
+
         // The enrolled baseline hash succeeds.
         client.begin_attempt(
             &account,
             &RecoveryAction::Compromise,
             &hash_of(&env, 1),
-            &cfg.baseline_doc_hash,
+            &config_baseline_doc_hash,
             &Vec::new(&env),
         );
+    }
+
+    #[test]
+    fn compromise_action_should_be_refused_when_baseline_was_never_enrolled() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(g1);
+        let mut cfg = guardian_only_config(&env, guardians, 1);
+        cfg.baseline_doc_hash = None;
+
+        client.enroll(&account, &cfg);
+
+        assert!(client
+            .try_begin_attempt(
+                &account,
+                &RecoveryAction::Compromise,
+                &hash_of(&env, 0xFF), // attacker-chosen target
+                &BytesN::from_array(&env, &[0u8; 32]),
+                &Vec::new(&env)
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn begin_attempt_should_refuse_replacement_ids_the_account_never_declared() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let g1 = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(g1);
+        let cfg = guardian_only_config(&env, guardians, 1);
+        client.enroll(&account, &cfg);
+
+        let mut bogus_replacement = Vec::new(&env);
+        bogus_replacement.push_back(hash_of(&env, 0x99)); // never declared replaceable
+
+        assert!(client
+            .try_begin_attempt(
+                &account,
+                &RecoveryAction::LostKey,
+                &hash_of(&env, 1),
+                &hash_of(&env, 2),
+                &bogus_replacement
+            )
+            .is_err());
     }
 
     #[test]
