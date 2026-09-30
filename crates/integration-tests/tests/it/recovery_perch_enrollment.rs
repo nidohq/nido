@@ -458,3 +458,149 @@ fn apply_doc_refuses_when_a_different_controller_is_used() {
             .is_none()
     );
 }
+
+#[test]
+fn apply_doc_refuses_when_config_exists_without_wiring() {
+    let env = Env::default();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_infra(&env);
+
+    let controller_addr = env.register(RecoveryController, ());
+    let (account, account_addr, verifier_addr, signing_key) =
+        deploy_smart_account_with_recovery(&env, None);
+    assert!(account.recovery_rule_id().is_none());
+
+    // Engineer the weird state: enroll a config directly on the controller
+    // for this account, WITHOUT ever wiring the account to it — simulating
+    // an out-of-band enroll() call that bypassed apply_doc entirely.
+    let mut out_of_band_guardians = soroban_sdk::Vec::new(&env);
+    out_of_band_guardians.push_back(Address::generate(&env));
+    out_of_band_guardians.push_back(Address::generate(&env));
+    let out_of_band_config = nido_recovery_controller::types::RecoveryConfig {
+        mode: AuthMode::GuardianOnly,
+        profile: Profile::Loss,
+        guardians: out_of_band_guardians,
+        guardian_threshold: 1,
+        verifier: None,
+        zk_pool: None,
+        network_passphrase: Bytes::from_slice(&env, TESTNET_PASSPHRASE.as_bytes()),
+        baseline_doc_hash: None,
+        replaceable: soroban_sdk::Vec::new(&env),
+        delay_secs: 500,
+        expiry_secs: 500,
+        max_cancels: 3,
+        version: 1,
+        pending_activity_policy: nido_recovery_controller::types::PendingActivityPolicy::Freeze,
+    };
+    let controller_client =
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
+    controller_client.enroll(&account_addr, &out_of_band_config);
+
+    // Confirmed the weird state: unwired, but a config exists.
+    assert!(account.recovery_rule_id().is_none());
+    assert!(controller_client.config(&account_addr).is_some());
+
+    let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
+    let guardian1 = addr_str(&Address::generate(&env));
+    let guardian2 = addr_str(&Address::generate(&env));
+    let doc = recovery_enrollment_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+    );
+    let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
+
+    let res = account.try_apply_doc(&doc_bytes);
+    assert!(
+        res.is_err(),
+        "must refuse rather than treating an out-of-band config as a reconfigure target \
+         when the account was never actually wired to listen to it"
+    );
+
+    // Nothing changed: still unwired, doc never applied.
+    assert!(account.recovery_rule_id().is_none());
+    assert!(account.applied_doc_hash().is_none());
+}
+
+// A naive fail-closed check here (refuse apply_doc when the doc omits
+// `recovery` while the account is enrolled) broke the real Stage 3
+// recovery-completion path: `guardian_only_lifecycle_completes_via_apply_doc`
+// and friends complete a recovery attempt via a zero-signer-authorized
+// apply_doc whose target document is built independently of the account's
+// recovery config (predates this migration) and has no `recovery` section
+// either. This test documents the real gap Copilot flagged — see PR #216
+// discussion thread — but the fix needs to distinguish "an ordinary
+// owner-authorized apply_doc omitting recovery" from "a recovery-completion
+// apply_doc omitting recovery", which apply()'s current call shape can't do.
+// Tracked alongside the other deferred reconfigure/completion-interaction
+// finding rather than patched here.
+#[test]
+#[ignore = "documents a known gap (recovery section omission isn't refused); \
+            the naive fix breaks real recovery completion — see PR #216"]
+fn apply_doc_refuses_when_recovery_is_removed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_infra(&env);
+
+    let controller_addr = env.register(RecoveryController, ());
+    let (account, account_addr, verifier_addr, signing_key) =
+        deploy_smart_account_with_recovery(&env, None);
+
+    let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
+    let guardian1 = addr_str(&Address::generate(&env));
+    let guardian2 = addr_str(&Address::generate(&env));
+
+    // First apply: enrolls, same as the existing enrollment test.
+    let doc1 = recovery_enrollment_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+    );
+    let doc1_hash = account.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()));
+
+    // Second apply: the SAME signers/admin rule, but the "recovery" key is
+    // omitted entirely — simulates a doc author (or an attacker holding a
+    // stolen passkey) submitting an ordinary apply_doc that just doesn't
+    // mention recovery, rather than going through the real, delay-gated
+    // initiate_recovery_rule_removal/execute_recovery_rule_removal flow.
+    let doc2 = format!(
+        r#"{{
+  "version": 1,
+  "network": "{network}",
+  "signers": [
+    {{ "id": "owner", "verifier": "{verifier}", "key": "{key_hex}" }}
+  ],
+  "rules": [
+    {{ "name": "admin",
+      "scope": {{ "type": "self-admin" }},
+      "principals": {{ "type": "all", "signers": ["owner"] }} }}
+  ]
+}}"#,
+        network = TESTNET_PASSPHRASE,
+        verifier = addr_str(&verifier_addr),
+        key_hex = key_hex,
+    );
+    let doc2_bytes = Bytes::from_slice(&env, canonicalize(&doc2).as_bytes());
+
+    let res = account.try_apply_doc(&doc2_bytes);
+    assert!(
+        res.is_err(),
+        "omitting the recovery section from an already-enrolled account's doc must \
+         be refused, not silently leave the old recovery authority active"
+    );
+
+    // Nothing changed: doc hash, rule wiring, and controller config all as before.
+    assert_eq!(account.applied_doc_hash(), Some(doc1_hash));
+    assert!(account.recovery_rule_id().is_some());
+    let controller_client =
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
+    assert!(controller_client.config(&account_addr).is_some());
+}
