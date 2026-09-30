@@ -342,7 +342,7 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, ApplyDocError> {
             (Some(_recovery_rule_id), Some(current_config)) => {
                 // the account has recovery installed and configured, and they are trying to reconfigure
                 // This only works for a Loss profile right now
-                // FIX ME so this wrks for Protected profile!&
+                // FIXME: support the Protected profile.
                 let new_config = recovery_config_from_compiled(e, &compiled_recovery);
                 let guardian_evidence: Vec<Address> = Vec::new(e);
                 if current_config != new_config.clone() {
