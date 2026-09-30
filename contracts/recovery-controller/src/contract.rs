@@ -393,6 +393,7 @@ impl RecoveryController {
         if new_config.profile != existing.profile
             || new_config.network_passphrase != existing.network_passphrase
             || new_config.baseline_doc_hash != existing.baseline_doc_hash
+            || new_config.replaceable != existing.replaceable
             || new_config.delay_secs != existing.delay_secs
             || new_config.expiry_secs != existing.expiry_secs
             || new_config.max_cancels != existing.max_cancels
@@ -1800,6 +1801,37 @@ mod tests {
                 .try_reconfigure(&account, &combined, &Vec::new(&env))
                 .is_err(),
             "reconfigure must reject a change to any field other than the added factor"
+        );
+    }
+
+    #[test]
+    fn reconfigure_rejects_changing_the_replaceable_allowlist() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = deploy(&env);
+        let client = RecoveryControllerClient::new(&env, &id);
+        let account = Address::generate(&env);
+        let guardian = Address::generate(&env);
+        let mut guardians = Vec::new(&env);
+        guardians.push_back(guardian);
+        let mut cfg = guardian_only_config(&env, guardians, 1);
+        cfg.replaceable.push_back(hash_of(&env, 0x01));
+        client.enroll(&account, &cfg);
+
+        let mut combined = cfg.clone();
+        combined.mode = AuthMode::Combined;
+        combined.verifier = Some(Address::generate(&env));
+        combined.zk_pool = Some(Address::generate(&env));
+        // An otherwise-valid additive transition, but it also swaps the
+        // replaceable-credential allowlist — must still be rejected.
+        combined.replaceable = Vec::new(&env);
+        combined.replaceable.push_back(hash_of(&env, 0x02));
+
+        assert!(
+            client
+                .try_reconfigure(&account, &combined, &Vec::new(&env))
+                .is_err(),
+            "reconfigure must reject a change to the replaceable-credential allowlist"
         );
     }
 
