@@ -49,6 +49,9 @@ perch-ir = { git = "https://github.com/stellar-registry/perch.git", rev = "bf416
 # now depend on a published, versioned, immutable release rather than an untagged fork.
 soroban-sdk-tools = "0.1.3"
 
+[profile.release]
+overflow-checks = true
+
 [profile.contract]
 overflow-checks = true
 inherits = "release"

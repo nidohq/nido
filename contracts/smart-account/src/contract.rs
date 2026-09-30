@@ -473,7 +473,10 @@ impl NidoSmartAccount {
         e.current_contract_address().require_auth();
         let controller = recovery_controller_or_panic(e);
         guard_live_pending(e, &controller);
-        let at = e.ledger().timestamp() + RECOVERY_REMOVAL_DELAY_SECS;
+        let at = e
+            .ledger()
+            .timestamp()
+            .saturating_add(RECOVERY_REMOVAL_DELAY_SECS);
         e.storage().instance().set(&RECOVERY_REMOVAL_AT, &at);
     }
 
@@ -652,7 +655,10 @@ impl NidoSmartAccount {
         e.current_contract_address().require_auth();
         let controller = recovery_controller_or_panic(e);
         guard_live_pending(e, &controller);
-        let at = e.ledger().timestamp() + RECOVERY_REMOVAL_DELAY_SECS;
+        let at = e
+            .ledger()
+            .timestamp()
+            .saturating_add(RECOVERY_REMOVAL_DELAY_SECS);
         e.storage()
             .instance()
             .set(&PENDING_UPGRADE_HASH, &new_wasm_hash);

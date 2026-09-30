@@ -452,14 +452,8 @@ fn recovery_config_from_compiled(e: &Env, compiled: &CompiledRecoveryConfig) -> 
     };
 
     let network_passphrase = Bytes::from_slice(e, NETWORK_PASSPHRASE.as_bytes());
-
-    // compiled.baseline is None when the doc doesn't enroll compromise recovery.
-    // An all zero array here is a safe stand-in: no real doc_hash can ever equal it (so
-    // compromise recovery just stays unreachable), and nothing validates
-    // this field anyway.
-
-    let delay_secs = u64::from(compiled.delay_ledgers) * AVG_LEDGER_CLOSE_SECS;
-    let expiry_secs = u64::from(compiled.expiry_ledgers) * AVG_LEDGER_CLOSE_SECS;
+    let delay_secs = u64::from(compiled.delay_ledgers).saturating_mul(AVG_LEDGER_CLOSE_SECS);
+    let expiry_secs = u64::from(compiled.expiry_ledgers).saturating_mul(AVG_LEDGER_CLOSE_SECS);
 
     let pending_activity_policy = match &compiled.pending_activity {
         CompiledPendingActivityPolicy::Freeze => PendingActivityPolicy::Freeze,
