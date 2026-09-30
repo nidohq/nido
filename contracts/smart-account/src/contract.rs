@@ -154,6 +154,15 @@ pub enum ApplyDocError {
     /// than silently treated as a reconfigure: we haven't verified this
     /// account is actually wired to listen to that config at all.
     RecoveryConfigWithoutWiring,
+    /// The doc names a recovery controller different from the one this
+    /// account's recovery rule is already wired to. Controller migration
+    /// isn't supported via `apply_doc` — refused rather than enrolling the
+    /// new controller while the installed rule (and `RECOVERY_CONTROLLER`)
+    /// keep pointing at the old one, leaving the new config inert. To swap
+    /// controllers, first remove the existing rule via
+    /// `initiate_recovery_rule_removal`/`execute_recovery_rule_removal`,
+    /// then enroll again.
+    RecoveryControllerMismatch,
 }
 
 // `soroban-sdk-tools` 0.1.3's `#[scerr]` predates `soroban-sdk` 27's

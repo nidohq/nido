@@ -418,46 +418,18 @@ fn apply_doc_enrolls_a_constructor_wired_but_unenrolled_account() {
 }
 
 #[test]
-fn apply_doc_refuses_when_config_exists_without_wiring() {
+fn apply_doc_refuses_when_a_different_controller_is_used() {
     let env = Env::default();
     env.mock_all_auths();
     bind_testnet(&env);
     register_infra(&env);
 
-    let controller_addr = env.register(RecoveryController, ());
+    let controller_a = env.register(RecoveryController, ());
     let (account, account_addr, verifier_addr, signing_key) =
-        deploy_smart_account_with_recovery(&env, None);
-    assert!(account.recovery_rule_id().is_none());
+        deploy_smart_account_with_recovery(&env, Some(&controller_a));
+    assert!(account.recovery_controller() == Some(controller_a.clone()));
 
-    // Engineer the weird state: enroll a config directly on the controller
-    // for this account, WITHOUT ever wiring the account to it — simulating
-    // an out-of-band enroll() call that bypassed apply_doc entirely.
-    let mut out_of_band_guardians = soroban_sdk::Vec::new(&env);
-    out_of_band_guardians.push_back(Address::generate(&env));
-    out_of_band_guardians.push_back(Address::generate(&env));
-    let out_of_band_config = nido_recovery_controller::types::RecoveryConfig {
-        mode: AuthMode::GuardianOnly,
-        profile: Profile::Loss,
-        guardians: out_of_band_guardians,
-        guardian_threshold: 1,
-        verifier: None,
-        zk_pool: None,
-        network_passphrase: Bytes::from_slice(&env, TESTNET_PASSPHRASE.as_bytes()),
-        baseline_doc_hash: soroban_sdk::BytesN::from_array(&env, &[0u8; 32]),
-        delay_secs: 500,
-        expiry_secs: 500,
-        max_cancels: 3,
-        version: 1,
-        pending_activity_policy: nido_recovery_controller::types::PendingActivityPolicy::Freeze,
-    };
-    let controller_client =
-        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
-    controller_client.enroll(&account_addr, &out_of_band_config);
-
-    // Confirmed the weird state: unwired, but a config exists.
-    assert!(account.recovery_rule_id().is_none());
-    assert!(controller_client.config(&account_addr).is_some());
-
+    let controller_b = env.register(RecoveryController, ());
     let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
     let guardian1 = addr_str(&Address::generate(&env));
     let guardian2 = addr_str(&Address::generate(&env));
@@ -465,7 +437,7 @@ fn apply_doc_refuses_when_config_exists_without_wiring() {
         TESTNET_PASSPHRASE,
         &addr_str(&verifier_addr),
         &key_hex,
-        &addr_str(&controller_addr),
+        &addr_str(&controller_b),
         &guardian1,
         &guardian2,
     );
@@ -474,6 +446,15 @@ fn apply_doc_refuses_when_config_exists_without_wiring() {
     let res = account.try_apply_doc(&doc_bytes);
     assert!(
         res.is_err(),
-        "must refuse rather than silently reconfigure an unwired account"
+        "must refuse rather than silently configure on an unwired controller"
+    );
+
+    // account's recovery controller is unchanged, still controller_a
+    assert!(account.recovery_controller() == Some(controller_a.clone()));
+    // controller b does not have config for this account
+    assert!(
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_b)
+            .config(&account_addr)
+            .is_none()
     );
 }

@@ -312,9 +312,19 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, ApplyDocError> {
     if let Some(compiled_recovery) = compiled.recovery.first() {
         let recovery_controller_client =
             RecoveryControllerClient::new(e, &compiled_recovery.controller);
+        let recovery_rule_id = NidoSmartAccount::recovery_rule_id(e);
+        if recovery_rule_id.is_some() {
+            // confirm the new config controller matches existing controller
+            // if the new config is trying to set a new controller, return an error
+            if NidoSmartAccount::recovery_controller(e)
+                != Some(compiled_recovery.controller.clone())
+            {
+                return Err(ApplyDocError::RecoveryControllerMismatch);
+            }
+        }
+
         let current_recovery_config =
             recovery_controller_client.config(&e.current_contract_address());
-        let recovery_rule_id = NidoSmartAccount::recovery_rule_id(e);
 
         match (recovery_rule_id, current_recovery_config) {
             (None, None) => {
