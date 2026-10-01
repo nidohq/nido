@@ -72,6 +72,7 @@ export function buildRecoveryConfig(input: RecoveryConfigInput): RecoveryConfig 
     zk_pool: input.zkPool,
     network_passphrase: Buffer.from(input.networkPassphrase, 'utf8'),
     baseline_doc_hash: toBytes32(input.baselineDocHash, 'baselineDocHash'),
+    replaceable: input.replaceable.map((r) => toBytes32(r, 'replaceable')),
     delay_secs: BigInt(input.delaySecs),
     expiry_secs: BigInt(input.expirySecs),
     max_cancels: input.maxCancels,

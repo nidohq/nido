@@ -29,7 +29,7 @@ sites. Mirrors perch's CI-guarded `crates/integration-tests/tests/testnet_pins.r
 | Name | Address | Notes |
 |---|---|---|
 | Perch stateless registry (NEW, 0.2.1 era) | `CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7` | The deployer perch's release CI publishes to as of doc-compiler 0.2.1; content-addresses every instance below. The previous registry `CC6ELNH6…` holds only the pre-cap builds. |
-| Perch doc-compiler 0.2.1 (cap-capable) | `CDWBJPDMBORIZERIFVMTGJFND6ZTAQJIVDNYST4SV33YBQP47BPKOHR6` | Stateless `compile_doc`; wasm `35f248f0…` (publish receipt on perch's `perch-doc-compiler-v0.2.1` release). The smart account cross-calls it from `apply_doc`. |
+| Perch doc-compiler 0.3.0 (recovery-schema) | `CAUAFGIAAN6KE4WPMKPVDMWYBG6PWS5EBG5P63ZWVOP4D57ELA6T46M6` | Stateless `compile_doc`; wasm `6b738418…` (recovery-schema generation — compiles a doc's `recovery` section). The smart account cross-calls it from `apply_doc`. |
 | Perch interpreter | `CDR2OTZIZYTAHEHHH5MBOL6RKLWKIEN5KLPIVOG7FVBVTFET552NTWL2` | OZ `Policy` evaluating perch constraint programs. Wasm `f63cae53…` (0.2.1 generation, NEW registry). Bindings: `@stellar-registry/perch-interpreter` (npm, upstream-published). |
 
 ## ZK Recovery (M1 — deployed to testnet 2026-09-10, testnet params)

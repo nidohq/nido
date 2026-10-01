@@ -40,92 +40,22 @@
 //! actually consumable today. The rule-set semantics now match upstream
 //! doc-only apart from the preserved recovery rule and the completion gate.
 
+use crate::contract::{
+    install_recovery_rule, ApplyDocError, NidoSmartAccount, RecoveryControllerClient,
+};
+use crate::types::{
+    AuthMode, CompiledDoc, CompiledPendingActivityPolicy, CompiledRecoveryConfig,
+    CompiledRecoveryMode, CompiledRule, DocCompilerError, PendingActivityPolicy, Profile,
+    RecoveryConfig, RecoveryProfile, RuleScope,
+};
 use soroban_sdk::{
-    contractclient, contractevent, contracttype, symbol_short, Address, Bytes, BytesN, Env,
-    IntoVal, Map, String, Symbol, Val, Vec,
+    contractclient, contractevent, symbol_short, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol,
+    Val, Vec,
 };
 use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{
-    add_context_rule, remove_context_rule, ContextRule, ContextRuleType, Signer,
-    SmartAccountStorageKey,
+    add_context_rule, remove_context_rule, ContextRule, ContextRuleType, SmartAccountStorageKey,
 };
-
-// ---------------------------------------------------------------------
-// Wire types of the DEPLOYED canonical doc-compiler — mirrored from the
-// on-chain artifact itself, NOT from perch source. The live testnet
-// compiler (wasm `3645bd0d…`, the registry's LATEST publish) predates
-// perch's cap-lowering (#54): its `CompiledRule` has FIVE fields (no
-// `cap`), and its error enum carries `CapUnsupported = 6` — it refuses
-// capped documents at compile rather than lowering them. Consuming the
-// perch-doc-compiler CRATE at a source rev gave this account SIX-field
-// types and made every live `apply_doc` trap with
-// `Error(Object, UnexpectedSize)` while decoding the compiler's return —
-// masked locally because the e2e registered the NATIVE (source-rev)
-// compiler at the derived address. These mirrors are transcribed from
-// `stellar contract fetch` + `stellar contract info interface` of the
-// deployed wasm; the fixtures under
-// `crates/integration-tests/fixtures/perch/` ARE those fetched bytes,
-// sha256-pinned to the hashes below and registered in the e2e, so a
-// type/artifact skew now fails locally. When perch publishes its
-// cap-capable compiler, bump the pin + re-add `cap` here (the lowering
-// branch exists in this branch's history).
-// ---------------------------------------------------------------------
-
-/// Everything the deployed compiler can refuse (its exact error spec).
-#[soroban_sdk_tools::scerr]
-pub enum DocCompilerError {
-    /// The submitted document bytes are not UTF-8.
-    DocNotUtf8,
-    /// The document failed fail-closed parsing.
-    DocParse,
-    /// The document failed semantic validation.
-    DocInvalid,
-    /// The document names no network, or one that is not this chain.
-    WrongNetwork,
-    /// The document cannot be lowered to rules.
-    DocCompile,
-}
-
-/// Where a compiled rule applies (deployed spec).
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuleScope {
-    SelfAdmin,
-    Contract(Address),
-}
-
-/// A cumulative spend cap (deployed 0.2.1 spec), lowered onto OZ
-/// `SpendingLimitAccountParams` at install time.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledCap {
-    pub period_ledgers: u32,
-    pub spending_limit: i128,
-}
-
-/// One compiled rule, as the deployed 0.2.1 compiler returns it — six
-/// fields including `cap`. `install` is deliberately `Vec<Val>` rather than
-/// a mirrored `InstallParams`: this account only passes the value through
-/// to the interpreter's policy-install map, so the raw `Val` avoids
-/// mirroring the interpreter's whole program type surface.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledRule {
-    pub cap: Vec<CompiledCap>,
-    pub install: Vec<Val>,
-    pub name: String,
-    pub scope: RuleScope,
-    pub signers: Vec<Signer>,
-    pub valid_until: Option<u32>,
-}
-
-/// A compiled document (deployed spec).
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledDoc {
-    pub doc_hash: BytesN<32>,
-    pub rules: Vec<CompiledRule>,
-}
 
 /// Cross-contract client for the deployed compiler's single entry point.
 #[allow(unused)]
@@ -134,35 +64,60 @@ trait DocCompilerInterface {
     fn compile_doc(e: &Env, doc_json: Bytes) -> Result<CompiledDoc, DocCompilerError>;
 }
 
-use crate::contract::ApplyDocError;
-
-/// Perch's content-addressed "stateless" registry on testnet — the deployer
-/// of every canonical perch contract instance. This is the NEW registry the
-/// perch release CI publishes to as of doc-compiler 0.2.1 (publish receipt
-/// on the `perch-doc-compiler-v0.2.1` GitHub release); the previous registry
-/// `CC6ELNH6…` holds only the pre-cap builds. Same pin as the SDK's
+/// Perch's `constructorless` registry on testnet (perch's own name for it —
+/// confirmed via `perch-derive-id CASB2M4J… constructorless <network passphrase>`,
+/// name-salted off perch's root registry `CASB2M4J…`) — the deployer of
+/// every canonical, currently-active perch infra contract, and the
+/// "versioned CI release target" perch's own release process actually
+/// publishes to. NOT the same thing as a differently-named, separate
+/// `stateless` registry (`CC6ELNH6…`) that predates this one: perch's own
+/// build tooling (`scripts/fetch-infra-wasm.sh`, `testnet_pins.rs`) is
+/// still wired to that registry as of the 0.3.0/recovery release,
+/// and resolving infra through it silently returns a pre-cap (pre-0.2.0)
+/// build instead of anything current. Same pin as the SDK's
 /// `PERCH_STATELESS_REGISTRY_TESTNET` (`policyDoc/deployment.ts`).
 pub const PERCH_STATELESS_REGISTRY: &str =
     "CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7";
 
-/// sha256 of the pinned `perch-doc-compiler` wasm — v0.2.1, the CAP-CAPABLE
-/// build (publish receipt on the `perch-doc-compiler-v0.2.1` GitHub release:
-/// registry `CDX2DMYM…`, deployed instance `CDWBJPDM…`). Hex:
-/// `35f248f0bcbf3d888bc1e6178707e90dbae37989b0efc3f43c85ce8b491506f5`.
+/// sha256 of the pinned `perch-doc-compiler` wasm — the 0.3.0 build
+/// (recovery/"Stage 4" support). Obtained via a live call to the registry's
+/// own `fetch_hash` method — NOT via `perch-derive-id`'s name-salt
+/// derivation or perch's `fetch-infra-wasm.sh`, both of which resolve
+/// through the stale `stateless` registry above and return the old
+/// pre-cap build instead:
+///
+/// ```sh
+/// stellar contract invoke --network testnet \
+///   --id CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7 \
+///   --source-account <any> --send=no -- \
+///   fetch_hash --wasm_name perch-doc-compiler
+/// ```
+///
+/// Hex: `6b73841894cb8de5d0a0d960f5248430b5d3b6c735bad6119595872d0e159e77`.
 pub const PERCH_DOC_COMPILER_WASM_HASH: [u8; 32] = [
-    0x35, 0xf2, 0x48, 0xf0, 0xbc, 0xbf, 0x3d, 0x88, 0x8b, 0xc1, 0xe6, 0x17, 0x87, 0x07, 0xe9, 0x0d,
-    0xba, 0xe3, 0x79, 0x89, 0xb0, 0xef, 0xc3, 0xf4, 0x3c, 0x85, 0xce, 0x8b, 0x49, 0x15, 0x06, 0xf5,
+    0x6b, 0x73, 0x84, 0x18, 0x94, 0xcb, 0x8d, 0xe5, 0xd0, 0xa0, 0xd9, 0x60, 0xf5, 0x24, 0x84, 0x30,
+    0xb5, 0xd3, 0xb6, 0xc7, 0x35, 0xba, 0xd6, 0x11, 0x95, 0x95, 0x87, 0x2d, 0x0e, 0x15, 0x9e, 0x77,
 ];
 
-/// sha256 of the pinned `perch-interpreter` wasm — the build published to
-/// the NEW registry alongside compiler 0.2.1 (same generation as the
-/// programs that compiler emits); deployed instance `CDR2OTZI…`. Same pin
-/// as the SDK's `PERCH_WASM_HASHES.interpreter`. Hex:
-/// `f63cae53fff084183181a220121de3394442ac4a2704e78896c07af8196f3651`.
+/// sha256 of the pinned `perch-interpreter` wasm. UNCHANGED from the prior
+/// (0.2.1-generation) pin — re-verified live via the same `fetch_hash`
+/// method as the compiler above (`--wasm_name perch-interpreter`) while
+/// moving to the 0.3.0 compiler. Recovery support never touches the
+/// interpreter (recovery config never lowers to an interpreter-evaluated
+/// op — see perch's own `docs/recovery/formal-verification-impact.md`), so
+/// there is no new interpreter build to pin. Same pin as the SDK's
+/// `PERCH_WASM_HASHES.interpreter`.
+/// Hex: `f63cae53fff084183181a220121de3394442ac4a2704e78896c07af8196f3651`.
 pub const PERCH_INTERPRETER_WASM_HASH: [u8; 32] = [
     0xf6, 0x3c, 0xae, 0x53, 0xff, 0xf0, 0x84, 0x18, 0x31, 0x81, 0xa2, 0x20, 0x12, 0x1d, 0xe3, 0x39,
     0x44, 0x42, 0xac, 0x4a, 0x27, 0x04, 0xe7, 0x88, 0x96, 0xc0, 0x7a, 0xf8, 0x19, 0x6f, 0x36, 0x51,
 ];
+
+/// This account's network passphrase — hardcoded for the same reason the
+/// compiler/interpreter pins above are: this account is already a
+/// per-network wasm build (see `PERCH_STATELESS_REGISTRY`), so network
+/// identity is baked in at compile time, not deployment time.
+const NETWORK_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 
 /// Instance storage key for the canonical `doc_hash` of the currently
 /// applied policy document. Absent until the first successful `apply_doc`.
@@ -353,6 +308,57 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, ApplyDocError> {
         installed.push_back(install_rule(e, &interpreter, &rule).id);
     }
 
+    // First time recovery enrollment outside of being added on deployment (reapply/reconfig is a later step). The compiled `recovery.controller` is the only source for both the `enroll` call and the rule installation below. This is done in the same atomic transaction, so they can never point to different controllers.
+    if let Some(compiled_recovery) = compiled.recovery.first() {
+        let recovery_controller_client =
+            RecoveryControllerClient::new(e, &compiled_recovery.controller);
+        let recovery_rule_id = NidoSmartAccount::recovery_rule_id(e);
+        if recovery_rule_id.is_some() {
+            // confirm the new config controller matches existing controller
+            // if the new config is trying to set a new controller, return an error
+            if NidoSmartAccount::recovery_controller(e)
+                != Some(compiled_recovery.controller.clone())
+            {
+                return Err(ApplyDocError::RecoveryControllerMismatch);
+            }
+        }
+
+        let current_recovery_config =
+            recovery_controller_client.config(&e.current_contract_address());
+
+        match (recovery_rule_id, current_recovery_config) {
+            (None, None) => {
+                // This is a fresh account without a recovery rule installed nor a recovery config enrolled on the recovery controller
+                let new_config = recovery_config_from_compiled(e, &compiled_recovery);
+                recovery_controller_client.enroll(&e.current_contract_address(), &new_config);
+                install_recovery_rule(e, &compiled_recovery.controller);
+            }
+            (Some(_recovery_rule_id), None) => {
+                // The rule is already installed (likely by the constructor), but was never
+                // enrolled in the recovery controller. Still treating this as an enrollment.
+                let new_config = recovery_config_from_compiled(e, &compiled_recovery);
+                recovery_controller_client.enroll(&e.current_contract_address(), &new_config);
+            }
+            (Some(_recovery_rule_id), Some(current_config)) => {
+                // the account has recovery installed and configured, and they are trying to reconfigure
+                // This only works for a Loss profile right now
+                // FIXME: support the Protected profile.
+                let new_config = recovery_config_from_compiled(e, &compiled_recovery);
+                let guardian_evidence: Vec<Address> = Vec::new(e);
+                if current_config != new_config.clone() {
+                    recovery_controller_client.reconfigure(
+                        &e.current_contract_address(),
+                        &new_config,
+                        &guardian_evidence,
+                    );
+                }
+            }
+            (None, Some(_current_config)) => {
+                return Err(ApplyDocError::RecoveryConfigWithoutWiring);
+            }
+        }
+    }
+
     e.storage().instance().set(&DOC_RIDS, &installed);
     e.storage().instance().set(&DOC_HASH, &compiled.doc_hash);
     // The lossless on-chain copy (canonical by the check above). Overwritten
@@ -408,4 +414,66 @@ fn install_rule(e: &Env, interpreter: &Address, rule: &CompiledRule) -> ContextR
         &rule.signers,
         &policies,
     )
+}
+
+const AVG_LEDGER_CLOSE_SECS: u64 = 5;
+
+// Open questions:
+// - we are using an approximation of the number of seconds it takes a ledger to close for delay_secs and expiry_secs since perch returns these values as ledgers, not seconds
+
+/// converts perch's recovery config output into a recovery config useable by nido's recovery controller
+fn recovery_config_from_compiled(e: &Env, compiled: &CompiledRecoveryConfig) -> RecoveryConfig {
+    let profile = match compiled.profile {
+        RecoveryProfile::Loss => Profile::Loss,
+        RecoveryProfile::Protected => Profile::Protected,
+    };
+    let (mode, guardians, guardian_threshold, verifier, zk_pool) = match &compiled.mode {
+        CompiledRecoveryMode::GuardianOnly(compiled_guardian_set) => (
+            AuthMode::GuardianOnly,
+            compiled_guardian_set.guardians.clone(),
+            compiled_guardian_set.quorum,
+            None,
+            None,
+        ),
+        CompiledRecoveryMode::ZkOnly(compiled_zk_verifier_config) => (
+            AuthMode::ZkOnly,
+            Vec::new(e),
+            0,
+            Some(compiled_zk_verifier_config.verifier.clone()),
+            compiled_zk_verifier_config.pool.clone(),
+        ),
+        CompiledRecoveryMode::Combined(compiled_guardian_set, compiled_zk_verifier_config) => (
+            AuthMode::Combined,
+            compiled_guardian_set.guardians.clone(),
+            compiled_guardian_set.quorum,
+            Some(compiled_zk_verifier_config.verifier.clone()),
+            compiled_zk_verifier_config.pool.clone(),
+        ),
+    };
+
+    let network_passphrase = Bytes::from_slice(e, NETWORK_PASSPHRASE.as_bytes());
+    let delay_secs = u64::from(compiled.delay_ledgers).saturating_mul(AVG_LEDGER_CLOSE_SECS);
+    let expiry_secs = u64::from(compiled.expiry_ledgers).saturating_mul(AVG_LEDGER_CLOSE_SECS);
+
+    let pending_activity_policy = match &compiled.pending_activity {
+        CompiledPendingActivityPolicy::Freeze => PendingActivityPolicy::Freeze,
+        CompiledPendingActivityPolicy::Continue => PendingActivityPolicy::Continue,
+    };
+
+    RecoveryConfig {
+        mode,
+        profile,
+        guardians,
+        guardian_threshold,
+        verifier,
+        zk_pool,
+        network_passphrase,
+        baseline_doc_hash: compiled.baseline.clone(),
+        delay_secs,
+        expiry_secs,
+        max_cancels: compiled.max_cancels,
+        version: 1, // see comment in recovery-controller/src/types.rs
+        pending_activity_policy,
+        replaceable: compiled.replaceable.clone(),
+    }
 }

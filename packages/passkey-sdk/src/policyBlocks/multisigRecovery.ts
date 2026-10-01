@@ -109,6 +109,7 @@ export const multisigRecoveryModule: PolicyBlockModule<MultisigRecoveryBlock> = 
       guardianThreshold: block.threshold,
       networkPassphrase: TESTNET_PASSPHRASE,
       baselineDocHash: NO_BASELINE_DOC_SENTINEL,
+      replaceable: [],
       delaySecs: DELAY_SECS_DEFAULT,
       expirySecs: EXPIRY_SECS_DEFAULT,
       maxCancels: MAX_CANCELS_DEFAULT,

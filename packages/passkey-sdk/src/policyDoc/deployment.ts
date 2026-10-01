@@ -36,7 +36,7 @@ export const PERCH_STATELESS_REGISTRY_TESTNET =
  *  pins (contracts/smart-account/src/doc.rs). */
 export const PERCH_WASM_HASHES = {
   interpreter: 'f63cae53fff084183181a220121de3394442ac4a2704e78896c07af8196f3651',
-  docCompiler: '35f248f0bcbf3d888bc1e6178707e90dbae37989b0efc3f43c85ce8b491506f5',
+  docCompiler: '6b73841894cb8de5d0a0d960f5248430b5d3b6c735bad6119595872d0e159e77',
 } as const;
 
 /** Derive a content-addressed perch contract id from its deployer registry

@@ -15,6 +15,7 @@ import { requestToPolicyDoc } from '@stellar-registry/perch';
 import type {
   Permission,
   PolicyDoc,
+  RecoverySpec,
   SignerDecl,
 } from '@stellar-registry/perch';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -57,11 +58,13 @@ export function buildPolicyDoc(req: {
   network?: string;
   signers: NidoSigner[];
   permissions: Permission[];
+  recovery?: RecoverySpec;
 }): PolicyDoc {
   return requestToPolicyDoc({
     ...(req.network !== undefined ? { network: req.network } : {}),
     signers: req.signers.map(toSignerDecl),
     permissions: req.permissions,
+    ...(req.recovery !== undefined ? { recovery: req.recovery } : {}),
   });
 }
 

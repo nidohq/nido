@@ -15,7 +15,7 @@ use stellar_accounts::smart_account::{
     SmartAccountError,
 };
 
-use crate::doc::DocCompilerError;
+use crate::types::{DocCompilerError, RecoveryConfig};
 
 /// Nido-specific errors for the in-account recovery guard (M2 Task 4).
 /// Separate from OZ's `SmartAccountError` (which this crate does not own
@@ -147,6 +147,22 @@ pub enum ApplyDocError {
     /// later once an expiring admin rule's `valid_until` passes); refused
     /// before touching anything.
     DocAdminLockout,
+    /// A recovery config already exists on the doc-named controller, but
+    /// this account has no recovery rule installed pointing at it (or
+    /// points elsewhere) — reachable only via some out-of-band `enroll()`
+    /// call that bypassed this doc-driven path entirely. Refused rather
+    /// than silently treated as a reconfigure: we haven't verified this
+    /// account is actually wired to listen to that config at all.
+    RecoveryConfigWithoutWiring,
+    /// The doc names a recovery controller different from the one this
+    /// account's recovery rule is already wired to. Controller migration
+    /// isn't supported via `apply_doc` — refused rather than enrolling the
+    /// new controller while the installed rule (and `RECOVERY_CONTROLLER`)
+    /// keep pointing at the old one, leaving the new config inert. To swap
+    /// controllers, first remove the existing rule via
+    /// `initiate_recovery_rule_removal`/`execute_recovery_rule_removal`,
+    /// then enroll again.
+    RecoveryControllerMismatch,
 }
 
 // `soroban-sdk-tools` 0.1.3's `#[scerr]` predates `soroban-sdk` 27's
@@ -199,7 +215,7 @@ impl soroban_sdk::SpecShakingMarker for ApplyDocError {
     }
 }
 
-/// Minimal cross-call stub for `nido-zk-recovery`'s `has_pending` view.
+/// Minimal cross-call stub for `nido-zk-recovery`.
 ///
 /// This crate deliberately does NOT depend on `nido-zk-recovery` as a
 /// normal Cargo dependency (see `Cargo.toml`'s note and
@@ -214,7 +230,8 @@ impl soroban_sdk::SpecShakingMarker for ApplyDocError {
 /// alongside the real, associated-type-bearing `Policy` trait, because
 /// `#[contractclient]` doesn't support associated types).
 #[contractclient(name = "RecoveryControllerClient")]
-trait RecoveryController {
+pub trait RecoveryController {
+    fn enroll(e: Env, account: Address, config: RecoveryConfig);
     fn has_pending(e: Env, account: Address) -> bool;
     // True iff a completion was consumed for `account`
     // in THIS ledger — `Policy::enforce` runs during the completing
@@ -231,6 +248,13 @@ trait RecoveryController {
     // `nido-recovery-doc-completion` controller from
     // `complete_recovery`, so no existing controller needs to export it.
     fn take_completion_grant(e: Env, account: Address) -> Option<BytesN<32>>;
+    fn config(e: Env, account: Address) -> Option<RecoveryConfig>;
+    fn reconfigure(
+        e: Env,
+        account: Address,
+        new_config: RecoveryConfig,
+        guardian_evidence: Vec<Address>,
+    );
 }
 
 /// Cross-calls `controller`'s `has_pending` view for this account. Pure
@@ -348,7 +372,7 @@ pub struct ZkRecoveryInstallParams {
 /// and `enroll_zk_recovery` (M2 Task 6's post-deploy migration path, below)
 /// -- both must install exactly the same rule shape, so this is the single
 /// place that shape is defined.
-fn install_recovery_rule(e: &Env, controller: &Address) -> u32 {
+pub(crate) fn install_recovery_rule(e: &Env, controller: &Address) -> u32 {
     let install: Val = ZkRecoveryInstallParams { version: 1 }.into_val(e);
     let mut recovery_policies: Map<Address, Val> = Map::new(e);
     recovery_policies.set(controller.clone(), install);
@@ -449,7 +473,10 @@ impl NidoSmartAccount {
         e.current_contract_address().require_auth();
         let controller = recovery_controller_or_panic(e);
         guard_live_pending(e, &controller);
-        let at = e.ledger().timestamp() + RECOVERY_REMOVAL_DELAY_SECS;
+        let at = e
+            .ledger()
+            .timestamp()
+            .saturating_add(RECOVERY_REMOVAL_DELAY_SECS);
         e.storage().instance().set(&RECOVERY_REMOVAL_AT, &at);
     }
 
@@ -566,6 +593,8 @@ impl NidoSmartAccount {
     /// reachable at all. Do not read this method as a general legacy-account
     /// migration story -- it only covers the "deployed with the new code,
     /// but skipped recovery at construction time" case.
+    /// NOTE: This function will eventually be deprecated; instead, recovery enrollment
+    /// and recovery-rule installation will both happen in `doc.rs`'s `apply()`.
     #[allow(clippy::needless_pass_by_value)]
     pub fn enroll_zk_recovery(e: &Env, recovery_controller: Address) {
         e.current_contract_address().require_auth();
@@ -626,7 +655,10 @@ impl NidoSmartAccount {
         e.current_contract_address().require_auth();
         let controller = recovery_controller_or_panic(e);
         guard_live_pending(e, &controller);
-        let at = e.ledger().timestamp() + RECOVERY_REMOVAL_DELAY_SECS;
+        let at = e
+            .ledger()
+            .timestamp()
+            .saturating_add(RECOVERY_REMOVAL_DELAY_SECS);
         e.storage()
             .instance()
             .set(&PENDING_UPGRADE_HASH, &new_wasm_hash);

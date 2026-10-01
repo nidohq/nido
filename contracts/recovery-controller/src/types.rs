@@ -114,11 +114,16 @@ pub struct GuardianSet {
 /// identities/quorum, verifier identity, baseline commitment. Fixed at
 /// enrollment and, after that, mutable only through `reconfigure`'s narrow
 /// additive path (see `contract.rs::reconfigure` and the crate doc
-/// comment's "Known limits"). NOT embedded in the account's own Perch
-/// policy document — this controller keeps recovery configuration entirely
-/// in its own storage, so an account's document canonical bytes are
-/// UNCHANGED by enrolling in recovery (see `lib.rs` tests
-/// `enrolling_does_not_touch_the_account_doc`).
+/// comment's "Known limits"). This controller's own `enroll`/`reconfigure`
+/// take no document argument and never touch one directly — `enroll`ing
+/// against THIS crate in isolation leaves any document's canonical bytes
+/// unchanged (see `contract.rs` test
+/// `enrolling_does_not_require_or_touch_any_document`). System-wide that's
+/// no longer the whole picture: `contracts/smart-account/src/doc.rs::apply`
+/// now reads a doc's `recovery` section and cross-calls `enroll`/
+/// `reconfigure` as a side effect of `apply_doc`, updating the account's
+/// `DOC_HASH`/`DOC_JSON` in the same transaction — so enrolling via that
+/// path does change the account's document.
 ///
 /// `reconfigure` only ever adds a missing evidence factor — it explicitly
 /// refuses any change to `version` (`ReconfigureFieldMismatch`), so
@@ -155,7 +160,11 @@ pub struct RecoveryConfig {
     /// The approved baseline document's canonical hash.
     /// `Compromise` attempts MUST target `baseline_doc_hash` plus
     /// replacements — never the live document — enforced at `begin_attempt`.
-    pub baseline_doc_hash: BytesN<32>,
+    pub baseline_doc_hash: Option<BytesN<32>>,
+    /** Signer ids from the account's doc the enrolled authority may replace
+   *  on a successful recovery (hex strings, 32-byte hashes, or bytes —
+   *  matches `baselineDocHash`'s input shape). */
+    pub replaceable: Vec<BytesN<32>>,
     pub delay_secs: u64,
     pub expiry_secs: u64,
     pub max_cancels: u32,
@@ -353,6 +362,14 @@ pub enum Error {
     /// limits" for exactly why a ZK reconfigure-evidence path needs a new
     /// circuit binding this crate does not add.
     ReconfigureZkEvidenceUnsupported = 29,
+    /// `begin_attempt`: `Compromise` action attempted, but
+    /// `config.baseline_doc_hash` is `None` — this account never enrolled
+    /// compromise recovery.
+    CompromiseRecoveryNotEnrolled = 30,
+    /// `begin_attempt`: a declared `replaced_credential_id` is not in
+    /// `config.replaceable` — the account's enrolled policy never authorized
+    /// replacing that credential.
+    CredentialNotReplaceable = 31,
 }
 
 #[contractevent(topics = ["recovery_attempt_begun"], data_format = "map")]

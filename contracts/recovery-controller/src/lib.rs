@@ -262,39 +262,31 @@
 //!   `initiate_recovery_rule_removal` -> `execute_recovery_rule_removal`
 //!   migration. This is not an isolated misconfiguration on
 //!   one test account; it is the universal starting state.
-//! - **Recovery configuration is NOT embedded in the account's Perch
-//!   policy document**, despite the goal of keeping all authority-bearing
-//!   recovery configuration reviewable with an accurate commitment, the
-//!   same guarantee `applied_doc_hash` gives ordinary policy. Investigated and
-//!   confirmed unreachable, not merely unimplemented: (1) `@stellar-
-//!   registry/perch`'s `policyDocSchema` is Zod `.strict()` — no top-level
-//!   extension fields, so a `recovery` key cannot simply be added to the
-//!   doc shape client-side; (2) the schema DOES have a `self-authenticating`
-//!   principal shape that could plausibly carry an arbitrary policy
-//!   address, but nido's own lowering
-//!   (`packages/passkey-sdk/src/policyDoc/lower.ts::lowerRule`)
-//!   unconditionally throws for it (`"self-authenticating rules need a
-//!   policy-call op not in program v1"`) — never reaches the wire; (3) the
-//!   decisive blocker: the REAL doc compiler is not nido code at all — it
-//!   is a separately deployed, version-pinned `perch-doc-compiler` Soroban
-//!   contract that `contracts/smart-account/src/doc.rs::apply` cross-calls.
-//!   Its wire-level `CompiledRule` type (`doc.rs`) has exactly six fields —
-//!   `cap`, `install` (hardwired to the fixed interpreter's own policy-
-//!   install program), `name`, `scope`, `signers`, `valid_until` — with NO
-//!   field capable of carrying an arbitrary policy contract address, let
-//!   alone a `RecoveryConfig`. `doc.rs`'s own `DOC_RIDS` comment states
-//!   plainly that rules installed via `apply_doc` never include the
-//!   recovery rule. Embedding recovery configuration in the doc would
-//!   require changing that EXTERNAL, pinned dependency's wire protocol —
-//!   out of scope while working against nido's own crates only.
-//!   Addressed instead with an equivalent, independently verifiable
-//!   substitute: `RecoveryController::config_hash(account) ->
-//!   Option<BytesN<32>>`, `sha256(xdr(RecoveryConfig))` using Soroban's own
-//!   `ToXdr` (deterministic canonical serialization) — a real, on-chain,
-//!   recomputable commitment to the FULL enrolled configuration, reviewable
-//!   the same way `applied_doc_hash` is, just not literally inside the
-//!   doc's own JSON. `packages/passkey-sdk/src/recoveryStage3/reads.ts::
-//!   readConfigHash` and the `recover-v3` Status panel surface it.
+//! - **RESOLVED — recovery configuration IS now embedded in the account's
+//!   Perch policy document.** The blockers this bullet used to describe
+//!   were about the PREVIOUSLY-pinned `perch-doc-compiler`'s wire protocol,
+//!   not a permanent structural limit: once nido's compiler/interpreter
+//!   pins were bumped to perch's Stage 4 (recovery-schema) generation, a
+//!   doc's `recovery` section compiles to a real `CompiledRecoveryConfig`
+//!   (`contracts/smart-account/src/types.rs`), and
+//!   `contracts/smart-account/src/doc.rs::apply` reads it as a normal part
+//!   of every `apply_doc` call — no separate `enroll`/`enroll_zk_recovery`
+//!   submission required. `apply`'s four-state match on `(recovery_rule_id,
+//!   current_recovery_config)` enrolls a fresh account, enrolls a
+//!   constructor-wired-but-unenrolled one, reconfigures an already-enrolled
+//!   one (`Profile::Loss` only so far), and fails closed
+//!   (`ApplyDocError::RecoveryConfigWithoutWiring`) on a config that exists
+//!   without a matching wired rule — closing the wiring-mismatch class the
+//!   bullet above this one describes, for the doc-driven path. The doc's
+//!   own `compiled.recovery.controller` is compared against the account's
+//!   actually-wired controller (`ApplyDocError::RecoveryControllerMismatch`)
+//!   before either `enroll` or `reconfigure` ever cross-calls, so a doc can
+//!   no longer silently enroll a controller the installed rule doesn't
+//!   point at. `RecoveryController::config_hash` (below) predates this and
+//!   remains available as an independent, out-of-band commitment, but it is
+//!   no longer the only way to review enrolled recovery configuration —
+//!   `apply_doc`'s own `doc_hash` now covers it, the same guarantee
+//!   `applied_doc_hash` gives ordinary policy.
 
 pub mod contract;
 pub mod types;

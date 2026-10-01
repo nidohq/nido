@@ -39,6 +39,8 @@ export type {
   PolicyDoc,
   PolicyRequest,
   Principals,
+  RecoveryModeSpec,
+  RecoverySpec,
   Rule,
   Scope,
   SignerDecl,
