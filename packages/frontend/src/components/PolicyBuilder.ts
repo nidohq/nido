@@ -154,6 +154,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
       applyUpdate,
       showErrorsIn,
     });
+    recoveryPanel.render();
     const sessionTab = container.querySelector<HTMLButtonElement>('#pol-tab-session')!;
     const adminTab = container.querySelector<HTMLButtonElement>('#pol-tab-admin')!;
     const recoveryTab = container.querySelector<HTMLButtonElement>('#pol-tab-recovery')!;
@@ -170,7 +171,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     };
     sessionTab.addEventListener('click', () => { tab = 'session'; applyTab(); });
     adminTab.addEventListener('click', () => { tab = 'admin'; applyTab(); });
-    recoveryTab.addEventListener('click', () => { tab = 'admin'; applyTab(); });
+    recoveryTab.addEventListener('click', () => { tab = 'recovery'; applyTab(); });
     applyTab();
   }
 
@@ -738,6 +739,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     updateSessionPreview();
     renderAdminPanel();
     updateAdminPreview();
+    recoveryPanel.render();
     recoveryPanel.updatePreview();
   });
 }
