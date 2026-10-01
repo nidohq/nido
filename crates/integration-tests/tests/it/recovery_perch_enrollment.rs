@@ -23,6 +23,7 @@ fn recovery_enrollment_doc(
     controller: &str,
     guardian1: &str,
     guardian2: &str,
+    profile: &str,
 ) -> String {
     format!(
         r#"{{
@@ -37,7 +38,7 @@ fn recovery_enrollment_doc(
       "principals": {{ "type": "all", "signers": ["owner"] }} }}
   ],
   "recovery": {{
-    "profile": "loss",
+    "profile": "{profile}",
     "mode": {{ "type": "guardian-only", "guardians": ["{guardian1}", "{guardian2}"], "quorum": 1 }},
     "controller": "{controller}",
     "replaceable": ["owner"],
@@ -78,6 +79,7 @@ fn apply_doc_with_recovery_section_enrolls_for_the_first_time() {
         &addr_str(&controller_addr),
         &guardian1,
         &guardian2,
+        "loss",
     );
     let canonical = canonicalize(&doc);
     let doc_bytes = Bytes::from_slice(&env, canonical.as_bytes());
@@ -104,6 +106,7 @@ fn apply_doc_with_recovery_section_enrolls_for_the_first_time() {
     assert_eq!(account.get_context_rules_count(), 2); // admin + recovery rule
 }
 
+#[allow(clippy::too_many_arguments)]
 fn recovery_combined_doc(
     network: &str,
     verifier: &str,
@@ -114,6 +117,7 @@ fn recovery_combined_doc(
     zk_verifier: &str,
     circuit_id_hex: &str,
     zk_pool: &str,
+    profile: &str,
 ) -> String {
     format!(
         r#"{{
@@ -128,7 +132,7 @@ fn recovery_combined_doc(
       "principals": {{ "type": "all", "signers": ["owner"] }} }}
   ],
   "recovery": {{
-    "profile": "loss",
+    "profile": "{profile}",
     "mode": {{ "type": "combined", "guardians": ["{guardian1}", "{guardian2}"], "quorum": 1, "verifier": "{zk_verifier}", "circuit-id": "{circuit_id_hex}", "pool": "{zk_pool}" }},
     "controller": "{controller}",
     "replaceable": ["owner"],
@@ -165,6 +169,7 @@ fn apply_doc_with_additive_recovery_change_reconfigures() {
         &addr_str(&controller_addr),
         &guardian1,
         &guardian2,
+        "loss",
     );
     account.apply_doc(
         &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
@@ -191,6 +196,7 @@ fn apply_doc_with_additive_recovery_change_reconfigures() {
         &zk_verifier,
         "00",
         &zk_pool,
+        "loss",
     );
     account.apply_doc(
         &Bytes::from_slice(&env, canonicalize(&doc2).as_bytes()),
@@ -233,6 +239,7 @@ fn apply_doc_with_unchanged_recovery_section_does_not_reconfigure() {
         &addr_str(&controller_addr),
         &guardian1,
         &guardian2,
+        "loss",
     );
     let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
 
@@ -262,6 +269,7 @@ fn apply_doc_with_unchanged_recovery_section_does_not_reconfigure() {
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn recovery_zk_only_doc(
     network: &str,
     verifier: &str,
@@ -271,6 +279,7 @@ fn recovery_zk_only_doc(
     circuit_id_hex: &str,
     zk_pool: &str,
     target: &str,
+    profile: &str,
 ) -> String {
     format!(
         r#"{{
@@ -289,7 +298,7 @@ fn recovery_zk_only_doc(
       "functions": ["transfer"] }}
   ],
   "recovery": {{
-    "profile": "loss",
+    "profile": "{profile}",
     "mode": {{ "type": "zk-only", "verifier": "{zk_verifier}", "circuit-id": "{circuit_id_hex}", "pool": "{zk_pool}" }},
     "controller": "{controller}",
     "replaceable": ["owner"],
@@ -324,6 +333,7 @@ fn apply_doc_with_non_additive_recovery_change_reverts_the_whole_apply() {
         &addr_str(&controller_addr),
         &guardian1,
         &guardian2,
+        "loss",
     );
     let doc1_hash = account.apply_doc(
         &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
@@ -345,6 +355,7 @@ fn apply_doc_with_non_additive_recovery_change_reverts_the_whole_apply() {
         "00",
         &zk_pool,
         &target,
+        "loss",
     );
     let doc2_bytes = Bytes::from_slice(&env, canonicalize(&doc2).as_bytes());
 
@@ -406,6 +417,7 @@ fn apply_doc_enrolls_a_constructor_wired_but_unenrolled_account() {
         &addr_str(&controller_addr),
         &guardian1,
         &guardian2,
+        "loss",
     );
     let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
 
@@ -449,6 +461,7 @@ fn apply_doc_refuses_when_a_different_controller_is_used() {
         &addr_str(&controller_b),
         &guardian1,
         &guardian2,
+        "loss",
     );
     let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
 
@@ -520,6 +533,7 @@ fn apply_doc_refuses_when_config_exists_without_wiring() {
         &addr_str(&controller_addr),
         &guardian1,
         &guardian2,
+        "loss",
     );
     let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
 
@@ -572,6 +586,7 @@ fn apply_doc_refuses_when_recovery_is_removed() {
         &addr_str(&controller_addr),
         &guardian1,
         &guardian2,
+        "loss",
     );
     let doc1_hash = account.apply_doc(
         &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
@@ -615,4 +630,306 @@ fn apply_doc_refuses_when_recovery_is_removed() {
     let controller_client =
         nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
     assert!(controller_client.config(&account_addr).is_some());
+}
+
+// ---------------------------------------------------------------------
+// Protected-profile reconfigure through apply_doc: `reconfigure`'s
+// guardian-quorum evidence check (contract.rs's `if matches!(existing.
+// profile, Profile::Protected)` block) is already implemented and tested
+// at the controller level — these tests confirm apply_doc's new
+// `guardian_evidence` parameter actually reaches it, for both the success
+// and refusal paths.
+// ---------------------------------------------------------------------
+
+#[test]
+fn apply_doc_with_protected_reconfigure_and_sufficient_guardian_evidence_succeeds() {
+    // GuardianOnly/Protected -> Combined, with evidence meeting the
+    // enrolled quorum (1-of-2, per recovery_enrollment_doc's hardcoded
+    // "quorum": 1).
+    let env = Env::default();
+    // The guardian's `require_auth_for_args` (inside the controller's
+    // `reconfigure`, itself cross-called from this account's own apply_doc)
+    // is a genuinely independent address, not part of the account's own
+    // root-invocation auth tree — plain `mock_all_auths()` only covers the
+    // root invoker, so this needs the non-root variant.
+    env.mock_all_auths_allowing_non_root_auth();
+    bind_testnet(&env);
+    register_infra(&env);
+
+    let controller_addr = env.register(RecoveryController, ());
+    let (account, account_addr, verifier_addr, signing_key) =
+        deploy_smart_account_with_recovery(&env, None);
+
+    let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
+    let guardian1_addr = Address::generate(&env);
+    let guardian2_addr = Address::generate(&env);
+    let guardian1 = addr_str(&guardian1_addr);
+    let guardian2 = addr_str(&guardian2_addr);
+
+    let doc1 = recovery_enrollment_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+        "protected",
+    );
+    account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
+        &Vec::new(&env),
+    );
+
+    let controller_client =
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
+    let cfg = controller_client.config(&account_addr).unwrap();
+    assert!(matches!(cfg.mode, AuthMode::GuardianOnly));
+    assert!(matches!(cfg.profile, Profile::Protected));
+
+    let zk_verifier = addr_str(&Address::generate(&env));
+    let zk_pool = addr_str(&Address::generate(&env));
+    let doc2 = recovery_combined_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+        &zk_verifier,
+        "00",
+        &zk_pool,
+        "protected",
+    );
+    let mut evidence = Vec::new(&env);
+    evidence.push_back(guardian1_addr);
+    account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc2).as_bytes()),
+        &evidence,
+    );
+
+    let cfg = controller_client.config(&account_addr).unwrap();
+    assert!(
+        matches!(cfg.mode, AuthMode::Combined),
+        "expected Combined after a Protected-profile reconfigure with sufficient evidence, got {:?}",
+        cfg.mode
+    );
+}
+
+#[test]
+fn apply_doc_with_protected_reconfigure_and_insufficient_guardian_evidence_fails() {
+    // Same additive transition as the success case above, but with NO
+    // guardian evidence — below the enrolled 1-of-2 quorum.
+    let env = Env::default();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_infra(&env);
+
+    let controller_addr = env.register(RecoveryController, ());
+    let (account, account_addr, verifier_addr, signing_key) =
+        deploy_smart_account_with_recovery(&env, None);
+
+    let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
+    let guardian1 = addr_str(&Address::generate(&env));
+    let guardian2 = addr_str(&Address::generate(&env));
+
+    let doc1 = recovery_enrollment_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+        "protected",
+    );
+    let doc1_hash = account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
+        &Vec::new(&env),
+    );
+
+    let zk_verifier = addr_str(&Address::generate(&env));
+    let zk_pool = addr_str(&Address::generate(&env));
+    let doc2 = recovery_combined_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+        &zk_verifier,
+        "00",
+        &zk_pool,
+        "protected",
+    );
+    let doc2_bytes = Bytes::from_slice(&env, canonicalize(&doc2).as_bytes());
+
+    let res = account.try_apply_doc(&doc2_bytes, &Vec::new(&env));
+    assert!(
+        res.is_err(),
+        "a Protected-profile reconfigure with no guardian evidence must be refused"
+    );
+
+    // Nothing changed: doc hash and recovery config both as before.
+    assert_eq!(account.applied_doc_hash(), Some(doc1_hash));
+    let controller_client =
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
+    let cfg = controller_client.config(&account_addr).unwrap();
+    assert!(matches!(cfg.mode, AuthMode::GuardianOnly));
+}
+
+#[test]
+fn apply_doc_with_protected_reconfigure_rejects_a_non_guardian() {
+    // Evidence from a real address, but one that was never enrolled as a
+    // guardian on this config — the controller's NotAGuardian check.
+    let env = Env::default();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_infra(&env);
+
+    let controller_addr = env.register(RecoveryController, ());
+    let (account, account_addr, verifier_addr, signing_key) =
+        deploy_smart_account_with_recovery(&env, None);
+
+    let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
+    let guardian1 = addr_str(&Address::generate(&env));
+    let guardian2 = addr_str(&Address::generate(&env));
+
+    let doc1 = recovery_enrollment_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+        "protected",
+    );
+    let doc1_hash = account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
+        &Vec::new(&env),
+    );
+
+    let zk_verifier = addr_str(&Address::generate(&env));
+    let zk_pool = addr_str(&Address::generate(&env));
+    let doc2 = recovery_combined_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+        &zk_verifier,
+        "00",
+        &zk_pool,
+        "protected",
+    );
+    let doc2_bytes = Bytes::from_slice(&env, canonicalize(&doc2).as_bytes());
+
+    let not_a_guardian = Address::generate(&env);
+    let mut evidence = Vec::new(&env);
+    evidence.push_back(not_a_guardian);
+
+    let res = account.try_apply_doc(&doc2_bytes, &evidence);
+    assert!(
+        res.is_err(),
+        "evidence from an address that was never enrolled as a guardian must be refused"
+    );
+
+    assert_eq!(account.applied_doc_hash(), Some(doc1_hash));
+    let controller_client =
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
+    let cfg = controller_client.config(&account_addr).unwrap();
+    assert!(matches!(cfg.mode, AuthMode::GuardianOnly));
+}
+
+#[test]
+fn apply_doc_protected_zk_only_reconfigure_evidence_is_unsupported() {
+    // ZkOnly/Protected -> Combined is structurally additive (same
+    // verifier/pool, adding guardians), but the controller explicitly
+    // refuses ANY Protected-profile reconfigure starting from ZkOnly —
+    // there's no ZK reconfigure-evidence circuit binding yet (see
+    // `reconfigure_protected_zk_only_evidence_is_explicitly_unsupported`
+    // in `recovery-controller/src/contract.rs`). Confirms apply_doc
+    // propagates that refusal atomically, same as every other reconfigure
+    // rejection.
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    env.mock_all_auths();
+    bind_testnet(&env);
+    register_infra(&env);
+
+    let controller_addr = env.register(RecoveryController, ());
+    let (account, account_addr, verifier_addr, signing_key) =
+        deploy_smart_account_with_recovery(&env, None);
+
+    let key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes());
+    let zk_verifier = addr_str(&Address::generate(&env));
+    let zk_pool = addr_str(&Address::generate(&env));
+
+    // A minimal ZK-only enrollment doc (no unrelated "pay" rule — this test
+    // only cares about the recovery section).
+    let doc1 = format!(
+        r#"{{
+  "version": 1,
+  "network": "{network}",
+  "signers": [
+    {{ "id": "owner", "verifier": "{verifier}", "key": "{key_hex}" }}
+  ],
+  "rules": [
+    {{ "name": "admin",
+      "scope": {{ "type": "self-admin" }},
+      "principals": {{ "type": "all", "signers": ["owner"] }} }}
+  ],
+  "recovery": {{
+    "profile": "protected",
+    "mode": {{ "type": "zk-only", "verifier": "{zk_verifier}", "circuit-id": "00", "pool": "{zk_pool}" }},
+    "controller": "{controller}",
+    "replaceable": ["owner"],
+    "delay-ledgers": 100,
+    "expiry-ledgers": 100,
+    "max-cancels": 3,
+    "pending-activity": "freeze"
+  }}
+}}"#,
+        network = TESTNET_PASSPHRASE,
+        verifier = addr_str(&verifier_addr),
+        key_hex = key_hex,
+        zk_verifier = zk_verifier,
+        zk_pool = zk_pool,
+        controller = addr_str(&controller_addr),
+    );
+    let doc1_hash = account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
+        &Vec::new(&env),
+    );
+
+    let controller_client =
+        nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
+    let cfg = controller_client.config(&account_addr).unwrap();
+    assert!(matches!(cfg.mode, AuthMode::ZkOnly));
+    assert!(matches!(cfg.profile, Profile::Protected));
+
+    let guardian1 = addr_str(&Address::generate(&env));
+    let guardian2 = addr_str(&Address::generate(&env));
+    let doc2 = recovery_combined_doc(
+        TESTNET_PASSPHRASE,
+        &addr_str(&verifier_addr),
+        &key_hex,
+        &addr_str(&controller_addr),
+        &guardian1,
+        &guardian2,
+        &zk_verifier,
+        "00",
+        &zk_pool,
+        "protected",
+    );
+    let doc2_bytes = Bytes::from_slice(&env, canonicalize(&doc2).as_bytes());
+
+    let res = account.try_apply_doc(&doc2_bytes, &Vec::new(&env));
+    assert!(
+        res.is_err(),
+        "Protected + ZkOnly reconfigure must be refused, there's no ZK evidence circuit yet"
+    );
+
+    assert_eq!(account.applied_doc_hash(), Some(doc1_hash));
+    let cfg_after = controller_client.config(&account_addr).unwrap();
+    assert!(matches!(cfg_after.mode, AuthMode::ZkOnly));
 }
