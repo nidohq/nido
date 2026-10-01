@@ -471,3 +471,105 @@ export function removeAdminRule(
   );
 }
 
+// --- Recovery (Loss profile, guardian-only — first pass) -------------------
+
+/**
+ * Input for enrolling/reconfiguring Loss-profile, guardian only recovery.
+ * Deliberately scoped narrowly for this first pass: no Protected
+ * profile (needs guardian-evidence UX not built yet), no ZkOnly/Combined
+ * modes, no suspected-compromise baseline (lost-key recovery only).
+ */
+export interface RecoveryDraft {
+  /** The adopted recovery-controller instance's address (C-strkey). */
+  controller: string;
+  /** G/C-address guardians. */
+  guardians: string[];
+  guardianThreshold: number;
+  /** Signer ids (`doc.signers[].id`) a recovery may replace. Must be non-empty. */
+  replaceable: string[];
+  delayLedgers: number;
+  expiryLedgers: number;
+  maxCancels: number;
+  pendingActivity: 'freeze' | 'continue';
+}
+
+export function validateRecoveryDraft(draft: RecoveryDraft, base: PolicyDoc): DocValidationResult {
+  const errors: string[] = [];
+
+  if (!isContractAddress(draft.controller.trim())) {
+    errors.push('Recovery controller is not a valid C-address.');
+  }
+
+  if (draft.guardians.length === 0) {
+    errors.push('Add at least one guardian.');
+  }
+  for (const g of draft.guardians) {
+    if (!isStellarAddress(g.trim())) {
+      errors.push(`Guardian "${g}" is not a valid C- or G-address.`);
+    }
+  }
+  if (new Set(draft.guardians.map((g) => g.trim())).size !== draft.guardians.length) {
+    errors.push('Guardians must be distinct.');
+  }
+
+  if (
+    !Number.isInteger(draft.guardianThreshold) ||
+    draft.guardianThreshold < 1 ||
+    draft.guardianThreshold > draft.guardians.length
+  ) {
+    errors.push('Guardian threshold must be between 1 and the number of guardians.');
+  }
+
+  if (draft.replaceable.length === 0) {
+    errors.push('Choose at least one signer that recovery may replace.');
+  }
+  const signerIds = new Set(base.signers.map((s) => s.id));
+  for (const id of draft.replaceable) {
+    if (!signerIds.has(id)) {
+      errors.push(`"${id}" is not a signer on this document.`);
+    }
+  }
+
+  for (const [label, value] of [
+    ['Delay', draft.delayLedgers],
+    ['Expiry', draft.expiryLedgers],
+    ['Max cancels', draft.maxCancels],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) {
+      errors.push(`${label} must be a positive integer.`);
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+export function upsertRecovery(
+  base: PolicyDoc,
+  draft: RecoveryDraft,
+  networkPassphrase: string,
+): PolicyDoc {
+  assertSameNetwork(base, networkPassphrase);
+  // instead of building this inline, we could export recoverySpecToWire
+  // from perch and use that to create the recovery shape here.
+  const recovery = {
+    profile: 'loss' as const,
+    mode: {
+      type: 'guardian-only' as const,
+      guardians: draft.guardians.map((g) => g.trim()),
+      quorum: draft.guardianThreshold,
+    },
+    controller: draft.controller.trim(),
+    replaceable: draft.replaceable,
+    'delay-ledgers': draft.delayLedgers,
+    'expiry-ledgers': draft.expiryLedgers,
+    'max-cancels': draft.maxCancels,
+    'pending-activity': draft.pendingActivity,
+  };
+  return parsePolicyDoc(
+    renameLegacyOwner({
+      ...base,
+      network: networkPassphrase,
+      recovery,
+    } as PolicyDoc),
+  );
+}
