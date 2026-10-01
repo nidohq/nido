@@ -66,8 +66,15 @@ jobs:
       # never runs `just build-contracts` first). That's a hard cargo build
       # failure, not a findings-based one, so fail_on_error/the severity
       # gate below can't rescue it -- this step itself has to tolerate it.
-      # Real fix: stage the smart-account wasm into Scout's sandbox before
-      # this step runs (see PR description for the plan).
+      #
+      # Tried pre-running scout-actions against contracts/smart-account
+      # first (same job, hoping its build artifacts would land where
+      # factory's build.rs looks) -- confirmed via a real CI run that this
+      # doesn't work: Scout's own analysis pipeline is check-only, it never
+      # links an actual wasm binary, so there was nothing for the pre-build
+      # pass to leave behind. Real fix still needs something that actually
+      # builds (not just analyzes) smart-account inside that same sandboxed
+      # target dir -- not attempted here.
       - name: Run Scout
         id: scout
         continue-on-error: true
