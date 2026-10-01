@@ -161,12 +161,15 @@ pub struct RecoveryConfig {
     /// `Compromise` attempts MUST target `baseline_doc_hash` plus
     /// replacements — never the live document — enforced at `begin_attempt`.
     pub baseline_doc_hash: Option<BytesN<32>>,
+    /** Signer ids from the account's doc the enrolled authority may replace
+   *  on a successful recovery (hex strings, 32-byte hashes, or bytes —
+   *  matches `baselineDocHash`'s input shape). */
+    pub replaceable: Vec<BytesN<32>>,
     pub delay_secs: u64,
     pub expiry_secs: u64,
     pub max_cancels: u32,
     pub version: u32,
     pub pending_activity_policy: PendingActivityPolicy,
-    pub replaceable: Vec<BytesN<32>>,
 }
 
 #[contracttype]

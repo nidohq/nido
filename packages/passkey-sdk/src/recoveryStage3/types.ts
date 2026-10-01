@@ -61,6 +61,7 @@ export interface RecoveryConfigInput {
    *  without `0x`, or 32 raw bytes). `Compromise` attempts must target this
    *  exact hash plus replacements. */
   baselineDocHash: Uint8Array | string;
+  replaceable: (Uint8Array | string)[];
   delaySecs: number | bigint;
   expirySecs: number | bigint;
   maxCancels: number;
