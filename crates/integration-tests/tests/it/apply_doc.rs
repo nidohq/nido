@@ -29,7 +29,7 @@ use nido_smart_account::doc::{
 use nido_smart_account::types::DocCompilerError;
 use sha2::{Digest, Sha256};
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
-use soroban_sdk::{vec, Address, Bytes, BytesN, Env, Event, String as SString};
+use soroban_sdk::{vec, Address, Bytes, BytesN, Env, Event, String as SString, Vec};
 
 const TESTNET_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 
@@ -178,7 +178,7 @@ fn apply_doc_replaces_rule_set_stores_doc_and_emits_recoverable_doc() {
     let canonical = canonicalize(&doc);
     let doc_bytes = Bytes::from_slice(&env, canonical.as_bytes());
 
-    let hash = client.apply_doc(&doc_bytes);
+    let hash = client.apply_doc(&doc_bytes, &Vec::new(&env));
 
     // Event capture must happen immediately: `Env::events()` reflects only
     // the most recent top-level invocation. `apply_doc` publishes
@@ -264,7 +264,10 @@ fn reapply_replaces_the_whole_rule_set() {
   ]
 }}"#
     );
-    let first = client.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()));
+    let first = client.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
+        &Vec::new(&env),
+    );
     assert_eq!(client.doc_rule_ids(), vec![&env, 1u32]);
     assert_eq!(client.get_context_rules_count(), 1);
 
@@ -272,7 +275,10 @@ fn reapply_replaces_the_whole_rule_set() {
     // replaced wholesale.
     let doc2 = fixture_doc(TESTNET_PASSPHRASE, &verifier, &key_hex, &target);
     let canonical2 = canonicalize(&doc2);
-    let second = client.apply_doc(&Bytes::from_slice(&env, canonical2.as_bytes()));
+    let second = client.apply_doc(
+        &Bytes::from_slice(&env, canonical2.as_bytes()),
+        &Vec::new(&env),
+    );
 
     assert_ne!(first, second);
     assert_eq!(client.applied_doc_hash(), Some(second));
@@ -325,7 +331,10 @@ fn capped_doc_installs_spending_limit_beside_interpreter() {
         key_hex = hex_lower(&signing_key.verifying_key().to_sec1_bytes()),
     );
 
-    client.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes()));
+    client.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc).as_bytes()),
+        &Vec::new(&env),
+    );
 
     let capped = client.get_context_rule(&2);
     assert_eq!(capped.name, SString::from_str(&env, "capped-pay"));
@@ -368,7 +377,10 @@ fn admin_less_doc_is_refused_anti_brick() {
     );
 
     assert_doc_error(
-        client.try_apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes())),
+        client.try_apply_doc(
+            &Bytes::from_slice(&env, canonicalize(&doc).as_bytes()),
+            &Vec::new(&env),
+        ),
         ApplyDocError::DocAdminLockout,
     );
     // Nothing changed: the constructor's default rule is still the policy.
@@ -397,7 +409,7 @@ fn non_canonical_doc_is_refused() {
     );
 
     assert_doc_error(
-        client.try_apply_doc(&Bytes::from_slice(&env, doc.as_bytes())),
+        client.try_apply_doc(&Bytes::from_slice(&env, doc.as_bytes()), &Vec::new(&env)),
         ApplyDocError::DocNotCanonical,
     );
     assert_eq!(client.get_context_rules_count(), 1);
@@ -423,7 +435,10 @@ fn wrong_network_doc_is_refused() {
     );
 
     assert_doc_error(
-        client.try_apply_doc(&Bytes::from_slice(&env, canonicalize(&doc).as_bytes())),
+        client.try_apply_doc(
+            &Bytes::from_slice(&env, canonicalize(&doc).as_bytes()),
+            &Vec::new(&env),
+        ),
         ApplyDocError::DocCompiler(DocCompilerError::WrongNetwork),
     );
     assert_eq!(client.get_context_rules_count(), 1);

@@ -133,10 +133,12 @@ pub fn zero_signer_apply_doc_entry(
     env: &Env,
     account_addr: &Address,
     doc_json: &Bytes,
+    guardian_evidence: &SVec<Address>,
     rule_id: u32,
     nonce: i64,
 ) -> SorobanAuthorizationEntry {
-    let args: SVec<Val> = soroban_sdk::vec![env, doc_json.into_val(env)];
+    let args: SVec<Val> =
+        soroban_sdk::vec![env, doc_json.into_val(env), guardian_evidence.into_val(env)];
     let args_scval: VecM<ScVal> = args
         .iter()
         .map(|v| ScVal::try_from_val(env, &v).unwrap())

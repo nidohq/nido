@@ -207,9 +207,13 @@ pub fn zero_signer_entry(
     account_addr: &Address,
     fn_name: &str,
     doc_json: &Bytes,
+    guardian_evidence: Option<&SVec<Address>>,
     rule_id: u32,
 ) -> SorobanAuthorizationEntry {
-    let args: SVec<Val> = soroban_sdk::vec![env, doc_json.into_val(env)];
+    let mut args: SVec<Val> = soroban_sdk::vec![env, doc_json.into_val(env)];
+    if let Some(evidence) = guardian_evidence {
+        args.push_back(evidence.into_val(env));
+    }
     let args_scval: VecM<ScVal> = args
         .iter()
         .map(|v| ScVal::try_from_val(env, &v).unwrap())

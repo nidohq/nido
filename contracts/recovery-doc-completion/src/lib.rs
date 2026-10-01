@@ -450,7 +450,8 @@ impl Policy for DocRecoveryCompletion {
         if cc.fn_name != apply_doc_fn(e) && cc.fn_name != complete_recovery_fn(e) {
             panic_with_error!(e, Error::ContextMismatch);
         }
-        if cc.args.len() != 1 {
+        let expected_args_len = if cc.fn_name == apply_doc_fn(e) { 2 } else { 1 };
+        if cc.args.len() != expected_args_len {
             panic_with_error!(e, Error::ContextMismatch);
         }
         let doc_val: Val = cc

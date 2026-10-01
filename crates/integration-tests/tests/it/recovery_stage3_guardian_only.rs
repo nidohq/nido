@@ -70,11 +70,12 @@ fn guardian_only_lifecycle_completes_via_apply_doc() {
         &env,
         &setup.account_addr,
         &doc_bytes,
+        &SVec::new(&env),
         setup.recovery_rule_id,
         0x00C0_FFEE,
     );
     env.set_auths(&[entry]);
-    let res = setup.account.try_apply_doc(&doc_bytes);
+    let res = setup.account.try_apply_doc(&doc_bytes, &SVec::new(&env));
     assert!(
         res.is_ok(),
         "recovery-authorized apply_doc must succeed: {res:?}"
@@ -127,14 +128,15 @@ fn repeat_completion_is_refused() {
         &env,
         &setup.account_addr,
         &doc_bytes,
+        &SVec::new(&env),
         setup.recovery_rule_id,
         0x00C0_FFEE,
     );
     env.set_auths(&[entry.clone()]);
-    setup.account.apply_doc(&doc_bytes);
+    setup.account.apply_doc(&doc_bytes, &SVec::new(&env));
 
     env.set_auths(&[entry]);
-    let res = setup.account.try_apply_doc(&doc_bytes);
+    let res = setup.account.try_apply_doc(&doc_bytes, &SVec::new(&env));
     assert!(
         res.is_err(),
         "a second completion of the SAME consumed attempt must fail"
@@ -183,11 +185,12 @@ fn second_recovery_attempt_after_completion_succeeds() {
         &env,
         &setup.account_addr,
         &doc1,
+        &SVec::new(&env),
         setup.recovery_rule_id,
         0x00C0_FFEE,
     );
     env.set_auths(&[entry1]);
-    setup.account.apply_doc(&doc1);
+    setup.account.apply_doc(&doc1, &SVec::new(&env));
     assert_eq!(setup.account.applied_doc_hash(), Some(hash1.clone()));
 
     // Second device, second attempt.
@@ -229,11 +232,12 @@ fn second_recovery_attempt_after_completion_succeeds() {
         &env,
         &setup.account_addr,
         &doc2,
+        &SVec::new(&env),
         setup.recovery_rule_id,
         0x00C0_FFEF,
     );
     env.set_auths(&[entry2]);
-    setup.account.apply_doc(&doc2);
+    setup.account.apply_doc(&doc2, &SVec::new(&env));
     assert_eq!(setup.account.applied_doc_hash(), Some(hash2));
 }
 
@@ -281,11 +285,12 @@ fn expired_attempt_cannot_complete_but_allows_a_fresh_one() {
         &env,
         &setup.account_addr,
         &doc_bytes,
+        &SVec::new(&env),
         setup.recovery_rule_id,
         0x00C0_FFEE,
     );
     env.set_auths(&[entry]);
-    let res = setup.account.try_apply_doc(&doc_bytes);
+    let res = setup.account.try_apply_doc(&doc_bytes, &SVec::new(&env));
     assert!(res.is_err(), "an EXPIRED attempt must not complete");
 
     env.mock_all_auths();
@@ -394,11 +399,12 @@ fn restores_an_inactive_account_without_its_old_admin_key() {
         &env,
         &setup.account_addr,
         &doc_bytes,
+        &SVec::new(&env),
         setup.recovery_rule_id,
         0x00C0_FFEE,
     );
     env.set_auths(&[entry]);
-    let res = setup.account.try_apply_doc(&doc_bytes);
+    let res = setup.account.try_apply_doc(&doc_bytes, &SVec::new(&env));
     assert!(
         res.is_ok(),
         "restoration must succeed without the old admin key ever signing again: {res:?}"
@@ -456,11 +462,12 @@ fn failed_install_leaves_the_attempt_unspent() {
         &env,
         &setup.account_addr,
         &doc_bytes,
+        &SVec::new(&env),
         setup.recovery_rule_id,
         0x00C0_FFEE,
     );
     env.set_auths(&[entry]);
-    let res = setup.account.try_apply_doc(&doc_bytes);
+    let res = setup.account.try_apply_doc(&doc_bytes, &SVec::new(&env));
     assert!(
         res.is_err(),
         "the admin-lockout document must fail the anti-brick pipeline check"
@@ -513,7 +520,7 @@ fn ordinary_authorization_cannot_complete_even_the_exact_document() {
     // mock_all_auths is still active, so the account's OWN (Default rule)
     // auth is trivially satisfied here -- exercising `guard_no_pending`,
     // not host auth-selection.
-    let res = setup.account.try_apply_doc(&doc_bytes);
+    let res = setup.account.try_apply_doc(&doc_bytes, &SVec::new(&env));
     assert!(
         res.is_err(),
         "ordinary admin-authorized apply_doc must be blocked while an attempt is live"

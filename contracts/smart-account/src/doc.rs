@@ -225,7 +225,11 @@ pub fn doc_rule_ids(e: &Env) -> Vec<u32> {
 /// itself fails; `DocNotCanonical` refuses submissions that are not the
 /// canonical byte form; `DocAdminLockout` is the anti-brick refusal (see the
 /// comments at each check).
-pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, ApplyDocError> {
+pub fn apply(
+    e: &Env,
+    doc_json: &Bytes,
+    guardian_evidence: &Vec<Address>,
+) -> Result<BytesN<32>, ApplyDocError> {
     // Stateless compile: parse, validate, network-bind, canonicalize + hash,
     // lower. Every compiler refusal surfaces as a typed error.
     let compiled: CompiledDoc =
@@ -340,16 +344,19 @@ pub fn apply(e: &Env, doc_json: &Bytes) -> Result<BytesN<32>, ApplyDocError> {
                 recovery_controller_client.enroll(&e.current_contract_address(), &new_config);
             }
             (Some(_recovery_rule_id), Some(current_config)) => {
-                // the account has recovery installed and configured, and they are trying to reconfigure
-                // This only works for a Loss profile right now
-                // FIXME: support the Protected profile.
+                // The account has recovery installed and configured, now it is being
+                // reconfigured.  Loss profile needs no evidence (empty Vec is fine);
+                // Protected profile's guardian-quorum check happens inside the controller's
+                // own `reconfigure` — this just forwards whatever the caller supplied.
+                // Deliberately the non-`try_` client: a controller refusal (bad evidence,
+                // non-additive transition, ...) traps and reverts this whole apply_doc
+                // atomically, same as `enroll` above — not caught/translated.
                 let new_config = recovery_config_from_compiled(e, &compiled_recovery);
-                let guardian_evidence: Vec<Address> = Vec::new(e);
                 if current_config != new_config.clone() {
                     recovery_controller_client.reconfigure(
                         &e.current_contract_address(),
                         &new_config,
-                        &guardian_evidence,
+                        guardian_evidence,
                     );
                 }
             }

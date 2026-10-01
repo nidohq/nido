@@ -14,7 +14,7 @@ use nido_integration_tests::deploy_smart_account_with_recovery;
 use nido_recovery_controller::types::{AuthMode, Profile};
 use nido_recovery_controller::RecoveryController;
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{Address, Bytes, Env};
+use soroban_sdk::{Address, Bytes, Env, Vec};
 
 fn recovery_enrollment_doc(
     network: &str,
@@ -82,7 +82,7 @@ fn apply_doc_with_recovery_section_enrolls_for_the_first_time() {
     let canonical = canonicalize(&doc);
     let doc_bytes = Bytes::from_slice(&env, canonical.as_bytes());
 
-    let hash = account.apply_doc(&doc_bytes);
+    let hash = account.apply_doc(&doc_bytes, &Vec::new(&env));
     assert_eq!(hash, canonical_doc_hash(&env, &doc));
 
     // The account is now wired to the controller the doc named.
@@ -166,7 +166,10 @@ fn apply_doc_with_additive_recovery_change_reconfigures() {
         &guardian1,
         &guardian2,
     );
-    account.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()));
+    account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
+        &Vec::new(&env),
+    );
 
     let controller_client =
         nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
@@ -189,7 +192,10 @@ fn apply_doc_with_additive_recovery_change_reconfigures() {
         "00",
         &zk_pool,
     );
-    account.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc2).as_bytes()));
+    account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc2).as_bytes()),
+        &Vec::new(&env),
+    );
 
     let cfg = controller_client.config(&account_addr).unwrap();
     assert!(
@@ -231,14 +237,14 @@ fn apply_doc_with_unchanged_recovery_section_does_not_reconfigure() {
     let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
 
     // First apply: enrolls.
-    account.apply_doc(&doc_bytes);
+    account.apply_doc(&doc_bytes, &Vec::new(&env));
 
     let controller_client =
         nido_recovery_controller::RecoveryControllerClient::new(&env, &controller_addr);
     let cfg_before = controller_client.config(&account_addr).unwrap();
 
     // Second apply: the EXACT same doc, recovery section unchanged.
-    account.apply_doc(&doc_bytes);
+    account.apply_doc(&doc_bytes, &Vec::new(&env));
 
     let cfg_after = controller_client.config(&account_addr).unwrap();
     assert_eq!(
@@ -319,7 +325,10 @@ fn apply_doc_with_non_additive_recovery_change_reverts_the_whole_apply() {
         &guardian1,
         &guardian2,
     );
-    let doc1_hash = account.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()));
+    let doc1_hash = account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
+        &Vec::new(&env),
+    );
 
     // Non-additive: GuardianOnly -> ZkOnly drops guardians entirely, which
     // reconfigure's catch-all match arm refuses. Bundles an unrelated new
@@ -339,7 +348,7 @@ fn apply_doc_with_non_additive_recovery_change_reverts_the_whole_apply() {
     );
     let doc2_bytes = Bytes::from_slice(&env, canonicalize(&doc2).as_bytes());
 
-    let res = account.try_apply_doc(&doc2_bytes);
+    let res = account.try_apply_doc(&doc2_bytes, &Vec::new(&env));
     assert!(
         res.is_err(),
         "a non-additive reconfigure attempt must fail, not silently succeed"
@@ -402,7 +411,7 @@ fn apply_doc_enrolls_a_constructor_wired_but_unenrolled_account() {
 
     // Must NOT panic — before the fix, this would wrongly try to reconfigure
     // a config that doesn't exist yet.
-    account.apply_doc(&doc_bytes);
+    account.apply_doc(&doc_bytes, &Vec::new(&env));
 
     let cfg = controller_client
         .config(&account_addr)
@@ -443,7 +452,7 @@ fn apply_doc_refuses_when_a_different_controller_is_used() {
     );
     let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
 
-    let res = account.try_apply_doc(&doc_bytes);
+    let res = account.try_apply_doc(&doc_bytes, &Vec::new(&env));
     assert!(
         res.is_err(),
         "must refuse rather than silently configure on an unwired controller"
@@ -514,7 +523,7 @@ fn apply_doc_refuses_when_config_exists_without_wiring() {
     );
     let doc_bytes = Bytes::from_slice(&env, canonicalize(&doc).as_bytes());
 
-    let res = account.try_apply_doc(&doc_bytes);
+    let res = account.try_apply_doc(&doc_bytes, &Vec::new(&env));
     assert!(
         res.is_err(),
         "must refuse rather than treating an out-of-band config as a reconfigure target \
@@ -564,7 +573,10 @@ fn apply_doc_refuses_when_recovery_is_removed() {
         &guardian1,
         &guardian2,
     );
-    let doc1_hash = account.apply_doc(&Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()));
+    let doc1_hash = account.apply_doc(
+        &Bytes::from_slice(&env, canonicalize(&doc1).as_bytes()),
+        &Vec::new(&env),
+    );
 
     // Second apply: the SAME signers/admin rule, but the "recovery" key is
     // omitted entirely — simulates a doc author (or an attacker holding a
@@ -590,7 +602,7 @@ fn apply_doc_refuses_when_recovery_is_removed() {
     );
     let doc2_bytes = Bytes::from_slice(&env, canonicalize(&doc2).as_bytes());
 
-    let res = account.try_apply_doc(&doc2_bytes);
+    let res = account.try_apply_doc(&doc2_bytes, &Vec::new(&env));
     assert!(
         res.is_err(),
         "omitting the recovery section from an already-enrolled account's doc must \

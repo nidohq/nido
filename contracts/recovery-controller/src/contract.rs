@@ -992,7 +992,7 @@ impl Policy for RecoveryController {
         if cc.fn_name != apply_doc_fn(e) {
             panic_with_error!(e, Error::ContextMismatch);
         }
-        if cc.args.len() != 1 {
+        if cc.args.len() != 2 {
             panic_with_error!(e, Error::ContextMismatch);
         }
         let doc_val: Val = cc

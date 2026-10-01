@@ -85,6 +85,7 @@ fn completion_installs_exact_target_document() {
         &setup.account_addr,
         "complete_recovery",
         &doc_bytes,
+        None,
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
@@ -136,6 +137,7 @@ fn repeat_completion_in_same_ledger_is_refused() {
         &setup.account_addr,
         "complete_recovery",
         &doc_bytes,
+        None,
         setup.recovery_rule_id,
     );
     env.set_auths(std::slice::from_ref(&entry));
@@ -176,6 +178,7 @@ fn completion_after_expiry_is_refused() {
         &setup.account_addr,
         "complete_recovery",
         &doc_bytes,
+        None,
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
@@ -214,6 +217,7 @@ fn completion_before_timelock_is_refused() {
         &setup.account_addr,
         "complete_recovery",
         &doc_bytes,
+        None,
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
@@ -251,6 +255,7 @@ fn failed_install_leaves_the_attempt_unspent() {
         &setup.account_addr,
         "complete_recovery",
         &doc_bytes,
+        None,
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
@@ -310,6 +315,7 @@ fn wrong_document_is_rejected_by_enforce() {
         &setup.account_addr,
         "complete_recovery",
         &wrong_bytes,
+        None,
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
