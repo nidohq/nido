@@ -101,6 +101,114 @@ whole set with `just test`; cost gates with `just bench-zk`, `just bench-zk-init
   victim account. Evidence: pool tests (`contracts/zk-recovery/src/pool.rs`),
   `zk_recovery_lifecycle.rs`.
 
+## Recovery controller (guardian-quorum / ZK, M2)
+
+`contracts/recovery-controller` — a shared, constructorless controller distinct from
+the M1 pool above. Unit-test evidence below is in
+`contracts/recovery-controller/src/contract.rs`'s own `#[cfg(test)]` module unless a
+`crates/integration-tests/tests/it/` path is given.
+
+- **RC1 — One-shot enrollment with a hard mode/machinery match.** `enroll` is
+  self-authed and one-shot (`AlreadyEnrolled`); it refuses any `GuardianOnly` config
+  carrying ZK fields, or `ZkOnly`/`Combined` missing them (`ModeConfigMismatch`) —
+  `GuardianOnly` never requires any ZK machinery, by construction, not just by
+  convention. Evidence: `enroll_rejects_unresolved_policy_branch`,
+  `enroll_rejects_threshold_above_guardian_count`, and the sibling mode-mismatch tests.
+- **RC2 — Atomic doc-driven wiring.** `apply_doc`'s compiled `recovery.controller` is
+  the SOLE source for both the `enroll`/`reconfigure` cross-call and the account's
+  recovery context-rule installation, in the SAME transaction
+  (`contracts/smart-account/src/doc.rs::apply`) — a doc can never enroll a controller
+  the installed rule doesn't point at (`ApplyDocError::RecoveryControllerMismatch`),
+  nor leave a stored config orphaned without a wired rule
+  (`ApplyDocError::RecoveryConfigWithoutWiring`). This closes the wiring-integrity bug
+  class the OLD two-step `enroll_zk_recovery` + standalone `enroll()` flow was exposed
+  to. Evidence: `recovery_perch_enrollment.rs::{apply_doc_with_recovery_section_enrolls_for_the_first_time,
+  apply_doc_enrolls_a_constructor_wired_but_unenrolled_account,
+  apply_doc_refuses_when_a_different_controller_is_used,
+  apply_doc_refuses_when_config_exists_without_wiring}`.
+- **RC3 — Reconfigure is strictly additive.** `reconfigure` accepts ONLY
+  `GuardianOnly -> Combined` or `ZkOnly -> Combined`; it refuses `Combined ->`
+  anything, a mode swap, re-adding an already-present factor, or ANY change to
+  `profile`/`network_passphrase`/`baseline_doc_hash`/`replaceable`/`delay_secs`/
+  `expiry_secs`/`max_cancels`/`pending_activity_policy`/`version`
+  (`ReconfigureNotAdditive`/`ReconfigureFieldMismatch`). Evidence:
+  `reconfigure_guardian_only_to_combined_adds_zk_and_leaves_guardians_untouched`,
+  `reconfigure_zk_only_to_combined_adds_guardians_and_leaves_zk_untouched`,
+  `reconfigure_rejects_combined_as_a_starting_point`,
+  `reconfigure_rejects_a_mode_swap_instead_of_addition`,
+  `reconfigure_rejects_re_adding_an_already_present_factor`,
+  `reconfigure_rejects_changing_a_locked_field`,
+  `reconfigure_rejects_changing_the_replaceable_allowlist`.
+- **RC4 — Protected-profile reconfigure needs a live quorum of the CURRENTLY-enrolled
+  factor, in the same transaction.** For an existing `GuardianOnly` config,
+  `>= guardian_threshold` distinct enrolled guardians must each
+  `require_auth_for_args` the exact `reconfigure_digest(account, new_config)`
+  (`ReconfigureEvidenceInsufficient` otherwise) — a one-shot nested-auth collection,
+  deliberately NOT the multi-transaction tally `submit_guardian_approval` uses for
+  attempts. `Profile::Loss` needs only `account.require_auth()`. Existing `ZkOnly` +
+  `Protected` refuses outright (`ReconfigureZkEvidenceUnsupported`) rather than
+  accepting a weaker proxy. Evidence: `reconfigure_loss_profile_needs_only_account_auth`,
+  `reconfigure_protected_guardian_only_needs_quorum_evidence`,
+  `reconfigure_protected_guardian_evidence_rejects_a_non_guardian`,
+  `reconfigure_protected_guardian_evidence_rejects_duplicate_guardian`,
+  `reconfigure_protected_zk_only_evidence_is_explicitly_unsupported`;
+  `recovery_perch_enrollment.rs::{apply_doc_with_protected_reconfigure_and_sufficient_guardian_evidence_succeeds,
+  apply_doc_with_protected_reconfigure_and_insufficient_guardian_evidence_fails,
+  apply_doc_with_protected_reconfigure_rejects_a_non_guardian,
+  apply_doc_protected_zk_only_reconfigure_evidence_is_unsupported}`.
+- **RC5 — Mode integrity at evidence time.** A factor the mode doesn't require can't be
+  submitted at all (`ModeMismatch`); `Combined` promotes only when BOTH guardian
+  quorum AND ZK verification hold (`&&`, never `||`). Evidence:
+  `recovery_stage3_combined.rs::{combined_mode_requires_both_factors_not_either,
+  combined_mode_guardian_quorum_alone_never_promotes}`.
+- **RC6 — Attempt commitment integrity + Compromise-baseline exactness.**
+  `ProposalCommitment` is frozen at `begin_attempt`, never mutated;
+  `submit_zk_proof`/`_cancel` recompute `auth_hash` from the attempt's OWN frozen
+  fields, never a caller-supplied hash. `action == Compromise` MUST target exactly
+  `config.baseline_doc_hash` (`BaselineMismatch` otherwise). Evidence:
+  `recovery_stage3_zk_only.rs::{tampered_proof_is_rejected,
+  proof_does_not_transfer_to_a_different_target_doc_hash}`;
+  `compromise_action_must_target_the_enrolled_baseline`.
+- **RC7 — Replaceable-credential allowlist.** `begin_attempt` refuses a declared
+  `replaced_credential_ids` entry outside `config.replaceable`
+  (`CredentialNotReplaceable`) or already permanently revoked
+  (`RevokedCredentialRevived`). `replaceable` is resolved from the doc's `signers` by
+  perch's compiler at apply time and is one of the fields `reconfigure` can never
+  change (RC3). Evidence: `begin_attempt_should_refuse_replacement_ids_the_account_never_declared`.
+- **RC8 — Single completion, state-keyed not ledger-keyed.** `enforce` marks the
+  attempt `Completed` in place; a second completion attempt finds
+  `state != AuthorizedPending` and fails `NoPending`, in the same transaction or after
+  — a direct fix for the M1 controller's ledger-scoped `CompletionGrant` boolean gap.
+  Evidence: `recovery_stage3_guardian_only.rs::repeat_completion_is_refused`.
+- **RC9 — Completion is doc-hash-bound and requires the recovery rule's own
+  authorization.** `enforce` accepts only a self-call to `apply_doc` with exactly two
+  arguments and requires `sha256(doc_json) == attempt.commitment.target_doc_hash`; an
+  ordinary admin-authorized call (not routed through the zero-signer recovery rule)
+  cannot complete even the byte-identical document. The install/consume step is
+  atomic with `apply_doc`'s own document install (a failed doc compile/install
+  reverts the whole completion). Evidence:
+  `recovery_stage3_guardian_only.rs::{ordinary_authorization_cannot_complete_even_the_exact_document,
+  failed_install_leaves_the_attempt_unspent}`.
+- **RC10 — Cancellation is a cryptographically distinct domain from initiation.**
+  `submit_guardian_cancel`/`submit_zk_cancel` use `CancelTally` (separate storage from
+  `Attempt::guardian_approvals`/`zk_verified`) and, for ZK, an `auth_hash` binding
+  `action = Cancel`; no entry point accepts bare admin/account authorization for
+  cancellation. Evidence: `recovery_stage3_guardian_only.rs::cancellation_requires_its_own_guardian_quorum`.
+- **RC11 — Recovery completes without the original signer.** A successful attempt
+  rotates in new signer(s) and completes using ONLY the recovery rule's zero-signer
+  policy authorization; the account's original passkey is used once, at `enroll`, and
+  never referenced again. Evidence:
+  `recovery_stage3_guardian_only.rs::restores_an_inactive_account_without_its_old_admin_key`.
+- **RC12 — The recovery rule is exempt from `apply_doc`'s whole-rule-set replacement.**
+  `doc.rs::apply`'s rule-removal loop explicitly skips `recovery_rule_id` — every other
+  context rule is replaced on each apply, but the zero-signer recovery rule (and
+  therefore the account's wiring to its controller) cannot be silently wiped by an
+  unrelated policy update. The on-chain rule name was recently corrected from
+  `"zk-recovery"` to `"recovery"` (mode-agnostic) — affects only newly installed rules,
+  not retroactively. **Evidence gap:** currently code-level only; no integration test
+  re-applies a doc on an already recovery-enrolled account and asserts the recovery
+  rule id/controller are unchanged. Recommend adding one before mainnet.
+
 ## Circuit & cryptography
 
 - **C1 — Circuit fully constrained.** All three public inputs (`root`, `nullifier`,
@@ -144,6 +252,13 @@ whole set with `just test`; cost gates with `just bench-zk`, `just bench-zk-init
   `sha256(passphrase)` folded into `auth_hash`) does not verify against a pool configured for a
   different network — a testnet proof cannot be replayed on mainnet. Evidence:
   `zk_recovery_lifecycle.rs::wrong_network_passphrase_proof_is_rejected`.
+- **V5 — Recovery-verifier VK is immutable by construction, not just by convention.**
+  `contracts/recovery-verifier` is constructorless: the VK is baked into the Wasm at
+  compile time (`include_bytes!`), with no constructor, admin, or upgrade entry point
+  at all — stronger than V1's "set once at construction" (there is no construction
+  step to get wrong). A circuit change means a brand-new Wasm/address, never an
+  in-place swap. Evidence: `contracts/recovery-verifier/src/lib.rs` (crate doc
+  comment); no admin/upgrade entry points exist in its `#[contractimpl]` surface.
 
 ### Vendored verifier coverage
 
@@ -178,6 +293,11 @@ crate to be self-contained would trip the vendor-drift guard (`scripts/check-ven
   (`initiate_cost.rs`).
 - **B3 — guard cross-call ≤ 10M CPU** (measured ~1.17M). Gate: `just bench-zk-guard`
   (`guard_cost.rs`).
+- **(no ID yet, gap) — `nido-recovery-verifier::verify_proof` is measured but not gated.**
+  ~179.3M CPU (`crates/zk-bench/tests/recovery_verifier_budget.rs`, real Wasm-metered),
+  vs. mainnet's 400M `tx_max_instructions` ceiling — but unlike B1's enforced
+  `MAX_VERIFY_CPU` assertion, this test prints the number without asserting a
+  threshold. Recommend promoting to an enforced gate (own B-series ID) before mainnet.
 
 ## Storage / liveness
 
@@ -196,3 +316,10 @@ crate to be self-contained would trip the vendor-drift guard (`scripts/check-ven
   **protocol** guarantee — an archived persistent entry is inaccessible (a read errors and
   reverts), never silently readable as `None` — which is exactly why staying under `max_ttl`
   matters.
+- **(no ID yet, gap) — Recovery-controller storage has the same extend-to-max pattern
+  as T1 but no survival test.** Every `enroll`/`reconfigure`/`begin_attempt`/approval/
+  cancel/completion write calls `extend_persistent_max` (`contract.rs:43-46`,
+  `extend_ttl(max, max)` — identical pattern to T1's `zk-recovery`), but no test
+  advances ledger time across the controller's own `delay_secs + expiry_secs` window
+  the way `recovery_state_survives_full_active_window` does for M1. Evidence: code
+  only. Recommend an analogous test before mainnet.

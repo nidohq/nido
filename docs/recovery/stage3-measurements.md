@@ -122,13 +122,32 @@ two `BytesN<32>` + a `u64`), but the exact XDR/fee delta was not measured.
   `packages/passkey-sdk/src/recoveryStage3/reads.ts::readConfigHash` and
   the `recover-v3` Status panel.
 
+> **Superseded (see `contracts/recovery-controller/src/lib.rs`'s "Known limits",
+> marked RESOLVED):** the paragraph above was accurate against the
+> `perch-doc-compiler` pin active when this measurement was taken. Once nido's
+> compiler/interpreter pins moved to perch's Stage-4 (recovery-schema) generation, a
+> doc's `recovery` section DOES compile to a real `CompiledRecoveryConfig`, and
+> `contracts/smart-account/src/doc.rs::apply` reads it as a normal part of every
+> `apply_doc` call. `config_hash` remains available as an independent, out-of-band
+> commitment, but is no longer the only way to review enrolled recovery
+> configuration — see `docs/AUDIT_SCOPE.md`, `docs/THREAT_MODEL.md`,
+> `docs/SECURITY_INVARIANTS.md` (RC2), and `docs/RUNBOOKS.md` §6 for the current,
+> doc-embedded design.
+
 ## 7. Explicit limits
 
 `contracts/recovery-controller/src/lib.rs`'s crate doc comment is the
 canonical, most detailed list ("Known limits" section) — read it directly.
 Summary, plus measurement-specific notes:
 
-- No `reconfigure` entry point (enrollment is one-shot).
+- ~~No `reconfigure` entry point (enrollment is one-shot).~~ **Superseded:** a
+  `reconfigure` entry point was added after this measurement was taken — strictly
+  additive only (`GuardianOnly`/`ZkOnly` -> `Combined`), gated by `Profile`/
+  guardian-quorum evidence for `Protected` accounts (see
+  `contracts/recovery-controller/src/lib.rs`'s "Known limits" and
+  `docs/SECURITY_INVARIANTS.md`'s RC3/RC4). It still supports no general reconfigure
+  (no baseline update, guardian-set rotation, or mode downgrade), so the proof-gen/
+  verification-cost/restoration measurements in this document are unaffected.
 - `replaced_credential_ids` is client-declared, not on-chain-verified
   against the target document's actual content.
 - No "ordinary execution" freeze on `execute()` — only `apply_doc` and the
