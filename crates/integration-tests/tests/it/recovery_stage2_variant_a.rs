@@ -13,7 +13,7 @@ use crate::recovery_stage2_common::{
 };
 use nido_smart_account::contract::{ApplyDocError, NidoSmartAccountError};
 use soroban_sdk::testutils::{Address as _, Ledger as _};
-use soroban_sdk::{Address, Bytes, Env};
+use soroban_sdk::{Address, Bytes, Env, Vec};
 
 const DELAY_SECS: u64 = 3 * 24 * 3600;
 const EXPIRY_SECS: u64 = 7 * 24 * 3600;
@@ -84,10 +84,11 @@ fn completion_installs_exact_target_document() {
         &setup.account_addr,
         "apply_doc",
         &doc_bytes,
+        Some(&Vec::new(&env)),
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
-    let res = setup.account.try_apply_doc(&doc_bytes);
+    let res = setup.account.try_apply_doc(&doc_bytes, &Vec::new(&env));
     assert!(
         res.is_ok(),
         "the recovery-authorized apply_doc must succeed: {res:?}"
@@ -134,15 +135,22 @@ fn repeat_completion_in_same_ledger_is_refused() {
         &setup.account_addr,
         "apply_doc",
         &doc_bytes,
+        Some(&Vec::new(&env)),
         setup.recovery_rule_id,
     );
     env.set_auths(std::slice::from_ref(&entry));
-    assert!(setup.account.try_apply_doc(&doc_bytes).is_ok());
+    assert!(setup
+        .account
+        .try_apply_doc(&doc_bytes, &Vec::new(&env))
+        .is_ok());
 
     // Same ledger, identical entry: the pending is gone, so this must fail.
     env.set_auths(&[entry]);
     assert!(
-        setup.account.try_apply_doc(&doc_bytes).is_err(),
+        setup
+            .account
+            .try_apply_doc(&doc_bytes, &Vec::new(&env))
+            .is_err(),
         "a second completion in the same ledger must be refused"
     );
 }
@@ -177,11 +185,15 @@ fn completion_after_expiry_is_refused() {
         &setup.account_addr,
         "apply_doc",
         &doc_bytes,
+        Some(&Vec::new(&env)),
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
     assert!(
-        setup.account.try_apply_doc(&doc_bytes).is_err(),
+        setup
+            .account
+            .try_apply_doc(&doc_bytes, &Vec::new(&env))
+            .is_err(),
         "completion after expiry must be refused"
     );
 }
@@ -218,10 +230,14 @@ fn completion_before_timelock_is_refused() {
         &setup.account_addr,
         "apply_doc",
         &doc_bytes,
+        Some(&Vec::new(&env)),
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
-    assert!(setup.account.try_apply_doc(&doc_bytes).is_err());
+    assert!(setup
+        .account
+        .try_apply_doc(&doc_bytes, &Vec::new(&env))
+        .is_err());
 }
 
 /// Atomicity: the attempt's committed target is a document that compiles
@@ -256,11 +272,12 @@ fn failed_install_leaves_the_attempt_unspent() {
         &setup.account_addr,
         "apply_doc",
         &doc_bytes,
+        Some(&Vec::new(&env)),
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
     assert_apply_doc_error(
-        setup.account.try_apply_doc(&doc_bytes),
+        setup.account.try_apply_doc(&doc_bytes, &Vec::new(&env)),
         ApplyDocError::DocAdminLockout,
     );
 
@@ -320,11 +337,15 @@ fn wrong_document_is_rejected_by_enforce() {
         &setup.account_addr,
         "apply_doc",
         &wrong_bytes,
+        Some(&Vec::new(&env)),
         setup.recovery_rule_id,
     );
     env.set_auths(&[entry]);
     assert!(
-        setup.account.try_apply_doc(&wrong_bytes).is_err(),
+        setup
+            .account
+            .try_apply_doc(&wrong_bytes, &Vec::new(&env))
+            .is_err(),
         "a document not matching the committed target_doc_hash must be refused"
     );
     assert!(setup.controller.has_pending(&setup.account_addr));
@@ -365,7 +386,7 @@ fn ordinary_authorization_cannot_complete_even_the_exact_document() {
     // Ordinary/generic authorization (mock_all_auths bypasses __check_auth
     // entirely, so no rule -- including the recovery rule -- actually
     // authorizes this call).
-    let res = setup.account.try_apply_doc(&doc_bytes);
+    let res = setup.account.try_apply_doc(&doc_bytes, &Vec::new(&env));
     assert_doc_error(res, NidoSmartAccountError::RecoveryPendingBlocked);
     assert!(setup.controller.has_pending(&setup.account_addr));
 }

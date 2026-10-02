@@ -195,21 +195,29 @@ pub fn setup(env: &Env) -> Setup<'_> {
 }
 
 /// Builds a zero-signer `SorobanAuthorizationEntry` for a self-call to
-/// `fn_name` with a single `doc_json` argument, authorized via
-/// `context_rule_ids = [rule_id]` and an EMPTY `AuthPayload.signers` map —
-/// mirrors `zk_recovery_completion.rs`'s `self_call_entry`. For `rule_id =
-/// setup.recovery_rule_id`, this is exactly the shape the recovery
-/// controller's zero-signer rule accepts (no signature needed; the attached
-/// `Policy::enforce` is the entire authorization).
+/// `fn_name`, authorized via `context_rule_ids = [rule_id]` and an EMPTY
+/// `AuthPayload.signers` map — mirrors `zk_recovery_completion.rs`'s
+/// `self_call_entry`. For `rule_id = setup.recovery_rule_id`, this is
+/// exactly the shape the recovery controller's zero-signer rule accepts (no
+/// signature needed; the attached `Policy::enforce` is the entire
+/// authorization). Args are `[doc_json]` when `guardian_evidence` is `None`
+/// (`complete_recovery`'s one-argument shape) or `[doc_json,
+/// guardian_evidence]` when `Some` (`apply_doc`'s two-argument shape) —
+/// this must match the real call's own argument count exactly, or the
+/// recorded invocation won't match what's actually authorized.
 #[must_use]
 pub fn zero_signer_entry(
     env: &Env,
     account_addr: &Address,
     fn_name: &str,
     doc_json: &Bytes,
+    guardian_evidence: Option<&SVec<Address>>,
     rule_id: u32,
 ) -> SorobanAuthorizationEntry {
-    let args: SVec<Val> = soroban_sdk::vec![env, doc_json.into_val(env)];
+    let mut args: SVec<Val> = soroban_sdk::vec![env, doc_json.into_val(env)];
+    if let Some(evidence) = guardian_evidence {
+        args.push_back(evidence.into_val(env));
+    }
     let args_scval: VecM<ScVal> = args
         .iter()
         .map(|v| ScVal::try_from_val(env, &v).unwrap())

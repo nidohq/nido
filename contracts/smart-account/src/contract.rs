@@ -733,10 +733,14 @@ impl NidoSmartAccount {
     /// `DocCapUnsupported` (capped docs keep the SDK install path).
     // `#[contractimpl]` entry point; SDK ABI requires an owned `Bytes`.
     #[allow(clippy::needless_pass_by_value)]
-    pub fn apply_doc(e: &Env, doc_json: Bytes) -> Result<BytesN<32>, ApplyDocError> {
+    pub fn apply_doc(
+        e: &Env,
+        doc_json: Bytes,
+        guardian_evidence: Vec<Address>,
+    ) -> Result<BytesN<32>, ApplyDocError> {
         e.current_contract_address().require_auth();
         guard_no_pending(e);
-        crate::doc::apply(e, &doc_json)
+        crate::doc::apply(e, &doc_json, &guardian_evidence)
     }
 
     // -----------------------------------------------------------------
@@ -784,7 +788,10 @@ impl NidoSmartAccount {
             panic_with_error!(e, NidoSmartAccountError::RecoveryCompletionMismatch);
         }
 
-        crate::doc::apply(e, &doc_json)
+        // Empty: Variant B's completion docs predate doc-embedded recovery and
+        // carry no `recovery` section, so apply()'s reconfigure branch never
+        // consumes this (see #219).
+        crate::doc::apply(e, &doc_json, &Vec::new(e))
     }
 
     /// The canonical `doc_hash` of the currently applied policy document,

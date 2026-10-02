@@ -118,6 +118,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "replaceable"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "verifier"
                       },
                       "val": "void"
@@ -468,6 +476,14 @@
                           "symbol": "Loss"
                         }
                       ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "replaceable"
+                    },
+                    "val": {
+                      "vec": []
                     }
                   },
                   {

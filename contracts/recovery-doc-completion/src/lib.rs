@@ -399,12 +399,16 @@ impl Policy for DocRecoveryCompletion {
     ///    elapsed (`TimelockNotElapsed`), and it must not be expired
     ///    (`RecoveryExpired`).
     /// 3. `context` must be a self-call whose `fn_name` is EITHER
-    ///    `apply_doc` (Variant A) or `complete_recovery` (Variant B), with
-    ///    EXACTLY one argument decoding to `Bytes` whose sha256 equals the
-    ///    attempt's committed `target_doc_hash` — anything else is
-    ///    `ContextMismatch`. This is the entire binding: the same document
-    ///    the authority approved at `initiate` time is the ONLY document a
-    ///    completion can install, for either vehicle.
+    ///    `apply_doc` (Variant A, two arguments: `doc_json: Bytes`,
+    ///    `guardian_evidence: Vec<Address>` -- only `doc_json` is checked)
+    ///    or `complete_recovery` (Variant B, one argument: `doc_json:
+    ///    Bytes`). Either way, the FIRST argument must decode to `Bytes`
+    ///    whose sha256 equals the attempt's committed `target_doc_hash` --
+    ///    anything else (wrong `fn_name`, wrong argument count for that
+    ///    `fn_name`, or a hash mismatch) is `ContextMismatch`. This is the
+    ///    entire binding: the same document the authority approved at
+    ///    `initiate` time is the ONLY document a completion can install,
+    ///    for either vehicle.
     /// 4. Consume: delete the pending (single completion — a second
     ///    completion attempt, same transaction, same ledger, or after
     ///    expiry, finds no pending and fails at step 2), write the
@@ -450,7 +454,8 @@ impl Policy for DocRecoveryCompletion {
         if cc.fn_name != apply_doc_fn(e) && cc.fn_name != complete_recovery_fn(e) {
             panic_with_error!(e, Error::ContextMismatch);
         }
-        if cc.args.len() != 1 {
+        let expected_args_len = if cc.fn_name == apply_doc_fn(e) { 2 } else { 1 };
+        if cc.args.len() != expected_args_len {
             panic_with_error!(e, Error::ContextMismatch);
         }
         let doc_val: Val = cc
