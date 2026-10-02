@@ -14,6 +14,8 @@ against whom, and what it explicitly assumes it can trust.
 | `G_temp` ephemeral funding key | Onboarding only, then discarded | Theft of pre-migration funds; account hijack during deployment. |
 | Relayer sponsor keys | Relayer host | Drain of the fee-sponsor budget; tx censorship. |
 | Registry name → address mapping | Stellar Registry | Mis-resolution of verifier / recovery controller for newly created accounts. |
+| Enrolled guardian keys (`RecoveryConfig.guardians`) | Each guardian's own wallet/key | A colluding quorum (`>= guardian_threshold`) can authorize a `GuardianOnly`/`Combined` recovery attempt, or (`Profile::Protected`) a config `reconfigure` — comparable blast radius to a stolen passkey for accounts enrolled in that mode. |
+| Recovery config commitment (`RecoveryConfig`, incl. `baseline_doc_hash`, `replaceable`) | `contracts/recovery-controller` storage, per account | Governs who can recover an account and which credentials a successful recovery may replace. `reconfigure` can only ever ADD a missing evidence factor — `baseline_doc_hash`/`replaceable`/timing fields can never change post-enrollment by any path, legitimate or not. |
 
 ## Adversaries & the attacks in scope
 
@@ -46,6 +48,25 @@ against whom, and what it explicitly assumes it can trust.
 8. **Malicious/mistaken admin (post-B1 upgradability).** Once `upgrade()` exists, the
    admin key is a new trust anchor. *Mitigations:* multisig admin + upgrade timelock
    so users can exit before a bad upgrade lands.
+9. **Colluding guardian quorum (M2 `GuardianOnly`/`Combined` accounts).** `>= guardian_threshold`
+   guardians sign a malicious `begin_attempt` + `submit_guardian_approval` sequence, or
+   (Protected profile) a malicious `reconfigure`. *Mitigations:* `delay_secs` timelock
+   before completion gives the owner a window to react (e.g.
+   `initiate_recovery_rule_removal`, itself guarded by the same live-pending check);
+   `Combined` mode requires the quorum AND a valid ZK proof together (`&&`, never
+   `||` — SECURITY_INVARIANTS RC5); cancellation uses its own domain-separated
+   `CancelTally`, distinct from initiation evidence. *Residual risk:* no guardian-set
+   rotation exists post-enrollment (`reconfigure` only adds a missing factor, never
+   swaps/rotates guardians) — see nidohq/nido#221-adjacent gaps.
+10. **Invoker-auth confusion on `enroll`/`reconfigure` (nidohq/nido#217).** The
+    controller's `enroll`/`reconfigure` require only `account.require_auth()`, with
+    no way yet to distinguish a genuine `apply_doc`-driven cross-call from an
+    external caller separately holding valid auth for the same account and invoking
+    the controller directly. *Mitigations (partial):* `apply_doc`'s own checks
+    (`RecoveryControllerMismatch`, `RecoveryConfigWithoutWiring` —
+    `contracts/smart-account/src/doc.rs`) bind the DOC-DRIVEN path; a direct,
+    out-of-band cross-call to the controller has no equivalent binding today. Open,
+    tracked, not closed.
 
 ## Trusted parties / assumptions
 
@@ -58,6 +79,10 @@ against whom, and what it explicitly assumes it can trust.
   passkey isolation depends on it).
 - After B1, the **admin multisig** signers are honest-majority and the upgrade
   timelock is respected.
+- For accounts enrolled in `GuardianOnly`/`Combined` mode, the **currently-enrolled
+  guardian set** is a trust anchor: a quorum of them is trusted not to collude on a
+  malicious recovery attempt, and (for `Profile::Protected`) not to collude on a
+  malicious `reconfigure`.
 
 ## Out of scope
 
@@ -66,3 +91,7 @@ against whom, and what it explicitly assumes it can trust.
 - Stellar consensus-layer or host-function bugs.
 - Compromise of the user's browser vendor or OS.
 - Loss of BOTH the passkey and the recovery secret (unrecoverable by design).
+- The M2 guardian-quorum/ZK recovery system's deliberately-deferred gaps (invoker-auth
+  wiring, approximate timelock, reconfigure/completion interaction, guardian-rotation,
+  etc.) are tracked as open issues, not silent gaps — see MAINNET_READINESS.md §G for
+  the full, numbered list.

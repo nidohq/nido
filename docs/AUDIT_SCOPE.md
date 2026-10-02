@@ -23,6 +23,8 @@ proof-system verification), separate from a general Soroban/Rust reviewer.
 | WebAuthn verifier | `contracts/webauthn-verifier/` | Stateless secp256r1/P-256 signature verification (OZ `Verifier`). |
 | ZK recovery pool/controller | `contracts/zk-recovery/` | Merkle pool + recovery state machine (initiate/cancel/revoke/complete), nullifiers, timelock, rate-limit, policy. |
 | ZK verifier | `contracts/zk-verifier/` | Thin wrapper binding a VK; delegates to the vendored UltraHonk verifier. |
+| Recovery controller (M2) | `contracts/recovery-controller/` | Shared, constructorless controller: `GuardianOnly`/`ZkOnly`/`Combined` evidence modes against `Loss`/`Protected` profiles. Config lives inside the account's own policy document (`recovery` section) and is wired atomically by `apply_doc` (`contracts/smart-account/src/doc.rs`), not via a separate enroll step. Independent of, and does not replace, the M1 `zk-recovery` pool above — both exist in the same codebase; no mainnet deployment of this controller exists yet (see MAINNET_READINESS.md §A5). |
+| Recovery proof verifier (M2) | `contracts/recovery-verifier/` | Constructorless UltraHonk verifier for the `zk_recovery_doc` circuit — VK baked in at compile time (`include_bytes!`), no constructor/admin/upgrade at all. A sibling of `nido-zk-verifier`, not a replacement for it. |
 | Multisig policy | `contracts/multisig-policy/` | Threshold policy. |
 | Spending-limit policy | `contracts/spending-limit-policy/` | Rolling-window SAC transfer metering. |
 | Name registry | `contracts/name-registry/` | Human-readable account names. |
@@ -36,6 +38,11 @@ proof-system verification), separate from a general Soroban/Rust reviewer.
   (see [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md) for provenance). Verbatim third-party
   code; the audit should confirm soundness of proof verification and that the
   vendored copy matches its declared upstream.
+- `circuits/zk_recovery_doc/` — a NEW, isolated sibling circuit (not an in-place edit
+  of `circuits/zk_recovery/`; the two are byte-for-byte independent). Same
+  topology/public-input shape (`root || nullifier || auth_hash`, 96 bytes) as
+  `zk_recovery`, different witness/field semantics bound to
+  `contracts/recovery-controller`'s `ProposalCommitment`.
 
 ### 3. Off-chain infrastructure
 
@@ -76,6 +83,11 @@ The pre-v0.7 contracts listed in `DEPLOYED.md` ("Pre-v0.7 contracts (do not use)
 are on-chain from earlier iterations, incompatible with the current WASM, and
 out of scope. They must not be deployed to mainnet.
 
+`contracts/recovery-doc-completion/` is an experimental, comparison-only harness built
+to evaluate two completion mechanisms (Variant A vs. Variant B —
+[docs/recovery/stage2-findings.md](./recovery/stage2-findings.md)), never deployed, and
+explicitly out of the audited recovery-controller surface. It must not ship to mainnet.
+
 ## What to hand the auditor alongside this file
 
 - [THREAT_MODEL.md](./THREAT_MODEL.md) — assets, adversaries, trust assumptions.
@@ -83,3 +95,9 @@ out of scope. They must not be deployed to mainnet.
 - [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md) — dependency + toolchain provenance.
 - `ARCHITECTURE.md`, `DEPLOYED.md` — system design + deployed addresses/params.
 - The design spec under `docs/` (`2026-07-02-zk-recovery-design.md`) for the ZK protocol.
+- [docs/recovery/TRANSITION_SPEC.md](./recovery/TRANSITION_SPEC.md) — the abstract
+  state-machine spec `contracts/recovery-controller` implements a variant of.
+- [docs/recovery/stage2-findings.md](./recovery/stage2-findings.md),
+  [docs/recovery/stage3-measurements.md](./recovery/stage3-measurements.md) — the
+  completion-mechanism comparison (Variant A, adopted) and the controller's own
+  measurement record.
