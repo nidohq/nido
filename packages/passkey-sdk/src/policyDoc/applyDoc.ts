@@ -31,6 +31,11 @@ export interface BuildApplyDocArgs {
   account: string;
   rpcUrl: string;
   networkPassphrase?: string;
+    /** For `Profile::Protected` only: the currently-enrolled guardians
+   *  nested-authorizing this exact reconfigure in the same transaction.
+   *  Omit (or pass `[]`) for enrollment, `Profile::Loss`, or any apply
+   *  that doesn't touch an already-Protected recovery config. */
+  guardianEvidence?: string[];
 }
 
 export interface ApplyDocTx extends TxBuild {
@@ -63,7 +68,10 @@ export async function buildApplyDocTx(
     networkPassphrase,
     rpcUrl: args.rpcUrl,
   });
-  const tx = await client.apply_doc({ doc_json: Buffer.from(canonical, 'utf8') });
+  const tx = await client.apply_doc({ 
+    doc_json: Buffer.from(canonical, 'utf8'),
+    guardian_evidence: args.guardianEvidence ?? [],
+  });
 
   return {
     docHash: docHash(doc),

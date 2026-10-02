@@ -54,6 +54,7 @@ import { diffPolicyDocs } from '../lib/policy/docDiff.js';
 import { bytesToHex, truncate } from '../lib/policy/policyView.js';
 import { summarizeDoc } from '../lib/policy/docView.js';
 import { renderDocDiffHtml, renderDocPreviewHtml } from './PolicyInspector.js';
+import { mountRecoveryPanel } from './RecoveryPanel.js';
 
 const NETWORK_PASSPHRASE = Networks.TESTNET;
 
@@ -63,7 +64,7 @@ interface BuilderOptions {
   onSubmitted?: () => void;
 }
 
-type BuilderTab = 'session' | 'admin';
+type BuilderTab = 'session' | 'admin' | 'recovery';
 
 export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions): void {
   // The merge baseline for every submit and the diff's "before" side:
@@ -85,6 +86,8 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
 
   let sessionWrap: HTMLElement;
   let adminWrap: HTMLElement;
+  let recoveryWrap: HTMLElement;
+  let recoveryPanel: ReturnType<typeof mountRecoveryPanel>;
 
   const baselineReady: Promise<void> = (async () => {
     try {
@@ -134,25 +137,41 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
       <div class="pol-mode-tabs" role="tablist" style="display:flex;gap:8px;margin-bottom:14px;">
         <button type="button" id="pol-tab-session" role="tab" class="btn sm" aria-selected="false">Session key</button>
         <button type="button" id="pol-tab-admin" role="tab" class="btn sm" aria-selected="false">Admin keys</button>
-      </div>
+        <button type="button" id="pol-tab-recovery" role="tab" class="btn sm" aria-selected="false">Recovery</button>
+        </div>
       <div id="pol-session-wrap"></div>
-      <div id="pol-admin-wrap"></div>`;
+      <div id="pol-admin-wrap"></div>
+      <div id="pol-recovery-wrap"></div>`;
     sessionWrap = container.querySelector<HTMLElement>('#pol-session-wrap')!;
     adminWrap = container.querySelector<HTMLElement>('#pol-admin-wrap')!;
+    recoveryWrap = container.querySelector<HTMLElement>('#pol-recovery-wrap')!;
     renderSessionForm();
     renderAdminPanel();
+    recoveryPanel = mountRecoveryPanel(recoveryWrap, {
+      account: opts.account,
+      networkPassphrase: NETWORK_PASSPHRASE,
+      getBaseline: () => ({ doc: baselineDoc, blocked: baselineBlocked, loaded: baselineLoaded, isFirstApply }),
+      applyUpdate,
+      showErrorsIn,
+    });
+    recoveryPanel.render();
     const sessionTab = container.querySelector<HTMLButtonElement>('#pol-tab-session')!;
     const adminTab = container.querySelector<HTMLButtonElement>('#pol-tab-admin')!;
+    const recoveryTab = container.querySelector<HTMLButtonElement>('#pol-tab-recovery')!;
     const applyTab = () => {
       sessionWrap.hidden = tab !== 'session';
       adminWrap.hidden = tab !== 'admin';
+      recoveryWrap.hidden = tab !== 'recovery';
       sessionTab.className = `btn sm ${tab === 'session' ? 'soft' : 'ghost'}`;
       adminTab.className = `btn sm ${tab === 'admin' ? 'soft' : 'ghost'}`;
+      recoveryTab.className = `btn sm ${tab === 'recovery' ? 'soft' : 'ghost'}`;
       sessionTab.setAttribute('aria-selected', String(tab === 'session'));
       adminTab.setAttribute('aria-selected', String(tab === 'admin'));
+      recoveryTab.setAttribute('aria-selected', String(tab === 'recovery'));
     };
     sessionTab.addEventListener('click', () => { tab = 'session'; applyTab(); });
     adminTab.addEventListener('click', () => { tab = 'admin'; applyTab(); });
+    recoveryTab.addEventListener('click', () => { tab = 'recovery'; applyTab(); });
     applyTab();
   }
 
@@ -720,5 +739,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     updateSessionPreview();
     renderAdminPanel();
     updateAdminPreview();
+    recoveryPanel.render();
+    recoveryPanel.updatePreview();
   });
 }

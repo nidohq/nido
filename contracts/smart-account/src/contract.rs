@@ -381,7 +381,7 @@ pub(crate) fn install_recovery_rule(e: &Env, controller: &Address) -> u32 {
     let rule = add_context_rule(
         e,
         &ContextRuleType::CallContract(e.current_contract_address()),
-        &String::from_str(e, "zk-recovery"),
+        &String::from_str(e, "recovery"),
         None,
         &no_signers,
         &recovery_policies,

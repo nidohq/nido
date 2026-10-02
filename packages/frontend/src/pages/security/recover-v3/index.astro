@@ -349,6 +349,7 @@ import Icon from '../../../components/Icon.astro';
         zkPool: val('cfg-zkpool') || undefined,
         networkPassphrase: NETWORK_PASSPHRASE,
         baselineDocHash: targetDocHash(baselineDoc),
+        replaceable: [],
         delaySecs: Number(val('cfg-delay')),
         expirySecs: Number(val('cfg-expiry')),
         maxCancels: Number(val('cfg-maxcancels')),
