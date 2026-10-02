@@ -942,8 +942,11 @@ impl Policy for RecoveryController {
     /// 1. `context_rule.id` matches the id this policy was installed under.
     /// 2. A live attempt exists, is `AuthorizedPending`, its timelock has
     ///    elapsed, and it is not expired.
-    /// 3. `context` is a self-call to `apply_doc` with exactly one `Bytes`
-    ///    argument whose sha256 equals `attempt.commitment.target_doc_hash`.
+    /// 3. `context` is a self-call to `apply_doc` with exactly two
+    ///    arguments (`doc_json: Bytes`, `guardian_evidence: Vec<Address>`) --
+    ///    only `doc_json` is validated here, its sha256 must equal
+    ///    `attempt.commitment.target_doc_hash`; `guardian_evidence` is
+    ///    irrelevant to a completion and is not inspected.
     /// 4. Consume: mark `Completed`, append `replaced_credential_ids` to
     ///    `RevokedCredentials` (property 10 bookkeeping), spend the ZK
     ///    nullifier if one was reserved, emit.

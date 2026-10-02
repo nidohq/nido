@@ -122,12 +122,14 @@ pub fn setup_guardian_only(
 }
 
 /// Builds a zero-signer `SorobanAuthorizationEntry` for a self-call to
-/// `apply_doc` with a single `doc_json` argument, authorized via
+/// `apply_doc` with its real two-argument shape (`doc_json`, then
+/// `guardian_evidence`, in that order — matching the real entry point's
+/// signature exactly, not just `doc_json` alone), authorized via
 /// `context_rule_ids = [rule_id]` and an EMPTY `AuthPayload.signers` map —
-/// identical to `recovery_stage2_common::zero_signer_entry`, duplicated here
-/// (rather than re-exported) since it is a small, self-contained builder and
-/// this controller's completion vehicle is always `apply_doc` (Variant A;
-/// no dedicated Variant B entry point here).
+/// identical to `recovery_stage2_common::zero_signer_entry`'s `apply_doc`
+/// case, duplicated here (rather than re-exported) since it is a small,
+/// self-contained builder and this controller's completion vehicle is
+/// always `apply_doc` (Variant A; no dedicated Variant B entry point here).
 #[must_use]
 pub fn zero_signer_apply_doc_entry(
     env: &Env,

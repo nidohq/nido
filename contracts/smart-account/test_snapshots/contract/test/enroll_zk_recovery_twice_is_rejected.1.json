@@ -179,7 +179,7 @@
                       "symbol": "name"
                     },
                     "val": {
-                      "string": "zk-recovery"
+                      "string": "recovery"
                     }
                   },
                   {
@@ -610,7 +610,7 @@
                       "symbol": "name"
                     },
                     "val": {
-                      "string": "zk-recovery"
+                      "string": "recovery"
                     }
                   },
                   {

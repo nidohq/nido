@@ -121,6 +121,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "replaceable"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "verifier"
                       },
                       "val": "void"
@@ -264,6 +272,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "replaceable"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "verifier"
                       },
                       "val": {
@@ -313,7 +329,7 @@
               "function_name": "reconfigure",
               "args": [
                 {
-                  "bytes": "e03faf9bfc06b465f5abbbf27bd4351c6b00057cbd8d75257771a86a5dd48163"
+                  "bytes": "0d90713e3a6b982f520c4e596f3b0c547b6781d7c1c07ac54e0d36446df28fd3"
                 }
               ]
             }
@@ -330,7 +346,7 @@
               "function_name": "reconfigure",
               "args": [
                 {
-                  "bytes": "e03faf9bfc06b465f5abbbf27bd4351c6b00057cbd8d75257771a86a5dd48163"
+                  "bytes": "0d90713e3a6b982f520c4e596f3b0c547b6781d7c1c07ac54e0d36446df28fd3"
                 }
               ]
             }
@@ -468,6 +484,14 @@
                           "symbol": "Protected"
                         }
                       ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "replaceable"
+                    },
+                    "val": {
+                      "vec": []
                     }
                   },
                   {

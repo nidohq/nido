@@ -121,6 +121,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "replaceable"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "verifier"
                       },
                       "val": "void"
@@ -277,6 +285,14 @@
                           "symbol": "Protected"
                         }
                       ]
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "replaceable"
+                    },
+                    "val": {
+                      "vec": []
                     }
                   },
                   {
