@@ -1,8 +1,12 @@
 import { rpc, Contract, Networks, Account, TransactionBuilder, scValToNative } from '@stellar/stellar-sdk';
 import { test, expect } from '../../support/fixtures';
 import { createAndDeployAs } from '../../support/recovery';
+import { deployAccountDirect } from '../../support/directDeploy';
 
 const PORT = Number(process.env.E2E_PORT || 4399);
+// Onboarding through the relayer, or from Node (NIDO_E2E_DIRECT_DEPLOY=1;
+// see perch-recovery.testnet.spec.ts).
+const createAccount = process.env.NIDO_E2E_DIRECT_DEPLOY ? deployAccountDirect : createAndDeployAs;
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const DUMMY_SOURCE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 // Any well-formed G-address — the "delegated key" admin-add path only
@@ -42,7 +46,7 @@ test.describe('@testnet account policy page — real apply_doc via the policy UI
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    const { cAddress: account, host } = await createAndDeployAs(page, PORT, `policy-doc-${Date.now()}`);
+    const { cAddress: account, host } = await createAccount(page, PORT, `policy-doc-${Date.now()}`);
     const truncated = `${DUMMY_ADMIN_ADDRESS.slice(0, 6)}…${DUMMY_ADMIN_ADDRESS.slice(-6)}`;
 
     await page.goto(`http://${host}/account/policy/`, { waitUntil: 'domcontentloaded' });
