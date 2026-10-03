@@ -1,7 +1,7 @@
-// Chain reads for the perch doc layer: the smart account's `apply_doc`
-// surface (`applied_doc_hash` / `doc_rule_ids` / `get_applied_doc`), the
-// `DocApplied` event fallback, and the interpreter's per-rule programs —
-// composed into the SDK's three-tier `readPolicy`.
+// Chain reads for the perch doc layer: the Perch account's `apply_doc`
+// surface (`applied_doc_hash` / `applied_doc`), the `DocApplied` event
+// fallback, and the interpreter's per-rule programs — composed into the
+// SDK's three-tier `readPolicy`.
 //
 // Every read here is simulate-only / RPC-only; nothing signs. All reads are
 // tolerant of accounts WITHOUT the doc surface (pre-`apply_doc` wasm): they
@@ -23,6 +23,7 @@ import { adminBaseline } from './docDraft.js';
 import { Client as InterpreterClient } from '@stellar-registry/perch-interpreter';
 import { fetchRegistryAddress, simulateView } from '../policyChainFetch.js';
 import { RPC_URL, NETWORK_PASSPHRASE } from '../network.js';
+import { perchDeployment } from '../recovery/deployment.js';
 
 /** How far back the `DocApplied` event fallback scans. Testnet RPC keeps
  *  roughly a day of events; ask for a bit less so the request never starts
@@ -30,7 +31,7 @@ import { RPC_URL, NETWORK_PASSPHRASE } from '../network.js';
 const EVENT_LOOKBACK_LEDGERS = 16000;
 
 /** Where the applied doc's JSON was recovered from. `storage` is the
- *  lossless on-chain copy (`get_applied_doc`); `events` is the `DocApplied`
+ *  lossless on-chain copy (`applied_doc`); `events` is the `DocApplied`
  *  event history, which only reaches back as far as RPC retention. */
 export type DocJsonSource = 'storage' | 'events';
 
@@ -40,11 +41,9 @@ export interface DocSurface {
   supported: boolean;
   /** Stored canonical hash, or null if no document was ever applied. */
   appliedDocHash: Uint8Array | null;
-  /** Rule ids of the doc-managed rules, in document order. */
-  docRuleIds: number[];
 }
 
-/** Probe the account's doc surface (`applied_doc_hash` + `doc_rule_ids`). */
+/** Probe the account's doc surface (`applied_doc_hash`). */
 export async function fetchDocSurface(account: string): Promise<DocSurface> {
   let server: rpc.Server;
   let contract: Contract;
@@ -60,16 +59,9 @@ export async function fetchDocSurface(account: string): Promise<DocSurface> {
   } catch {
     // No `applied_doc_hash` on this account (older wasm) — or the RPC is
     // down, in which case every other read on the page fails loudly anyway.
-    return { supported: false, appliedDocHash: null, docRuleIds: [] };
+    return { supported: false, appliedDocHash: null };
   }
-  let docRuleIds: number[] = [];
-  try {
-    const rv = await simulateView(server, contract, 'doc_rule_ids');
-    docRuleIds = (scValToNative(rv) as number[]).map(Number);
-  } catch {
-    docRuleIds = [];
-  }
-  return { supported: true, appliedDocHash, docRuleIds };
+  return { supported: true, appliedDocHash };
 }
 
 /** Decode a `DocApplied` event's data payload to the doc JSON string.
@@ -109,7 +101,7 @@ export interface RecoveredDocJson {
 
 /**
  * Recover the applied document's JSON. Prefers the lossless on-chain copy
- * (the `get_applied_doc` view, stored by `apply_doc`); falls back to the
+ * (the `applied_doc` view, stored by `apply_doc`); falls back to the
  * account's latest `DocApplied` event whose `doc_hash` topic matches the
  * stored hash. Returns null when neither path reaches a document (readPolicy
  * then classifies the account as tier c).
@@ -127,7 +119,7 @@ export async function fetchAppliedDocJson(
 
   // Lossless path: the canonical doc JSON in persistent storage.
   try {
-    const rv = await simulateView(server, new Contract(account), 'get_applied_doc');
+    const rv = await simulateView(server, new Contract(account), 'applied_doc');
     const native = scValToNative(rv) as Uint8Array | Buffer | null | undefined;
     if (native != null) {
       return { json: Buffer.from(native).toString('utf8'), source: 'storage' };
@@ -163,6 +155,12 @@ export async function fetchAppliedDocJson(
   return null;
 }
 
+/** The interpreter the account's pinned build attaches: from the Perch
+ *  deployment manifest, else the canonical testnet one. */
+function interpreterAddress(): string {
+  return perchDeployment()?.interpreter ?? perchTestnetAddresses().interpreter;
+}
+
 /** Fetch the interpreter's install params for each doc-managed rule, keyed
  *  by rule id. Missing/unreadable entries are simply absent (readPolicy
  *  treats absence as "cannot check program content", not as drift). */
@@ -172,7 +170,7 @@ export async function fetchInterpreterPrograms(
 ): Promise<Record<number, { program: import('@nidohq/passkey-sdk').RpnProgram; docHash: Uint8Array }>> {
   if (ruleIds.length === 0) return {};
   const client = new InterpreterClient({
-    contractId: perchTestnetAddresses().interpreter,
+    contractId: interpreterAddress(),
     networkPassphrase: NETWORK_PASSPHRASE,
     rpcUrl: RPC_URL,
   });
@@ -218,13 +216,16 @@ export async function readDocPolicy(
   const surface = await fetchDocSurface(account);
   const storedHex = surface.appliedDocHash === null ? null : toHex(surface.appliedDocHash);
   const recovered = storedHex === null ? null : await fetchAppliedDocJson(account, storedHex);
-  const programs =
-    surface.docRuleIds.length > 0
-      ? await fetchInterpreterPrograms(account, surface.docRuleIds)
-      : {};
-  const spendingLimitAddress = await fetchRegistryAddress('spending-limit-policy').catch(
-    () => undefined,
-  );
+  // Every live rule but the zero-signer recovery rule came from the
+  // document (`apply_doc` replaces the whole set).
+  const docRuleIds = surface.appliedDocHash === null
+    ? []
+    : chainRules.filter((r) => r.name !== 'recovery').map((r) => r.ruleId);
+  const programs = await fetchInterpreterPrograms(account, docRuleIds);
+  const deployment = perchDeployment();
+  const spendingLimitAddress =
+    deployment?.spendingLimit ??
+    (await fetchRegistryAddress('spending-limit-policy').catch(() => undefined));
 
   const result = readPolicy({
     chainRules,
@@ -235,7 +236,7 @@ export async function readDocPolicy(
     ...(recovered?.source === 'events' ? { eventDocJson: recovered.json } : {}),
     decompileCtx: {
       account,
-      interpreterAddress: perchTestnetAddresses().interpreter,
+      interpreterAddress: interpreterAddress(),
       ...(spendingLimitAddress !== undefined ? { spendingLimitAddress } : {}),
       programs,
     },

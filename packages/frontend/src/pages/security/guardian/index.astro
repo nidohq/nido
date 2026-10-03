@@ -1,23 +1,23 @@
 ---
-// Get back in. The page is a thin shell: the flow lives in
-// src/lib/recovery/recoverPage.ts, on the Perch SDK (`perch` namespace of
+// Approve as a friend. The page is a thin shell: the flow lives in
+// src/lib/recovery/guardianPage.ts, on the Perch SDK (`perch` namespace of
 // @nidohq/passkey-sdk).
 import NidoLayout from '../../../layouts/NidoLayout.astro';
 import Toast from '../../../components/Toast.astro';
 import PasskeySheet from '../../../components/PasskeySheet.astro';
 import Icon from '../../../components/Icon.astro';
 ---
-<NidoLayout title="Get back in">
+<NidoLayout title="Approve">
   <div class="col-scroll scroll-hide screen-in">
     <div class="topbar dash-hide-desktop">
       <a href="/security/" class="btn ghost sm" style="width:40px;height:40px;padding:0;border-radius:12px;" aria-label="Back to security">
         <Icon name="back" size={18} />
       </a>
-      <div class="disp" style="font-weight:800;font-size:21px;">Get back in</div>
+      <div class="disp" style="font-weight:800;font-size:21px;">Approve as a friend</div>
     </div>
     <div class="pad" style="padding-top:8px;">
-      <div class="dash-head"><h1 class="dash-head-title disp">Get back in</h1></div>
-      <p class="mut" style="font-size:13.5px;margin:0 0 4px;line-height:1.5;">Lost your passkey? Your recovery setup lets you back in.</p>
+      <div class="dash-head"><h1 class="dash-head-title disp">Approve as a friend</h1></div>
+      <p class="mut" style="font-size:13.5px;margin:0 0 4px;line-height:1.5;">A friend asked you to approve a change to their Nido.</p>
       <div id="recovery-root"></div>
     </div>
   </div>
@@ -32,11 +32,8 @@ import Icon from '../../../components/Icon.astro';
 </style>
 
 <script>
-  import { contractIdFromHostname, isContractId } from '@nidohq/passkey-sdk';
-  import { mountRecover } from '../../../lib/recovery/recoverPage.js';
+  import { mountGuardian } from '../../../lib/recovery/guardianPage.js';
 
-  const host = contractIdFromHostname(window.location.hostname);
-  const account = host && isContractId(host) ? host : null;
   const root = document.getElementById('recovery-root')!;
-  await mountRecover(root, account);
+  await mountGuardian(root);
 </script>

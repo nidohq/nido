@@ -7,11 +7,9 @@ export default defineConfig({
   site: "https://nido.fyi",
   vite: {
     worker: {
-      // `prover.worker.ts` is a `type: "module"` Worker (see
-      // `lib/zk/prover.ts`). Vite/Rollup's code-splitting build for module
-      // workers can't emit "iife"/"umd" (its default `worker.format`) —
-      // `astro build` hard-fails with "Invalid value \"iife\" for option
-      // \"worker.format\"" the moment any page imports the zk prover.
+      // bb.js (the ZK prover, loaded lazily by the recovery pages) spawns
+      // module workers. Vite/Rollup's code-splitting build for module
+      // workers can't emit "iife"/"umd" (its default `worker.format`).
       format: 'es',
     },
   },
