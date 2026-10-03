@@ -10,18 +10,7 @@ export interface Friend {
   nickname?: string;
 }
 
-export type PolicyBlock =
-  | MultisigRecoveryBlock
-  | ScopedSessionKeyBlock;
-
-export interface MultisigRecoveryBlock {
-  kind: 'multisig-recovery';
-  /** On-chain rule id once installed; absent for drafts. */
-  ruleId?: number;
-  threshold: number;
-  friends: Friend[];
-  label?: string;
-}
+export type PolicyBlock = ScopedSessionKeyBlock;
 
 export interface ScopedSessionKeyBlock {
   kind: 'scoped-session-key';

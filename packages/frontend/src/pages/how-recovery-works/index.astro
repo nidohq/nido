@@ -1,13 +1,14 @@
 ---
-// Educational explainer: "How account recovery with zero-knowledge proofs works".
-// A landing-style (shell="bleed") page, styled with the Warm Nest design system
-// (.lp-*, .td-*, tokens from styles/nido.css). Content lives in the frontmatter
-// data below and is rendered via .map() so Astro auto-escapes code identifiers
-// like `nido:zkrecovery:backup:<account>`, `>=`, `->` in techNotes/definitions.
+// Educational explainer: "How account recovery works" on the Perch recovery
+// stack (stellar-registry/perch, vendor/perch). A landing-style
+// (shell="bleed") page, styled with the Warm Nest design system (.lp-*,
+// .td-*, tokens from styles/nido.css). Content lives in the frontmatter data
+// below and is rendered via .map() so Astro auto-escapes code identifiers.
 //
-// The technical claims here were derived from the on-chain zk-recovery contract,
-// the Noir circuit, the passkey-sdk client, and the integration lifecycle tests,
-// and fact-checked against them. Keep them accurate if the mechanism changes.
+// The technical claims here follow vendor/perch/docs/recovery/spec.md and
+// docs/zk/, and Nido's integration suites that exercise them
+// (crates/integration-tests/tests/it/recovery_*.rs). Keep them accurate if
+// the mechanism changes.
 import NidoLayout from "../../layouts/NidoLayout.astro";
 import Logo from "../../components/Logo.astro";
 import Icon from "../../components/Icon.astro";
@@ -15,189 +16,179 @@ import Nest from "../../components/Nest.astro";
 
 const githubRepository = import.meta.env.PUBLIC_GITHUB_REPOSITORY as string | undefined;
 const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : undefined;
-const circuitUrl = githubUrl ? `${githubUrl}/blob/main/circuits/zk_recovery/src/main.nr` : undefined;
-const contractUrl = githubUrl ? `${githubUrl}/tree/main/contracts/zk-recovery` : undefined;
+const circuitUrl = "https://github.com/stellar-registry/perch/tree/main/circuits";
+const contractUrl = "https://github.com/stellar-registry/perch/tree/main/crates/perch-recovery";
 
 // ── The recovery pipeline, left to right (the centerpiece diagram) ──
 const pipeline = [
-  { label: "Self-held secret", sub: "Seed phrase or wallet signature, hashed in your browser. Never stored." },
-  { label: "Commitment enrolled", sub: "Only a fingerprint goes on-chain, bound to your account." },
-  { label: "Merkle pool", sub: "One giant append-only tree of everyone's tickets." },
-  { label: "New passkey + proof", sub: "New device makes a proof you know the secret." },
-  { label: "Initiate", sub: "Anyone can submit it; only your proof is valid." },
-  { label: "Safety timer", sub: "A window for the real you to say no." },
-  { label: "Completion", sub: "The new passkey — and only that key — is installed." },
-  { label: "Account restored", sub: "Yours again, with the new passkey." },
+  { label: "Choose your helpers", sub: "Trusted friends, a recovery kit, or both, written into your account's policy." },
+  { label: "Enrolled on-chain", sub: "One policy update records the setup; a kit's fingerprint joins a public pool." },
+  { label: "New passkey", sub: "On a new device you create a fresh passkey for your Nido." },
+  { label: "Open a recovery", sub: "Anyone can open it. It changes nothing until it is approved." },
+  { label: "Approval", sub: "Your friends approve, or your kit proves it is you, or both." },
+  { label: "Waiting period", sub: "Days in which you, or your helpers, can stop it." },
+  { label: "Completion", sub: "Your policy, with only the lost passkey swapped for the new one." },
+  { label: "Back in", sub: "The old passkey is revoked for good." },
 ];
 
-// ── The six-step flow. `body` is plain-language; `dev` is the precise
-//    developer-layer detail with real names. tone/icon are presentation only. ──
 const steps = [
   {
     num: "1",
-    title: "Enroll a secret only you hold",
-    actor: "You · Browser",
+    title: "Write recovery into your policy",
+    actor: "You · Your Nido",
     icon: "fingerprint",
     tone: "var(--acc)",
-    body: "When you set up recovery, your browser turns a written-down seed phrase — or a repeatable signature from a wallet you already control — into a single secret number. It lives in memory just long enough to compute a fingerprint, then it's gone. Only the fingerprint, never the secret, is written to the blockchain.",
-    dev: "deriveSecretM1 (seed) or deriveM2SecretSafely (wallet signature) in passkey-sdk/src/zkRecovery run HKDF-SHA256 with salt=networkPassphrase and info='nido-recovery-v1:'+tag, then reduce384 into a BN254 field element (Fr). The client submits only inner = Poseidon2([DOM_LEAF, secret], 2). The secret is never persisted — only an advisory flag at localStorage key nido:zkrecovery:backup:<account>.",
+    body: "Recovery is part of your Nido's policy document, like every other rule. You pick what it protects against (losing your passkey, or someone stealing it), who can help (friends, a recovery kit, or both), and how long a recovery must wait. Saving it is one update your passkey signs.",
+    dev: "The document's recovery member names the profile (loss | protected), the mode (guardian-only | zk-only | combined), guardians and quorum, the ZK adapter, circuit id, pool, enrollment id and commitment, the controller, an optional baseline hash, the replaceable signer ids, and the timing in ledgers. apply_doc compiles it, the controller records it in rcv_sync, and the account installs a zero-signer recovery rule whose only policy is the controller.",
   },
   {
     num: "2",
-    title: "The fingerprint is bound to your account",
-    actor: "Controller contract",
+    title: "A recovery kit, if you want one",
+    actor: "You · Browser",
     icon: "shield",
     tone: "var(--honey)",
-    body: "The contract takes your fingerprint and stamps it with your account address — a step you can't do yourself and can't fake — then files it into a giant append-only tree of everyone's recovery tickets. Because the binding happens on-chain, from the account that just authorized the insert, your ticket can only ever recover your account.",
-    dev: "insert(account, commitment) [factory.require_auth, genesis] or insert_for(account, commitment) [account.require_auth, re-enroll] in pool.rs call insert_bound, which rejects non-canonical values via require_canonical, computes stored = Poseidon2([DOM_BIND, acct_hi, acct_lo, inner], 4) and appends it to the depth-24 Merkle tree, emitting leaf_inserted. A pre-wrapped leaf can never be trusted.",
+    body: "A recovery kit is a random secret your browser makes and you keep offline. Only its fingerprint goes on-chain, into a public pool shared by every Nido that uses one. The same policy update inserts it, so your kit is either fully enrolled or not at all.",
+    dev: "The kit holds a 253-bit random secret and a 32-byte enrollment id. The document names commitment = Poseidon2(DOM_LEAF, secret); apply_doc calls the pool's rcv_insert, which stores leaf = Poseidon2(DOM_BIND, account, enrollment id, commitment) in a depth-32 tree that rolls over when full. Every root a tree ever had stays valid for proofs.",
   },
   {
     num: "3",
-    title: "Later: new passkey, and prove you know the secret",
-    actor: "You · Browser",
+    title: "Lost your passkey? Make a new one and open a recovery",
+    actor: "You · New device",
     icon: "key",
     tone: "var(--acc)",
-    body: "You've lost your device. You create a brand-new passkey, then re-enter your seed phrase (or re-sign with your wallet) to reproduce the secret. Your browser rebuilds the recovery tree from public blockchain data, double-checks it against the contract, and generates a zero-knowledge proof: \"I know a secret whose ticket sits in this tree, bound to this account.\" The secret never leaves your browser.",
-    dev: "createSessionPasskey yields new_pubkey (65-byte SEC1 P-256). syncPoolAndLocate rebuilds the depth-24 tree from leaf_inserted events (or the pool-indexer) and gates on verifyAgainstOnChainRoot against current_root — a mismatch is a hard error. prover.worker.ts fetches circuits/zk_recovery.json, checks its sha256 against MANIFEST.circuitSha256, then runs Noir.execute and UltraHonkBackend.generateProof.",
+    body: "On a new device you create a fresh passkey for your Nido and open a recovery that says which passkey it replaces. Anyone can open one, and opening it changes nothing: your Nido keeps working and nothing is frozen until a recovery is approved.",
+    dev: "begin_lost_key(account, replacements) is permissionless. The controller derives the target on-chain with the account's own compiler: the applied document with exactly the declared credential swapped (same signer slot, same kind, same verifier). Nobody supplies a target hash. A ZK mode must also declare a fresh kit, because completing spends the old one.",
   },
   {
     num: "4",
-    title: "Anyone can submit it — only your proof is valid",
-    actor: "Relayer · Controller contract",
+    title: "Your helpers approve",
+    actor: "Friends · Your kit",
     icon: "bolt",
     tone: "var(--teal)",
-    body: "The proof plus a few public values go to the contract. It doesn't matter who sends it — a fee-paying relayer does, so you need no funds and no working key. The contract runs a strict checklist, re-derives the request fingerprint from the actual call, verifies the proof, and starts a safety timer. A malicious sender can't smuggle in a different key: any tampering breaks the proof.",
-    dev: "initiate_recovery(account, new_pubkey, nonce, timelock_secs, root, nullifier, proof) has NO require_auth. It runs 9 ordered checks, recomputes auth_hash for ACTION_INITIATE=1 via compute_auth_hash from the call's own args, assembles public_inputs = root || nullifier || auth_hash (96 bytes) and cross-calls the UltraHonk verifier via env.try_invoke_contract(cfg.verifier, 'verify_proof', ...). Fee-sponsored by the nido.fly.dev relayer.",
+    body: "Friends approve from their own Nidos, after checking with you that the new passkey is really yours. A recovery kit approves with a zero-knowledge proof made in your browser. In combined mode both are needed. Each approval covers this one recovery and nothing else.",
+    dev: "Guardians authorize submit_guardian for the attempt's statement digest. A ZK proof's public inputs are root, nullifier, and statement_hash = H(DOM_AUTH, account, enrollment id, digest), where digest covers the network, account, controller, configuration epoch and hash, timing, action, attempt id, source and target hashes, and the replacement-set hash. The first approved attempt invalidates every other open one.",
   },
   {
     num: "5",
-    title: "The safety timer — your window to say no",
-    actor: "You · Controller contract",
+    title: "A waiting period you control",
+    actor: "You · Controller",
     icon: "clock",
     tone: "var(--honey)",
-    body: "Recovery can't finish immediately. During the wait, your account freezes key-removal so an attacker can't strip the incoming passkey. If a pending recovery is an imposter and your live key still works, you can cancel it (your secret stays usable) or permanently burn a leaked secret. Only after the timer elapses can recovery complete.",
-    dev: "executable_after = now + delay_secs; expires_at = executable_after + completion_window_secs. The in-account guard_no_pending cross-calls has_pending before remove_signer / remove_context_rule / remove_policy / update_context_rule_valid_until; the recovery rule itself is unremovable (RecoveryRuleProtected). cancel_recovery / burn_nullifier both need account.require_auth plus a fresh ACTION_CANCEL=2 / ACTION_REVOKE=3 proof.",
+    body: "An approved recovery waits before it can finish. Under the lose-my-passkey profile you keep using your Nido and can cancel it any time with your passkey. Under the stolen-passkey profile your Nido freezes, and only your helpers can cancel, because a thief holding your passkey must not be able to.",
+    dev: "Loss: ordinary activity continues; the owner's cancel_recovery is never capped. Protected: the controller sets a freeze mirror in the account through rcv_gate, and __check_auth refuses everything but the completing apply_doc on every path, including execute and delegated auth. Both profiles refuse policy changes and upgrades while an attempt is authorized. Evidence cancellations are capped by max-cancels.",
   },
   {
     num: "6",
-    title: "The new passkey takes over",
-    actor: "Relayer · Verifier",
+    title: "Your policy, with the new passkey",
+    actor: "Anyone · Your Nido",
     icon: "shieldcheck",
     tone: "var(--good)",
-    body: "Once the timer is up, anyone can trigger the final step. The account installs your new passkey — but only that exact key; the recovery policy refuses to authorize anything else. No signature and no second proof are needed here: the earlier, already-proven pending record is the sole authority. Your account is yours again.",
-    dev: "A permissionless add_context_rule(Default, 'recovered', None, [Signer::External(webauthn_verifier, new_pubkey)], {}) resolves through the zero-signer recovery rule into ZkRecovery::enforce, which gates fn_name, the exact new-signer set == pending.new_pubkey, empty policies, and the timelock. On success it marks the nullifier Spent, deletes the pending, and emits RecoveryCompleted. No verify_proof runs at completion.",
+    body: "After the wait anyone can finish the recovery. Your Nido installs exactly the derived policy: everything as it was, with the lost passkey replaced. The old passkey is revoked forever, and a kit used for the recovery is spent and replaced by your new one.",
+    dev: "Completion is the account's own apply_doc of the derived target, authorized by selecting the zero-signer recovery rule; the controller's enforce checks the exact bytes, the timelock, and the window. The account revokes every credential the target drops, the controller spends the nullifier and bumps the configuration epoch (killing older evidence and queued upgrades), and the new kit's leaf is inserted.",
   },
 ];
 
-// ── Privacy: what the proof hides vs reveals ──
 const hidden = [
-  "Your recovery secret — a private witness inside the proof. It never appears on-chain, never touches a Nido server, and is wiped from browser memory after use.",
-  "Which leaf in the tree is yours — plus your account, action, nonce and new public key as raw values. They're folded into one fingerprint: bound, but never exposed.",
+  "Your recovery kit's secret: a private input to the proof. It never appears on-chain and Nido never stores it.",
+  "Which leaf in the pool is yours: the proof shows a leaf is in the pool and bound to your account without pointing at it.",
 ];
 const revealed = [
-  { k: "root", v: "which snapshot of the pool your proof was built against." },
-  { k: "nullifier", v: "a one-time public tag that says \"this secret was used\" — never the secret itself." },
-  { k: "auth_hash", v: "the request fingerprint, which the contract re-derives on its own to catch any swap." },
+  { k: "root", v: "which snapshot of the pool the proof was built against." },
+  { k: "nullifier", v: "a one-time public tag for your kit, spent only when a recovery completes." },
+  { k: "statement_hash", v: "the fingerprint of exactly what is being approved, rebuilt by the controller." },
 ];
 
-// ── Why it's safe ──
 const whySafe = [
   {
     icon: "link",
-    title: "Only your proof, for only your account",
-    body: "The proof is cryptographically welded to the exact request — your account, this controller, the network, the action, the nonce, the new key, the timer. The contract re-derives that fingerprint (auth_hash) from the live call and rejects any mismatch. Flip a single byte of the new public key and verification fails.",
+    title: "Approvals cover one exact recovery",
+    body: "Every approval and every proof is bound to one statement: this network, this Nido, this recovery service, this configuration, this recovery, and the exact replacement. An approval for one recovery cannot be reused for another, for a cancellation, or after the setup changes.",
   },
   {
     icon: "clock",
-    title: "A timer the real owner controls",
-    body: "Recovery can never complete the instant it starts. The delay gives the genuine owner time to notice and cancel an imposter with their still-working passkey. Meanwhile the account freezes any attempt to remove signers or rules, so a thief can't quietly strip out the incoming key mid-recovery.",
+    title: "A waiting period with a veto",
+    body: "Nothing completes the moment it is approved. Under the lose-my-passkey profile you can always cancel; under the stolen-passkey profile your helpers can, and your Nido is frozen so a thief cannot move funds in the meantime.",
   },
   {
     icon: "refresh",
-    title: "One secret, one use",
-    body: "Each secret produces a single deterministic public tag (the nullifier). Once used it's spent forever and can't start another recovery, the nonce must advance by exactly one, and initiations are capped at 3 per rolling 90 days. A stranger can't kill your credential either — burning it requires proving you know the secret bound to your own account.",
+    title: "Nobody picks the result",
+    body: "The new policy is derived on-chain from your current one (or your saved restore point) and the declared replacement. A recovery can swap the passkeys you marked replaceable, for passkeys of the same kind, and nothing else.",
   },
   {
     icon: "lock",
-    title: "The completion gate can only install your key",
-    body: "The final key-swap runs through a tightly fenced policy: ZkRecovery::enforce refuses everything except installing exactly your pending new passkey, with no extra policies. And a thief with a stolen live passkey still can't disable recovery — the policy can't be repointed, and uninstalling it simply panics.",
+    title: "Revoked means revoked",
+    body: "Every passkey a recovery replaces or removes joins a permanent revoked list that every future policy update is checked against. A stolen passkey cannot come back, even if the thief can still sign.",
   },
 ];
 
-// ── Glossary ──
 const glossary = [
-  { term: "Recovery secret", def: "A single secret number only you can reproduce — from a written-down seed phrase or a repeatable wallet signature. Nido never stores or sees it; it's derived transiently in the browser and discarded." },
-  { term: "Commitment", def: "A fingerprint of your secret. The client submits only inner = Poseidon2([DOM_LEAF, secret], 2); the pool wraps it on-chain into an account-bound stored leaf. You can never submit the wrapped form." },
-  { term: "Nullifier", def: "A PUBLIC one-time tag, unique per account+secret, that says \"this secret was used\" without revealing it. Tracked as Reserved then Spent so a secret can never start two recoveries." },
-  { term: "auth_hash", def: "A fingerprint of every consequential argument of a recovery call. It's one of the three public inputs; the contract recomputes it from the live call, so a proof can't be reused with swapped inputs." },
-  { term: "Merkle pool", def: "A depth-24 append-only Poseidon2 tree of everyone's recovery tickets — one leaf per enrolled secret, bound to one account. The root summarizes it. It is NOT a set of guardians." },
-  { term: "UltraHonk", def: "The zero-knowledge proving system used — Barretenberg's Honk family over the BN254 curve, not Groth16. A universal SRS means no per-circuit trusted-setup ceremony." },
-  { term: "Timelock", def: "The mandatory delay between starting and finishing recovery, plus an expiry window after which an uncompleted attempt lapses. It gives the real owner time to cancel an imposter." },
+  { term: "Profile", def: "What recovery protects against: losing your passkey (loss), or someone stealing it (protected)." },
+  { term: "Guardian", def: "A friend's Nido or Stellar account that can approve a recovery of yours. A quorum of them is needed." },
+  { term: "Recovery kit", def: "A random secret you keep offline. Its fingerprint (commitment) is enrolled in a public pool; a zero-knowledge proof shows you hold it." },
+  { term: "Nullifier", def: "A public one-time tag per kit. Proofs need it unspent; only a completed recovery spends it, and nothing ever un-spends it." },
+  { term: "Statement", def: "The exact thing an approval covers: network, account, controller, configuration epoch and hash, timing, action, and its subject." },
+  { term: "UltraHonk", def: "The zero-knowledge proving system (Barretenberg, BN254). Perch verifies it on-chain with NethermindEth's audited verifier." },
+  { term: "Baseline", def: "An optional saved policy a stolen-passkey recovery can restore, published on-chain at setup." },
 ];
 
-// ── FAQ ──
 const faq = [
-  { q: "Does Nido or anyone store my seed phrase or recovery secret?", a: "No. Your secret is entirely self-held — a seed phrase you wrote down, or a value re-derived on demand from a wallet signature. It's computed transiently in your browser and immediately discarded. Only a non-secret commitment ever goes on-chain, and only a non-secret flag lives in your browser. There is no server copy to leak, subpoena, or breach." },
-  { q: "Do guardians or friends approve my recovery? Can they see my balance?", a: "No — Nido's zero-knowledge recovery has no guardians and no M-of-N social voting at all. The pool is a set of commitments (one leaf = one secret bound to one account), not a set of people. Recovery is a single self-held secret, a proof, and a timer. Nobody watches your account." },
-  { q: "Does the proof hide my balance or transaction amounts?", a: "That's a common misconception. This circuit proves membership in the recovery pool, the nullifier, and the request binding — it has nothing to do with money. There's no amount, value, or balance anywhere in the circuit. What it hides is your secret and which ticket is yours." },
-  { q: "If anyone can submit the recovery transaction, can a stranger take my account?", a: "No. Submission is permissionless on purpose, so a relayer can pay the fee for someone with no funds and no working key — but security comes entirely from the proof. Only someone who knows your secret can produce a valid one, it's welded to your exact account, and the timer lets the real you cancel an imposter first." },
-  { q: "Does completing recovery require the new passkey to sign, or re-run the proof?", a: "Neither. Completion is a permissionless, zero-signer call whose sole authority is the recovery policy checking the already-proven pending record. (Canceling or burning a recovery, by contrast, does require your live passkey plus a fresh proof.)" },
-  { q: "What proving system is this, and does it need a trusted setup?", a: "It's UltraHonk (Barretenberg) over the BN254 curve — not Groth16 and not plain PLONK. It uses a universal SRS, so there's no per-circuit trusted-setup ceremony. The on-chain verifier finishes in a single pairing check using Stellar's native BN254 host functions to fit the CPU budget." },
+  { q: "Does Nido store my recovery kit?", a: "No. Your browser makes the kit and gives it to you as a file; Nido never stores it. Only a fingerprint goes on-chain. Keep the file offline: anyone holding it can open a recovery, which is why the waiting period and your veto exist." },
+  { q: "Can my friends see my balance or move my money?", a: "No. A guardian can only approve or cancel a recovery of your Nido. They never get a key to it, and the result of a recovery is fixed on-chain before they approve." },
+  { q: "If anyone can open a recovery, can a stranger lock me out?", a: "No. Opening a recovery changes nothing and freezes nothing. Only an approved recovery restricts your Nido, and approval takes your helpers or your kit." },
+  { q: "What if my passkey is stolen, not lost?", a: "Choose the stolen-passkey profile. Then changing recovery, upgrading, or cancelling needs your helpers too, and with a saved restore point a recovery can undo whatever the thief changed." },
+  { q: "Do I need funds or a working key to recover?", a: "No. Opening, approving with a kit, and completing are all permissionless, so a relayer can pay for them." },
+  { q: "What proving system is this, and does it need a trusted setup?", a: "UltraHonk over BN254 with a universal reference string, so there is no per-circuit ceremony. Verification costs about 87M of the network's 400M instruction limit per transaction." },
 ];
 
-// ── Developer deep-dive ──
 const devDeep = [
-  { title: "The circuit statement", where: "circuits/zk_recovery/src/main.nr", body: "main() takes exactly three public inputs — root, nullifier, auth_hash — and everything else is a private witness (secret, account halves, 24 Merkle siblings + bits, action, new-pubkey fields, controller halves, nonce, timelock). It asserts three things: (1) the account-bound leaf climbs 24 levels to root; (2) Poseidon2([DOM_NULL, acct_hi, acct_lo, secret], 4) == nullifier; (3) the 15-input Poseidon2 over the request fields == auth_hash." },
-  { title: "Verification is recomputed on-chain, every time", where: "controller.rs · hash.rs", body: "The controller never trusts a caller-supplied auth_hash. In initiate_recovery it recomputes it via compute_auth_hash from the call's own args, assembles public_inputs = root(32) || nullifier(32) || auth_hash(32), and cross-calls the verifier's verify_proof; any failure maps to VerificationFailed. Host hashing in hash.rs (leaf_inner, wrap_leaf, compute_nullifier, compute_auth_hash) is asserted equal to committed circuit fixtures." },
-  { title: "Completion is a policy, not a re-proof", where: "policy.rs", body: "There is no complete_recovery entry point. A permissionless add_context_rule on the account resolves through a zero-signer rule into ZkRecovery::enforce, which requires a live, timelock-elapsed pending and gates fn_name, an exact new-signer set equal to pending.new_pubkey, and empty policies. This gate matters because OZ rule-matching validates only a rule's target contract, not its fn_name/args." },
-  { title: "The proving & verifying stack", where: "zk-verifier · prover.worker.ts", body: "Proofs are UltraHonk over BN254 with a universal SRS. The in-browser worker runs Noir.execute then UltraHonkBackend.generateProof with the keccak oracle to match the on-chain transcript. The Soroban verifier stores a ~1.9 KB verification key, re-derives the Fiat-Shamir transcript, runs sum-check and a batched KZG opening, and ends in one bn254 pairing check — ~159M CPU against a 400M budget." },
-  { title: "Owner defenses & anti-grief", where: "controller.rs", body: "cancel_recovery and burn_nullifier both require account.require_auth() plus a fresh proof whose auth_hash zeroes the new-pubkey and timelock. Cancel releases the reservation (secret stays usable); burn marks the nullifier Spent forever. Because the nullifier is public, a foreign account trying to burn a victim's nullifier recomputes auth_hash from its own address and fails verification — proven by a dedicated anti-grief test." },
+  { title: "One state machine for every profile and mode", where: "perch: docs/recovery/spec.md", body: "Perch's spec defines attempts (collecting, authorized, completed, cancelled), the per-account epoch that kills stale evidence, evidence freshness, cancellation rules, nullifier ownership, revocation, and the upgrade delay, for Loss and Protected under GuardianOnly, ZkOnly, and Combined. Nido's integration suites run all six combinations end to end with real proofs." },
+  { title: "Targets are derived, not supplied", where: "perch-doc-compiler: derive_target", body: "A lost-key target is the applied document with exactly the declared replacements; a compromise target is the published baseline's signers and rules with the current recovery member. Replacements keep the slot's kind and verifier. The completing apply_doc must submit exactly those bytes." },
+  { title: "Completion is not reconfiguration", where: "perch-recovery: rcv_sync", body: "The controller's enforce leaves a marker for the same invocation's rcv_sync, bound to the attempt, the target hash, and the ledger. That is how the account tells a completion from an owner's policy change, so rotating a passkey never trips the reconfiguration rules." },
+  { title: "The ZK backend", where: "perch: circuits/, crates/perch-zk-*", body: "A Noir circuit proved with UltraHonk (bb 0.87.0, nargo 1.0.0-beta.9), an adapter with the audited verifier and VK compiled in, and a constructorless depth-32 pool that accounts insert into through apply_doc. Artifacts and proofs reproduce byte for byte from source." },
+  { title: "Reserved hook names", where: "perch-smart-account: check_auth", body: "The account never signs or executes install, uninstall, enforce, or any rcv_* name, so the controller's and pool's hooks are reachable only from the account's own apply_doc, cancel_recovery, and upgrade calls." },
 ];
 
-// ── Illustrative animated walkthrough ("Watch Alice recover"). Names and
-//    hash values are fictional; the calls, order and on-chain effects mirror
-//    the contracts. Driven by the demo <script> at the foot of the file. ──
 const demoScenes = [
-  { n: 1, station: "Enrolled", actor: "Alice · Browser", tone: "var(--acc)", icon: "fingerprint",
+  { n: 1, station: "Set up", actor: "Alice · Her Nido", tone: "var(--acc)", icon: "fingerprint",
     headline: "Months ago, Alice set up recovery.",
-    caption: "Her browser turned a seed phrase into a secret, hashed it to a fingerprint, and wrote only the fingerprint on-chain — bound to her account.",
-    chip: "secret (browser only)  →  commitment 0x8f3a…c4" },
+    caption: "Two friends of three can help, and she keeps a recovery kit offline. One policy update recorded it all.",
+    chip: "combined · 2 of 3 friends + kit" },
   { n: 2, station: "Phone lost", actor: "Alice", tone: "var(--honey)", icon: "device",
     headline: "Today, her phone is gone.",
-    caption: "The passkey went with it. On a new device she has no key and no way in — the classic lockout.",
-    chip: "signer: unreachable" },
-  { n: 3, station: "New key", actor: "Alice · Browser", tone: "var(--acc)", icon: "key",
+    caption: "Her passkey went with it. On a new device she has no way in.",
+    chip: "passkey: unreachable" },
+  { n: 3, station: "New key", actor: "Alice · New phone", tone: "var(--acc)", icon: "key",
     headline: "New phone, fresh passkey.",
-    caption: "Alice creates a brand-new passkey. Its public key is where she wants the account to answer from now on.",
-    chip: "new_pubkey 0x04a7…e2" },
-  { n: 4, station: "Prove it", actor: "Alice · Browser", tone: "var(--teal)", icon: "shield", flourish: "proof",
-    headline: "She proves she knows the secret.",
-    caption: "She re-enters her seed phrase. The secret is rebuilt in her browser and a zero-knowledge proof is generated — the secret itself never leaves the page.",
-    chip: "UltraHonk proof  ·  secret stays local" },
-  { n: 5, station: "Initiate", actor: "Relayer · Contract", tone: "var(--honey)", icon: "bolt",
-    headline: "Anyone can submit it — a relayer does.",
-    caption: "The proof and a few public values go on-chain. The contract runs nine checks, re-derives the request fingerprint, verifies the proof, and reserves a one-time tag. A relayer pays the fee, so Alice needs no funds.",
-    chip: "verify_proof ✓  ·  nullifier 0x9d1e…7b reserved" },
-  { n: 6, station: "Timer", actor: "Alice · Contract", tone: "var(--honey)", icon: "clock", flourish: "timer",
-    headline: "A 48-hour window to say no.",
-    caption: "Recovery can't finish yet. If this were an imposter, the real Alice could cancel with her still-working key. Meanwhile, removing signers is frozen.",
-    chip: "timelock 48h  ·  signer removal blocked" },
-  { n: 7, station: "Complete", actor: "Relayer · Policy", tone: "var(--good)", icon: "shieldcheck",
-    headline: "The new key takes over — only that key.",
-    caption: "After the wait, anyone can trigger completion. The policy installs exactly Alice's new passkey and nothing else — no second proof, no signature.",
-    chip: "add_context_rule → enforce ✓  ·  nullifier spent" },
+    caption: "Alice creates a new passkey for her Nido and opens a recovery that names it as the replacement.",
+    chip: "attempt #0 · replace admin" },
+  { n: 4, station: "Friends", actor: "Bo · Cy", tone: "var(--teal)", icon: "shield",
+    headline: "Two friends check with her, then approve.",
+    caption: "Each reads Alice the last characters of her new passkey on a call before approving from their own Nido.",
+    chip: "2 of 2 approvals" },
+  { n: 5, station: "Kit", actor: "Alice · Browser", tone: "var(--honey)", icon: "bolt", flourish: "proof",
+    headline: "Her recovery kit proves it is her.",
+    caption: "Her browser proves she holds the kit for this exact recovery. The secret never leaves the page.",
+    chip: "UltraHonk proof ✓" },
+  { n: 6, station: "Wait", actor: "Controller", tone: "var(--honey)", icon: "clock", flourish: "timer",
+    headline: "A seven-day wait.",
+    caption: "Under her profile Alice could still cancel with her old passkey if she found it. Policy changes are on hold.",
+    chip: "timelock 120,960 ledgers" },
+  { n: 7, station: "Complete", actor: "Anyone", tone: "var(--good)", icon: "shieldcheck",
+    headline: "Her policy, with the new passkey.",
+    caption: "Anyone finishes it. Her Nido installs exactly the derived policy; the old passkey is revoked and her kit is replaced.",
+    chip: "apply_doc via recovery rule ✓" },
   { n: 8, station: "Back in", actor: "Alice", tone: "var(--good)", icon: "home",
     headline: "Alice is back in.",
-    caption: "Her account now answers to the new passkey. Nobody ever learned her secret, saw her balance, or could point to her ticket in the pool.",
-    chip: "250 XLM  ·  secured by new passkey" },
+    caption: "Same Nido, same friends, a new passkey and a fresh kit.",
+    chip: "250 XLM · new passkey" },
 ];
 
 const demoLedger = [
-  { from: 1, icon: "link", text: "commitment 0x8f3a…c4  ·  bound to Alice" },
-  { from: 1, icon: "plus", text: "leaf #24,118 appended" },
-  { from: 1, icon: "refresh", text: "pool root 0x71bd…09" },
-  { from: 5, altFrom: 7, icon: "lock", text: "nullifier 0x9d1e…7b  ·  reserved", alt: "nullifier 0x9d1e…7b  ·  spent" },
-  { from: 5, altFrom: 7, icon: "key", text: "pending → new key 0x04a7…e2", alt: "new signer 0x04a7…e2  ·  installed" },
+  { from: 1, icon: "link", text: "recovery: combined · 2 of 3" },
+  { from: 1, icon: "plus", text: "kit leaf appended to pool" },
+  { from: 3, icon: "refresh", text: "attempt #0 opened" },
+  { from: 5, altFrom: 7, icon: "lock", text: "attempt #0 · approved", alt: "nullifier spent · new kit enrolled" },
+  { from: 5, altFrom: 7, icon: "key", text: "target: admin → new passkey", alt: "old passkey revoked" },
 ];
 ---
 
@@ -232,17 +223,17 @@ const demoLedger = [
         <span class="chip acc" style="margin-bottom:20px;"><Icon name="sparkle" size={13} color="var(--acc-ink)" /> Zero-knowledge recovery</span>
         <h1 class="disp rx-h1">Recover your account,<br /><span class="acc" style="font-style:italic;">reveal nothing.</span></h1>
         <p class="lp-sub">
-          Lose your passkey and your account is still yours. A secret only you hold,
-          plus a zero-knowledge proof and a safety timer, brings you back in —
-          without ever telling anyone what your secret is.
+          Lose your passkey and your account is still yours. Friends you trust, a
+          recovery kit only you hold, or both bring you back in, after a waiting
+          period in which the real you can say no.
         </p>
         <div class="lp-cta">
-          <a class="btn acc" href="/security/" style="width:auto;padding:0 24px;height:52px;">Set up recovery <Icon name="arrow" size={17} color="#fff" /></a>
+          <a class="btn acc" href="/security/recovery/" style="width:auto;padding:0 24px;height:52px;">Set up recovery <Icon name="arrow" size={17} color="#fff" /></a>
           {circuitUrl && <a class="btn ghost" href={circuitUrl} target="_blank" rel="noopener" style="width:auto;padding:0 22px;height:52px;">Read the circuit</a>}
         </div>
         <div class="lp-trust">
-          <span><Icon name="lock" size={15} color="var(--mut)" /> No secret stored anywhere</span>
-          <span><Icon name="eye" size={15} color="var(--mut)" /> No guardians watching</span>
+          <span><Icon name="lock" size={15} color="var(--mut)" /> Nido stores no secret</span>
+          <span><Icon name="eye" size={15} color="var(--mut)" /> Friends never hold a key</span>
           <span><Icon name="shieldcheck" size={15} color="var(--mut)" /> No backdoor for anyone</span>
         </div>
       </div>
@@ -273,14 +264,13 @@ const demoLedger = [
       <h2 class="disp lp-h2" style="text-align:left;margin-top:8px;">The lost-key problem, without a backdoor.</h2>
       <p class="rx-lede-body">
         Passkeys are wonderful — until the device holding them is gone. The usual
-        fixes are grim: hand a company your seed phrase to babysit (now they can
-        drain you), or lean on a cluster of "guardians" who can see and gate your
-        account. Nido takes neither path. Your backup is a single secret only you
-        can reproduce — written down, or re-derived from a wallet you already
-        control. Nido never stores it, never transmits it, never sees it. At
-        recovery time your browser <em>proves</em> you know it, a timer lets the
-        real you veto an imposter, and a fresh passkey takes over.
-        <strong>No custodian. No guardians. No backdoor — including for us.</strong>
+        fixes are grim: hand a company your keys to babysit (now they can drain
+        you), or give friends keys of their own. Nido does neither. Friends you
+        name can only approve a recovery whose result is fixed on-chain before
+        they look, and a recovery kit only you hold proves it is you without
+        revealing anything. Either way a waiting period lets the real you veto
+        an imposter, and only the lost passkey is replaced.
+        <strong>No custodian. No backdoor, including for us.</strong>
       </p>
     </section>
 
@@ -294,10 +284,10 @@ const demoLedger = [
           Picture a coat check with millions of coats. When you drop yours off, the
           attendant seals it in a tamper-proof bag stamped with your name — you
           never touch the seal, so you can only ever reclaim <em>your</em> coat.
-          Instead of a paper stub, you keep a secret number memorized. To get your
+          Instead of a paper stub, you keep a secret number in a sealed envelope. To get your
           coat back you don't hand over the number; you step behind a screen and
           prove, mathematically, that you know a number matching one sealed bag on
-          the racks — without saying which bag, or what the number is. The
+          the racks, without saying which bag or what the number is. The
           attendant hangs a "claimed" marker so the same secret can't be used
           twice, waits a set time in case the real you shows up to object, then
           hands the coat to your new pocket. Nobody ever learned your number, saw
@@ -462,7 +452,7 @@ const demoLedger = [
       </div>
       <div class="alert info rx-notbalance">
         <Icon name="info" size={16} color="var(--acc-ink)" class="alert-ico" />
-        <span><strong>Not your balance.</strong> The circuit proves membership, a nullifier, and a request binding — there is no amount or balance anywhere in it. Enrolling a real secret and enrolling a decoy look identical on-chain, so whether you set up recovery at all stays private.</span>
+        <span><strong>Not your balance.</strong> The circuit proves membership, a nullifier, and a request binding — there is no amount or balance anywhere in it. Enrollment itself is public: anyone can see that a Nido uses recovery, but not your secret or which leaf in the pool is yours.</span>
       </div>
     </section>
 
@@ -532,7 +522,7 @@ const demoLedger = [
       </div>
       {contractUrl && (
         <p class="mut rx-dev-foot">
-          Read the full contract at <a class="link" href={contractUrl} target="_blank" rel="noopener">contracts/zk-recovery</a>{circuitUrl && (<Fragment> and the circuit at <a class="link" href={circuitUrl} target="_blank" rel="noopener">circuits/zk_recovery</a></Fragment>)}.
+          Read the recovery controller at <a class="link" href={contractUrl} target="_blank" rel="noopener">perch-recovery</a>{circuitUrl && (<Fragment> and the circuit at <a class="link" href={circuitUrl} target="_blank" rel="noopener">perch/circuits</a></Fragment>)}.
         </p>
       )}
     </section>
@@ -542,8 +532,8 @@ const demoLedger = [
       <div class="halo" style="width: 360px; height: 360px; bottom: -220px; left: 50%; transform: translateX(-50%);"></div>
       <div style="display:flex;justify-content:center;margin-bottom:22px;position:relative;"><Nest size={64} /></div>
       <h2 class="disp" style="font-weight:800;font-size:clamp(28px,7vw,40px);letter-spacing:-.01em;position:relative;line-height:1.05;">Never locked out,<br />never watched.</h2>
-      <p class="lp-sub" style="margin:14px auto 0;max-width:380px;position:relative;">Set up zero-knowledge recovery in your Nido — a secret only you hold, and no one to trust with it.</p>
-      <a class="btn acc" href="/security/" style="width:auto;padding:0 28px;height:54px;margin:26px auto 0;position:relative;">Set up recovery <Icon name="arrow" size={18} color="#fff" /></a>
+      <p class="lp-sub" style="margin:14px auto 0;max-width:380px;position:relative;">Set up recovery in your Nido: friends, a kit only you hold, or both.</p>
+      <a class="btn acc" href="/security/recovery/" style="width:auto;padding:0 28px;height:54px;margin:26px auto 0;position:relative;">Set up recovery <Icon name="arrow" size={18} color="#fff" /></a>
     </section>
 
     <footer class="lp-foot">

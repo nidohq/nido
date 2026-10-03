@@ -10,12 +10,9 @@ import {
   xdr,
 } from '@stellar/stellar-sdk';
 import type { ChainRule, ChainSigner, PolicyState } from '@nidohq/passkey-sdk';
-import {
-  fetchRegistryAddress as sdkFetchRegistryAddress,
-  RECOVERY_CONTROLLER_TESTNET_ID,
-} from '@nidohq/passkey-sdk';
+import { fetchRegistryAddress as sdkFetchRegistryAddress } from '@nidohq/passkey-sdk';
 import { Client as SpendingLimitPolicyClient } from '@nidohq/spending-limit-policy';
-import { Client as RecoveryControllerClient } from '@nidohq/recovery-controller';
+import { perchDeployment } from './recovery/deployment.js';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = Networks.TESTNET;
@@ -24,25 +21,6 @@ const NETWORK_PASSPHRASE = Networks.TESTNET;
 // natively; the CLI does that client-side. We target unverified directly so
 // `fetch_contract_id("verifier")` resolves without a prefix.
 const REGISTRY_ADDRESS = 'CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S';
-
-// --- ZK preview mode (PR-preview builds only; testnet) ---------------------
-//
-// When `PUBLIC_ZK_PREVIEW` is set at build time, `fetchRegistryAddress`
-// resolves `factory` / `zk-recovery` to this hardcoded testnet PAIR instead of
-// going through the registry, so a PR-preview build can exercise
-// `create_account_v2`'s genesis-insert (on-chain invisibility) without
-// touching the production registry entries. Production (`PUBLIC_ZK_PREVIEW`
-// unset/falsy) is completely unaffected — this block is dead code in that
-// build. See DEPLOYED.md's "Preview (factory-v2)" section.
-const ZK_PREVIEW_ENABLED = Boolean(import.meta.env.PUBLIC_ZK_PREVIEW);
-/** TESTNET PREVIEW ONLY — factory-v2-preview, supports `create_account_v2`. */
-const ZK_PREVIEW_FACTORY_ADDRESS = 'CA2NQS3V6XCNA4FZDPQ4JLSQ65CRWMHHLYQEZ5YQ7MYQX2G5USZ4GWBL';
-/** TESTNET PREVIEW ONLY — pool-v2-preview, the recovery pool bound to the factory above. */
-const ZK_PREVIEW_ZK_RECOVERY_ADDRESS = 'CDXT3DCXYFNZNKBST7VZMN5RJWH24HQXO3WLENQEP7YMPAEZJTQNMEKS';
-const ZK_PREVIEW_ADDRESSES: Record<string, string> = {
-  factory: ZK_PREVIEW_FACTORY_ADDRESS,
-  'zk-recovery': ZK_PREVIEW_ZK_RECOVERY_ADDRESS,
-};
 
 /** Simulate-only invocation of a contract view method. Returns the result ScVal. */
 export async function simulateView(
@@ -130,47 +108,12 @@ export async function fetchAllChainRules(account: string): Promise<ChainRule[]> 
   return out;
 }
 
-/** Read the Stage 3 `RecoveryController`'s enrolled config for `account`
- *  and shape it as `{ guardians, threshold }` — the shape
- *  `multisigRecovery.ts::fromChain` recognizes as the Stage 3 rule variant
- *  (distinguished from the legacy multisig-policy shape by `guardians`
- *  being present at all). Returns `{}` (not thrown) on any read failure or
- *  when the account isn't enrolled in ANY mode this block can render
- *  (ZkOnly has no guardians at all) — same tolerant-read convention as the
- *  rest of this function. */
-async function fetchRecoveryControllerState(account: string): Promise<PolicyState[string]> {
-  try {
-    const client = new RecoveryControllerClient({
-      contractId: RECOVERY_CONTROLLER_TESTNET_ID,
-      networkPassphrase: NETWORK_PASSPHRASE,
-      rpcUrl: RPC_URL,
-    });
-    const tx = await client.config({ account });
-    const config = tx.result; // Option<RecoveryConfig>
-    if (!config) return {};
-    // `Combined` mode ALSO has guardians (in addition to verifier/zk_pool) —
-    // only `ZkOnly` has none. Restricting this to `GuardianOnly` specifically
-    // was a real bug caught live: after a guardian-first-then-ZK-second
-    // `reconfigure` lands the account in `Combined`, the Security page's
-    // "N of M friends can rotate..." block would silently vanish (this
-    // returned `{}`, so `fromChain` saw no guardians and fell through to
-    // "No trusted friends yet.") even though guardians were very much still
-    // configured and the on-chain config was correct.
-    if (config.mode.tag === 'ZkOnly') return {};
-    return {
-      guardians: config.guardians,
-      threshold: config.guardian_threshold,
-    };
-  } catch {
-    return {};
-  }
-}
-
 /** For each policy address attached to a rule, fetch its per-(account,rule)
  *  state. The multisig policy yields `{ threshold }` (via its `get_threshold`
  *  view); the spending-limit policy yields `{ spendingLimit }` (via
- *  `fetchSpendingLimit`); the Stage 3 recovery controller yields
- *  `{ guardians, threshold }` (via `fetchRecoveryControllerState`). Unknown /
+ *  `fetchSpendingLimit`); the Perch recovery controller yields
+ *  `{ recoveryController: true }` (its configuration is the applied
+ *  document's `recovery` member, read by the recovery pages). Unknown /
  *  unreadable policies yield `{}`. */
 export async function fetchPolicyState(
   account: string,
@@ -188,8 +131,8 @@ export async function fetchPolicyState(
       state[policyAddr] = limit ? { spendingLimit: limit } : { spendingLimit: 'unreadable' };
       continue;
     }
-    if (policyAddr === RECOVERY_CONTROLLER_TESTNET_ID) {
-      state[policyAddr] = await fetchRecoveryControllerState(account);
+    if (policyAddr === perchDeployment()?.recoveryController) {
+      state[policyAddr] = { recoveryController: true };
       continue;
     }
     try {
@@ -263,14 +206,18 @@ export async function fetchSpendingLimit(
  *  registry routing + hardcoded fallbacks), pinned to this frontend's testnet
  *  RPC / network / registry constants. */
 export async function fetchRegistryAddress(name: string): Promise<string> {
-  if (ZK_PREVIEW_ENABLED && name in ZK_PREVIEW_ADDRESSES) {
-    return ZK_PREVIEW_ADDRESSES[name];
-  }
   return sdkFetchRegistryAddress(name, {
     rpcUrl: RPC_URL,
     networkPassphrase: NETWORK_PASSPHRASE,
     registryId: REGISTRY_ADDRESS,
   });
+}
+
+/** The account factory new Nidos are minted by: the Perch deployment's (Nido's
+ *  factory around Perch's account) when this build has one, otherwise the
+ *  registry's `factory`. */
+export async function fetchFactoryAddress(): Promise<string> {
+  return perchDeployment()?.factory ?? fetchRegistryAddress('factory');
 }
 
 /** Resolve the verifier address that THIS account actually trusts for its
@@ -316,6 +263,7 @@ export async function findRuleForPubkey(
 export async function resolveSignerRule(
   account: string,
   pubkeyHex: string,
+  ruleName?: string,
 ): Promise<{ ruleId: number; verifier: string } | null> {
   const server = new rpc.Server(RPC_URL);
   const countRv = await simulateView(server, new Contract(account), 'get_context_rules_count');
@@ -337,7 +285,8 @@ export async function resolveSignerRule(
       throw err;
     }
     found++;
-    const native = scValToNative(ruleRv) as { id?: number; signers?: unknown[] };
+    const native = scValToNative(ruleRv) as { id?: number; name?: string; signers?: unknown[] };
+    if (ruleName !== undefined && native.name !== ruleName) continue;
     for (const s of native.signers ?? []) {
       // ["External", verifier, pubkey_bytes_as_array_or_buffer]
       if (Array.isArray(s) && s[0] === 'External') {
@@ -404,9 +353,9 @@ export async function fetchVerifierAddress(account: string): Promise<string> {
       }
     }
   } catch {
-    // fall through to registry
+    // fall through to the deployment's verifier, then the registry
   }
-  return fetchRegistryAddress('verifier');
+  return perchDeployment()?.webauthnVerifier ?? fetchRegistryAddress('verifier');
 }
 
 /** What the wallet's sign ceremony needs to know about the default rule

@@ -49,6 +49,8 @@ import Icon from '../../../components/Icon.astro';
           <div id="pol-builder"></div>
         </div>
       </section>
+
+      <div id="pol-upgrades"></div>
     </div>
   </div>
 
@@ -126,6 +128,8 @@ import Icon from '../../../components/Icon.astro';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocPolicy, renderPolicyList } from '../../../components/PolicyInspector.js';
   import { mountPolicyBuilder } from '../../../components/PolicyBuilder.js';
+  import { mountUpgrades } from '../../../lib/recovery/upgradesPanel.js';
+  import { perchDeployment } from '../../../lib/recovery/deployment.js';
 
   const account = contractIdFromHostname(window.location.hostname);
   const rulesEl = document.getElementById('pol-rules')!;
@@ -140,9 +144,14 @@ import Icon from '../../../components/Icon.astro';
     const wanted: Array<[string, string]> = [
       ['spending-limit-policy', 'Spending limit'],
       ['multisig-policy', 'Multisig threshold'],
-      ['zk-recovery', 'ZK recovery'],
     ];
     const known = new Map<string, string>();
+    const deployment = perchDeployment();
+    if (deployment) {
+      known.set(deployment.recoveryController, 'Account recovery');
+      known.set(deployment.interpreter, 'Perch policy');
+      known.set(deployment.spendingLimit, 'Spending limit');
+    }
     await Promise.all(
       wanted.map(async ([name, label]) => {
         try {
@@ -249,6 +258,7 @@ import Icon from '../../../components/Icon.astro';
       account,
       onSubmitted: () => void refresh(known),
     });
+    void mountUpgrades(document.getElementById('pol-upgrades')!, account).catch(() => {});
   }
 
   void init();

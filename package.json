@@ -10,7 +10,7 @@
     "vendor/perch/packages/perch-zk"
   ],
   "scripts": {
-    "build:packages": "npm run build -w @stellar-registry/perch -w @stellar-registry/perch-zk -w @nidohq/smart-account -w @nidohq/perch-account -w @nidohq/perch-recovery -w @nidohq/perch-zk-pool -w @nidohq/perch-zk-adapter -w @nidohq/perch-doc-compiler -w @nidohq/multisig-policy -w @nidohq/spending-limit-policy -w @nidohq/webauthn-verifier -w @nidohq/factory -w @nidohq/status-message -w @nidohq/zk-recovery -w @nidohq/recovery-controller -w @nidohq/passkey-sdk -w @nidohq/stellar-wallets-kit-module",
+    "build:packages": "npm run build -w @stellar-registry/perch -w @stellar-registry/perch-zk -w @nidohq/perch-account -w @nidohq/perch-recovery -w @nidohq/perch-zk-pool -w @nidohq/perch-zk-adapter -w @nidohq/perch-doc-compiler -w @nidohq/multisig-policy -w @nidohq/spending-limit-policy -w @nidohq/factory -w @nidohq/status-message -w @nidohq/passkey-sdk -w @nidohq/stellar-wallets-kit-module",
     "postinstall": "npm run build:packages",
     "test:support": "vitest run --config vitest.support.config.ts",
     "test:e2e": "playwright test --grep @fast",
