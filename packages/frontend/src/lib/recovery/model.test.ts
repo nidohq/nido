@@ -9,6 +9,7 @@ import {
   condition,
   decodeGuardianRequest,
   encodeGuardianRequest,
+  foreignVerifiers,
   hex,
   parseRecoveryKit,
   replacementsFromWire,
@@ -136,6 +137,17 @@ describe('guardian requests', () => {
         hex(perch.replacementSetHash(set)),
       );
     }
+  });
+
+  it('flags replacement credentials checked by another verifier', () => {
+    const wire = replacementsToWire({
+      signers: [
+        { signerId: 'admin', credential: { kind: 'external', verifier: deployment.webauthnVerifier, key: new Uint8Array(65).fill(4) } },
+        { signerId: 'device', credential: { kind: 'external', verifier: contract(40), key: new Uint8Array(65).fill(4) } },
+      ],
+    });
+    expect(foreignVerifiers(wire, deployment.webauthnVerifier)).toEqual([contract(40)]);
+    expect(foreignVerifiers({ signers: [wire.signers[0]!] }, deployment.webauthnVerifier)).toEqual([]);
   });
 
   it('round-trips change requests and their SDK subjects', () => {

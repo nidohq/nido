@@ -24,6 +24,7 @@ import { perchDeployment, requireDeployment } from './deployment.js';
 import {
   changeSubject,
   decodeGuardianRequest,
+  foreignVerifiers,
   hex,
   replacementsFromWire,
   summarizeRecovery,
@@ -139,6 +140,9 @@ async function describe(request: GuardianRequest, doc: PolicyDoc): Promise<strin
       const declared = perch.replacementSetHash(perch.sortReplacements(replacementsFromWire(request.replacements)));
       if (hex(declared) !== hex(sub.replacementsHash)) {
         return '<div class="alert danger" role="alert">This link’s replacement does not match the attempt on chain. Do not approve.</div>';
+      }
+      if (foreignVerifiers(request.replacements, requireDeployment().webauthnVerifier).length) {
+        return '<div class="alert danger" role="alert">This link’s new passkey is checked by an unknown contract, not Nido’s passkey verifier. Do not approve.</div>';
       }
       who = request.replacements.signers
         .map((r) => `<p style="margin:0;">New passkey for <strong>${esc(r.signerId)}</strong> ends in <code class="mono">${esc(r.key.slice(-12))}</code>. Ask your friend to read you the same ending from their new device.</p>`)

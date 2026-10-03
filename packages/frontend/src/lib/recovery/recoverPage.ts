@@ -24,9 +24,8 @@ import { buf2hex, parseRegistration, perch, saveCredential } from '@nidohq/passk
 import { scValToNative } from '@stellar/stellar-sdk';
 import { esc } from '../html.js';
 import { toast } from '../toast.js';
-import { fetchVerifierAddress } from '../policyChainFetch.js';
 import { latestLedger, readRecoveryState, recoveryClient, submitOpen } from './chain.js';
-import { perchDeployment } from './deployment.js';
+import { perchDeployment, requireDeployment } from './deployment.js';
 import {
   condition,
   ledgersToText,
@@ -142,7 +141,8 @@ function startCard(
       })) as PublicKeyCredential | null;
       if (!created) throw new Error('Passkey creation was cancelled.');
       const reg = parseRegistration(created as never);
-      const verifier = await fetchVerifierAddress(account);
+      // The deployment's verifier: guardians refuse any other (foreignVerifiers).
+      const verifier = requireDeployment().webauthnVerifier;
       let zkEnrollment: perch.ReplacementSet['zkEnrollment'];
       if (zkMode) {
         status.textContent = 'Creating your new recovery kit…';
