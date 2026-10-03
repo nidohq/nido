@@ -23,23 +23,17 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@nidohq/multisig-policy": "^0.1.0",
     "@nidohq/perch-account": "^0.1.0",
     "@nidohq/perch-doc-compiler": "^0.1.0",
     "@nidohq/perch-recovery": "^0.1.0",
     "@nidohq/perch-zk-adapter": "^0.1.0",
     "@nidohq/perch-zk-pool": "^0.1.0",
-    "@nidohq/recovery-controller": "^0.1.0",
-    "@nidohq/smart-account": "^0.1.0",
     "@nidohq/spending-limit-policy": "^0.1.0",
-    "@nidohq/zk-recovery": "^0.1.0",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
-    "@scure/bip39": "^2.2.0",
     "@stellar-registry/perch": "0.3.1",
     "@stellar-registry/perch-interpreter": "^0.1.0",
-    "@stellar-registry/perch-zk": "0.1.0",
-    "@zkpassport/poseidon2": "^0.6.2"
+    "@stellar-registry/perch-zk": "0.1.0"
   },
   "publishConfig": {
     "access": "public"

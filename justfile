@@ -11,13 +11,6 @@ test:
 build:
     cargo build --workspace
 
-# Compile the zk_recovery Noir circuit and generate its VK/proof/public-inputs
-# artifacts + manifest under circuits/zk_recovery/{target,public/circuits}.
-# See circuits/zk_recovery/scripts/gen_artifacts.sh for details (falls back
-# to docker for the bb steps if the local bb can't run -- e.g. glibc < 2.38).
-build-circuits:
-    bash circuits/zk_recovery/scripts/gen_artifacts.sh
-
 # Fetch the Perch stack Nido builds and tests against: Perch's testnet
 # deployment, by the hashes in vendor/perch/deployments/testnet.json. Fills the
 # submodule's build-time pin caches (the account's compiler, interpreter, and
@@ -107,7 +100,7 @@ publish-registry alias network="testnet":
     ./scripts/deploy-registry.sh {{alias}} {{network}}
 
 # Regenerate one binding from a fresh .wasm and apply post-gen fixes.
-# Usage: just bindings smart-account
+# Usage: just bindings factory
 # Run after `just build-contracts`. See scripts/fix-bindings.sh for what
 # the post-gen pass does (stellar-sdk pin alignment + Context shim).
 bindings name:
