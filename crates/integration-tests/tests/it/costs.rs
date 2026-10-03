@@ -18,7 +18,7 @@ use nido_integration_tests::world::{
     world, Account, Enrolled, Mode, Passkey, Profile, World, DELAY,
 };
 use nido_integration_tests::zk::{self, ZkCredential};
-use nido_integration_tests::PERCH_ACCOUNT_WASM;
+use nido_integration_tests::UPGRADE_TARGET_WASM;
 use perch_recovery::EvidenceDomain::{Cancel, Initiate};
 use perch_recovery_interface::account::ACCOUNT_UPGRADE_DELAY_LEDGERS;
 use perch_recovery_interface::statement::ConfigChange;
@@ -85,8 +85,9 @@ fn quorum(w: &World, e: &Enrolled, attempt: u64, domain: perch_recovery::Evidenc
         .unwrap();
 }
 
-/// A `Protected` `Combined` account from enrollment to completion, through a
-/// proven reconfiguration, a proven upgrade, and a cancelled attempt.
+/// A `Protected` `Combined` account from enrollment through a proven
+/// reconfiguration, a cancelled attempt, a completed recovery, and a proven
+/// upgrade.
 #[test]
 #[allow(clippy::too_many_lines)] // one account's transactions, in order
 fn protected_combined_transactions_fit_the_budget() {
@@ -134,31 +135,6 @@ fn protected_combined_transactions_fit_the_budget() {
     report.row(&w, "protected_reconfiguration_apply_doc");
     e.recovery = next;
     e.zk = Some(cred2.clone());
-
-    // Protected upgrade, to the account's own code so later rows still run.
-    let code = w.env.deployer().upload_contract_wasm(PERCH_ACCOUNT_WASM);
-    let upgrade = StatementSubject::Upgrade(UpgradeSubject {
-        request_id: w.account(&e.account).next_upgrade_request_id(),
-        wasm_hash: code.clone(),
-    });
-    let until = w.ledger() + 50;
-    quorum_change(&w, &e, &upgrade, until);
-    let proof = zk::evidence(
-        &w,
-        "costs-upgrade",
-        "costs: Protected Combined upgrade approval, ZK half",
-        &e.account.address,
-        &cred2,
-        &w.ctl()
-            .change_statement(&e.account.address, &upgrade, &until),
-    );
-    w.ctl()
-        .submit_zk_change(&e.account.address, &upgrade, &until, &proof);
-    let request = w.schedule_upgrade(&e.account, &code, until).unwrap();
-    report.row(&w, "protected_schedule_upgrade");
-    w.advance(ACCOUNT_UPGRADE_DELAY_LEDGERS);
-    assert_eq!(w.execute_upgrade(&e.account, request), Ok(true));
-    report.row(&w, "execute_upgrade");
 
     // An attempt authorized by a promoting guardian approval, then cancelled
     // with both factors (the proof last).
@@ -224,6 +200,32 @@ fn protected_combined_transactions_fit_the_budget() {
     report.row(&w, "ordinary_activity_direct");
     w.execute(&owner, "owner").unwrap();
     report.row(&w, "ordinary_activity_execute");
+
+    // Protected upgrade, last: the target is a fixed Wasm (its hash is in the
+    // proof's statement), so the account runs nothing after it. The owner is
+    // the recovered passkey and the ZK half is the rotated credential.
+    let code = w.env.deployer().upload_contract_wasm(UPGRADE_TARGET_WASM);
+    let upgrade = StatementSubject::Upgrade(UpgradeSubject {
+        request_id: w.account(&owner).next_upgrade_request_id(),
+        wasm_hash: code.clone(),
+    });
+    let until = w.ledger() + 50;
+    quorum_change(&w, &e, &upgrade, until);
+    let proof = zk::evidence(
+        &w,
+        "costs-upgrade",
+        "costs: Protected Combined upgrade approval, ZK half",
+        &owner.address,
+        &rotated2,
+        &w.ctl().change_statement(&owner.address, &upgrade, &until),
+    );
+    w.ctl()
+        .submit_zk_change(&owner.address, &upgrade, &until, &proof);
+    let request = w.schedule_upgrade(&owner, &code, until).unwrap();
+    report.row(&w, "protected_schedule_upgrade");
+    w.advance(ACCOUNT_UPGRADE_DELAY_LEDGERS);
+    assert_eq!(w.execute_upgrade(&owner, request), Ok(true));
+    report.row(&w, "execute_upgrade");
 
     report.assert_within_budget();
 }

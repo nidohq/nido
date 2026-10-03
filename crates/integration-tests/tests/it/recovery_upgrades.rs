@@ -10,7 +10,7 @@
 
 use nido_integration_tests::world::{err, world, Enrolled, Mode, Passkey, Profile, World, DELAY};
 use nido_integration_tests::zk;
-use nido_integration_tests::FACTORY_WASM;
+use nido_integration_tests::UPGRADE_TARGET_WASM;
 use perch_account::PerchAccountError;
 use perch_recovery::{EvidenceDomain, RecoveryError};
 use perch_recovery_interface::account::ACCOUNT_UPGRADE_DELAY_LEDGERS;
@@ -22,7 +22,7 @@ fn rec(e: RecoveryError) -> PerchAccountError {
 }
 
 fn wasm(w: &World) -> BytesN<32> {
-    w.env.deployer().upload_contract_wasm(FACTORY_WASM)
+    w.env.deployer().upload_contract_wasm(UPGRADE_TARGET_WASM)
 }
 
 fn upgrade_subject(w: &World, e: &Enrolled, wasm: &BytesN<32>) -> StatementSubject {

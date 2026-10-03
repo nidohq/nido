@@ -3,10 +3,10 @@
   "circuit": "perch_zk_recovery",
   "account_id": "0x6ca558ea613e1f8a9883ad8a1b5b1d2d1c59d83185cba3bffe9853cc663f4752",
   "enrollment_id": "0xb7faac2ea6ff74cab223f09c8dba8b99affe7a5b5adb837f972df81b8ba59097",
-  "digest": "0x5d6f95b640d72e6a496f98f57557cc8e81b6ed1081c43eb50e676e35049c2eab",
+  "digest": "0x2bf9556b83e6ee27309f6ca9ad07ba0687b265724731a36d4718e3e4e99f9c8a",
   "tree_id": 1,
   "leaf_index": 0,
   "root": "0x2094a27f18505b0319924153c3be00f7b2395ae633476ec0cb9a592a294b8eee",
   "nullifier": "0x18991dd1ca3dc51b09e8f2b4012ca40604ada165e3db66216acbb31e548d9548",
-  "statement_hash": "0x21f5267afa008ed0f5985fb2ac62627d271ef6be33069873fafabc5611fd4254"
+  "statement_hash": "0x0bcf05d8ce7be9931922ed2e4874076fa2f6aef18bfdd369b51363f160dff23b"
 }

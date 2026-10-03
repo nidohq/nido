@@ -47,6 +47,11 @@ pub const PERCH_INTERPRETER_WASM: &[u8] =
 pub const PERCH_SPENDING_LIMIT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/perch_spending_limit.wasm");
 
+/// The Wasm the upgrade tests schedule: a committed copy of Nido's
+/// status-message contract (999 bytes). ZK upgrade approvals bind its hash,
+/// so it must not be a local build, whose hash varies with the toolchain.
+pub const UPGRADE_TARGET_WASM: &[u8] = include_bytes!("../fixtures/upgrade-target.wasm");
+
 /// The account's typed client (Perch's `PerchSmartAccount` surface).
 pub use perch_account::PerchAccountClient as SmartAccountClient;
 

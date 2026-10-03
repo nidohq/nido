@@ -2,11 +2,11 @@
   "description": "costs: Protected Combined upgrade approval, ZK half",
   "circuit": "perch_zk_recovery",
   "account_id": "0x6ca558ea613e1f8a9883ad8a1b5b1d2d1c59d83185cba3bffe9853cc663f4752",
-  "enrollment_id": "0xb7faac2ea6ff74cab223f09c8dba8b99affe7a5b5adb837f972df81b8ba59097",
-  "digest": "0xaed4e3605bb41a29e022cb06c734e6a4b4d0f02298f44e9c2d5f4d3c8fd2635a",
+  "enrollment_id": "0xa3af6c5508a4cc12877f435566686fc13c954c5f497ae3284c58dbe83f03e62d",
+  "digest": "0x8a3f66e68a535281ae016d7bbcd3b6061a2531ec90f317a0bc8ac2ce62b5da4e",
   "tree_id": 1,
-  "leaf_index": 0,
-  "root": "0x2094a27f18505b0319924153c3be00f7b2395ae633476ec0cb9a592a294b8eee",
-  "nullifier": "0x18991dd1ca3dc51b09e8f2b4012ca40604ada165e3db66216acbb31e548d9548",
-  "statement_hash": "0x18312d227f8b0384c0eb98709a34cf612cf490805bcc1cbb403482df8e3950a2"
+  "leaf_index": 1,
+  "root": "0x28db749fecc0863e871eb5cc30c16a2ec1254a11da400314208a5176951bd27e",
+  "nullifier": "0x19aa3ff58a5f2e8a1ce1c4dd5846056a77cbfc1e348c335e40d3a93e862873d1",
+  "statement_hash": "0x0762c3893f42e342b4069ca4406b11afbaa43bc443e9cb0882d67bbb6ee5a64d"
 }
