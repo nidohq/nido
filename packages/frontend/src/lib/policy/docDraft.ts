@@ -274,6 +274,14 @@ export function renameLegacyOwner(doc: PolicyDoc): PolicyDoc {
   if (!hasOwner || hasAdmin) return doc;
   return {
     ...doc,
+    ...(doc.recovery
+      ? {
+          recovery: {
+            ...doc.recovery,
+            replaceable: doc.recovery.replaceable.map((id) => (id === 'owner' ? 'admin' : id)),
+          },
+        }
+      : {}),
     signers: doc.signers.map((s) => (s.id === 'owner' ? { ...s, id: 'admin' } : s)),
     rules: doc.rules.map((r) =>
       r.principals.type === 'self-authenticating'
@@ -298,9 +306,12 @@ function rebuildDoc(
   rules: readonly WireRule[],
   networkPassphrase: string,
 ): PolicyDoc {
-  const referenced = new Set(
-    rules.flatMap((r) => (r.principals.type === 'self-authenticating' ? [] : r.principals.signers)),
-  );
+  // A recovery member's replaceable ids must stay declared, so they count as
+  // referenced even when no rule names them.
+  const referenced = new Set([
+    ...rules.flatMap((r) => (r.principals.type === 'self-authenticating' ? [] : r.principals.signers)),
+    ...(base.recovery?.replaceable ?? []),
+  ]);
   return parsePolicyDoc(
     renameLegacyOwner({
       ...base,

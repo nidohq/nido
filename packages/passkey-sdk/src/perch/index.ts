@@ -10,3 +10,4 @@ export * from './statement.js';
 export * from './doc.js';
 export * from './recovery.js';
 export * from './account.js';
+export type { ZkEvidence, ZkCredential } from './zk.js';

@@ -28,7 +28,7 @@ const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 
 // The expiration offset (relayer-mode auth-entry validity window) is computed by
 // `signatureExpirationOffset()` in ./relayerClient so every relayer-submitting
-// signing path (here + walletSign + zkRecoveryActions) shares ONE source of
+// signing path (here + walletSign) shares ONE source of
 // truth, passed identically to buildAuthHash and the injector.
 
 /** localStorage key shared with `account/index.astro` so we don't
@@ -83,6 +83,10 @@ export async function signAndSubmit(args: {
   verifierAddress?: string;
   /** Optional progress callback fired at each phase of the signing flow. */
   onProgress?: (p: { phase: "build" | "sign" | "submit" | "confirm"; detail?: string }) => void;
+  /** Sign through the account's rule with this name (a guardian's `guardian`
+   *  rule, scoped to the recovery controller) instead of the first rule that
+   *  holds this passkey. */
+  ruleName?: string;
 }): Promise<rpc.Api.SendTransactionResponse & { authHashHex: string }> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
@@ -96,7 +100,7 @@ export async function signAndSubmit(args: {
   // must target the resolved rule (else do_check_auth rejects with Error(Auth,
   // InvalidAction)) and use that rule's verifier. Returns rule 0 for a fresh
   // (non-recovered) account, so this generalizes both. See resolveSignerRule.
-  const resolved = await resolveSignerRule(args.account, cred.publicKey);
+  const resolved = await resolveSignerRule(args.account, cred.publicKey, args.ruleName);
   if (!resolved) {
     throw new Error(
       'This passkey is not registered on any authorization rule of the account. ' +

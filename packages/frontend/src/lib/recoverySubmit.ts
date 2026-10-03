@@ -1,35 +1,16 @@
 /**
- * Frontend action layer for account recovery
- * (`contracts/recovery-controller`, `@nidohq/passkey-sdk`'s
- * `recoveryStage3` module). Sibling to `zkRecoveryActions.ts` (the M1/M2
- * flow, untouched) — this file is new, plain, and intentionally minimal:
- * two submission strategies covering every call shape the controller
- * exposes:
+ * Two submission strategies for recovery calls that are not the account's
+ * own passkey-signed operations (those use `primaryPasskeySigner.ts`):
  *
- *   - `submitPermissionlessOp` — for `begin_attempt` / `submit_zk_proof` /
- *     `submit_zk_cancel` (no `require_auth` at all on-chain). Mirrors
- *     `zkRecoveryActions.ts::submitPermissionlessOp`'s classic
- *     (funded-ephemeral-G) submission path exactly — a funded fee-payer
- *     simulates, assembles, and submits; nothing is signed beyond the
- *     ordinary transaction envelope.
- *   - `submitGuardianOp` — for `submit_guardian_approval` /
- *     `submit_guardian_cancel` (`guardian.require_auth()`). The guardian is
- *     an arbitrary G/C address, not necessarily this page's own account, so
- *     this builds a CLASSIC transaction with the GUARDIAN as both source
- *     account and signer, and hands it to the already-wired
- *     `walletConnect.ts` `StellarWalletsKit` session (`signTransaction`) —
- *     the SAME kit `stellar-wallets-kit-module`'s `NidoModule` plugs into,
- *     so a guardian who is themselves a Nido smart account signs via the
- *     existing passkey redirect ceremony with NO new code here. A
- *     G-address `require_auth()` is satisfied by an ordinary classic
- *     transaction signature over the whole envelope — no separate
- *     Soroban auth-entry digest dance needed, unlike the smart-account
- *     passkey path in `primaryPasskeySigner.ts`.
- *
- * Enrollment (`enroll`, self-authed by the recovering account) and
- * completion (`apply_doc`, via the EXISTING `buildApplyDocTx`) both reuse
- * `primaryPasskeySigner.ts::signAndSubmit` unchanged — see the page's own
- * script for those call sites.
+ *   - `submitPermissionlessOp`: opening attempts, ZK evidence, baselines,
+ *     and completions (the completion's auth entry selects the zero-signer
+ *     recovery rule, so it carries no signature). A funded ephemeral G pays;
+ *     simulation runs with any pre-filled auth entries, so the footprint
+ *     includes the account's `__check_auth`.
+ *   - `submitGuardianOp`: a `G…` guardian's approval. The guardian is both
+ *     source and signer of a classic transaction signed through the
+ *     `walletConnect.ts` session; a `require_auth` of a G-address is
+ *     satisfied by the envelope signature.
  */
 import { rpc, TransactionBuilder, Transaction, xdr } from '@stellar/stellar-sdk';
 import { RPC_URL, NETWORK_PASSPHRASE } from './network.js';

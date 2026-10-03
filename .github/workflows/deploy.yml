@@ -34,7 +34,9 @@ jobs:
           # the relayer's public fund address (simulation-only tx source).
           PUBLIC_RELAYER_URL: https://nido.fly.dev
           PUBLIC_RELAYER_SIM_SOURCE: GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2
-          PUBLIC_RECOVERY_RELAY_URL: https://relay.nido.fyi
+          # The Perch recovery stack's testnet manifest (JSON), once WS4
+          # publishes it; unset, the recovery pages say it is not deployed.
+          PUBLIC_PERCH_DEPLOYMENT: ${{ vars.PUBLIC_PERCH_DEPLOYMENT }}
         run: npx astro build --root ./packages/frontend
 
       - name: Deploy to Cloudflare Pages

@@ -28,7 +28,7 @@ function randomSaltHex(): string {
  *   → `#preparing-continue` → hard-redirect to `<cAddress>.localhost:PORT/
  *     new-account/?salt=…&autopass=1` (the account's own subdomain)
  *   → autopass auto-registers the passkey → `#recovery-enroll-section`
- *     (seed/wallet/skip) → deploy() → `#done-section`.
+ *     (continue / set up recovery after) → deploy() → `#done-section`.
  *
  * IDENTITY UNDER AUTOPASS: the subdomain page auto-registers the passkey
  * itself (`attemptAutoPasskey`), BEFORE any per-page `useIdentity` call could
@@ -92,101 +92,10 @@ export async function createAndDeployAs(
     await page.locator('#recovery-enroll-section').waitFor({ state: 'visible', timeout: 60_000 });
   }
 
-  // A recovery-enrollment step (#recovery-enroll-section) sits between passkey
-  // registration and deploy(). Enrolling at creation is now an optional reveal;
-  // the primary action "Continue to my wallet" (#enroll-continue) takes the
-  // no-enrollment dummy-commitment path. Callers of this helper want a PLAIN
-  // create+deploy (specs that want ZK enrollment drive it themselves afterwards,
-  // e.g. via the security/ page's migration card, with a mnemonic they control)
-  // -- so always continue without a backup here.
+  // The recovery choice (#recovery-enroll-section) sits between passkey
+  // registration and deploy(). Callers want a PLAIN create+deploy (specs that
+  // set up recovery drive /security/recovery/ themselves), so continue.
   await page.locator('#enroll-continue').click();
   await page.locator('#done-section').waitFor({ state: 'visible', timeout: 120_000 });
   return { cAddress, host };
-}
-
-/**
- * Install an M-of-N recovery rule on the account currently loaded at `host`,
- * via the security page form (`mountRecoveryForm`). Friends are pre-deployed
- * account C-addresses. Signs the install (add_context_rule self-mod) with the
- * primary passkey.
- *
- * Adapted from the plan against the live form (recoveryForm.ts):
- *  - The form pre-populates THREE empty friend rows and starts threshold at 2.
- *    We fill the first `friendAddresses.length` rows and DELETE the remaining
- *    empty rows (each `.remove` click also clamps threshold down), so
- *    `validate()` ("Some friends did not resolve") passes.
- *  - Friend resolution is async (`resolveFriendInput`); for a C-address it's a
- *    local StrKey check, but we still WAIT for the row's `.resolve-status` to
- *    show the ✓ before saving.
- *  - `#rc-save` text is "Sign & save"; on success the form's innerHTML becomes
- *    "Recovery rule installed. Refreshing…" then reloads. On failure it
- *    `alert()`s "Failed to install recovery: <msg>" — we capture that dialog and
- *    throw so the caller sees the on-chain error verbatim.
- */
-export async function installRecoveryRule(
-  page: Page,
-  host: string,
-  friendAddresses: string[],
-  threshold: number,
-): Promise<void> {
-  await page.goto(`http://${host}/security/`, { waitUntil: 'domcontentloaded' });
-  await page.locator('#add-recovery').click();
-  await page.locator('#rc-friends .friend-row').first().waitFor({ timeout: 15_000 });
-
-  // Surface a failing install: the form alert()s the contract/auth error.
-  // Record the message for ANY dialog (not just the known failure patterns) so a
-  // surprise prompt isn't swallowed silently. These are UI alerts — no secrets.
-  let installAlert: string | null = null;
-  page.on('dialog', (d) => {
-    installAlert = d.message();
-    d.accept().catch(() => {});
-  });
-
-  const rows = page.locator('#rc-friends .friend-row');
-
-  // Fill the friend address rows (the form starts with 3 empty rows; add more
-  // only if we need MORE than what's present).
-  for (let i = 0; i < friendAddresses.length; i++) {
-    if ((await rows.count()) <= i) await page.locator('#rc-add-friend').click();
-    const row = rows.nth(i);
-    await row.locator('input').fill(friendAddresses[i]);
-    // Wait for the async resolve to land a ✓ (C-addresses resolve locally).
-    await expect(row.locator('.resolve-status')).toContainText('✓', { timeout: 15_000 });
-  }
-
-  // Delete any leftover empty rows so validate() doesn't reject them. Removing
-  // a row also clamps draft.threshold to the remaining count.
-  while ((await rows.count()) > friendAddresses.length) {
-    await rows.nth(friendAddresses.length).locator('button.remove').click();
-  }
-  await expect(page.locator('#rc-n-value')).toHaveText(String(friendAddresses.length), {
-    timeout: 5_000,
-  });
-
-  // Set threshold (M) via the stepper. Clamped to [1, friends.length].
-  for (let guard = 0; guard < 12; guard++) {
-    const m = parseInt((await page.locator('#rc-m-value').textContent())!.trim(), 10);
-    if (m === threshold) break;
-    await page.locator(m < threshold ? '#rc-m-up' : '#rc-m-down').click();
-  }
-  await expect(page.locator('#rc-m-value')).toHaveText(String(threshold), { timeout: 5_000 });
-
-  await page.locator('#rc-save').click();
-
-  // Success: the form replaces its body with the "installed" notice (then
-  // reloads). Failure: the dialog handler captured an alert. Race them.
-  const ok = await page
-    .locator('#recovery-form')
-    .filter({ hasText: /installed/i })
-    .first()
-    .waitFor({ timeout: 120_000 })
-    .then(() => true)
-    .catch(() => false);
-
-  if (!ok) {
-    throw new Error(
-      `installRecoveryRule did not confirm success on ${host}. ` +
-        `alert=${installAlert ?? '<none>'} friends=[${friendAddresses.join(',')}] threshold=${threshold}`,
-    );
-  }
 }

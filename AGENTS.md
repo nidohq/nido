@@ -74,8 +74,9 @@ state machine and `vendor/perch/docs/zk/` the ZK backend. Nido's coverage of it
 is `crates/integration-tests/tests/it/recovery_*.rs`, `onboarding.rs`, and
 `costs.rs`. ZK tests build their statement through the real controller and
 replay a committed proof of it; a changed statement fails with the instruction
-to run `just gen-zk-fixtures`. `circuits/zk_recovery` is only the legacy
-frontend prover's circuit.
+to run `just gen-zk-fixtures`. The wallet side is
+`packages/passkey-sdk/src/perch/` (SDK) and `packages/frontend/src/lib/recovery/`
+(pages), with `model.ts` holding the pure rules the unit tests pin.
 
 ## Testing Notes
 
