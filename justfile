@@ -129,6 +129,20 @@ bindings-all:
     done
     ./scripts/fix-bindings.sh
 
+# Regenerate the TypeScript clients for Perch's deployables
+# (packages/contract-bindings/perch-*) from the `just build-perch` wasm. Local
+# stand-ins until Perch's release workstream publishes its own bindings.
+bindings-perch:
+    @for name in perch-account perch-recovery perch-zk-pool perch-zk-adapter perch-doc-compiler; do \
+        wasm="target/wasm32v1-none/contract/$(echo $name | tr - _).wasm"; \
+        echo "→ $name ($wasm)"; \
+        stellar contract bindings typescript --overwrite \
+            --output-dir packages/contract-bindings/$name \
+            --wasm "$wasm"; \
+        git checkout -- packages/contract-bindings/$name/package.json; \
+    done
+    ./scripts/fix-bindings.sh
+
 # Run TestAuthenticator unit tests (vitest, node)
 test-support:
     npx vitest run --config vitest.support.config.ts
