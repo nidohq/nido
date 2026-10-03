@@ -59,9 +59,12 @@ jobs:
           # unless the system dbus + udev dev headers + pkg-config are present.
           sudo apt-get update
           sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
-          cargo install --locked stellar-cli
-          cargo install --locked stellar-scaffold-cli
-          cargo install --locked stellar-registry-cli@0.1.0
+          # Idempotent: the cargo cache can restore some of these binaries
+          # even when this cache misses, and `cargo install` refuses to
+          # overwrite an existing one.
+          command -v stellar >/dev/null || cargo install --locked stellar-cli
+          command -v stellar-scaffold >/dev/null || cargo install --locked stellar-scaffold-cli
+          command -v stellar-registry >/dev/null || cargo install --locked stellar-registry-cli@0.1.0
 
       # Perch's account reads its pinned infra (stateless registry id and the
       # compiler/interpreter/spending-limit wasm) from a git-ignored cache in
