@@ -1,0 +1,19 @@
+{
+  "version": "0.1.0",
+  "name": "@nidohq/perch-doc-compiler",
+  "private": true,
+  "description": "Generated TypeScript client for Perch's perch-doc-compiler contract, built from the pinned vendor/perch wasm. Replaced by Perch's published bindings once its release manifest lands.",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "typings": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^15.1.0",
+    "buffer": "6.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
+}

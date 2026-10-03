@@ -75,19 +75,99 @@ impl ZkCredential {
     }
 }
 
-/// What a committed fixture was proved for.
+/// The statement a fixture proves, field by field, as the controller built
+/// it: what another implementation (the SDK's TypeScript encoder) re-encodes
+/// to `encoding` and `digest`.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+struct StatementMeta {
+    network_id: String,
+    account: String,
+    controller: String,
+    epoch: u64,
+    config_hash: String,
+    delay_ledgers: u32,
+    expiry_ledgers: u32,
+    valid_until_ledger: u32,
+    /// `lost-key`, `compromise`, `cancel`, `reconfigure`, or `upgrade`.
+    action: String,
+    subject: serde_json::Value,
+    /// The canonical encoding (`docs/recovery/statement.md`).
+    encoding: String,
+}
+
+/// What a committed fixture was proved for, with the full witness, so the
+/// SDK can recompute the public inputs and re-prove with bb.js. The secrets
+/// are test credentials derived from labels.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 struct FixtureMeta {
     description: String,
     circuit: String,
+    statement: StatementMeta,
     account_id: String,
     enrollment_id: String,
+    secret: String,
     digest: String,
     tree_id: u32,
     leaf_index: u64,
+    siblings: Vec<String>,
     root: String,
     nullifier: String,
     statement_hash: String,
+}
+
+fn h(b: &BytesN<32>) -> String {
+    hex(&b.to_array())
+}
+
+fn statement_meta(env: &Env, s: &RecoveryStatement) -> StatementMeta {
+    use perch_recovery_interface::statement::{ConfigChange, StatementSubject};
+    use serde_json::json;
+    let (action, subject) = match &s.subject {
+        StatementSubject::LostKey(a) | StatementSubject::Compromise(a) => (
+            if matches!(s.subject, StatementSubject::LostKey(_)) {
+                "lost-key"
+            } else {
+                "compromise"
+            },
+            json!({
+                "attempt_id": a.attempt_id,
+                "source_doc_hash": h(&a.source_doc_hash),
+                "target_doc_hash": h(&a.target_doc_hash),
+                "replacements_hash": h(&a.replacements_hash),
+            }),
+        ),
+        StatementSubject::Cancel(c) => (
+            "cancel",
+            json!({ "attempt_id": c.attempt_id, "attempt_statement": h(&c.attempt_statement) }),
+        ),
+        StatementSubject::Reconfigure(ConfigChange::Set(next)) => (
+            "reconfigure",
+            json!({ "change": "set", "new_config_hash": h(next) }),
+        ),
+        StatementSubject::Reconfigure(ConfigChange::Remove) => {
+            ("reconfigure", json!({ "change": "remove" }))
+        }
+        StatementSubject::Upgrade(u) => (
+            "upgrade",
+            json!({ "request_id": u.request_id, "wasm_hash": h(&u.wasm_hash) }),
+        ),
+    };
+    let encoding = s.encode(env).expect("encodable statement");
+    let mut bytes = std::vec![0u8; encoding.len() as usize];
+    encoding.copy_into_slice(&mut bytes);
+    StatementMeta {
+        network_id: h(&s.network_id),
+        account: crate::world::strkey(&s.account),
+        controller: crate::world::strkey(&s.controller),
+        epoch: s.config.epoch,
+        config_hash: h(&s.config.config_hash),
+        delay_ledgers: s.timing.delay_ledgers,
+        expiry_ledgers: s.timing.expiry_ledgers,
+        valid_until_ledger: s.timing.valid_until_ledger,
+        action: action.to_string(),
+        subject,
+        encoding: hex(&bytes),
+    }
 }
 
 fn fixtures_dir() -> PathBuf {
@@ -199,11 +279,14 @@ pub fn evidence(
     let meta = FixtureMeta {
         description: description.to_string(),
         circuit: CIRCUIT.to_string(),
+        statement: statement_meta(env, statement),
         account_id: hex(&inputs.account_id),
         enrollment_id: hex(&inputs.enrollment_id),
+        secret: hex(&inputs.secret),
         digest: hex(&digest),
         tree_id: at.tree_id,
         leaf_index: at.index,
+        siblings: inputs.siblings.iter().map(|s| hex(s)).collect(),
         root: hex(&inputs.root),
         nullifier: hex(&inputs.nullifier),
         statement_hash: hex(&inputs.statement_hash),
