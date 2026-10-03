@@ -182,6 +182,13 @@ export function replacementsToWire(set: perch.ReplacementSet): WireReplacements 
   };
 }
 
+/** The verifiers in `w` other than `verifier`, the deployment's WebAuthn
+ *  verifier. A guardian compares the new passkey's key ending, which proves
+ *  nothing when the credential names a verifier that accepts any signature. */
+export function foreignVerifiers(w: WireReplacements, verifier: string): string[] {
+  return [...new Set(w.signers.map((s) => s.verifier).filter((v) => v !== verifier))];
+}
+
 export function replacementsFromWire(w: WireReplacements): perch.ReplacementSet {
   const bytes = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => parseInt(x, 16));
   return {
