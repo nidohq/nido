@@ -3,18 +3,16 @@ import { loadPolicyBlocks } from './loadBlocks.js';
 import type { ChainRule, LocalOverlay, PolicyBlock, PolicyBlockModule } from './types.js';
 import { registerPolicyBlockModule } from './registry.js';
 
-const FAKE_MULTISIG_ADDR = 'C' + 'M'.repeat(55);
+const FAKE_CONTROLLER_ADDR = 'C' + 'M'.repeat(55);
 const FAKE_TARGET = 'C' + 'T'.repeat(55);
 
-const multisigRule: ChainRule = {
+// The zero-signer recovery rule: no block module claims it.
+const recoveryRule: ChainRule = {
   ruleId: 1,
   contextType: { kind: 'call-contract', contract: 'C' + 'S'.repeat(55) },
   name: 'recovery',
-  signers: [
-    { kind: 'delegated', address: 'C' + '1'.repeat(55) },
-    { kind: 'delegated', address: 'C' + '2'.repeat(55) },
-  ],
-  policies: [FAKE_MULTISIG_ADDR],
+  signers: [],
+  policies: [FAKE_CONTROLLER_ADDR],
   validUntil: null,
 };
 const sessionRule: ChainRule = {
@@ -28,17 +26,6 @@ const sessionRule: ChainRule = {
 
 describe('loadPolicyBlocks', () => {
   it('dispatches each rule to its block module and skips unknown ones', async () => {
-    const multisigMod: PolicyBlockModule<Extract<PolicyBlock, { kind: 'multisig-recovery' }>> = {
-      kind: 'multisig-recovery',
-      buildInstall: vi.fn() as any,
-      buildRevoke: vi.fn() as any,
-      defaultDraft: vi.fn() as any,
-      summarize: () => '',
-      fromChain: (rule) =>
-        rule.policies.includes(FAKE_MULTISIG_ADDR)
-          ? { kind: 'multisig-recovery', ruleId: rule.ruleId, threshold: 2, friends: [] }
-          : null,
-    };
     const sessionMod: PolicyBlockModule<Extract<PolicyBlock, { kind: 'scoped-session-key' }>> = {
       kind: 'scoped-session-key',
       buildInstall: vi.fn() as any,
@@ -57,7 +44,6 @@ describe('loadPolicyBlocks', () => {
             }
           : null,
     };
-    registerPolicyBlockModule(multisigMod);
     registerPolicyBlockModule(sessionMod);
 
     const fakeOverlay: LocalOverlay = {
@@ -66,10 +52,10 @@ describe('loadPolicyBlocks', () => {
       blockLabels: {},
     };
     const blocks = await loadPolicyBlocks({
-      rules: [multisigRule, sessionRule],
+      rules: [recoveryRule, sessionRule],
       fetchPolicyState: async () => ({}),
       overlay: fakeOverlay,
     });
-    expect(blocks.map((b) => b.kind)).toEqual(['multisig-recovery', 'scoped-session-key']);
+    expect(blocks.map((b) => b.kind)).toEqual(['scoped-session-key']);
   });
 });

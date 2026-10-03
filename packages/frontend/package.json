@@ -10,20 +10,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aztec/bb.js": "3.0.0-nightly.20260102",
     "@creit.tech/stellar-wallets-kit": "^2.2.0",
-    "@noble/curves": "^2.2.0",
-    "@noble/hashes": "^2.2.0",
-    "@noir-lang/noir_js": "1.0.0-beta.18",
-    "@scure/bip39": "^2.2.0",
     "@nidohq/factory": "*",
     "@nidohq/passkey-sdk": "*",
-    "@nidohq/recovery-controller": "*",
-    "@nidohq/smart-account": "*",
     "@nidohq/spending-limit-policy": "*",
     "@nidohq/status-message": "*",
     "@nidohq/stellar-wallets-kit-module": "*",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
     "@stellar-registry/perch-interpreter": "^0.1.0",
+    "@stellar-registry/perch-zk": "0.1.0",
     "@stellar/stellar-sdk": "^15.1.0",
     "astro": "^5.3.0",
     "buffer": "^6.0.3"

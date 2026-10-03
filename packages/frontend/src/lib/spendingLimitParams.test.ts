@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createRequire } from "node:module";
 import { xdr, nativeToScVal, scValToNative, Networks } from "@stellar/stellar-sdk";
-import { Client as SmartAccountClient } from "@nidohq/smart-account";
 import { Client as SpendingLimitPolicyClient } from "@nidohq/spending-limit-policy";
 import {
   PERIOD_LEDGERS,
@@ -130,32 +129,6 @@ describe("spendingLimitParamsScVal cross-copy domain (#72 browser hazard)", () =
     expect(viaBrowserSpec instanceof browserSdk.xdr.ScVal).toBe(true);
     expect(viaBrowserSpec instanceof xdr.ScVal).toBe(false);
     expect(viaBrowserSpec.toXDR("base64")).toBe(encode("0.5", "day").toXDR("base64"));
-  });
-
-  it("is accepted by the smart-account Spec's add_context_rule conversion; a foreign-copy ScVal is not", () => {
-    const saSpec = new SmartAccountClient(CLIENT_OPTS).spec;
-    const args = (params: xdr.ScVal) => ({
-      context_type: { tag: "CallContract", values: [DUMMY_CONTRACT] },
-      name: "session-key",
-      valid_until: undefined,
-      signers: [],
-      policies: new Map([[DUMMY_CONTRACT, params]]),
-    });
-
-    // The fixed helper's output sails through untouched.
-    expect(() => saSpec.funcArgsToScVals("add_context_rule", args(encode("5", "day")))).not.toThrow();
-
-    // The production failure, pinned: the same value built in the OTHER SDK
-    // copy is rejected exactly the way the delegate page failed in browsers.
-    const browserSdk = loadBrowserBundleSdk();
-    const libSpec = new SpendingLimitPolicyClient(CLIENT_OPTS).spec;
-    const browserSpec = new browserSdk.contract.Spec(
-      libSpec.entries.map((e) => e.toXDR("base64")),
-    );
-    const foreignParams = spendingLimitParamsScVal(5_000_000n, 17280, browserSpec);
-    expect(() => saSpec.funcArgsToScVals("add_context_rule", args(foreignParams))).toThrow(
-      /cannot interpret .* value as ScVal/,
-    );
   });
 });
 
