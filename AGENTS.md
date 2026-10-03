@@ -40,7 +40,7 @@ authoritative reference. `@stellar-registry/perch` and `perch-zk` are npm
 workspaces from the `vendor/perch` submodule; `@stellar-registry/perch-interpreter`
 comes from npm (a root `overrides` entry keeps its bindings on the workspace's
 single `@stellar/stellar-sdk` copy — the #72 dual-SDK hazard). Perch contract addresses are derived, not deployed
-by nido — see DEPLOYED.md "Perch canonical deployment" and
+by nido — see DEPLOYED.md "Perch policy layer (0.2.1 era)" and
 `src/policyDoc/deployment.ts`; frozen golden vectors live in
 `src/policyDoc/testdata/`. The frontend's doc surface lives under
 `packages/frontend/src/lib/policy/` (three-tier read, doc builder drafts,
