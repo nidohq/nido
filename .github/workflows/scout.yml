@@ -24,24 +24,21 @@ jobs:
       # completion so the Checks tab shows the full per-contract picture.
       fail-fast: false
       matrix:
-        # Every crate under contracts/ EXCEPT contracts/vendor: the vendored
-        # UltraHonk verifier is upstream code we don't maintain (it's likewise
-        # excluded from `cargo test --workspace` in test.yml), so auditing it
-        # here would only produce findings we can't act on.
+        # Nido's own contract crates under contracts/. The account, recovery
+        # controller, ZK pool, and ZK adapter are Perch's (vendor/perch) and
+        # are audited in Perch's pipeline.
         contract:
           - factory
           - multisig-policy
           - name-registry
-          - recovery-controller
-          - recovery-verifier
-          - smart-account
           - spending-limit-policy
           - status-message
-          - webauthn-verifier
-          - zk-recovery
-          - zk-verifier
     steps:
+      # Submodules: the workspace's path dependencies on vendor/perch must
+      # exist for cargo to resolve any member.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: true
 
       # The action builds a Docker image with the Scout toolchain, mounts the
       # whole workspace into it, and runs `cargo scout-audit` from
@@ -60,21 +57,12 @@ jobs:
       # practical floor, not just a convenience.
       #
       # continue-on-error: true -- separately, `factory`'s build.rs panics
-      # inside Scout's sandbox because it expects the smart-account wasm
+      # inside Scout's sandbox because it expects the Perch account wasm
       # already staged at a dylint-internal target path, which nothing here
       # ever populates (Scout analyzes `contracts/factory` in isolation, it
       # never runs `just build-contracts` first). That's a hard cargo build
       # failure, not a findings-based one, so fail_on_error/the severity
       # gate below can't rescue it -- this step itself has to tolerate it.
-      #
-      # Tried pre-running scout-actions against contracts/smart-account
-      # first (same job, hoping its build artifacts would land where
-      # factory's build.rs looks) -- confirmed via a real CI run that this
-      # doesn't work: Scout's own analysis pipeline is check-only, it never
-      # links an actual wasm binary, so there was nothing for the pre-build
-      # pass to leave behind. Real fix still needs something that actually
-      # builds (not just analyzes) smart-account inside that same sandboxed
-      # target dir -- not attempted here.
       - name: Run Scout
         id: scout
         continue-on-error: true

@@ -1,0 +1,12 @@
+{
+  "description": "costs: the promoting proof of the attempt that completes",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x6ca558ea613e1f8a9883ad8a1b5b1d2d1c59d83185cba3bffe9853cc663f4752",
+  "enrollment_id": "0xb7faac2ea6ff74cab223f09c8dba8b99affe7a5b5adb837f972df81b8ba59097",
+  "digest": "0xb3b7fb2a51216bb877f97f6a1896728a35fcaee1d3e19540d9155efb3f136103",
+  "tree_id": 1,
+  "leaf_index": 0,
+  "root": "0x2094a27f18505b0319924153c3be00f7b2395ae633476ec0cb9a592a294b8eee",
+  "nullifier": "0x18991dd1ca3dc51b09e8f2b4012ca40604ada165e3db66216acbb31e548d9548",
+  "statement_hash": "0x2ed29f430281a00158b6b8fa98dc6411849f9c666d7bd410475e015c20dc2b4a"
+}

@@ -1,0 +1,12 @@
+{
+  "description": "Protected ZkOnly: Reconfigure(Set) to a slower delay",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x659ff924baa061a6d884e3c0b1f8c3a803199002b06689f3732d60d0d7c22e5d",
+  "enrollment_id": "0x0b4ae8fde90b5e2ad5546e2e3692c91320a3df387b1dcb1eebce16292e853ca8",
+  "digest": "0xf0e8b867f6b1eafffe580228fa60d97b33d52eded062c1802e5634122fa3e959",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x011f6a42b3e4f07b43d459ae8a089a00b8b0d4e48af068696bc5fe295b73ccea",
+  "nullifier": "0x099e785163c1c8007f9a26d8daf77bd0a188dc5b80ad4271951555c4f142828f",
+  "statement_hash": "0x199bd7d7f55dfe31f85832df1bff6478f8881dc6ebcfa5d4bde84e4f2c70ab9b"
+}

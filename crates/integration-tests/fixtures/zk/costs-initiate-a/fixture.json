@@ -1,0 +1,12 @@
+{
+  "description": "costs: initiation of the attempt that is cancelled",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x6ca558ea613e1f8a9883ad8a1b5b1d2d1c59d83185cba3bffe9853cc663f4752",
+  "enrollment_id": "0xb7faac2ea6ff74cab223f09c8dba8b99affe7a5b5adb837f972df81b8ba59097",
+  "digest": "0x81dd249ee3ce6582a0f5f68d8bea469d0c2e5f15e2b0ea1162cc6356cd10c08a",
+  "tree_id": 1,
+  "leaf_index": 0,
+  "root": "0x2094a27f18505b0319924153c3be00f7b2395ae633476ec0cb9a592a294b8eee",
+  "nullifier": "0x18991dd1ca3dc51b09e8f2b4012ca40604ada165e3db66216acbb31e548d9548",
+  "statement_hash": "0x1a023c85d12bb5222c811a6190206d075292545e96214e01617ed3e08edd8b3b"
+}

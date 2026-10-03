@@ -1,0 +1,12 @@
+{
+  "description": "Loss ZkOnly: after every recovery entry expired into the archive",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x5b52e07d67c66ef081913913b048d3fe7aab50b521d554b92a7c9871cb42d8c3",
+  "enrollment_id": "0xb7ab95a059bd46a03daff579916c26fdb398763dc2c8b9f85fe205c53a807b41",
+  "digest": "0x926114954223589c268bda77f195dc94d7875b1154e4d91c610d82d5ffd2e2bb",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x2f4f6e8f045926efb285198ccfd098ce7e4e1cf91da56684a7c7b9d23dc6558c",
+  "nullifier": "0x2db41eb9982bf8b29d1856edd4cfb98b0d3520c2fc9d72027b5f9f72f5380230",
+  "statement_hash": "0x262ba2f647a01580dfa02f746cc248e52df70046c5369158f2d599d66e34b4af"
+}
