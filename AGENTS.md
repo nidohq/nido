@@ -9,26 +9,28 @@ Nido helps users move from Stellar G-addresses to Soroban Smart Accounts (C-addr
 ## Build & Test Commands
 
 ```bash
-just test              # cargo test --workspace
-just build             # cargo build --workspace (native)
-just build-contracts   # stellar contract build --optimize (Soroban wasm)
+git submodule update --init   # vendor/perch, the Perch stack
+just perch-infra       # Perch's build-time infra cache (needs the stellar registry plugin)
+just build-contracts   # Perch's deployables (just build-perch) + Nido's wasm
+just test              # cargo test --workspace (embeds the wasm above)
 just check             # cargo fmt --check + cargo clippy -D warnings
-just fmt               # cargo fmt --all
+just gen-zk-fixtures   # re-prove the real-proof fixtures with Perch's pinned nargo/bb
 ```
 
-Run a single test by name: `cargo test -p nido-integration-tests smart_account_check_auth_with_passkey`
+Run a single test by name: `cargo test -p nido-integration-tests --test it recovery_lifecycle`
 
 ## Workspace Architecture
 
-Three contracts plus integration tests:
+The smart account, recovery controller, ZK membership pool, and ZK adapter are
+Perch's (stellar-registry/perch epic #99), consumed from the `vendor/perch`
+submodule as path dependencies; the root `Cargo.toml` comment says why and
+which branch it pins. Nido's own crates:
 
-**`contracts/smart-account`** — Soroban contract implementing OpenZeppelin's `CustomAccountInterface` + `SmartAccount` + `ExecutionEntryPoint` traits. Delegates auth to `do_check_auth` from stellar-accounts. `#![no_std]`.
+**`contracts/factory`** — Deploys Perch accounts (embedding the Perch account wasm) with a passkey admin rule checked by the WebAuthn verifier.
 
-**`contracts/webauthn-verifier`** — Soroban contract implementing OZ's `Verifier` trait for secp256r1/P-256 passkey signature verification. Stateless — deploy once, shared across accounts. `#![no_std]`.
+**`contracts/webauthn-verifier`** — OZ `Verifier` for secp256r1/P-256 passkeys. Stateless, shared across accounts.
 
-**`contracts/factory`** — Deploys Smart Accounts with a WebAuthn signer. Lazy-deploys a shared verifier instance.
-
-**`crates/integration-tests`** — Cross-crate integration tests using synthetic P-256 keypairs to construct full WebAuthn assertions without a browser.
+**`crates/integration-tests`** — The Perch stack as Nido deploys it (`src/world.rs`): everything from wasm, real passkey assertions, enforcing auth (`set_auths`), and real UltraHonk proofs replayed from `fixtures/zk/` (`src/zk.rs`).
 
 ## Policy doc layer (perch)
 
@@ -69,50 +71,13 @@ state revealed; the script's `reveal` map handles this (currently un-hides
 
 ## Account recovery (guardian quorum + ZK)
 
-Guardian-quorum and ZK-proof account recovery for doc-only smart accounts,
-built in three layers that are still visible in the code/doc layout:
-
-**Transition spec** (`docs/recovery/TRANSITION_SPEC.md` +
-`packages/recovery-spec/`) — the state-machine transition spec, an
-executable reference model, and adversarial tests for Perch/Nido ZK+guardian
-recovery. No contracts or circuits here — read the spec doc before extending
-recovery design elsewhere.
-
-**Completion mechanism** (`docs/recovery/stage2-findings.md`,
-`contracts/recovery-doc-completion`,
-`crates/integration-tests/tests/it/recovery_stage2_*.rs`) compares two ways
-to complete a doc-hash-committed recovery attempt against the doc-only smart
-account: authorizing the existing `apply_doc` (Variant A, adopted — no
-smart-account code changes) vs. a dedicated `complete_recovery` entry point
-sharing the same internal pipeline (Variant B). Read the findings doc's
-call-ordering section before adding any recovery completion vehicle — it
-explains why a value-bound, single-use completion grant (not a
-boolean/ledger flag) is required for any DEDICATED entry point, and why
-`apply_doc` needs no such mechanism at all.
-
-**Controller + circuit** (`contracts/recovery-controller`,
-`contracts/recovery-verifier`, `circuits/zk_recovery_doc`,
-`crates/integration-tests/tests/it/recovery_stage3_*.rs`,
-`docs/recovery/stage3-measurements.md`) is the shared controller
-implementing guardian-only, ZK-only, and combined evidence paths against the
-transition spec's proposal model, completing via the mechanism above's
-Variant A. Read `contracts/recovery-controller/src/lib.rs`'s crate doc
-comment FIRST — it is the authoritative architecture summary AND the
-canonical "Known limits" list (what's NOT implemented and why) before
-extending or reviewing this code.
-
-**`circuits/zk_recovery_doc` is a separate circuit crate from the
-pre-existing `circuits/zk_recovery` (M1's raw-signer-rotation circuit) —
-NOT an in-place edit.** They share domain constants and Merkle/nullifier
-logic but bind a different `auth_hash` field list (target-doc-hash instead
-of a raw pubkey). Do not merge them or edit one expecting it to affect the
-other: `circuits/zk_recovery`'s own fixtures/tests
-(`crates/integration-tests/tests/it/zk_recovery_*.rs`, `multisig_recovery.rs`)
-pin real `bb`-proved proofs against ITS `auth_hash` formula and would break
-if that circuit's witness shape changed. Similarly,
-`contracts/recovery-controller/src/zk.rs` deliberately duplicates
-(not depends on) `contracts/zk-recovery/src/hash.rs`'s Poseidon2 host-side
-reconstruction — same reason.
+Recovery is Perch's: `vendor/perch/docs/recovery/spec.md` is the authoritative
+state machine and `vendor/perch/docs/zk/` the ZK backend. Nido's coverage of it
+is `crates/integration-tests/tests/it/recovery_*.rs`, `onboarding.rs`, and
+`costs.rs`. ZK tests build their statement through the real controller and
+replay a committed proof of it; a changed statement fails with the instruction
+to run `just gen-zk-fixtures`. `circuits/zk_recovery` is only the legacy
+frontend prover's circuit.
 
 ## Testing Notes
 
@@ -120,7 +85,7 @@ Tests use synthetic P-256 keypairs (`SigningKey::random()`) to construct full We
 
 ## Dependency Version Constraints
 
-- `stellar-accounts` is pinned to a git rev of OpenZeppelin/stellar-contracts to match `soroban-sdk` 25.x
+- `stellar-accounts` is pinned to Perch's CAP-0071 OZ fork rev (theahaco/stellar-contracts-OZ), the same rev `vendor/perch/Cargo.toml` pins, so Nido's crates and Perch's share one `stellar-accounts`
 ## Relayer channels plugin
 
 `infra/relayer/plugins/channels/index.ts` is a thin passthrough to the upstream
