@@ -1,0 +1,12 @@
+{
+  "description": "Protected ZkOnly: alice's initiation of her first attempt",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x017a74aa3fe29ca82bcf84877221a7bfb435943f2b79456c25ae58f7c45ac071",
+  "enrollment_id": "0x523cbc0b40b0cb14828f3ab5da8ec2621e13a3ac7089a6f07ea748bda856ce6a",
+  "digest": "0x25518d0f8c95b9da78cc72d9afb288f52bcb9480f1f0ab65014deec4915b02ab",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x198a535aecaaa1461210197f630035e2adb0938b40e14d6e35419415242a04a6",
+  "nullifier": "0x16e3e7a781f1622e78c41be501c9b89c1eca847729de6af17164bb8ebc2772e2",
+  "statement_hash": "0x0edf4300b0e50e424947f09f13a6864571651a62a937f88b8c0950b532f0358b"
+}

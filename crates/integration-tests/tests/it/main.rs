@@ -1,8 +1,14 @@
 mod account;
 mod contract_verifier;
+mod costs;
 mod multisig_recovery;
 mod name_registry;
 mod name_registry_passkey_auth;
+mod onboarding;
 mod preauth_sweep_policy;
+mod recovery_lifecycle;
+mod recovery_reconfigure;
+mod recovery_rules;
+mod recovery_upgrades;
 mod scoped_session_key;
 mod spending_limit_policy;

@@ -1,0 +1,12 @@
+{
+  "description": "Protected ZkOnly: a Reconfigure(Remove) proof, offered for a Set",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x659ff924baa061a6d884e3c0b1f8c3a803199002b06689f3732d60d0d7c22e5d",
+  "enrollment_id": "0x0b4ae8fde90b5e2ad5546e2e3692c91320a3df387b1dcb1eebce16292e853ca8",
+  "digest": "0x3f3c4e4c2235d9efbfa2d03b440cda86133b8c656b9e2b4d4e41ca25f582d384",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x011f6a42b3e4f07b43d459ae8a089a00b8b0d4e48af068696bc5fe295b73ccea",
+  "nullifier": "0x099e785163c1c8007f9a26d8daf77bd0a188dc5b80ad4271951555c4f142828f",
+  "statement_hash": "0x15cf7ff63a8cb5e8c158a48da142d680e2ea14f34ff117f96acdf40636520d1b"
+}

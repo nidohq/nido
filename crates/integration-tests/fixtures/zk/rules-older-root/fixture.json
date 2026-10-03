@@ -1,0 +1,12 @@
+{
+  "description": "Loss ZkOnly: proved before two later enrollments moved the root",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x0dd5de6502ff8d33d9f4f581a78113fd083e29f93002c8c61dc4526204b87d53",
+  "enrollment_id": "0x04cc67634f9edb45553038aa543fbcd65efe0e6618af6eb92041275292aff6ca",
+  "digest": "0x92c228168b40d78d1e9aa4b1d387acca07928448ca8ac64557b29a999273423f",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x272c7a75e6d53849ce892c6e7376d236ca01655ce74d5d9a07888619feb7a2d4",
+  "nullifier": "0x05c20e5875dfcfa144e1cf5d86c68ef3d24167988f7c4aea7ff2c37317fb4dda",
+  "statement_hash": "0x20530813367dc9c964398f33d79648a1ba73a660e37af1a10967216cf0547d46"
+}

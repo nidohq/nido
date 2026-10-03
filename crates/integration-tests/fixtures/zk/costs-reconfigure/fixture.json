@@ -1,0 +1,12 @@
+{
+  "description": "costs: Protected Combined reconfiguration, ZK half",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x6ca558ea613e1f8a9883ad8a1b5b1d2d1c59d83185cba3bffe9853cc663f4752",
+  "enrollment_id": "0x493be4217fd3c05ae1d2819f08c683af69f4cbbabbe3693bf8235ec60bacde1f",
+  "digest": "0x1ca444697c69c9ce196a0c236fb24172b1c6a378fc70ea61db756eba30fe09a6",
+  "tree_id": 0,
+  "leaf_index": 4294967295,
+  "root": "0x05d830e99c0ad8942e2d4d233f7debe939cebce8aa49be327a3c241253ef5dab",
+  "nullifier": "0x197a3f9ce60ebd30bb03fa0961afa5c0f10740a93670acca706e50e0320996ab",
+  "statement_hash": "0x029923af4e1dbb4328daaee3d01d36af447d62d474facf0cd18885a7f8fce9f7"
+}

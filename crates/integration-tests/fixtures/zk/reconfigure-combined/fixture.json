@@ -1,0 +1,12 @@
+{
+  "description": "Protected Combined: the ZK half of a Reconfigure(Set)",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0xb87ae281982028956a42a36f63fe5d72069e2f4aedf31748b963ad292f1d52f5",
+  "enrollment_id": "0x1f7d90e046f5563e5deb2c594388d4d66440e59b2cc5c41e0cce7c3bab7531b2",
+  "digest": "0x7378e1034697c4166553d8625e51dca1b8dda9a20a100af737d8acaa92ec500f",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x015793d5b81a502a3a1d8fa7800f4220a0b942ad1bad194d5bbd43ec4a6e1952",
+  "nullifier": "0x135de2c39188d55032daa8b6e99c7d5a4c28ebd1bf6d2c50872dcc4d7413109c",
+  "statement_hash": "0x24709a4a121a145bd55faf61c6120c7a5be7e02ad278eb195bab4720ea74208a"
+}

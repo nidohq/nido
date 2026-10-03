@@ -1,0 +1,12 @@
+{
+  "description": "Protected ZkOnly: approval of an upgrade request",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x5b4346ac4cb5dcf606c8686bfa10de5bca5992392cacca4642b4aa6f89f14777",
+  "enrollment_id": "0x3a650dab8eff4cd61d67c555846aa0c94735b53fa279293a1be387810b87f974",
+  "digest": "0x9b299fce1565be9fcbf09b6f4a07583de8351f52c77649a4f70a311ccf667941",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x2bbca8b31ed535b96b17ab279e6639d07a56280cbcbc8a38889adc3309c35b14",
+  "nullifier": "0x1dec4fb72aa0ab7feaff7092d15ef5937bcff09ed4e74afee561233b49164b2d",
+  "statement_hash": "0x2070d89229c8768ed3ed620750c5d4a0cd3c5b66ef53d815e201ef76aee3d4f3"
+}

@@ -1,0 +1,12 @@
+{
+  "description": "Loss ZkOnly: the last slot of a sealed depth-32 tree, after rollover",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x98cd00bdb63c0fbac912237546b6e697d128a1755b8107948dd93881352ce869",
+  "enrollment_id": "0x261240f8ad5e83aec6c4087bde829882052d23ab9423fcc29e2265baef2e9fc2",
+  "digest": "0xb4fc7fd15a978c5a3f7bc03dd27e77764bcb34a1a3cb3525f3bb4c8e30e611a1",
+  "tree_id": 0,
+  "leaf_index": 4294967295,
+  "root": "0x17bb5719cf9b204364f517093d52a4dc5ba6e7d171a3decba9606fa2d42712d4",
+  "nullifier": "0x1b7eb3f95d0533fb597d59b688cd1ba5bd27e19e27377ab878ad70f0c0a30d2d",
+  "statement_hash": "0x056c6ac993ce1f630cefbd136fae7e977aa57332b816bec7c18fb1fdf19bb475"
+}
