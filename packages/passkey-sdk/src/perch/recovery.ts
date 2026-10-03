@@ -36,10 +36,9 @@ import type {
   StatementSubject as BindingSubject,
   ZkEvidence as BindingEvidence,
 } from '@nidohq/perch-recovery';
-import { Address, xdr } from '@stellar/stellar-sdk';
+import { Address, nativeToScVal, Operation, xdr } from '@stellar/stellar-sdk';
 import { extractXdrOperations } from '../assembledTx.js';
 import { DEFAULT_EXPIRATION_OFFSET } from '../auth.js';
-import { buildAuthPayloadScVal } from '../multiSigner.js';
 import type { TxBuild } from '../policyBlocks/types.js';
 import type { PerchDeployment } from './deployment.js';
 import {
@@ -160,28 +159,72 @@ function evidenceToChain(e: ZkEvidence): BindingEvidence {
   return { tree_id: e.treeId, root: b(e.root), nullifier: b(e.nullifier), proof: b(e.proof) };
 }
 
-/** Sign `account`'s auth entry in `op` by selecting its zero-signer recovery
- *  rule: an `AuthPayload` with no signers and that rule's id. */
-export function selectRecoveryRule(
-  op: xdr.Operation,
+/**
+ * The completing `apply_doc(targetCanonical, 0)` as one operation whose auth
+ * entry is already complete: address credentials for `account`, a fresh
+ * nonce, and an `AuthPayload` with no signers that selects the zero-signer
+ * recovery rule.
+ *
+ * It can't come from recording-mode simulation, the usual way a client
+ * learns its auth entries: recording never runs `__check_auth`, so the
+ * controller's `enforce` never marks the completion, `rcv_sync` sees a policy
+ * change during the authorized window, and simulation fails with
+ * `AttemptAuthorized` (Perch `docs/deploy/README.md`, "Simulating a recovery
+ * completion"). Simulate this operation with `authMode: 'enforce'`.
+ */
+export function completionOperation(
   account: string,
+  targetCanonical: string,
   recoveryRuleId: number,
   lastLedger: number,
+  nonce: bigint = randomNonce(),
 ): xdr.Operation {
-  const invoke = op.body().invokeHostFunctionOp();
-  const auth = invoke.auth().map((entry) => {
-    const creds = entry.credentials();
-    if (creds.switch() !== xdr.SorobanCredentialsType.sorobanCredentialsAddress()) return entry;
-    const address = creds.address();
-    if (Address.fromScAddress(address.address()).toString() !== account) return entry;
-    const signed = xdr.SorobanAuthorizationEntry.fromXDR(entry.toXDR());
-    const signedCreds = signed.credentials().address();
-    signedCreds.signatureExpirationLedger(lastLedger + DEFAULT_EXPIRATION_OFFSET);
-    signedCreds.signature(buildAuthPayloadScVal({ contextRuleIds: [recoveryRuleId], signers: [] }));
-    return signed;
+  const call = new xdr.InvokeContractArgs({
+    contractAddress: Address.fromString(account).toScAddress(),
+    functionName: 'apply_doc',
+    args: [
+      nativeToScVal(Buffer.from(targetCanonical, 'utf8'), { type: 'bytes' }),
+      nativeToScVal(0, { type: 'u32' }),
+    ],
   });
-  invoke.auth(auth);
-  return op;
+  const entry = new xdr.SorobanAuthorizationEntry({
+    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
+      new xdr.SorobanAddressCredentials({
+        address: Address.fromString(account).toScAddress(),
+        nonce: xdr.Int64.fromString(nonce.toString()),
+        signatureExpirationLedger: lastLedger + DEFAULT_EXPIRATION_OFFSET,
+        signature: recoveryRulePayload(recoveryRuleId),
+      }),
+    ),
+    rootInvocation: new xdr.SorobanAuthorizedInvocation({
+      function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(call),
+      subInvocations: [],
+    }),
+  });
+  return Operation.invokeHostFunction({
+    func: xdr.HostFunction.hostFunctionTypeInvokeContract(call),
+    auth: [entry],
+  });
+}
+
+/** OZ's `AuthPayload` selecting `ruleId` with no signers (`buildAuthPayloadScVal`
+ *  requires at least one): `{ context_rule_ids: [ruleId], signers: {} }`,
+ *  keys in symbol order. */
+export function recoveryRulePayload(ruleId: number): xdr.ScVal {
+  return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol('context_rule_ids'),
+      val: xdr.ScVal.scvVec([xdr.ScVal.scvU32(ruleId)]),
+    }),
+    new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('signers'), val: xdr.ScVal.scvMap([]) }),
+  ]);
+}
+
+/** A random non-negative `i64` nonce. */
+function randomNonce(): bigint {
+  const b = crypto.getRandomValues(new Uint8Array(8));
+  b[0]! &= 0x7f;
+  return b.reduce((n, x) => (n << 8n) | BigInt(x), 0n);
 }
 
 /** Unwrap a simulated read whose contract result is a `Result`. */
@@ -403,22 +446,19 @@ export class PerchRecovery {
   /** The completing `apply_doc` of `targetCanonical`, authorized by
    *  selecting the account's zero-signer recovery rule (no signature: the
    *  controller's `enforce` checks the exact target). Anyone may submit it
-   *  once the timelock has passed; re-simulate after building so the
-   *  footprint includes `__check_auth` and `enforce`. */
+   *  once the timelock has passed. See `completionOperation`: it must be
+   *  simulated in enforcing mode. */
   async completion(
     account: string,
     targetCanonical: string,
     recoveryRuleId: number,
     lastLedger: number,
   ): Promise<TxBuild> {
-    const tx = await this.account(account).apply_doc({
-      doc_json: Buffer.from(targetCanonical, 'utf8'),
-      approval_valid_until: 0,
-    });
-    const operations = extractXdrOperations(tx, 'completion').map((op) =>
-      selectRecoveryRule(op, account, recoveryRuleId, lastLedger),
-    );
-    return { operations, description: 'Complete the recovery' };
+    return {
+      operations: [completionOperation(account, targetCanonical, recoveryRuleId, lastLedger)],
+      description: 'Complete the recovery',
+      authMode: 'enforce',
+    };
   }
 
   /** A `Loss` owner's veto: the account's `cancel_recovery`, signed by the

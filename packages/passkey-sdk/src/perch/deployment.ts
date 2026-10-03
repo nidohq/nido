@@ -2,14 +2,12 @@
  * Where the Perch stack a Nido account uses lives on a network.
  *
  * Perch's release workstream (stellar-registry/perch#99 WS4) publishes one
- * deployment manifest per network: the content-addressed doc compiler,
- * interpreter, and spending limit the account pins, the constructorless
- * recovery controller, ZK pool, and ZK adapter, and the account wasm hash.
- * Until that manifest lands there is no deployment of this stack to point
- * at, so this module ships the shape and a loader but no addresses: every
- * builder takes a `PerchDeployment` argument, and `PENDING_TESTNET` is
- * `undefined` on purpose. Hardcoding an address here before the release
- * exists would point wallets at contracts nobody reviewed as a set.
+ * deployment manifest per network (`vendor/perch/deployments/<network>.json`):
+ * the content-addressed doc compiler, interpreter, spending limit, and
+ * WebAuthn verifier, the constructorless recovery controller, ZK pool, and ZK
+ * adapter, and the account wasm hash. `fromPerchManifest` reads one;
+ * `TESTNET` is Perch's testnet release plus Nido's factory, checked field by
+ * field against the manifest in `deployment.test.ts`.
  */
 
 import { StrKey } from '@stellar/stellar-sdk';
@@ -17,11 +15,16 @@ import { StrKey } from '@stellar/stellar-sdk';
 export interface PerchDeployment {
   /** The network passphrase every document must name. */
   network: string;
-  /** Nido's account factory (moves to Perch with WS4). */
+  /** Nido's account factory. Not Perch's: Perch's factory derives an
+   *  address from the admin signers, but a Nido passkey's RP ID is the
+   *  account's own subdomain, so the address must exist before the passkey
+   *  does. Nido's derives it from a salt alone. */
   factory: string;
-  /** The WebAuthn verifier passkey signers name (moves to Perch with WS4). */
+  /** Perch's WebAuthn verifier, which passkey signers name and the factory
+   *  pins. Constructorless, with no admin. */
   webauthnVerifier: string;
-  /** Perch's stateless subregistry the account derives its infra from. */
+  /** The registry Perch's infra is content-addressed under (the manifest's
+   *  `registry.id`); the account derives its infra from it. */
   statelessRegistry: string;
   docCompiler: string;
   interpreter: string;
@@ -37,8 +40,59 @@ export interface PerchDeployment {
   accountWasmHash: string;
 }
 
-/** The testnet deployment, once WS4's manifest exists. */
-export const PENDING_TESTNET: PerchDeployment | undefined = undefined;
+/** Perch's testnet release (`vendor/perch/deployments/testnet.json`, at the
+ *  submodule's pin) and Nido's factory built around its account
+ *  (`scripts/deploy-factory.sh`). */
+export const TESTNET: PerchDeployment = {
+  network: 'Test SDF Network ; September 2015',
+  factory: 'CB6SVLYMOSG6SJN4F5SDE7IHTDTXY26PJCALD3L55D72CGIJUUPMHLRQ',
+  webauthnVerifier: 'CDQOXV6N7GP4AAHRLXPVBZTXWK4NQNILT3EE6ZB2R7XLBH7Q2VKDN4SJ',
+  statelessRegistry: 'CDOTZIJUS2CZ62GCVQAI2VMZQC7QZJQ35REFAKJLVTZOJXCJ3VMYEJX2',
+  docCompiler: 'CBOD3WSW75SYZQM3KI4ZCY5PJG5Y4GSCSX4VLHPRNDXKKFF4KX27F3KU',
+  interpreter: 'CBW66V7Z3VYMRP3MYJOKVTDW3LCNCUUZPPYB3NEDHNKOMGZSSWSNOZMC',
+  spendingLimit: 'CCRSUPI7XC3Z3RV6BAERSWDA26F6QSVGBARZXQGUUAI3OBWCGHRI23MA',
+  recoveryController: 'CASILLRFPUXM2TWCIAPMHLCQD7MCQV3Q52GXKSAXDPS2XRPDCQF4I7YE',
+  zkPool: 'CDUADPOJYJEPO6S4KEZMRNLV7FAAKAXTCUICVJXMZCTVJCAS2Q5HPOSQ',
+  zkAdapter: 'CAP76WG7LVU5JHRR4J4YUY4QYKIKOKXFUSR57GZM5EXNFMTGFINFPM2H',
+  circuitId: '9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a',
+  treeDepth: 32,
+  accountWasmHash: '5f22b0a7971d7b6be18c3d7df12fad41feb285aba82b92227ae00617c560b560',
+};
+
+/** A Perch deployment manifest (`deployments/<network>.json`), the fields
+ *  this SDK reads. */
+export interface PerchManifest {
+  network_passphrase: string;
+  registry: { id: string };
+  zk: { circuit_id: string; tree_depth: number };
+  contracts: Record<string, { sha256: string; address?: string }>;
+}
+
+/** The deployment a Perch manifest describes, with Nido's `factory`. */
+export function fromPerchManifest(manifest: PerchManifest, factory: string): PerchDeployment {
+  const address = (name: string): string => {
+    const a = manifest.contracts[name]?.address;
+    if (!a) throw new Error(`perch manifest: no address for ${name}`);
+    return a;
+  };
+  const hash = manifest.contracts['perch-account']?.sha256;
+  if (!hash) throw new Error('perch manifest: no perch-account hash');
+  return parsePerchDeployment({
+    network: manifest.network_passphrase,
+    factory,
+    webauthnVerifier: address('perch-webauthn-verifier'),
+    statelessRegistry: manifest.registry.id,
+    docCompiler: address('perch-doc-compiler'),
+    interpreter: address('perch-interpreter'),
+    spendingLimit: address('perch-spending-limit'),
+    recoveryController: address('perch-recovery'),
+    zkPool: address('perch-zk-pool'),
+    zkAdapter: address('perch-zk-adapter'),
+    circuitId: manifest.zk.circuit_id,
+    treeDepth: manifest.zk.tree_depth,
+    accountWasmHash: hash,
+  });
+}
 
 const CONTRACT_FIELDS = [
   'factory',
@@ -79,13 +133,10 @@ export function parsePerchDeployment(value: unknown): PerchDeployment {
   return value as PerchDeployment;
 }
 
-/** The deployment to use, or a clear error while WS4's manifest is pending. */
+/** The deployment to use, or a clear error when a network has none. */
 export function requirePerchDeployment(deployment: PerchDeployment | undefined): PerchDeployment {
   if (deployment === undefined) {
-    throw new Error(
-      'No Perch deployment for this network yet: the recovery stack ships with ' +
-        "Perch's release manifest (stellar-registry/perch#99 WS4).",
-    );
+    throw new Error('No Perch deployment configured for this network.');
   }
   return deployment;
 }

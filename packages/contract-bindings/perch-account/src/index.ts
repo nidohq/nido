@@ -35,6 +35,17 @@ if (typeof window !== "undefined") {
 
 
 /**
+ * The shared infra an account resolves, pinned when it was built (see
+ * [`infra`]): what a deployment check compares with its manifest.
+ */
+export interface InfraPins {
+  doc_compiler: string;
+  interpreter: string;
+  spending_limit: string;
+}
+
+
+/**
  * The `Protected` freeze, mirrored from the adopted controller through
  * [`PerchSmartAccount::rcv_gate`]: while `ledger < until`, the account
  * authorizes nothing but `attempt_id`'s completion.
@@ -291,6 +302,12 @@ export type ContextRuleType = {tag: "Default", values: void} | {tag: "CallContra
 
 export interface Client {
   /**
+   * Construct and simulate a infra transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Every shared contract this account pins at build time.
+   */
+  infra: (options?: MethodOptions) => Promise<AssembledTransaction<InfraPins>>
+
+  /**
    * Construct and simulate a renew transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Extend the account's instance, applied document, and the named
    * revoked-set and enrolled-id entries to the network maximum.
@@ -468,7 +485,8 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAAAAAAAJ5FeHRlbmQgdGhlIGFjY291bnQncyBpbnN0YW5jZSwgYXBwbGllZCBkb2N1bWVudCwgYW5kIHRoZSBuYW1lZApyZXZva2VkLXNldCBhbmQgZW5yb2xsZWQtaWQgZW50cmllcyB0byB0aGUgbmV0d29yayBtYXhpbXVtLgpQZXJtaXNzaW9ubGVzczsgY2hhbmdlcyBubyBtZWFuaW5nLgAAAAAABXJlbmV3AAAAAAAAAgAAAAAAAAAMZmluZ2VycHJpbnRzAAAD6gAAA+4AAAAgAAAAAAAAAA5lbnJvbGxtZW50X2lkcwAAAAAD6gAAA+4AAAAgAAAAAA==",
+      new ContractSpec([ "AAAAAAAAADZFdmVyeSBzaGFyZWQgY29udHJhY3QgdGhpcyBhY2NvdW50IHBpbnMgYXQgYnVpbGQgdGltZS4AAAAAAAVpbmZyYQAAAAAAAAAAAAABAAAH0AAAAAlJbmZyYVBpbnMAAAA=",
+        "AAAAAAAAAJ5FeHRlbmQgdGhlIGFjY291bnQncyBpbnN0YW5jZSwgYXBwbGllZCBkb2N1bWVudCwgYW5kIHRoZSBuYW1lZApyZXZva2VkLXNldCBhbmQgZW5yb2xsZWQtaWQgZW50cmllcyB0byB0aGUgbmV0d29yayBtYXhpbXVtLgpQZXJtaXNzaW9ubGVzczsgY2hhbmdlcyBubyBtZWFuaW5nLgAAAAAABXJlbmV3AAAAAAAAAgAAAAAAAAAMZmluZ2VycHJpbnRzAAAD6gAAA+4AAAAgAAAAAAAAAA5lbnJvbGxtZW50X2lkcwAAAAAD6gAAA+4AAAAgAAAAAA==",
         "AAAAAAAAAVdDYWxsIGB0YXJnZXRfZm5gIG9uIGB0YXJnZXRgIGFzIHRoaXMgYWNjb3VudCAodGhlIGFjY291bnQgYmVjb21lcwp0aGUgaW52b2tlciwgc28gYHRhcmdldGAncyBgcmVxdWlyZV9hdXRoYCBvZiB0aGlzIGFjY291bnQgcGFzc2VzKS4KUmVxdWlyZXMgdGhlIGFjY291bnQncyBhdXRob3JpemF0aW9uIG9mIHRoaXMgZXhhY3QgY2FsbC4gUmVmdXNlcyB0aGUKaW52b2tlci1vbmx5IGhvb2sgbmFtZXM6IG90aGVyd2lzZSB3aG9ldmVyIGNhbiBhdXRob3JpemUgYGV4ZWN1dGVgCmNvdWxkIHJlYWNoIGEgY29udHJvbGxlciwgcG9saWN5LCBvciBwb29sIGhvb2sgYXMgdGhlIGFjY291bnQKKHNwZWMgwqcxNSkuAAAAAAdleGVjdXRlAAAAAAMAAAAAAAAABnRhcmdldAAAAAAAEwAAAAAAAAAJdGFyZ2V0X2ZuAAAAAAAAEQAAAAAAAAALdGFyZ2V0X2FyZ3MAAAAD6gAAAAAAAAABAAAD6QAAAAAAAAfQAAAAEVBlcmNoQWNjb3VudEVycm9yAAAA",
         "AAAAAAAAAXxJbnZva2VyLW9ubHk6IHRoZSBhZG9wdGVkIGNvbnRyb2xsZXIgc2V0cyAoYGZyb3plbl91bnRpbCA+IDBgKSBvcgpjbGVhcnMgKGAwYCkgdGhlIGBQcm90ZWN0ZWRgIGZyZWV6ZSBmb3IgYGF0dGVtcHRfaWRgLiBUaGUgYWNjb3VudAptaXJyb3JzIHRoZSBmcmVlemUgcmF0aGVyIHRoYW4gYXNraW5nIHRoZSBjb250cm9sbGVyIGZyb20KYF9fY2hlY2tfYXV0aGAsIGJlY2F1c2UgYW4gYWNjb3VudCBhcHByb3ZpbmcgYXMgYSBndWFyZGlhbiB0aHJvdWdoCnRoZSBzYW1lIGNvbnRyb2xsZXIgaW5zdGFuY2UgcnVucyBgX19jaGVja19hdXRoYCB3aGlsZSB0aGF0CmNvbnRyb2xsZXIgaXMgb24gdGhlIGNhbGwgc3RhY2ssIGFuZCB0aGUgaG9zdCByZWZ1c2VzIHJlLWVudHJ5LgAAAAhyY3ZfZ2F0ZQAAAAIAAAAAAAAACmF0dGVtcHRfaWQAAAAAAAYAAAAAAAAADGZyb3plbl91bnRpbAAAAAQAAAABAAAD6QAAAAIAAAfQAAAAEVBlcmNoQWNjb3VudEVycm9yAAAA",
         "AAAAAAAAA0dBcHBseSBhIHBvbGljeSBkb2N1bWVudCDigJQgKip0aGUgb25seSB3YXkgYXV0aG9yaXphdGlvbiBjaGFuZ2VzKiouClRoZSB0d28gc2hhcmVkLCBpbW11dGFibGUgaW5mcmEgY29udHJhY3RzICh0aGUgc3RhdGVsZXNzIGRvYyBjb21waWxlcgphbmQgdGhlIGludGVycHJldGVyKSBhcmUgZGVyaXZlZCBmcm9tIHRoZSBidWlsZC10aW1lLXBpbm5lZApbYHN0YXRlbGVzc19yZWdpc3RyeWBdIChzZWUgW2BpbmZyYWBdKSwgbmV2ZXIgcGFzc2VkIGluLiBSZXBsYWNlcyB0aGUKZW50aXJlIHJ1bGUgc2V0IGF0b21pY2FsbHkgYW5kIHJldHVybnMgdGhlIGNhbm9uaWNhbCBgZG9jX2hhc2hgLgoKQXV0aG9yaXplZCBieSB0aGUgb3duZXIgKGFueSBvcmRpbmFyeSBydWxlIHNjb3BlZCB0byB0aGUgYWNjb3VudCksCm9yLCBmb3IgYSByZWNvdmVyeSBjb21wbGV0aW9uIG9ubHksIGJ5IHRoZSB6ZXJvLXNpZ25lciByZWNvdmVyeSBydWxlCndob3NlIGNvbnRyb2xsZXIgY2hlY2tzIHRoZSBleGFjdCB0YXJnZXQuIE9uIGFuIGFjY291bnQgd2l0aCBhbgphZG9wdGVkIGNvbnRyb2xsZXIsIHRoZSBjb250cm9sbGVyJ3MgYHJjdl9zeW5jYCBjbGFzc2lmaWVzIHRoZSBjYWxsCmJlZm9yZSBhbnkgcnVsZSBjaGFuZ2VzIGFuZCByZWZ1c2VzIHdoYXQgdGhlIHByb2ZpbGUgZG9lcyBub3QgYWxsb3cKKGBkb2NzL3JlY292ZXJ5L3NwZWMubWRgIMKnMTApLiBgYXBwcm92YWxfdmFsaWRfdW50aWxgIGlzIHRoZQpmcmVzaG5lc3MgYm91bmQgYSBgUHJvdGVjdGVkYCByZWNvbmZpZ3VyYXRpb24ncyByZWNvcmRlZCBhcHByb3ZhbHMKd2VyZSBnaXZlbiBmb3I7IGl0IGlzIGlnbm9yZWQgb3RoZXJ3aXNlLgAAAAAJYXBwbHlfZG9jAAAAAAAAAgAAAAAAAAAIZG9jX2pzb24AAAAOAAAAAAAAABRhcHByb3ZhbF92YWxpZF91bnRpbAAAAAQAAAABAAAD6QAAA+4AAAAgAAAH0AAAABFQZXJjaEFjY291bnRFcnJvcgAAAA==",
@@ -489,6 +507,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAChUaGUgYWRvcHRlZCByZWNvdmVyeSBjb250cm9sbGVyLCBpZiBhbnkuAAAAE3JlY292ZXJ5X2NvbnRyb2xsZXIAAAAAAAAAAAEAAAPoAAAAEw==",
         "AAAAAAAAAHhSZWFkLW9ubHkgcnVsZSBzdXJmYWNlLCByZS1leHBvc2VkIGhlcmUgYmVjYXVzZSBgU21hcnRBY2NvdW50YCBpdHNlbGYKaXMgZGVsaWJlcmF0ZWx5IG5vdCBleHBvcnRlZCBieSBkb2Mtb25seSBhY2NvdW50cy4AAAAXZ2V0X2NvbnRleHRfcnVsZXNfY291bnQAAAAAAAAAAAEAAAAE",
         "AAAAAAAAAFNUaGUgaWQgdGhlIG5leHQgYHNjaGVkdWxlX3VwZ3JhZGVgIHdpbGwgYXNzaWduOiB3aGF0IGBQcm90ZWN0ZWRgCmFwcHJvdmVycyBhcHByb3ZlLgAAAAAXbmV4dF91cGdyYWRlX3JlcXVlc3RfaWQAAAAAAAAAAAEAAAAG",
+        "AAAAAQAAAINUaGUgc2hhcmVkIGluZnJhIGFuIGFjY291bnQgcmVzb2x2ZXMsIHBpbm5lZCB3aGVuIGl0IHdhcyBidWlsdCAoc2VlCltgaW5mcmFgXSk6IHdoYXQgYSBkZXBsb3ltZW50IGNoZWNrIGNvbXBhcmVzIHdpdGggaXRzIG1hbmlmZXN0LgAAAAAAAAAACUluZnJhUGlucwAAAAAAAAMAAAAAAAAADGRvY19jb21waWxlcgAAABMAAAAAAAAAC2ludGVycHJldGVyAAAAABMAAAAAAAAADnNwZW5kaW5nX2xpbWl0AAAAAAAT",
         "AAAAAQAAALtUaGUgYFByb3RlY3RlZGAgZnJlZXplLCBtaXJyb3JlZCBmcm9tIHRoZSBhZG9wdGVkIGNvbnRyb2xsZXIgdGhyb3VnaApbYFBlcmNoU21hcnRBY2NvdW50OjpyY3ZfZ2F0ZWBdOiB3aGlsZSBgbGVkZ2VyIDwgdW50aWxgLCB0aGUgYWNjb3VudAphdXRob3JpemVzIG5vdGhpbmcgYnV0IGBhdHRlbXB0X2lkYCdzIGNvbXBsZXRpb24uAAAAAAAAAAAKRnJlZXplR2F0ZQAAAAAAAgAAAAAAAAAKYXR0ZW1wdF9pZAAAAAAABgAAACZUaGUgYXV0aG9yaXplZCBhdHRlbXB0J3MgYGV4cGlyZXNfYXRgLgAAAAAABXVudGlsAAAAAAAABA==",
         "AAAABQAAAEJFbWl0dGVkIGFmdGVyIGEgZG9jdW1lbnQgaXMgYXBwbGllZDogdGhlIG5ldyBjYW5vbmljYWwgYGRvY19oYXNoYC4AAAAAAAAAAAAKRG9jQXBwbGllZAAAAAAAAQAAAAtkb2NfYXBwbGllZAAAAAABAAAAAAAAAAhkb2NfaGFzaAAAA+4AAAAgAAAAAQAAAAI=",
         "AAAABQAAAFhFbWl0dGVkIHdoZW4gdGhlIGFkb3B0ZWQgY29udHJvbGxlciBzZXRzIChgdW50aWwgPiAwYCkgb3IgY2xlYXJzIHRoZQpgUHJvdGVjdGVkYCBmcmVlemUuAAAAAAAAAA1GcmVlemVDaGFuZ2VkAAAAAAAAAQAAAA5mcmVlemVfY2hhbmdlZAAAAAAAAgAAAAAAAAAKYXR0ZW1wdF9pZAAAAAAABgAAAAAAAAAAAAAABXVudGlsAAAAAAAABAAAAAAAAAAC",
@@ -517,7 +536,8 @@ export class Client extends ContractClient {
     )
   }
   public readonly fromJSON = {
-    renew: this.txFromJSON<null>,
+    infra: this.txFromJSON<InfraPins>,
+        renew: this.txFromJSON<null>,
         execute: this.txFromJSON<Result<any>>,
         rcv_gate: this.txFromJSON<Result<void>>,
         apply_doc: this.txFromJSON<Result<Buffer>>,
