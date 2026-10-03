@@ -55,8 +55,7 @@ export async function mountRecoverySettings(root: HTMLElement, account: string |
       el(
         'div',
         { class: 'alert', role: 'note' },
-        'Recovery runs on the Perch recovery stack, which is not deployed on this network yet. ' +
-          'It ships with Perch’s release.',
+        'Recovery runs on the Perch recovery stack, which is not deployed on this network yet.',
       ),
     );
     return;

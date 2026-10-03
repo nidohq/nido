@@ -80,7 +80,7 @@ export async function mountRecover(root: HTMLElement, account: string | null): P
   }
   if (!perchDeployment()) {
     root.append(
-      el('div', { class: 'alert', role: 'note' }, 'Recovery is not deployed on this network yet. It ships with Perch’s release.'),
+      el('div', { class: 'alert', role: 'note' }, 'Recovery is not deployed on this network yet.'),
     );
     return;
   }
@@ -100,7 +100,14 @@ export async function mountRecover(root: HTMLElement, account: string | null): P
     root.append(startCard(account, s.replaceable, s.mode !== 'guardian-only', Boolean(s.baselineDocHash), () => location.reload()));
     return;
   }
-  root.append(await progressCard(account, pending, s));
+  try {
+    root.append(await progressCard(account, pending, s));
+  } catch (e) {
+    // A failed read (an RPC hiccup) must not leave the page dead: say so and
+    // try again, as the progress card itself would.
+    root.append(card('Your recovery', `<p style="margin:0;">Couldn’t read your recovery right now (${esc(errorText(e))}). Trying again…</p>`));
+    setTimeout(() => location.reload(), 15_000);
+  }
 }
 
 /** Step 1-2: new passkey (and kit), then open the attempt. */
