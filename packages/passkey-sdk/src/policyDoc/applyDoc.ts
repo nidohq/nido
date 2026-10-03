@@ -1,24 +1,25 @@
 /**
- * Doc-only: the ONE apply route — the SDK half of the smart
- * account's `apply_doc` entry point (contracts/smart-account/src/doc.rs),
- * the account's sole policy write path.
+ * Doc-only: the ONE apply route — the SDK half of the Perch account's
+ * `apply_doc(doc_json, approval_valid_until)`, the account's sole policy
+ * write path (vendor/perch/crates/perch-smart-account).
  *
- * `buildApplyDocTx` submits the document ITSELF: the contract cross-calls
- * perch's stateless doc-compiler to parse/validate/lower on-chain,
- * atomically replaces the whole rule set (recovery rule excepted), stores
- * the canonical `doc_hash` AND the full canonical doc JSON (readable via
- * `get_applied_doc` — the lossless, no-indexer read), and emits the doc
- * JSON as a `DocApplied` event. Capped docs are supported (compiler
- * 0.2.1): the contract attaches its pinned stock spending-limit policy
- * beside the interpreter. The contract REFUSES non-canonical bytes
- * (`DocNotCanonical`); this builder always submits `canonicalJson(doc)`,
- * so stored == emitted == canonical and either copy hashes straight to the
- * stored identity. Anti-brick: the contract refuses documents without a
- * policy-free self-admin rule (`DocAdminLockout`) — build docs with one.
+ * The account cross-calls Perch's stateless doc compiler to parse, validate,
+ * and lower the document on chain, has its recovery controller classify any
+ * change to the `recovery` member, atomically replaces the whole rule set
+ * (the zero-signer recovery rule included), inserts a new ZK leaf into the
+ * pool when the enrollment id changes, and stores the canonical bytes
+ * (readable via `applied_doc`). Capped rules get Perch's spending limit
+ * beside the interpreter. Anti-brick: the account refuses a document without
+ * a policy-free self-admin rule (`AdminLockout`). This builder submits
+ * `canonicalJson(doc)`, so the stored copy hashes straight to `docHash`.
+ *
+ * `approvalValidUntil` is the freshness bound a `Protected` reconfiguration's
+ * recorded evidence was given for (`perch.PerchRecovery.approveChange` /
+ * `submitZkChange`); 0 otherwise.
  */
 
 import { Buffer } from 'buffer';
-import { Client as SmartAccountClient } from '@nidohq/smart-account';
+import { Client as AccountClient } from '@nidohq/perch-account';
 import { canonicalJson, docHash } from '@stellar-registry/perch';
 import type { PolicyDoc } from '@stellar-registry/perch';
 import { extractXdrOperations } from '../assembledTx.js';
@@ -31,6 +32,8 @@ export interface BuildApplyDocArgs {
   account: string;
   rpcUrl: string;
   networkPassphrase?: string;
+  /** See the module docs. Defaults to 0. */
+  approvalValidUntil?: number;
 }
 
 export interface ApplyDocTx extends TxBuild {
@@ -58,12 +61,15 @@ export async function buildApplyDocTx(
     );
   }
   const canonical = canonicalJson(doc);
-  const client = new SmartAccountClient({
+  const client = new AccountClient({
     contractId: args.account,
     networkPassphrase,
     rpcUrl: args.rpcUrl,
   });
-  const tx = await client.apply_doc({ doc_json: Buffer.from(canonical, 'utf8') });
+  const tx = await client.apply_doc({
+    doc_json: Buffer.from(canonical, 'utf8'),
+    approval_valid_until: args.approvalValidUntil ?? 0,
+  });
 
   return {
     docHash: docHash(doc),
