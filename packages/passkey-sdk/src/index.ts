@@ -106,3 +106,7 @@ export * from './friendSigning.js';
 export * from './zkRecovery/index.js';
 
 export * from './recoveryStage3/index.js';
+
+/** Nido on the Perch stack: one namespace, so it can sit beside the legacy
+ *  recovery modules above until the wallet stops using them. */
+export * as perch from './perch/index.js';
