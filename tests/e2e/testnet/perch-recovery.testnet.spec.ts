@@ -2,6 +2,7 @@ import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { test, expect, SEED_HEX, useIdentity } from '../../support/fixtures';
 import { getInitScript } from '../../support/auth/bundle';
 import { createAndDeployAs } from '../../support/recovery';
+import { deployAccountDirect } from '../../support/directDeploy';
 
 /**
  * @testnet — recovery through the wallet on the Perch stack, for all six
@@ -11,8 +12,13 @@ import { createAndDeployAs } from '../../support/recovery';
  * It runs against `perch.TESTNET`, Perch's testnet release
  * (stellar-registry/perch#99 WS4) and Nido's factory around its account:
  *
- *   npx astro build --root ./packages/frontend
+ *   PUBLIC_RELAYER_URL=… PUBLIC_RELAYER_SIM_SOURCE=… npx astro build --root ./packages/frontend
  *   npx playwright test --project=testnet-chromium perch-recovery
+ *
+ * Accounts are created through the onboarding UI, which the hosted relayer
+ * sponsors. With `NIDO_E2E_DIRECT_DEPLOY=1` (and a build without the relayer)
+ * they are created from Node instead (`deployAccountDirect`); every recovery
+ * step still runs through the wallet against the deployed contracts.
  *
  * Each run: deploy guardian Nidos (guardian modes), deploy the owner's Nido
  * and set up recovery on /security/recovery/ (the "quick" timing preset, ~2
@@ -23,6 +29,7 @@ import { createAndDeployAs } from '../../support/recovery';
  */
 
 const PORT = Number(process.env.E2E_PORT || 4399);
+const createAccount = process.env.NIDO_E2E_DIRECT_DEPLOY ? deployAccountDirect : createAndDeployAs;
 
 type Profile = 'loss' | 'protected';
 type Mode = 'guardian-only' | 'zk-only' | 'combined';
@@ -51,13 +58,13 @@ test.describe('@testnet Perch recovery through the wallet', () => {
         if (mode !== 'zk-only') {
           for (const n of [1, 2]) {
             const g = await freshContext(browser, `${run}-guardian-${n}`);
-            const { cAddress, host } = await createAndDeployAs(g.page, PORT, `${run}-guardian-${n}`);
+            const { cAddress, host } = await createAccount(g.page, PORT, `${run}-guardian-${n}`);
             guardians.push({ address: cAddress, host, page: g.page });
           }
         }
 
         // The owner's Nido and its recovery settings.
-        const owner = await createAndDeployAs(page, PORT, `${run}-owner`);
+        const owner = await createAccount(page, PORT, `${run}-owner`);
         await page.goto(`http://${owner.host}/security/recovery/`, { waitUntil: 'networkidle' });
         await page.locator(`input[name="profile"][value="${profile}"]`).check();
         await page.locator(`input[name="mode"][value="${mode}"]`).check();
@@ -84,9 +91,11 @@ test.describe('@testnet Perch recovery through the wallet', () => {
         // A new device with a new passkey.
         const device = await freshContext(browser, `${run}-owner-new-device`);
         device.page.on('dialog', (d) => void d.accept());
+        device.page.on('pageerror', (e) => console.log(`[${run} device] pageerror: ${e.message}`));
+        device.page.on('console', (m) => m.type() === 'error' && console.log(`[${run} device] ${m.text()}`));
         await device.page.goto(`http://${owner.host}/security/recover/`, { waitUntil: 'networkidle' });
         await device.page.getByRole('button', { name: 'Create my new passkey' }).click();
-        await expect(device.page.getByText('Your recovery')).toBeVisible({ timeout: 180_000 });
+        await expect(device.page.getByText('Your recovery', { exact: true })).toBeVisible({ timeout: 180_000 });
 
         // Evidence: friends approve from their own Nidos; the old kit proves.
         if (guardians.length) {
