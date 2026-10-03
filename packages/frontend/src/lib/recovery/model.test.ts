@@ -3,6 +3,7 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildPolicyDoc, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
 import {
   adminSignerIds,
+  attemptLinkProblem,
   changeNeeds,
   changeSubject,
   changeToRequest,
@@ -148,6 +149,22 @@ describe('guardian requests', () => {
     });
     expect(foreignVerifiers(wire, deployment.webauthnVerifier)).toEqual([contract(40)]);
     expect(foreignVerifiers({ signers: [wire.signers[0]!] }, deployment.webauthnVerifier)).toEqual([]);
+  });
+
+  it('refuses an attempt link without, or with another, replacement set', () => {
+    const set: perch.ReplacementSet = {
+      signers: [{ signerId: 'admin', credential: { kind: 'external', verifier: deployment.webauthnVerifier, key: new Uint8Array(65).fill(4) } }],
+    };
+    const bound = perch.replacementSetHash(set);
+    const verifier = deployment.webauthnVerifier;
+    expect(attemptLinkProblem(replacementsToWire(set), bound, verifier)).toBeUndefined();
+    expect(attemptLinkProblem(undefined, bound, verifier)).toMatch(/does not say/);
+    const other = { signers: [{ ...set.signers[0]!, credential: { kind: 'external' as const, verifier, key: new Uint8Array(65).fill(5) } }] };
+    expect(attemptLinkProblem(replacementsToWire(other), bound, verifier)).toMatch(/does not match/);
+    // The same key behind a verifier that accepts anything: the hash matches
+    // what the attacker bound, so only the verifier check catches it.
+    const forged = { signers: [{ ...set.signers[0]!, credential: { kind: 'external' as const, verifier: contract(40), key: new Uint8Array(65).fill(4) } }] };
+    expect(attemptLinkProblem(replacementsToWire(forged), perch.replacementSetHash(forged), verifier)).toMatch(/unknown contract/);
   });
 
   it('round-trips change requests and their SDK subjects', () => {

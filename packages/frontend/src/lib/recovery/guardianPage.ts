@@ -22,11 +22,10 @@ import { connect as connectWallet, initWalletKit } from '../walletConnect.js';
 import { applyDoc, currentOrFirstDoc, GUARDIAN_RULE, recoveryClient, submitAsGuardian, readRecoveryState } from './chain.js';
 import { perchDeployment, requireDeployment } from './deployment.js';
 import {
+  attemptLinkProblem,
   changeSubject,
   decodeGuardianRequest,
-  foreignVerifiers,
   hex,
-  replacementsFromWire,
   summarizeRecovery,
   type GuardianRequest,
 } from './model.js';
@@ -54,7 +53,8 @@ export async function mountGuardian(root: HTMLElement): Promise<void> {
     return;
   }
   const details = await describe(request, state.doc!);
-  root.append(card(`A request from ${short(request.account)}`, details));
+  root.append(card(`A request from ${short(request.account)}`, details.html));
+  if (!details.ok) return;
 
   const c = card('Your approval', '');
   const body = c.querySelector('.card') as HTMLElement;
@@ -122,8 +122,14 @@ export async function mountGuardian(root: HTMLElement): Promise<void> {
   );
 }
 
-/** A human description of the request, with its payload verified. */
-async function describe(request: GuardianRequest, doc: PolicyDoc): Promise<string> {
+/** A human description of the request, with its payload verified. `ok` is
+ *  false when the guardian must not approve: the page then offers no
+ *  Approve button. */
+async function describe(request: GuardianRequest, doc: PolicyDoc): Promise<{ html: string; ok: boolean }> {
+  const refuse = (why: string) => ({
+    html: `<div class="alert danger" role="alert">${esc(why)} Do not approve.</div>`,
+    ok: false,
+  });
   const client = recoveryClient();
   if (request.kind === 'attempt') {
     const statement = await client.statement(
@@ -132,46 +138,50 @@ async function describe(request: GuardianRequest, doc: PolicyDoc): Promise<strin
       request.domain === 'cancel' ? perch.EvidenceDomain.Cancel : perch.EvidenceDomain.Initiate,
     );
     if (request.domain === 'cancel') {
-      return `<p style="margin:0;">Cancel recovery attempt ${esc(request.attemptId)}. Approve only if your friend says they did not start it.</p>`;
+      return {
+        html: `<p style="margin:0;">Cancel recovery attempt ${esc(request.attemptId)}. Approve only if your friend says they did not start it.</p>`,
+        ok: true,
+      };
     }
     const sub = statement.subject;
-    let who = '<p class="mut" style="margin:0;">The link does not say which new passkey would take over. Ask your friend for a fresh link.</p>';
-    if (request.replacements && (sub.action === 'lost-key' || sub.action === 'compromise')) {
-      const declared = perch.replacementSetHash(perch.sortReplacements(replacementsFromWire(request.replacements)));
-      if (hex(declared) !== hex(sub.replacementsHash)) {
-        return '<div class="alert danger" role="alert">This link’s replacement does not match the attempt on chain. Do not approve.</div>';
-      }
-      if (foreignVerifiers(request.replacements, requireDeployment().webauthnVerifier).length) {
-        return '<div class="alert danger" role="alert">This link’s new passkey is checked by an unknown contract, not Nido’s passkey verifier. Do not approve.</div>';
-      }
-      who = request.replacements.signers
-        .map((r) => `<p style="margin:0;">New passkey for <strong>${esc(r.signerId)}</strong> ends in <code class="mono">${esc(r.key.slice(-12))}</code>. Ask your friend to read you the same ending from their new device.</p>`)
-        .join('');
+    if (sub.action !== 'lost-key' && sub.action !== 'compromise') {
+      return refuse('This link does not name a recovery attempt.');
     }
+    const problem = attemptLinkProblem(request.replacements, sub.replacementsHash, requireDeployment().webauthnVerifier);
+    if (problem) return refuse(problem);
+    const who = request.replacements!.signers
+      .map((r) => `<p style="margin:0;">New passkey for <strong>${esc(r.signerId)}</strong> ends in <code class="mono">${esc(r.key.slice(-12))}</code>. Ask your friend to read you the same ending from their new device.</p>`)
+      .join('');
     const what = sub.action === 'compromise' ? 'restore their saved setup (they say their passkey was stolen)' : 'replace a lost passkey';
-    return `<p style="margin:0;">Your friend wants to ${what}.</p>${who}`;
+    return { html: `<p style="margin:0;">Your friend wants to ${what}.</p>${who}`, ok: true };
   }
   const c = request.change;
   if (c.kind === 'upgrade') {
-    return `<p style="margin:0;">Upgrade the Nido’s code to Wasm <code class="mono">${esc(c.wasmHash.slice(0, 16))}…</code>. It runs only after a seven-day wait.</p>`;
+    return {
+      html: `<p style="margin:0;">Upgrade the Nido’s code to Wasm <code class="mono">${esc(c.wasmHash.slice(0, 16))}…</code>. It runs only after a seven-day wait.</p>`,
+      ok: true,
+    };
   }
   if (c.kind === 'reconfigure-remove') {
-    return '<p style="margin:0;">Turn recovery off. Approve only if your friend asked you to.</p>';
+    return { html: '<p style="margin:0;">Turn recovery off. Approve only if your friend asked you to.</p>', ok: true };
   }
   const proposed = request.recovery;
-  if (proposed !== undefined) {
-    const next = perch.withRecovery(doc, undefined);
-    const withProposed = parsePolicyDocJson(JSON.stringify({ ...next, recovery: proposed }));
-    const computed = perch.configHash(withProposed);
-    if (!computed || hex(computed) !== c.configHash) {
-      return '<div class="alert danger" role="alert">The proposed settings in this link do not match the request. Do not approve.</div>';
-    }
-    const s = summarizeRecovery(withProposed)!;
-    return `<p style="margin:0;">Change recovery to: ${esc(s.profile)}, ${esc(s.mode)}${
-      s.guardians.length ? `, ${s.quorum} of ${s.guardians.length} friends` : ''
-    }.</p>`;
+  if (proposed === undefined) {
+    return refuse('The link does not say what the new recovery settings are. Ask your friend for a fresh link.');
   }
-  return '<p style="margin:0;">Change the Nido’s recovery settings.</p>';
+  const next = perch.withRecovery(doc, undefined);
+  const withProposed = parsePolicyDocJson(JSON.stringify({ ...next, recovery: proposed }));
+  const computed = perch.configHash(withProposed);
+  if (!computed || hex(computed) !== c.configHash) {
+    return refuse('The proposed settings in this link do not match the request.');
+  }
+  const s = summarizeRecovery(withProposed)!;
+  return {
+    html: `<p style="margin:0;">Change recovery to: ${esc(s.profile)}, ${esc(s.mode)}${
+      s.guardians.length ? `, ${s.quorum} of ${s.guardians.length} friends` : ''
+    }.</p>`,
+    ok: true,
+  };
 }
 
 async function hasGuardianRule(account: string): Promise<boolean> {

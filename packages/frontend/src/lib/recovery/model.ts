@@ -189,6 +189,27 @@ export function foreignVerifiers(w: WireReplacements, verifier: string): string[
   return [...new Set(w.signers.map((s) => s.verifier).filter((v) => v !== verifier))];
 }
 
+/** Why a guardian must not approve an attempt link, or `undefined` when the
+ *  link carries the replacement set the attempt bound on chain (`boundHash`)
+ *  and every new credential is checked by `verifier`. */
+export function attemptLinkProblem(
+  replacements: WireReplacements | undefined,
+  boundHash: Uint8Array,
+  verifier: string,
+): string | undefined {
+  if (!replacements) {
+    return 'The link does not say which new passkey would take over. Ask your friend for a fresh link.';
+  }
+  const declared = perch.replacementSetHash(perch.sortReplacements(replacementsFromWire(replacements)));
+  if (hex(declared) !== hex(boundHash)) {
+    return 'This link’s replacement does not match the attempt on chain.';
+  }
+  if (foreignVerifiers(replacements, verifier).length) {
+    return 'This link’s new passkey is checked by an unknown contract, not Nido’s passkey verifier.';
+  }
+  return undefined;
+}
+
 export function replacementsFromWire(w: WireReplacements): perch.ReplacementSet {
   const bytes = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => parseInt(x, 16));
   return {
