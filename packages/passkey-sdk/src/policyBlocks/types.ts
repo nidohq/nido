@@ -83,6 +83,9 @@ export interface TxBuild {
   operations: xdr.Operation[];
   /** Brief description used in the signing UI. */
   description: string;
+  /** `'enforce'`: the operations carry complete auth entries and must be
+   *  simulated in enforcing mode (a recovery completion). */
+  authMode?: 'enforce';
 }
 
 export interface PolicyBlockModule<B extends PolicyBlock> {
