@@ -1,144 +1,111 @@
-# Mainnet Readiness — Go / No-Go Checklist
+# Mainnet readiness
 
-Every box must be checked before mainnet launch. Grouped by the workstreams in the
-audit-readiness plan. "Blocker" = launch cannot proceed without it.
+Go/no-go checklist. Every box is checked before mainnet. Perch's epic #99
+leaves mainnet rollout out of its own scope, so a mainnet Perch deployment is
+a prerequisite on top of everything here.
 
-## A. Hard blockers
+## A. Blockers
 
-- [ ] **A1 — ZK recovery params (BLOCKER).** Fresh mainnet pool deployed with
-  `delay_secs=1_209_600` (14d), `timelock_floor_secs=604_800` (7d),
-  `completion_window_secs=2_592_000` (30d). Params are immutable at construction; the
-  testnet pool uses 60s/0/604800 and cannot be reused. Tooling in place:
-  `scripts/deploy-zk-recovery.mjs --mainnet` presets these values and its mainnet guard
-  refuses a sub-day delay/floor or a missing `--admin`; verify the live pool afterward with
-  `node scripts/preflight-recovery-config.mjs --contract <POOL>` (reads the on-chain
-  `config()` view and exits non-zero on any spec mismatch — the go/no-go gate).
-- [ ] **A1 — Mainnet circuit VK regenerated.** VK/proof fixtures regenerated under the
-  pinned toolchain against the **mainnet network passphrase** and 14d timelock (both are
-  bound into `auth_hash`); testnet proofs/VK do not carry over. Hashes recorded in
-  `DEPLOYED.md`.
-- [~] **A2 — setup secret off URL query params (BLOCKER).** The setup salt (derives the
-  address + lets its holder claim the pre-funded account) is now carried in the URL HASH,
-  never the query: `createNido`/`nidoRowHref` **and the apex→subdomain reservation redirect**
-  emit `#salt=` (the fragment is never sent to the server, so it stays out of worker/CDN access
-  logs + cross-origin Referer; `autopass`/`then` stay in the query). The `/new-account/`
-  receiver reads the hash first, still accepts legacy `?salt=`/`?key=` query links but SCRUBS
-  them from the URL (`history.replaceState`) on load so a leaked secret doesn't linger.
-  Unit-tested (`createNido`/`accountLinks`); a `@fast` Playwright assertion checks the query
-  scrub. Remaining: run the Playwright lane to confirm end-to-end (couldn't run browsers here).
-- [ ] **A3 — Mainnet registry deployed + wired.** Deploy a Nido-owned `stellar-registry`
-  instance on mainnet (registry-owner key under the multisig) and register
-  `factory`/`verifier`/`zk-recovery` into it (`scripts/deploy-registry.sh` +
-  `just publish-registry`, rehearsed on testnet). Factory `REGISTRY` constant + all client
-  fallbacks (`passkey-sdk/src/registry.ts`, `frontend/src/lib/policyChainFetch.ts`) point at
-  its contract-id; rebuilt + tested against mainnet RPC. Registry wasm hash + id recorded in
-  `DEPLOYED.md`; registry added to the trusted-external set in `AUDIT_SCOPE.md`/`SUPPLY_CHAIN.md`.
-  (Later: register this registry's id into the AhaLabs verified registry — additive, not a blocker.)
-- [ ] **A4 — Relayer keys in KMS/HSM (BLOCKER).** Sponsor + channel keys no longer live as
-  on-disk keystores; migrated to a KMS/HSM signer; testnet keys rotated out.
+- [ ] **A1. Perch published and verified.** Done on testnet: Perch's release
+  manifest records every contract by hash, `just perch-infra` fetches exactly
+  those bytes, the factory embeds the manifest's `perch-account`, and
+  `perch.TESTNET` is checked against the manifest. Left: Perch merges and
+  publishes the release (crates, npm packages, `perch-contracts` bindings),
+  Nido's pins move from the submodule to those, and a mainnet manifest
+  exists. A `PUBLIC_PERCH_DEPLOYMENT` override is not yet checked against
+  Perch's hashes (THREAT_MODEL 9).
+- [x] **A2. Setup secret out of query strings.** The salt travels in the URL
+  fragment and legacy query links are scrubbed on load (W5).
+- [ ] **A3. Relayer keys in KMS/HSM.** Sponsor and channel keys no longer sit
+  on disk; testnet keys rotated out.
+- [ ] **A4. Mainnet registry and pins.** A Nido-owned registry instance
+  (`scripts/deploy-registry.sh`, rehearsed on testnet), the factory's
+  `REGISTRY` constant and client fallbacks pointed at it, and
+  `set_registry_pins(<verifier>)` called.
+- [ ] **A5. Audit findings resolved** for Nido and for Perch, with the freeze
+  commits recorded in AUDIT_SCOPE.md.
 
-## B. Architecture freeze (before audit)
+## B. Governance
 
-- [x] **B1 (code) — admin + upgrade() implemented across the contract set** (issue #26):
-  `smart-account` (self-authed; **blocked while a recovery is pending**, and — for a
-  recovery-enabled account — the immediate `upgrade` is **refused** (`UpgradeRequiresTimelock`)
-  in favour of a 7-day announce-then-execute path (`initiate_upgrade` → `execute_upgrade`), so a
-  stolen passkey can't instantly strip the protected recovery rule), `factory`, `zk-verifier`
-  (VK stays immutable), `zk-recovery`, `webauthn-verifier`, `multisig-policy`,
-  `spending-limit-policy`, `name-registry` — each with `admin`/`set_admin`/`upgrade`, the admin
-  set via `__constructor(admin: Address)`. Fresh deploys pass `--admin` (see
-  `scripts/deploy-policy-builder-v1.sh`, `scripts/deploy-zk-recovery.mjs`). All contracts except
-  `smart-account` (which keeps its bespoke recovery-timelocked upgrade) now source
-  `admin`/`set_admin`/`upgrade` from the shared **`admin-sep`** crate (`Administratable` +
-  `Upgradable`) rather than per-contract inlined code — see [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).
-- [ ] **B1 (governance) — admin behind a multisig, `upgrade` behind a timelock.** The mainnet
-  `--admin` must be a multisig C-address (not the deploying key). The `smart-account` self-upgrade
-  is already timelocked in-code (above); the **singleton** contracts (`zk-verifier`, policies,
-  `name-registry`, `factory`) upgrade immediately once admin-authed, so the multisig — ideally
-  with its own upgrade timelock so users can exit before an upgrade lands — is the mitigation
-  there. `zk-verifier` VK intentionally immutable (a circuit change still means a fresh verifier
-  deploy + re-register, never an in-place VK swap).
-- [x] **B2 (code) — Registry address pinning implemented (pin bypass).** Factory has
-  admin-settable pins (`set_registry_pins(verifier, zk_recovery)`); once pinned it resolves
-  `verifier`/`zk-recovery` directly from the pin and never consults the registry, on every
-  `create_account`/`create_account_v2` (invariant F5, tested) — so a repointed/broken registry
-  can neither reroute nor block new accounts. Unpinned = pre-B2 behavior; the
-  `set_recovery_pool` override is checked before the `zk-recovery` pin.
-- [ ] **B2 (deploy) — Pins set + keys under multisig.** At cutover, call `set_registry_pins`
-  with the mainnet verifier/zk-recovery addresses (from `DEPLOYED.md`); put the registry-owner
-  + factory admin (`set_registry_pins`/`set_recovery_pool`) keys under the multisig; add
-  change-monitoring/alerts on any registry address change.
+- [ ] **B1. Factory admin behind a multisig with a visible upgrade delay**
+  (THREAT_MODEL 8), or the factory pins its verifier at build time. The
+  passkey verifier itself is now Perch's, with no admin (THREAT_MODEL 7).
+- [ ] **B2. Name-registry, policy, and registry-owner keys behind the
+  multisig**, with alerts on any registry address change.
 
-## C. Reproducible builds & provenance
+## C. Reproducible builds
 
-- [ ] **C1 — bb pinned + guarded** (done; verify `manifest.json` shows `bbRequired`).
-- [ ] **C2 — Rust toolchain + `stellar-cli` pinned**; every deployed wasm hash re-derivable.
-- [ ] **C2 — Reproducibility attestation.** One command rebuilds all deployed wasms + circuit
-  VK and diffs against `DEPLOYED.md`/`manifest.json`; result is byte-identical.
-- [ ] **C3 — Vendor provenance recorded** + drift check extended to the vendor `Cargo.toml`.
+- [ ] **C1. `stellar-cli` and `stellar-scaffold-cli` pinned** and the
+  versions behind each deployed wasm recorded (they write themselves into the
+  wasm metadata).
+- [ ] **C2. One command rebuilds Nido's deployed wasm** and diffs the hashes
+  against DEPLOYED.md. Perch's wasm is checked against the manifest's hashes
+  (`just perch-infra`).
+- [x] **C3. Proof fixtures reproduce in CI** with Perch's checksum-pinned
+  toolchain: every re-proof verifies and no `fixture.json` changes (the
+  proofs are zero-knowledge, so their bytes do).
 
-## D. Audit-prep documents
+## D. Recovery operations
 
-- [x] AUDIT_SCOPE.md, THREAT_MODEL.md, SECURITY_INVARIANTS.md, SUPPLY_CHAIN.md,
-  MAINNET_READINESS.md, RUNBOOKS.md drafted.
-- [ ] Freeze commit recorded in AUDIT_SCOPE.md.
-- [ ] OZ repinned to a tagged release, or risk documented + accepted.
+- [ ] **D1. The wallet restores archived recovery state** before a recovery
+  transaction (RUNBOOKS §6). Today it only works while the state is live.
+- [ ] **D2. Protected requires a baseline**, or the wallet makes the risk
+  explicit (#220).
+- [ ] **D3. Recovery state renewal runs on a schedule** (the permissionless
+  `renew` calls, RUNBOOKS §6), or users are told how to renew.
+- [~] **D4. The testnet suite passes against Perch's testnet release.** All
+  six profile/mode combinations and the policy page's `apply_doc` pass
+  through the wallet on testnet with real proofs and passkey signatures,
+  against Perch's 17f2c9c deployment (2026-10-07, one clean run of seven
+  specs, 20.6 minutes). Accounts were created with the relayer-free harness
+  (`NIDO_E2E_DIRECT_DEPLOY=1`): through the hosted relayer the same day, the
+  policy page and the two ZK-only combinations passed, and the other five
+  were refused at onboarding ("Too many transactions queued"). Left: a full
+  run through relayer-sponsored onboarding.
+- [ ] **D5. The ZK verifier delta audited.** Proofs are zero-knowledge now,
+  so they hide the secret, but Perch's `UltraKeccakZKFlavor` delta on the
+  audited verifier is not audited yet (THREAT_MODEL 13); Perch lists that
+  audit as a release criterion.
+- [ ] **D6. Product calls made:** retire or port Nido's pre-Perch policies;
+  retire `infra/recovery-relay`.
+- [ ] **D7. The hosted relayer's onboarding queue.** It refused every
+  account setup on 2026-10-03, and five of seven on 2026-10-07 after
+  accepting the first few, while its health check passed; find out why
+  before relying on it (RUNBOOKS §5).
 
-## E. Security hardening
+## E. Hardening
 
-- [~] Security headers (frame/content-type/referrer) ENFORCED at both the worker proxy
-  (`frontend/worker-proxy-nido/index.js`) and the static Pages origin
-  (`packages/frontend/public/_headers`). CSP ships Report-Only with a tightened allowlist
-  (explicit connect-src hosts + Google Fonts), identical in both places. Remaining: verify a
-  clean report stream in prod, then promote Report-Only → enforced (drop `-Report-Only`) in
-  both files, and separately try dropping `style-src 'unsafe-inline'`.
-- [x] Legacy query-param sign path validates callback/return origin (no signature exfiltration) —
-  `signRequestFromParams` normalises + matches the dApp/return origin at the SignRequest source
-  (`signing/signRequest.ts`), with `signRequest.test.ts` covering the phishing case.
-- [x] `expirationOffset`/`relayerEnabled` centralized with a parity test — single
-  `signatureExpirationOffset()` (`relayerClient.ts`) threaded through walletSign/
-  primaryPasskeySigner/zkRecoveryActions; parity asserted in `relayerClient.test.ts`.
-- [ ] localStorage credential material encrypted + expiring.
-- [x] Relayer per-client fairness (per-IP token bucket in Caddy, 30/min), metrics enabled
-  (Prometheus on :8081, Fly-scraped), alert definitions + incident-response playbook in
-  RUNBOOKS §4. (Needs a Fly deploy to verify the xcaddy build + confirm live metric names;
-  true per-*client* fee accounting via per-client keys remains future work.)
-- [x] Structured error on malformed/truncated proofs — the zk-verifier boundary
-  (`verify_proof`) length-pre-checks against the VK and returns `ProofParseError` instead of
-  letting the vendored parser's `assert_eq!` trap (invariant V3; no vendored edit, no
-  drift-guard churn). Curve-point validity delegated to the host BN254 ops.
-- [~] Storage TTL/archival validated across the 44-day active window (invariant T1) —
-  `recovery_state_survives_full_active_window` proves the window (~760k ledgers) sits far under
-  both the in-env `max_ttl` (~6.31M) **and a pinned lower bound of the mainnet `max_entry_ttl`
-  (~3.11M)** with every write extending to max, advances the ledger timestamp+sequence
-  across the full window, and completes at its end. (Archival eviction is a Soroban protocol
-  guarantee, not modelled by the test env — see the invariant's scope note.)
-  **At cutover:** confirm the live mainnet `max_entry_ttl` ≥ the active window (~760k ledgers).
-- [ ] `status-message` demo typo fixed + redeployed, or explicitly excluded from mainnet.
+- [ ] **E1. CSP enforced.** Promote the report-only CSP in
+  `frontend/worker-proxy-nido/index.js` and `packages/frontend/public/_headers`
+  after a clean report stream. `connect-src` must allow the RPC, the relayer,
+  and the proving reference string's host.
+- [ ] **E2. Stored credential material encrypted and expiring.**
+- [ ] **E3. `status-message` excluded from mainnet.**
+- [ ] **E4. The proving reference string self-hosted** with a checked hash
+  instead of downloaded from `crs.aztec.network`.
+- [x] **E5. The legacy query-parameter sign path validates the callback
+  origin** (`signing/signRequest.ts`, `signRequest.test.ts`).
+- [x] **E6. Relayer fairness and metrics:** per-IP bucket, Prometheus,
+  alerts (RUNBOOKS §5).
 
-## F. Test coverage
+## F. Tests
 
-- [ ] Vendored UltraHonk verifier tests un-excluded from CI (fixtures vendored).
-- [ ] Negative tests: forged proof, double-spend nullifier, wrong-network, timelock-not-elapsed,
-  unauthorized mutation, malformed proof, `execute` abuse, salt reuse, i128 overflow.
-- [ ] Property/fuzz tests for Merkle/Poseidon/low-S.
-- [ ] Testnet e2e Playwright lane un-quarantined (or CI-gated).
-- [ ] Full recovery-lifecycle test running under mainnet params.
+- [x] **F1. Enforcing-auth integration tests with real proofs** for every
+  profile/mode combination, reconfiguration, cancellation, upgrades,
+  archival, and budgets (SECURITY_INVARIANTS).
+- [ ] **F2. The testnet Playwright lane gated in CI.**
+- [ ] **F3. Property or fuzz tests** for the SDK's encodings and WebAuthn
+  parsing.
 
-## Cutover sequence (release day)
+## Cutover sequence
 
-1. Confirm B/C/D/E/F all green on the frozen, audited commit; audit findings applied.
-2. Deploy the Nido-owned `stellar-registry` instance (A3, `deploy-registry.sh`), registry-owner
-   key under the multisig. Deploy contracts fresh: pool via `deploy-zk-recovery.mjs --mainnet`
-   (A1 params) with a multisig `--admin` (B1); factory rebuilt with the mainnet `REGISTRY`
-   constant set to the just-deployed registry id (A3).
-3. Register `factory`/`verifier`/`zk-recovery` into the registry; regenerate + register the
-   mainnet VK (A1).
-4. **Pin the registry (B2):** `factory.set_registry_pins(<verifier>, <zk-recovery>)` with the
-   just-deployed mainnet addresses. Once pinned the registry is off the account-creation path
-   (pin bypass), so a later repoint cannot reroute or block new accounts.
-5. Run `preflight-recovery-config.mjs --contract <POOL>` → must print **GO** before any user
-   account is created. (Optionally `--expect-factory/-verifier/-webauthn` to assert the binds.)
-6. Relayer on KMS (A4); alerts firing; run the incident-response drill.
-7. Frontend on mainnet config (A2/A3); smoke-test onboarding + a full recovery lifecycle.
-8. Update `DEPLOYED.md` with mainnet addresses, params, wasm/VK/circuit hashes.
+1. Everything above green on the frozen, audited commits.
+2. Perch's mainnet deployment exists and its manifest verifies (A1).
+3. Deploy the registry instance (A4) and, if needed, the WebAuthn verifier,
+   with multisig admins (B1).
+4. Build the factory around the published account wasm, deploy it, upload the
+   account wasm, pin the verifier, register the factory (RUNBOOKS §2.2).
+5. Relayer on KMS (A3), alerts live, incident drill run.
+6. Front end built with the mainnet manifest; smoke-test onboarding and one
+   full recovery.
+7. Record everything in DEPLOYED.md.
