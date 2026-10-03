@@ -130,8 +130,8 @@ bindings-all:
     ./scripts/fix-bindings.sh
 
 # Regenerate the TypeScript clients for Perch's deployables
-# (packages/contract-bindings/perch-*) from the `just build-perch` wasm. Local
-# stand-ins until Perch's release workstream publishes its own bindings.
+# (packages/contract-bindings/perch-*) from the deployed wasm `just perch-infra`
+# fetched. Local stand-ins until Perch publishes @stellar-registry/perch-contracts.
 bindings-perch:
     @for name in perch-account perch-recovery perch-zk-pool perch-zk-adapter perch-doc-compiler; do \
         wasm="target/wasm32v1-none/contract/$(echo $name | tr - _).wasm"; \
