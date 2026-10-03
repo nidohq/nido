@@ -8,12 +8,11 @@ import { createAndDeployAs } from '../../support/recovery';
  * profile/mode combinations, against live testnet with real proofs (bb.js in
  * the page) and the accounts' real passkey authorization.
  *
- * PENDING Perch's release workstream (stellar-registry/perch#99 WS4): there
- * is no testnet deployment of the Perch recovery stack yet, so this suite
- * skips unless the build and the run both get the manifest:
+ * It runs against `perch.TESTNET`, Perch's testnet release
+ * (stellar-registry/perch#99 WS4) and Nido's factory around its account:
  *
- *   PUBLIC_PERCH_DEPLOYMENT="$(cat perch-testnet.json)" npx astro build --root ./packages/frontend
- *   PUBLIC_PERCH_DEPLOYMENT="$(cat perch-testnet.json)" npx playwright test --project=testnet-chromium perch-recovery
+ *   npx astro build --root ./packages/frontend
+ *   npx playwright test --project=testnet-chromium perch-recovery
  *
  * Each run: deploy guardian Nidos (guardian modes), deploy the owner's Nido
  * and set up recovery on /security/recovery/ (the "quick" timing preset, ~2
@@ -24,7 +23,6 @@ import { createAndDeployAs } from '../../support/recovery';
  */
 
 const PORT = Number(process.env.E2E_PORT || 4399);
-const DEPLOYMENT = process.env.PUBLIC_PERCH_DEPLOYMENT;
 
 type Profile = 'loss' | 'protected';
 type Mode = 'guardian-only' | 'zk-only' | 'combined';
@@ -41,7 +39,6 @@ async function freshContext(browser: Browser, label: string): Promise<{ context:
 }
 
 test.describe('@testnet Perch recovery through the wallet', () => {
-  test.skip(!DEPLOYMENT, 'Pending the Perch WS4 testnet deployment manifest (PUBLIC_PERCH_DEPLOYMENT)');
   test.describe.configure({ timeout: 20 * 60_000 });
 
   for (const profile of ['loss', 'protected'] as const satisfies readonly Profile[]) {

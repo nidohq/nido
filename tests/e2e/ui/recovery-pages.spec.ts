@@ -3,11 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // UI-only checks for the recovery pages on the Perch stack. No chain, no
-// passkey: the fast-tier build has no `PUBLIC_PERCH_DEPLOYMENT` (WS4's
-// manifest does not exist yet), so every recovery page must say so instead
-// of guessing addresses, and must boot without script errors. The flows
-// themselves run against live testnet in
-// tests/e2e/testnet/perch-recovery.testnet.spec.ts once the manifest lands.
+// passkey: the fast tier builds with `PUBLIC_PERCH_DEPLOYMENT=none`, so every
+// recovery page must say recovery is not deployed instead of guessing
+// addresses, and must boot without script errors. The flows themselves run
+// against live testnet in tests/e2e/testnet/perch-recovery.testnet.spec.ts.
 
 const PORT = Number(process.env.E2E_PORT || 4399);
 const DIST_DIR = join(process.cwd(), 'packages/frontend/dist');

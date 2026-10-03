@@ -233,7 +233,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     accountUrl,
     stripSubdomain,
   } from "@nidohq/passkey-sdk";
-  import { fetchRegistryAddress } from "../../lib/policyChainFetch.js";
+  import { fetchFactoryAddress } from "../../lib/policyChainFetch.js";
   import { parseReturnIntent, buildClaimReturnUrl } from "../../lib/claimFlow";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
@@ -598,7 +598,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     })
       .addOperation(
         Operation.invokeContractFunction({
-          contract: await fetchRegistryAddress("factory"),
+          contract: await fetchFactoryAddress(),
           function: "get_c_address",
           args: [xdr.ScVal.scvBytes(Buffer.from(saltBytes()))],
         }),
@@ -770,7 +770,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       })
         .addOperation(
           Operation.invokeContractFunction({
-            contract: await fetchRegistryAddress("factory"),
+            contract: await fetchFactoryAddress(),
             function: "create_account",
             args: [
               xdr.ScVal.scvBytes(Buffer.from(saltBytes())),
