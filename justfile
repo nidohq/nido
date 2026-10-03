@@ -18,35 +18,16 @@ build:
 build-circuits:
     bash circuits/zk_recovery/scripts/gen_artifacts.sh
 
-# Populate the Perch submodule's build-time infra cache
-# (vendor/perch/crates/perch-smart-account/wasm/: the stateless registry id and
-# the doc compiler / interpreter / spending-limit wasm whose hashes the account
-# pins). Perch's own script; needs the Stellar CLI with the registry plugin.
-# Run once after cloning (and after bumping vendor/perch).
+# Fetch the Perch stack Nido builds and tests against: Perch's testnet
+# deployment, by the hashes in vendor/perch/deployments/testnet.json. Fills the
+# submodule's build-time pin caches (the account's compiler, interpreter, and
+# spending limit) and puts every deployed contract's wasm in
+# target/wasm32v1-none/contract/ (perch_*.wasm), so the tests run the deployed
+# bytes and the factory embeds the deployed account. Perch's script refuses any
+# file whose sha256 or content address differs from the manifest. Needs the
+# Stellar CLI and jq. Run once after cloning and after bumping vendor/perch.
 perch-infra:
-    cd vendor/perch && bash scripts/fetch-infra-wasm.sh
-
-# Build Perch's deployables from the vendor/perch submodule, each in its own
-# invocation (one `cargo build` over several packages unifies features and
-# links the full doc compiler into the account), in Perch's own workspace so
-# Perch's lock and release profile apply. `stellar contract build` also shakes
-# the contract spec, which a raw `cargo build` does not. Outputs land beside
-# Nido's own wasm in target/wasm32v1-none/contract/. These are local builds of
-# the pinned source, not release artifacts: they are replaced by the
-# hash-verified wasm Perch's release workstream publishes.
-build-perch:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    test -s vendor/perch/crates/perch-smart-account/wasm/stateless.id || {
-        echo "vendor/perch infra cache missing: run 'git submodule update --init' and 'just perch-infra'" >&2
-        exit 1
-    }
-    for p in perch-account perch-recovery perch-zk-pool perch-zk-adapter \
-             perch-doc-compiler perch-interpreter perch-spending-limit; do
-        CARGO_TARGET_DIR=target/perch stellar contract build \
-            --manifest-path vendor/perch/Cargo.toml --package "$p" \
-            --out-dir target/wasm32v1-none/contract --optimize
-    done
+    cd vendor/perch && bash scripts/fetch-infra-wasm.sh --stack ../../target/wasm32v1-none/contract
 
 # Regenerate the real UltraHonk proofs the recovery integration tests replay
 # (crates/integration-tests/fixtures/zk/). Installs Perch's pinned nargo/bb
@@ -62,8 +43,8 @@ gen-zk-fixtures:
     (cd vendor/perch/circuits && "$NARGO" compile --workspace)
     NIDO_ZK_PROVE=1 cargo test -p nido-integration-tests --test it -- --test-threads=1
 
-# Build and optimize Soroban contracts: Perch's deployables first (the
-# factory's build.rs embeds the Perch account wasm), then Nido's own contracts.
+# Build and optimize Nido's Soroban contracts. The factory's build.rs embeds
+# the Perch account wasm `just perch-infra` fetched.
 #
 # SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2: scaffold invokes raw
 # `cargo rustc` rather than `stellar contract build`, so it does not set the
@@ -71,9 +52,9 @@ gen-zk-fixtures:
 # new enough stellar-cli) so the build does not abort on spec-shaking.
 #
 # Scaffold does NOT run wasm-opt, so we optimize Nido's wasm in place
-# afterwards; deployed wasm must stay optimized. Perch's wasm is already
-# optimized by `build-perch`.
-build-contracts: build-perch
+# afterwards; deployed wasm must stay optimized.
+build-contracts:
+    @test -s target/wasm32v1-none/contract/perch_account.wasm || { echo "Perch stack missing: run 'git submodule update --init' and 'just perch-infra'" >&2; exit 1; }
     SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 stellar-scaffold build --profile contract
     @for wasm in target/wasm32v1-none/contract/nido_*.wasm; do \
         case "$wasm" in *.optimized.wasm) continue;; esac; \
@@ -87,7 +68,7 @@ build-ts:
 # Nido's own crates. Named explicitly because `cargo fmt --all` also formats
 # local path dependencies, which would rewrite the vendor/perch submodule.
 # Keep in sync with `[workspace.members]` in the root Cargo.toml.
-fmt-pkgs := "-p nido-integration-tests -p nido-factory -p nido-multisig-policy -p nido-name-registry -p nido-preauth-sweep-policy -p nido-spending-limit-policy -p nido-status-message -p nido-webauthn-verifier"
+fmt-pkgs := "-p nido-integration-tests -p nido-factory -p nido-multisig-policy -p nido-name-registry -p nido-preauth-sweep-policy -p nido-spending-limit-policy -p nido-status-message"
 
 # Check formatting and clippy
 check:
@@ -113,16 +94,15 @@ cloudflare-deploy: build-astro
 dev: build-ts
     (cd packages/frontend; npm run dev)
 
-# Run Tasks 4 & 4b: publish + deploy multisig-policy via stellar-registry,
-# publish + upgrade factory. See scripts/deploy-policy-builder-v1.sh for what
-# it does and the env-var overrides.
-publish-policy-builder-v1 alias network="testnet":
-    ./scripts/deploy-policy-builder-v1.sh {{alias}} {{network}}
+# Deploy Nido's factory around Perch's deployed account and pin Perch's
+# WebAuthn verifier. Registers no name. See scripts/deploy-factory.sh.
+deploy-factory identity network="testnet":
+    ./scripts/deploy-factory.sh {{identity}} {{network}}
 
-# Deploy a Nido-owned stellar-registry instance and register factory/verifier/
-# zk-recovery into it (plan A3). Fetches the reference registry wasm, redeploys
-# it under our owner, records the wasm hash. Rehearse on testnet before mainnet;
-# set FACTORY/VERIFIER/ZK_RECOVERY (+ OWNER/ctor args). See scripts/deploy-registry.sh.
+# Deploy a Nido-owned stellar-registry instance and register factory/verifier
+# into it (plan A3). Fetches the reference registry wasm, redeploys it under our
+# owner, records the wasm hash. Rehearse on testnet before mainnet; set
+# FACTORY/VERIFIER (+ OWNER/ctor args). See scripts/deploy-registry.sh.
 publish-registry alias network="testnet":
     ./scripts/deploy-registry.sh {{alias}} {{network}}
 
@@ -140,7 +120,7 @@ bindings name:
 # Regenerate ALL bindings (assumes wasms in target/) and apply post-gen
 # fixes once at the end.
 bindings-all:
-    @for name in smart-account factory multisig-policy webauthn-verifier; do \
+    @for name in factory multisig-policy; do \
         wasm="target/wasm32v1-none/contract/nido_$$(echo $$name | tr - _).wasm"; \
         echo "→ $$name ($$wasm)"; \
         stellar contract bindings typescript --overwrite \

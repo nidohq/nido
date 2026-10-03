@@ -13,8 +13,8 @@ use stellar_accounts::smart_account::Signer;
 // name, a reused salt) surface as the registry's or the host's own errors.
 
 mod perch_account {
-    //! Embeds Perch's smart-account wasm (`perch-account`, built from the
-    //! `vendor/perch` submodule by `just build-perch`) so the factory derives
+    //! Embeds Perch's smart-account wasm (`perch-account`, the deployed bytes
+    //! `just perch-infra` fetches by the manifest's hash) so the factory derives
     //! the deploy hash from the bytes instead of hardcoding it:
     //!
     //!  1. `build.rs` stages `target/wasm32v1-none/contract/perch_account.wasm`

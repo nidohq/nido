@@ -33,7 +33,6 @@ jobs:
           - name-registry
           - spending-limit-policy
           - status-message
-          - webauthn-verifier
     steps:
       # Submodules: the workspace's path dependencies on vendor/perch must
       # exist for cargo to resolve any member.

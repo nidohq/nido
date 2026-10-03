@@ -1,9 +1,9 @@
 //! The Perch stack as Nido deploys it, under ENFORCING authorization.
 //!
-//! Every contract runs from its wasm build: Nido's factory and `WebAuthn`
-//! verifier (`just build-contracts`), and Perch's account, doc compiler,
-//! interpreter, spending limit, recovery controller, ZK membership pool, and
-//! ZK adapter (`just build-perch`). Accounts are minted by the factory, so
+//! Every contract runs from its wasm: Nido's factory (`just build-contracts`),
+//! and Perch's account, `WebAuthn` verifier, doc compiler, interpreter,
+//! spending limit, recovery controller, ZK membership pool, and ZK adapter,
+//! exactly as deployed on testnet (`just perch-infra`). Accounts are minted by the factory, so
 //! their code is the exact Perch account wasm the factory embeds.
 //!
 //! Every key is a P-256 passkey checked by the `WebAuthn` verifier. Every
@@ -27,8 +27,8 @@ extern crate std;
 
 use crate::{
     build_contract_assertion, test_key, FACTORY_WASM, PERCH_ACCOUNT_WASM, PERCH_DOC_COMPILER_WASM,
-    PERCH_INTERPRETER_WASM, PERCH_RECOVERY_WASM, PERCH_SPENDING_LIMIT_WASM, PERCH_ZK_ADAPTER_WASM,
-    PERCH_ZK_POOL_WASM, WEBAUTHN_VERIFIER_WASM,
+    PERCH_INTERPRETER_WASM, PERCH_RECOVERY_WASM, PERCH_SPENDING_LIMIT_WASM,
+    PERCH_WEBAUTHN_VERIFIER_WASM, PERCH_ZK_ADAPTER_WASM, PERCH_ZK_POOL_WASM,
 };
 use p256::ecdsa::SigningKey;
 use perch_account::{PerchAccountClient, PerchAccountError};
@@ -423,7 +423,7 @@ pub fn world() -> World {
 
     let admin = contract_at(&env, "deployer");
     let verifier = contract_at(&env, "webauthn-verifier");
-    env.register_at(&verifier, WEBAUTHN_VERIFIER_WASM, (admin.clone(),));
+    env.register_at(&verifier, PERCH_WEBAUTHN_VERIFIER_WASM, ());
     let controller = contract_at(&env, "recovery-controller");
     env.register_at(&controller, PERCH_RECOVERY_WASM, ());
     let pool = contract_at(&env, "zk-pool");

@@ -34,10 +34,9 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@just
 
-      # `stellar-cli` (binary `stellar`), `stellar-scaffold-cli` (binary
-      # `stellar-scaffold`), and the registry plugin (binary
-      # `stellar-registry`, which `just perch-infra` uses to resolve Perch's
-      # infra by name) aren't available as prebuilt actions, so build them
+      # `stellar-cli` (binary `stellar`, which `just perch-infra` uses to
+      # fetch Perch's deployed wasm) and `stellar-scaffold-cli` (binary
+      # `stellar-scaffold`) aren't available as prebuilt actions, so build them
       # from crates.io. Cached separately from the cargo registry/target cache
       # above (keyed only on tool names, not Cargo.lock) so a workspace
       # dependency bump doesn't force re-installing these.
@@ -48,8 +47,7 @@ jobs:
           path: |
             ~/.cargo/bin/stellar
             ~/.cargo/bin/stellar-scaffold
-            ~/.cargo/bin/stellar-registry
-          key: ${{ runner.os }}-stellar-cli-tools-v2
+          key: ${{ runner.os }}-stellar-cli-tools-v3
 
       - name: Install Stellar CLI tools
         if: steps.stellar-tools-cache.outputs.cache-hit != 'true'
@@ -64,23 +62,21 @@ jobs:
           # overwrite an existing one.
           command -v stellar >/dev/null || cargo install --locked stellar-cli
           command -v stellar-scaffold >/dev/null || cargo install --locked stellar-scaffold-cli
-          command -v stellar-registry >/dev/null || cargo install --locked stellar-registry-cli@0.1.0
 
-      # Perch's account reads its pinned infra (stateless registry id and the
-      # compiler/interpreter/spending-limit wasm) from a git-ignored cache in
-      # the submodule at build time; this resolves it from testnet by name,
-      # exactly as Perch's own CI does.
-      - name: Fetch Perch's pinned infra
+      # Perch's testnet deployment, by the hashes in its manifest
+      # (vendor/perch/deployments/testnet.json): the account's build-time pin
+      # cache in the submodule, and every deployed contract's wasm, each
+      # refused unless its sha256 and content address match.
+      - name: Fetch Perch's deployed stack
         run: just perch-infra
 
-      # Perch's deployables (from vendor/perch), then Nido's own contracts;
-      # the factory embeds the Perch account wasm.
+      # Nido's own contracts; the factory embeds the fetched Perch account.
       - name: Build contract wasms
         run: just build-contracts
 
       # The whole Rust workspace: the factory, the policy contracts, and the
-      # integration suites that drive the Perch account, controller, pool, and
-      # adapter wasm under enforcing authorization, replaying the committed
+      # integration suites that drive the deployed Perch account, verifier,
+      # controller, pool, and adapter wasm under enforcing authorization, replaying the committed
       # real UltraHonk proofs (crates/integration-tests/fixtures/zk/), and the
       # `costs` suite's 75%-of-network-limit budget gate.
       - name: cargo test --workspace

@@ -2,8 +2,8 @@
 //!
 //! The factory embeds the Perch smart-account wasm (via `include_bytes!` in
 //! `src/contract.rs`) so it can derive the deploy hash at runtime instead of
-//! hardcoding it. `just build-perch` builds it from the `vendor/perch`
-//! submodule at `target/wasm32v1-none/contract/perch_account.wasm`.
+//! hardcoding it. `just perch-infra` fetches it, by the hash in Perch's
+//! deployment manifest, to `target/wasm32v1-none/contract/perch_account.wasm`.
 //!
 //! This script copies that wasm to a stable staging location —
 //!   `<workspace-target>/stellar/<STELLAR_NETWORK or "local">/perch_account.wasm`
@@ -41,11 +41,11 @@ fn main() {
     } else if staged.exists() {
         // No freshly-built wasm this run; fall back to a copy a previous build
         // (or the registry-download path) staged. This can embed STALE bytes,
-        // so make it loud — a developer who forgot `just build-perch` after
+        // so make it loud — a developer who forgot `just perch-infra` after
         // bumping vendor/perch would otherwise silently ship the old wasm.
         println!(
             "cargo:warning=factory: embedding PREVIOUSLY-STAGED perch account wasm \
-             ({}); freshly-built {} not found. Run `just build-perch` to embed \
+             ({}); freshly-fetched {} not found. Run `just perch-infra` to embed \
              the current bytes.",
             staged.display(),
             built_wasm.display()
@@ -54,9 +54,9 @@ fn main() {
     } else {
         panic!(
             "perch account wasm not found.\n\
-             Expected built wasm at: {}\n\
+             Expected fetched wasm at: {}\n\
              or a staged copy at:    {}\n\
-             Run `just build-perch` first so the factory can embed the Perch \
+             Run `just perch-infra` first so the factory can embed the Perch \
              account wasm.",
             built_wasm.display(),
             staged.display()

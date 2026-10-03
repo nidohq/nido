@@ -17,7 +17,7 @@ stellar-accounts = { workspace = true }
 soroban-sdk-tools = { workspace = true }
 
 # The Perch stack under test (vendor/perch). The deployables run from their
-# wasm builds (`just build-perch`); these crates provide the typed clients,
+# deployed wasm (`just perch-infra`); these crates provide the typed clients,
 # error enums, statement types, and the native ZK witness/proving helpers.
 perch-account = { workspace = true }
 perch-smart-account = { workspace = true }

@@ -34,14 +34,15 @@ stellar-accounts = { git = "https://github.com/theahaco/stellar-contracts-OZ.git
 soroban-sdk-tools = "0.1.3"
 
 # The Perch stack (stellar-registry/perch epic #99), consumed from the
-# vendor/perch submodule, which pins the WS3 branch
-# (fm/perch-epic99-controller-p7). These move to published packages once
-# Perch's release workstream (WS4) lands its deployment manifest.
+# vendor/perch submodule, which pins the release workstream's branch
+# (WS4, fm/perch-epic99-release-p8) and its testnet deployment manifest
+# (deployments/testnet.json). These move to published packages once Perch
+# merges and publishes that release.
 #
 # Path dependencies rather than git dependencies because
-# `perch-smart-account` reads a fetched, git-ignored infra cache at build time
-# (`crates/perch-smart-account/wasm/`); `just perch-infra` populates it in the
-# submodule. All Perch crates come from the one checkout so their types unify.
+# `perch-smart-account` reads a fetched, git-ignored pin cache at build time
+# (`crates/perch-smart-account/wasm/`); `just perch-infra` fills it from the
+# manifest. All Perch crates come from the one checkout so their types unify.
 perch-account = { path = "vendor/perch/crates/perch-account" }
 perch-smart-account = { path = "vendor/perch/crates/perch-smart-account" }
 perch-recovery = { path = "vendor/perch/crates/perch-recovery" }

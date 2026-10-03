@@ -10,8 +10,8 @@ Nido helps users move from Stellar G-addresses to Soroban Smart Accounts (C-addr
 
 ```bash
 git submodule update --init   # vendor/perch, the Perch stack
-just perch-infra       # Perch's build-time infra cache (needs the stellar registry plugin)
-just build-contracts   # Perch's deployables (just build-perch) + Nido's wasm
+just perch-infra       # Perch's deployed wasm + pin caches, by the hashes in vendor/perch/deployments/testnet.json
+just build-contracts   # Nido's wasm (the factory embeds the fetched Perch account)
 just test              # cargo test --workspace (embeds the wasm above)
 just check             # cargo fmt --check + cargo clippy -D warnings
 just gen-zk-fixtures   # re-prove the real-proof fixtures with Perch's pinned nargo/bb
@@ -21,14 +21,12 @@ Run a single test by name: `cargo test -p nido-integration-tests --test it recov
 
 ## Workspace Architecture
 
-The smart account, recovery controller, ZK membership pool, and ZK adapter are
-Perch's (stellar-registry/perch epic #99), consumed from the `vendor/perch`
+The smart account, WebAuthn verifier, recovery controller, ZK membership pool,
+and ZK adapter are Perch's (stellar-registry/perch epic #99), consumed from the `vendor/perch`
 submodule as path dependencies; the root `Cargo.toml` comment says why and
 which branch it pins. Nido's own crates:
 
-**`contracts/factory`** — Deploys Perch accounts (embedding the Perch account wasm) with a passkey admin rule checked by the WebAuthn verifier.
-
-**`contracts/webauthn-verifier`** — OZ `Verifier` for secp256r1/P-256 passkeys. Stateless, shared across accounts.
+**`contracts/factory`** — Deploys Perch accounts (embedding the Perch account wasm) with a passkey admin rule checked by Perch's immutable WebAuthn verifier (pinned via `set_registry_pins`).
 
 **`crates/integration-tests`** — The Perch stack as Nido deploys it (`src/world.rs`): everything from wasm, real passkey assertions, enforcing auth (`set_auths`), and real UltraHonk proofs replayed from `fixtures/zk/` (`src/zk.rs`).
 

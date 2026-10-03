@@ -12,9 +12,6 @@ pub mod world;
 pub mod zk;
 
 /// Nido's own contracts, built by `just build-contracts`.
-pub const WEBAUTHN_VERIFIER_WASM: &[u8] =
-    include_bytes!("../../../target/wasm32v1-none/contract/nido_webauthn_verifier.wasm");
-
 pub const MULTISIG_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_multisig_policy.wasm");
 
@@ -30,8 +27,10 @@ pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
 pub const FACTORY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
 
-/// The Perch deployables under test, built from the `vendor/perch` submodule
-/// by `just build-perch` (Perch's workspace, lock, and release profile).
+/// The Perch deployables under test: the exact wasm of Perch's testnet
+/// deployment, fetched by `just perch-infra` from the hashes in
+/// `vendor/perch/deployments/testnet.json` (each refused unless its sha256
+/// and content address match).
 pub const PERCH_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/perch_account.wasm");
 pub const PERCH_RECOVERY_WASM: &[u8] =
@@ -46,6 +45,10 @@ pub const PERCH_INTERPRETER_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/perch_interpreter.wasm");
 pub const PERCH_SPENDING_LIMIT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/perch_spending_limit.wasm");
+/// The constructorless, immutable `WebAuthn` verifier every passkey signer
+/// names; the factory pins it.
+pub const PERCH_WEBAUTHN_VERIFIER_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_webauthn_verifier.wasm");
 
 /// The Wasm the upgrade tests schedule: a committed copy of Nido's
 /// status-message contract (999 bytes). ZK upgrade approvals bind its hash,
@@ -237,10 +240,7 @@ pub fn deploy_smart_account(
     soroban_sdk::Address,
     SigningKey,
 ) {
-    let verifier_addr = env.register(
-        WEBAUTHN_VERIFIER_WASM,
-        (soroban_sdk::Address::generate(env),),
-    );
+    let verifier_addr = env.register(PERCH_WEBAUTHN_VERIFIER_WASM, ());
     let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
     let pubkey_sec1 = signing_key.verifying_key().to_sec1_bytes();
     let signer = Signer::External(

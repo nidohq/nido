@@ -1,4 +1,4 @@
 [submodule "vendor/perch"]
 	path = vendor/perch
 	url = https://github.com/stellar-registry/perch.git
-	branch = fm/perch-epic99-controller-p7
+	branch = fm/perch-epic99-release-p8
