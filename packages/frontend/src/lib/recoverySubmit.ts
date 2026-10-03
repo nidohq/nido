@@ -19,9 +19,12 @@ import { signTransaction as walletSignTransaction } from './walletConnect.js';
 
 /** Submit a PERMISSIONLESS operation (no on-chain `require_auth`) using a
  *  funded ephemeral G-address as fee-payer/source. Simulate → assemble →
- *  sign (submitter only) → send → poll. */
+ *  sign (submitter only) → send → poll. `authMode: 'enforce'` simulates with
+ *  the operation's own, complete auth entries (a recovery completion, whose
+ *  controller check only runs inside `__check_auth`). */
 export async function submitPermissionlessOp(
   operation: xdr.Operation,
+  authMode?: 'enforce',
 ): Promise<{ hash: string; retval: xdr.ScVal | undefined }> {
   const server = new rpc.Server(RPC_URL);
   const submitter = await getSubmitter();
@@ -36,7 +39,7 @@ export async function submitPermissionlessOp(
     .setTimeout(0)
     .build();
 
-  const sim = await server.simulateTransaction(simTx);
+  const sim = await server.simulateTransaction(simTx, undefined, authMode);
   if (rpc.Api.isSimulationError(sim)) {
     throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
   }

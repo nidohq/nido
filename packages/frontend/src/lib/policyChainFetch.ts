@@ -213,6 +213,13 @@ export async function fetchRegistryAddress(name: string): Promise<string> {
   });
 }
 
+/** The account factory new Nidos are minted by: the Perch deployment's (Nido's
+ *  factory around Perch's account) when this build has one, otherwise the
+ *  registry's `factory`. */
+export async function fetchFactoryAddress(): Promise<string> {
+  return perchDeployment()?.factory ?? fetchRegistryAddress('factory');
+}
+
 /** Resolve the verifier address that THIS account actually trusts for its
  *  primary passkey, by reading the External signer on the default rule.
  *
@@ -346,9 +353,9 @@ export async function fetchVerifierAddress(account: string): Promise<string> {
       }
     }
   } catch {
-    // fall through to registry
+    // fall through to the deployment's verifier, then the registry
   }
-  return fetchRegistryAddress('verifier');
+  return perchDeployment()?.webauthnVerifier ?? fetchRegistryAddress('verifier');
 }
 
 /** What the wallet's sign ceremony needs to know about the default rule

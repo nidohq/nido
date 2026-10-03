@@ -34,8 +34,8 @@ jobs:
           # the relayer's public fund address (simulation-only tx source).
           PUBLIC_RELAYER_URL: https://nido.fly.dev
           PUBLIC_RELAYER_SIM_SOURCE: GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2
-          # The Perch recovery stack's testnet manifest (JSON), once WS4
-          # publishes it; unset, the recovery pages say it is not deployed.
+          # Overrides the Perch deployment (JSON, or `none`); unset, the
+          # wallet uses perch.TESTNET, Perch's testnet release.
           PUBLIC_PERCH_DEPLOYMENT: ${{ vars.PUBLIC_PERCH_DEPLOYMENT }}
         run: npx astro build --root ./packages/frontend
 

@@ -53,11 +53,11 @@ export const REGISTRY_FALLBACKS: Record<string, string> = {
   factory: "CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG",
   "name-registry": "CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX",
   "status-message": "CD5FK6CQ7QIZ5ONARG36Y53ERI5PIBGELSJUTD7OXYLK6EQAS4N3TFBV",
-  // The verifier registered under `unverified/verifier` on testnet by
-  // scripts/deploy-policy-builder-v1.sh. `policyChainFetch.fetchVerifierAddress`
-  // prefers the verifier the account's own rule references and only falls back
-  // to this registry lookup; this entry covers the case where that lookup also
-  // can't reach the registry.
+  // Nido's former admin-upgradeable verifier, registered under
+  // `unverified/verifier` on testnet; accounts minted before the Perch
+  // factory name it. `policyChainFetch.fetchVerifierAddress` prefers the
+  // verifier the account's own rule references, then the Perch deployment's,
+  // and only then this registry lookup.
   verifier: "CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY",
 };
 

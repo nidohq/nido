@@ -34,14 +34,8 @@ async function readAppliedDocHash(account: string): Promise<string | null> {
  * add a delegated-key admin rule, submit (signed by the account's passkey),
  * see the success toast, and confirm on chain via `applied_doc_hash()` that
  * a new document replaced the first one.
- *
- * PENDING Perch's release workstream (stellar-registry/perch#99 WS4): a
- * fresh Perch account needs the Perch-embedding factory and Perch's
- * compiler on testnet, so this skips without `PUBLIC_PERCH_DEPLOYMENT`, like
- * perch-recovery.testnet.spec.ts.
  */
 test.describe('@testnet account policy page — real apply_doc via the policy UI', () => {
-  test.skip(!process.env.PUBLIC_PERCH_DEPLOYMENT, 'Pending the Perch WS4 testnet deployment manifest (PUBLIC_PERCH_DEPLOYMENT)');
   test.describe.configure({ timeout: 300_000 });
 
   test('adding an admin key through /account/policy/ lands a real apply_doc', async ({ page }) => {

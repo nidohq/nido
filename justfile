@@ -151,11 +151,13 @@ test-support:
     npx vitest run --config vitest.support.config.ts
 
 # Fast UI e2e tier (shim) across all browsers; builds the frontend first
-test-e2e: build-astro
+test-e2e:
+    PUBLIC_PERCH_DEPLOYMENT=none npx astro build --root ./packages/frontend
     npx playwright test --grep @fast
 
 # Chromium CDP virtual-authenticator fidelity lane; builds the frontend first
-test-e2e-cdp: build-astro
+test-e2e-cdp:
+    PUBLIC_PERCH_DEPLOYMENT=none npx astro build --root ./packages/frontend
     npx playwright test --project=chromium-cdp
 
 # Sources tests/.env.testnet if present (set NIDO_TEST_BANK_SECRET there to a

@@ -282,7 +282,7 @@ async function progressCard(
       const ruleId = await client.recoveryRuleId(account);
       if (ruleId === undefined) throw new Error('This Nido has no recovery rule.');
       const op = await client.completion(account, target, ruleId, await latestLedger());
-      await submitOpen(op.operations[0]!);
+      await submitOpen(op.operations[0]!, op.authMode);
       location.reload();
     }),
   );

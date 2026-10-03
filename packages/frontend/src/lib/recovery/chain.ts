@@ -97,8 +97,11 @@ export async function submitAsGuardian(guardian: string, operation: xdr.Operatio
 }
 
 /** A permissionless transaction, paid by this browser's submitter. */
-export async function submitOpen(operation: xdr.Operation): Promise<{ hash: string; retval?: xdr.ScVal }> {
+export async function submitOpen(
+  operation: xdr.Operation,
+  authMode?: 'enforce',
+): Promise<{ hash: string; retval?: xdr.ScVal }> {
   await getSubmitter();
-  return submitPermissionlessOp(operation);
+  return submitPermissionlessOp(operation, authMode);
 }
 
