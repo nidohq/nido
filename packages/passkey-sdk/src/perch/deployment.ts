@@ -1,5 +1,5 @@
 /**
- * Where the Perch stack a Nido account uses lives on a network.
+ * Where to find a Nido account's Perch stack on a network.
  *
  * Perch's release workstream (stellar-registry/perch#99 WS4) publishes one
  * deployment manifest per network (`vendor/perch/deployments/<network>.json`):
