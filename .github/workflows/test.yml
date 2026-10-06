@@ -74,6 +74,12 @@ jobs:
       - name: Build contract wasms
         run: just build-contracts
 
+      # The vendored Perch stack can't silently diverge from what Nido
+      # consumes: submodule pin and branch, the fetched wasm, pin cache, and
+      # factory embed against the manifest (scripts/check-perch-drift.sh).
+      - name: Check vendor/perch for drift
+        run: just check-vendor-drift
+
       # The whole Rust workspace: the factory, the policy contracts, and the
       # integration suites that drive the deployed Perch account, verifier,
       # controller, pool, and adapter wasm under enforcing authorization, replaying the committed

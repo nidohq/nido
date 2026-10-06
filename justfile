@@ -29,6 +29,14 @@ build-circuits:
 perch-infra:
     cd vendor/perch && bash scripts/fetch-infra-wasm.sh --stack ../../target/wasm32v1-none/contract
 
+# Check the vendored Perch stack hasn't drifted from what Nido builds against:
+# the submodule at its recorded commit (on its declared branch), the fetched
+# wasm, pin cache, and factory embed equal to the manifest's, and npm resolving
+# Perch's packages to the submodule. See scripts/check-perch-drift.sh. Run after
+# `just perch-infra` and `just build-contracts`.
+check-vendor-drift:
+    bash scripts/check-perch-drift.sh
+
 # Regenerate the real UltraHonk proofs the recovery integration tests replay
 # (crates/integration-tests/fixtures/zk/). Installs Perch's pinned nargo/bb
 # under vendor/perch/target/zk-toolchain/, compiles Perch's circuit, and runs
