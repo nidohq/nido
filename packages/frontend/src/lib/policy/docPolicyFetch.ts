@@ -161,27 +161,29 @@ function interpreterAddress(): string {
   return perchDeployment()?.interpreter ?? perchTestnetAddresses().interpreter;
 }
 
-/** Fetch the interpreter's install params for each doc-managed rule, keyed
- *  by rule id. Missing/unreadable entries are simply absent (readPolicy
+/** Fetch the interpreter's install params (program and rule-hash
+ *  provenance) for each doc-managed rule, keyed by rule id. Missing/unreadable entries are simply absent (readPolicy
  *  treats absence as "cannot check program content", not as drift). */
 export async function fetchInterpreterPrograms(
   account: string,
   ruleIds: number[],
-): Promise<Record<number, { program: import('@nidohq/passkey-sdk').RpnProgram; docHash: Uint8Array }>> {
+): Promise<Record<number, { program: import('@nidohq/passkey-sdk').RpnProgram; ruleHash: Uint8Array }>> {
   if (ruleIds.length === 0) return {};
   const client = new InterpreterClient({
     contractId: interpreterAddress(),
     networkPassphrase: NETWORK_PASSPHRASE,
     rpcUrl: RPC_URL,
   });
-  const out: Record<number, { program: import('@nidohq/passkey-sdk').RpnProgram; docHash: Uint8Array }> = {};
+  const out: Record<number, { program: import('@nidohq/passkey-sdk').RpnProgram; ruleHash: Uint8Array }> = {};
   await Promise.all(
     ruleIds.map(async (id) => {
       try {
         const tx = await client.get_program({ smart_account: account, context_rule_id: id });
         const params = tx.result;
         if (params) {
-          out[id] = { program: params.program, docHash: new Uint8Array(params.doc_hash) };
+          // `doc_hash` keeps its name, but since stellar-registry/perch#102 it
+          // is the rule's hash (perch-js `ruleHash`), not the document's.
+          out[id] = { program: params.program, ruleHash: new Uint8Array(params.doc_hash) };
         }
       } catch {
         // Rule carries no interpreter program (or the read failed) — skip.
