@@ -28,7 +28,6 @@ import type { DecompileContext, DecompiledRule, DecompileResult } from './types.
 export function decompileRules(chainRules: ChainRule[], ctx: DecompileContext): DecompileResult {
   const signerIds = new SignerIdAllocator();
   const rules: DecompiledRule[] = [];
-  const committedDocHashes: string[] = [];
 
   for (const chainRule of chainRules) {
     const mapped = mapRule(chainRule, ctx);
@@ -51,16 +50,13 @@ export function decompileRules(chainRules: ChainRule[], ctx: DecompileContext): 
       ...(chainRule.validUntil !== null ? { 'not-after-ledger': chainRule.validUntil + 1 } : {}),
       ...(mapped.cap !== undefined ? { cap: mapped.cap } : {}),
     };
-    if (mapped.committedDocHash !== undefined && !committedDocHashes.includes(mapped.committedDocHash)) {
-      committedDocHashes.push(mapped.committedDocHash);
-    }
     rules.push({
       kind: 'doc',
       ruleId: chainRule.ruleId,
       rule,
       signers: ids.map((id) => signerIds.decl(id)),
-      ...(mapped.committedDocHash !== undefined
-        ? { committedDocHash: mapped.committedDocHash }
+      ...(mapped.committedRuleHash !== undefined
+        ? { committedRuleHash: mapped.committedRuleHash }
         : {}),
     });
   }
@@ -80,7 +76,7 @@ export function decompileRules(chainRules: ChainRule[], ctx: DecompileContext): 
       doc = null; // a chain rule produced an un-parseable view; keep per-rule entries
     }
   }
-  return { rules, doc, docHash: hash, committedDocHashes };
+  return { rules, doc, docHash: hash };
 }
 
 /** What one chain rule maps to, before signer ids exist; a string is a raw-
@@ -90,7 +86,7 @@ interface MappedRule {
   functions?: string[];
   args?: ArgConstraint[];
   cap?: Rule['cap'];
-  committedDocHash?: string;
+  committedRuleHash?: string;
 }
 
 function mapRule(chainRule: ChainRule, ctx: DecompileContext): MappedRule | string {
@@ -116,8 +112,8 @@ function mapRule(chainRule: ChainRule, ctx: DecompileContext): MappedRule | stri
       if (typeof decoded === 'string') return decoded;
       if (decoded.functions !== undefined) mapped.functions = decoded.functions;
       if (decoded.args !== undefined) mapped.args = decoded.args;
-      mapped.committedDocHash =
-        typeof entry.docHash === 'string' ? entry.docHash.toLowerCase() : bytesToHex(entry.docHash);
+      mapped.committedRuleHash =
+        typeof entry.ruleHash === 'string' ? entry.ruleHash.toLowerCase() : bytesToHex(entry.ruleHash);
     } else if (ctx.spendingLimitAddress !== undefined && policy === ctx.spendingLimitAddress) {
       const cap = ctx.spendingLimits?.[chainRule.ruleId];
       if (!cap) {

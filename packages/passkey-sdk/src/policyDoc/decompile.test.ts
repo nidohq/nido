@@ -4,8 +4,8 @@ import type { ChainRule } from '../policyBlocks/types.js';
 import {
   buildPolicyDoc,
   decompileRules,
-  docHash,
   lowerDoc,
+  ruleHash,
   scopedSessionKeyDoc,
 } from './index.js';
 import type { DecompileContext, LoweredDoc, LoweredRule } from './index.js';
@@ -37,7 +37,7 @@ function toChain(lowered: LoweredDoc, rule: LoweredRule, ruleId: number): {
   };
   if (rule.program) {
     policies.push(INTERPRETER);
-    ctx.programs[ruleId] = { program: rule.program, docHash: lowered.docHash };
+    ctx.programs[ruleId] = { program: rule.program, ruleHash: rule.ruleHash };
   }
   if (rule.cap) {
     policies.push(SPENDING_LIMIT);
@@ -84,15 +84,19 @@ describe('decompileRules: round-trip of the v1 template', () => {
     expect(entry.signers).toEqual([{ id: 'delegated-1', address: SESSION_G }]);
   });
 
-  it('reports the doc_hash the on-chain program committed to', () => {
-    expect(result.committedDocHashes).toEqual([docHash(original)]);
+  it('reports the rule hash the on-chain program committed to', () => {
+    const entry = result.rules[0];
+    expect(entry.kind === 'doc' && entry.committedRuleHash).toBe(ruleHash(original.rules[0]));
   });
 
   it('assembles a valid doc view whose semantics survive re-lowering', () => {
     expect(result.doc).not.toBeNull();
     expect(result.docHash).not.toBeNull();
     const relowered = lowerDoc(result.doc!, { account: ACCOUNT });
-    expect(relowered.rules).toEqual(lowered.rules);
+    // Semantics, not text: the rule hash also covers signer ids, which the
+    // view synthesizes.
+    const semantics = (rules: LoweredRule[]) => rules.map(({ ruleHash: _hash, ...rest }) => rest);
+    expect(semantics(relowered.rules)).toEqual(semantics(lowered.rules));
   });
 });
 
@@ -110,7 +114,7 @@ describe('decompileRules: bare and self-admin rules', () => {
     expect(entry.kind).toBe('doc');
     if (entry.kind !== 'doc') return;
     expect(entry.rule.scope).toEqual({ type: 'self-admin' });
-    expect(entry.committedDocHash).toBeUndefined();
+    expect(entry.committedRuleHash).toBeUndefined();
   });
 
   it('dedupes one signer appearing in several rules', () => {
@@ -183,7 +187,7 @@ describe('decompileRules: raw fallbacks', () => {
               { tag: 'All', values: [1] },
             ],
           },
-          docHash: 'ab'.repeat(32),
+          ruleHash: 'ab'.repeat(32),
         },
       },
     };
@@ -194,7 +198,7 @@ describe('decompileRules: raw fallbacks', () => {
     const rule = bare({ policies: [INTERPRETER], signers: [{ kind: 'delegated', address: SESSION_G }] });
     const program = (ops: NonNullable<DecompileContext['programs']>[number]['program']['ops']): DecompileContext => ({
       ...CTX,
-      programs: { 3: { program: { version: 1, ops }, docHash: 'ab'.repeat(32) } },
+      programs: { 3: { program: { version: 1, ops }, ruleHash: 'ab'.repeat(32) } },
     });
     expect(
       reasonOf(rule, program([

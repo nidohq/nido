@@ -25,6 +25,7 @@ export {
   parsePolicyDocJson,
   policy,
   requestToPolicyDoc,
+  ruleHash,
   stringIn,
   stringPrefix,
   u32Eq,

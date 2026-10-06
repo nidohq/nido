@@ -15,7 +15,6 @@
  * controller (`crates/integration-tests/fixtures/zk/`).
  */
 
-import { sha256 } from '@noble/hashes/sha2.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import * as perchjs from '@stellar-registry/perch';
 
@@ -129,8 +128,3 @@ export const encodeReplacementSet: (set: ReplacementSet) => Uint8Array = perchjs
 /** `sha256("perch/recovery/replacements" || encoding)`: the attempt's
  *  `replacements_hash`. */
 export const replacementSetHash: (set: ReplacementSet) => Bytes32 = perchjs.replacementsHash;
-
-/** `sha256("perch/recovery/config" || canonical JSON of the recovery member)`. */
-export function configHashOfCanonical(canonicalRecoveryJson: string): Bytes32 {
-  return sha256(enc.encode(`perch/recovery/config${canonicalRecoveryJson}`));
-}

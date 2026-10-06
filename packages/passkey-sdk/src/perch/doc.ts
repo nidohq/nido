@@ -18,11 +18,11 @@
  * recovery; nothing else can change it in that window.
  */
 
-import { bytesToHex } from '@noble/hashes/utils.js';
-import { canonicalJson, parsePolicyDoc } from '@stellar-registry/perch';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+import { configHash as perchConfigHash, parsePolicyDoc } from '@stellar-registry/perch';
 import type { PolicyDoc, RecoverySpec, ZkFactorSpec } from '@stellar-registry/perch';
 import type { PerchDeployment } from './deployment.js';
-import { configHashOfCanonical, type Bytes32 } from './statement.js';
+import type { Bytes32 } from './statement.js';
 
 export type RecoveryProfile = 'loss' | 'protected';
 export type RecoveryMode = 'guardian-only' | 'zk-only' | 'combined';
@@ -139,12 +139,11 @@ export function withRecovery(doc: PolicyDoc, spec: RecoverySpec | undefined): Po
   return parsePolicyDoc(spec === undefined ? rest : { ...rest, recovery: recoveryToWire(spec) });
 }
 
-/** The recovery `config_hash` a document compiles to:
- *  `sha256("perch/recovery/config" || canonical JSON of its recovery member)`.
- *  What a `Protected` reconfiguration's evidence approves. */
+/** The recovery `config_hash` a document compiles to (perch-js
+ *  `configHash`), as bytes, or undefined without a recovery member. What a
+ *  `Protected` reconfiguration's evidence approves. */
 export function configHash(doc: PolicyDoc): Bytes32 | undefined {
-  const recovery = doc.recovery;
-  return recovery === undefined ? undefined : configHashOfCanonical(canonicalJson(recovery));
+  return doc.recovery === undefined ? undefined : hexToBytes(perchConfigHash(doc));
 }
 
 /** How `next` changes `current`'s recovery configuration, for deciding what

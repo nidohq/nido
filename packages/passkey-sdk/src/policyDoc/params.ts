@@ -52,22 +52,25 @@ function installParamsType(spec: Spec, contract: string): xdr.ScSpecTypeDef {
  * the value to put under the interpreter's address in `add_context_rule`'s
  * `policies` map.
  *
- * @param docHashHex The 32-byte doc_hash as lowercase hex (from `docHash()`
- *                   / `LoweredDoc.docHash`) — the identity of the WHOLE
- *                   document this rule was lowered from.
+ * @param ruleHashHex The rule's 32-byte `rule_hash` as lowercase hex (perch-js
+ *                    `ruleHash(rule)`, also `LoweredRule.ruleHash`): the
+ *                    program's provenance, `SHA-256("perch/rule" || the rule's
+ *                    canonical JSON)`. The interpreter's field is still named
+ *                    `doc_hash`; since stellar-registry/perch#102 it carries
+ *                    the rule hash, not the whole document's.
  * @param spec Override only in tests.
  */
 export function interpreterInstallParamsScVal(
   program: RpnProgram,
-  docHashHex: string,
+  ruleHashHex: string,
   spec?: Spec,
 ): xdr.ScVal {
-  const docHash = Buffer.from(docHashHex, 'hex');
-  if (docHash.length !== 32 || docHash.toString('hex') !== docHashHex.toLowerCase()) {
-    throw new Error(`policyDoc: doc_hash must be 32 bytes of hex, got "${docHashHex}"`);
+  const ruleHash = Buffer.from(ruleHashHex, 'hex');
+  if (ruleHash.length !== 32 || ruleHash.toString('hex') !== ruleHashHex.toLowerCase()) {
+    throw new Error(`policyDoc: rule hash must be 32 bytes of hex, got "${ruleHashHex}"`);
   }
   const s = spec ?? (interpreterSpec ??= new PerchInterpreterClient(PLACEHOLDER_OPTIONS).spec);
-  return s.nativeToScVal({ doc_hash: docHash, program }, installParamsType(s, 'perch-interpreter'));
+  return s.nativeToScVal({ doc_hash: ruleHash, program }, installParamsType(s, 'perch-interpreter'));
 }
 
 /**

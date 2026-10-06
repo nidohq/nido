@@ -24,7 +24,7 @@
  * lowering depends on and fails closed on anything it cannot express.
  */
 
-import { docHash } from '@stellar-registry/perch';
+import { docHash, ruleHash } from '@stellar-registry/perch';
 import type { ArgConstraint, PolicyDoc, Rule, SignerDecl } from '@stellar-registry/perch';
 import { hexToBytes } from '@noble/hashes/utils.js';
 import type { Op, RpnProgram } from '@stellar-registry/perch-interpreter';
@@ -126,6 +126,7 @@ function lowerRule(doc: PolicyDoc, rule: Rule, account: string): LoweredRule {
 
   return {
     name: rule.name,
+    ruleHash: ruleHash(rule),
     contract,
     signers,
     ...(notAfter !== undefined ? { validUntil: notAfter - 1 } : {}),

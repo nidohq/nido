@@ -21,6 +21,16 @@ describe('lowerDoc: ci-publish fixture', () => {
     expect(lowered.docHash).toBe('27cb38ef07bd8e4f86f07bef4d9272c070c2d9f05063d4c1ad1d4769b1d74a98');
   });
 
+  it("gives each rule Perch's rule hash (testdata/rule-hashes.json)", () => {
+    const vectors = JSON.parse(
+      readFileSync(resolve(here, '../../../../vendor/perch/testdata/rule-hashes.json'), 'utf8'),
+    ) as { fixtures: { fixture: string; doc_hash: string; rules: { name: string; rule_hash: string }[] }[] };
+    const fixture = vectors.fixtures.find((f) => f.doc_hash === lowered.docHash)!;
+    expect(lowered.rules.map((r) => [r.name, r.ruleHash])).toEqual(
+      fixture.rules.map((r) => [r.name, r.rule_hash]),
+    );
+  });
+
   it('lowers the bare self-admin rule policy-free onto the account itself', () => {
     const admin = lowered.rules[0];
     expect(admin.name).toBe('admin');
