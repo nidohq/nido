@@ -68,11 +68,13 @@ pub struct Config {
 pub struct Contract;
 
 // admin/set_admin/upgrade come from the shared `admin-sep` crate
-// (`Administratable` + `Upgradable`). This factory and the WebAuthn verifier
-// move to Perch with its release workstream (stellar-registry/perch#99 WS4),
-// which publishes them as constructorless, immutable infrastructure; until
-// then the admin is the deployer, and only gates pins and factory upgrades.
-// It has no authority over any deployed account.
+// (`Administratable` + `Upgradable`). Only the WebAuthn verifier moved to
+// Perch (its constructorless `perch-webauthn-verifier`, which this factory
+// pins); the factory stays Nido's, because Perch's factory derives an address
+// from the admin signers and a Nido passkey's RP ID is the account's own
+// subdomain, so the address has to exist before the passkey does. The admin
+// gates the verifier pin and factory upgrades, and has no authority over any
+// deployed account.
 #[contractimpl(contracttrait)]
 impl Administratable for Contract {}
 
