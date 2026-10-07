@@ -780,7 +780,8 @@ impl World {
         self.apply_bytes_as(account, "owner", &doc.bytes(self), valid_until)
     }
 
-    /// `apply_doc` of raw bytes, signed by `key` through the admin rule.
+    /// `apply_doc` of raw bytes, signed by `key` through the admin rule, over
+    /// whatever revision is current.
     pub fn apply_bytes_as(
         &self,
         account: &Account,
@@ -788,15 +789,50 @@ impl World {
         bytes: &Bytes,
         valid_until: u32,
     ) -> AccountResult<BytesN<32>> {
+        self.apply_bytes_at(account, key, bytes, valid_until, None)
+    }
+
+    /// `apply_doc` signed by the admin passkey for a document prepared at
+    /// `expected_revision`: refused with `StaleRevision` once the account
+    /// has moved past it.
+    pub fn apply_at(
+        &self,
+        account: &Account,
+        doc: &Doc,
+        valid_until: u32,
+        expected_revision: u64,
+    ) -> AccountResult<BytesN<32>> {
+        let bytes = doc.bytes(self);
+        self.apply_bytes_at(
+            account,
+            "owner",
+            &bytes,
+            valid_until,
+            Some(expected_revision),
+        )
+    }
+
+    fn apply_bytes_at(
+        &self,
+        account: &Account,
+        key: &str,
+        bytes: &Bytes,
+        valid_until: u32,
+        expected_revision: Option<u64>,
+    ) -> AccountResult<BytesN<32>> {
         let root = self.invocation(
             &account.address,
             "apply_doc",
-            std::vec![self.sc(bytes.clone()), self.sc(valid_until)],
+            std::vec![
+                self.sc(bytes.clone()),
+                self.sc(valid_until),
+                self.sc(expected_revision),
+            ],
         );
         let entry = self.signed(account, key, "admin", root);
         self.with_auths(&[entry], || {
             self.account(account)
-                .try_apply_doc(bytes, &valid_until)
+                .try_apply_doc(bytes, &valid_until, &expected_revision)
                 .map(|r| r.unwrap())
         })
     }
@@ -839,17 +875,18 @@ impl World {
         })
     }
 
-    /// Complete through the recovery rule: anyone may submit.
+    /// Complete through the recovery rule: anyone may submit. It names no
+    /// revision, as the wallet's completion does not.
     pub fn complete(&self, account: &Account, target: &Bytes) -> AccountResult<BytesN<32>> {
         let root = self.invocation(
             &account.address,
             "apply_doc",
-            std::vec![self.sc(target.clone()), self.sc(0u32)],
+            std::vec![self.sc(target.clone()), self.sc(0u32), self.sc(None::<u64>)],
         );
         let entry = self.recovery_rule_entry(&account.address, root);
         self.with_auths(&[entry], || {
             self.account(account)
-                .try_apply_doc(target, &0)
+                .try_apply_doc(target, &0, &None)
                 .map(|r| r.unwrap())
         })
     }

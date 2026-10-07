@@ -66,6 +66,34 @@ fn a_document_for_another_network_is_refused() {
     assert_eq!(w.account(&alice).applied_doc_hash(), None);
 }
 
+/// A document prepared at one revision never overwrites a change made since:
+/// an `apply_doc` naming the revision it was prepared at is refused with
+/// `StaleRevision` once the account moves, and leaves the revision. Every
+/// successful apply advances it by one, a re-apply of the same document
+/// included.
+#[test]
+fn a_document_prepared_at_an_older_revision_is_refused() {
+    let w = world();
+    let alice = minted(&w);
+    let client = w.account(&alice);
+    assert_eq!(client.revision(), 0);
+
+    let doc = w.doc(&alice, None);
+    w.apply_at(&alice, &doc, 0, 0)
+        .expect("prepared at revision 0");
+    assert_eq!(client.revision(), 1);
+
+    assert_eq!(
+        err(w.apply_at(&alice, &doc, 0, 0)),
+        PerchAccountError::StaleRevision
+    );
+    assert_eq!(client.revision(), 1);
+
+    w.apply_at(&alice, &doc, 0, 1)
+        .expect("re-prepared at revision 1");
+    assert_eq!(client.revision(), 2);
+}
+
 /// Each document replaces the whole rule set: rules the new document does not
 /// name are gone, and the stored copy tracks the latest document.
 #[test]

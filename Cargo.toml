@@ -36,10 +36,10 @@ stellar-accounts = { version = "0.7.1", git = "https://github.com/theahaco/stell
 soroban-sdk-tools = "0.1.3"
 
 # The Perch stack (stellar-registry/perch epic #99), consumed from the
-# vendor/perch submodule, which pins the release workstream's branch
-# (WS4, fm/perch-epic99-release-p8 at 17f2c9c) and its testnet deployment
-# manifest (deployments/testnet.json). These move to published packages once Perch
-# merges and publishes that release.
+# vendor/perch submodule, which pins the deployment record at the top of the
+# #99 stack (fm/perch-epic99-deploy-p8 at 836fdc9, stellar-registry/perch#112)
+# and its testnet deployment manifest (deployments/testnet.json). These move to
+# published packages once Perch merges and publishes that release.
 #
 # Path dependencies rather than git dependencies because
 # `perch-smart-account` reads a fetched, git-ignored pin cache at build time
