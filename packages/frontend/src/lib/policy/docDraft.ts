@@ -8,7 +8,14 @@
 // the document via the SDK, and decides which apply route the transaction
 // takes; the component does the RPC + signing.
 
-import { buildPolicyDoc, parsePolicyDoc, scopedSessionKeyDoc, type PolicyDoc } from '@nidohq/passkey-sdk';
+import {
+  buildPolicyDoc,
+  MAX_DOC_RULES,
+  MAX_DOC_SIGNERS,
+  parsePolicyDoc,
+  scopedSessionKeyDoc,
+  type PolicyDoc,
+} from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress, MAX_RULE_NAME_LEN } from './policyDraft.js';
 
 /** Soroban symbol constraints for function names (SCSymbol: [A-Za-z0-9_],
@@ -390,9 +397,17 @@ export function validateAdminKeyDraft(draft: AdminKeyDraft, base: PolicyDoc): Do
   }
 
   // Refuse enrolling a key that already holds admin authority.
+  // Perch's caps (8 keys, 11 rules per document): each admin key adds a
+  // rule, and a key not yet declared adds a signer.
+  if (base.rules.length >= MAX_DOC_RULES) {
+    errors.push(`This Nido already has ${MAX_DOC_RULES} rules, the most an account holds. Remove an admin key or an app grant first.`);
+  }
   if (errors.length === 0) {
     const decl = adminDraftToDecl(draft, 'probe');
     const existing = base.signers.find((s) => signerKeyOf(s) === signerKeyOf(decl));
+    if (existing === undefined && base.signers.length >= MAX_DOC_SIGNERS) {
+      errors.push(`This Nido already holds ${MAX_DOC_SIGNERS} keys (passkeys, devices, and app keys together), the most an account holds. Remove one first.`);
+    }
     if (
       existing !== undefined &&
       adminRules(base).some(

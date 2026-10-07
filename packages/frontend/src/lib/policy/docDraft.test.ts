@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Networks } from '@stellar/stellar-sdk';
+import { Networks, StrKey } from '@stellar/stellar-sdk';
 import { canonicalJson, docHash } from '@nidohq/passkey-sdk';
 import {
   addAdminKey,
@@ -127,6 +127,19 @@ describe('admin keys', () => {
   describe('validateAdminKeyDraft', () => {
     it('accepts a fresh delegated key', () => {
       expect(validateAdminKeyDraft(delegatedDraft, base)).toEqual({ ok: true, errors: [] });
+    });
+
+    it("refuses a ninth key or a twelfth rule (Perch's caps)", () => {
+      const signers = Array.from({ length: 8 }, (_, i) => ({
+        id: `k${i}`,
+        address: StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x40 + i)),
+      }));
+      const nine = validateAdminKeyDraft(delegatedDraft, { ...base, signers });
+      expect(nine.ok).toBe(false);
+      expect(nine.errors.join(' ')).toMatch(/already holds 8 keys/);
+      const rules = Array.from({ length: 11 }, (_, i) => ({ ...base.rules[0]!, name: `r${i}` }));
+      const twelve = validateAdminKeyDraft(delegatedDraft, { ...base, rules });
+      expect(twelve.errors.join(' ')).toMatch(/already has 11 rules/);
     });
 
     it('rejects a duplicate rule name instead of replacing the rule', () => {
