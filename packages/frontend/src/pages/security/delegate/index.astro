@@ -138,8 +138,7 @@ import Icon from '../../../components/Icon.astro';
 <script>
   import { contractIdFromHostname, canonicalJson, docHash, parsePolicyDocJson } from '@nidohq/passkey-sdk';
   import type { PolicyDoc } from '@nidohq/passkey-sdk';
-  import { rpc } from '@stellar/stellar-sdk';
-  import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
+  import { NETWORK_PASSPHRASE, latestLedgerSequence } from '../../../lib/network.js';
   import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
   import {
     DOC_DURATIONS,
@@ -240,8 +239,7 @@ import Icon from '../../../components/Icon.astro';
   let latestLedger: number | null = null;
   const latestLedgerReady: Promise<void> = (async () => {
     try {
-      const server = new rpc.Server(RPC_URL);
-      latestLedger = (await server.getLatestLedger()).sequence;
+      latestLedger = await latestLedgerSequence();
     } catch {
       latestLedger = null;
     }

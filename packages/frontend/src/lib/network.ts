@@ -1,9 +1,19 @@
-import { Asset, Networks } from "@stellar/stellar-sdk";
+import { Asset, Networks, rpc } from "@stellar/stellar-sdk";
 
 /** Single source of truth for the network this build targets (currently testnet). */
 export const NETWORK_NAME = "testnet" as const;
 export const NETWORK_PASSPHRASE = Networks.TESTNET;
 export const RPC_URL = "https://soroban-testnet.stellar.org";
+
+/** The chain tip's ledger sequence, from the RPC's raw `getLatestLedger`
+ *  answer. stellar-sdk's `getLatestLedger()` also decodes the tip's whole
+ *  close meta, every transaction anyone put in that ledger, and its XDR
+ *  predates protocol 27's `AddressV2` and `AddressWithDelegates`
+ *  credentials: it throws ("unknown SorobanCredentialsType member") whenever
+ *  someone else's transaction in the tip uses them. */
+export async function latestLedgerSequence(server = new rpc.Server(RPC_URL)): Promise<number> {
+  return (await server._getLatestLedger()).sequence;
+}
 
 /** Stellar Expert human-explorer base (used to link each row to its tx). */
 export const EXPLORER_BASE = `https://stellar.expert/explorer/${NETWORK_NAME}`;

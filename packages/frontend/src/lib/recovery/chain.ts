@@ -11,9 +11,9 @@
  *   evidence, baselines, and completions.
  */
 
-import { rpc, type xdr } from '@stellar/stellar-sdk';
+import type { xdr } from '@stellar/stellar-sdk';
 import { buildApplyDocTx, loadCredential, parsePolicyDocJson, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
-import { NETWORK_PASSPHRASE, RPC_URL } from '../network.js';
+import { NETWORK_PASSPHRASE, RPC_URL, latestLedgerSequence } from '../network.js';
 import { adminBaseline } from '../policy/docDraft.js';
 import { fetchVerifierAddress } from '../policyChainFetch.js';
 import { getSubmitter, signAndSubmit } from '../primaryPasskeySigner.js';
@@ -64,7 +64,7 @@ export async function currentOrFirstDoc(account: string): Promise<PolicyDoc> {
 }
 
 export async function latestLedger(): Promise<number> {
-  return (await new rpc.Server(RPC_URL).getLatestLedger()).sequence;
+  return latestLedgerSequence();
 }
 
 /** Apply `doc` with the owner's passkey. `approvalValidUntil` is the bound a

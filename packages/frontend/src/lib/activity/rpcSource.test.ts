@@ -43,7 +43,7 @@ describe("fetchRpcRecent", () => {
 
   it("runs two parallel walks — own events and unpinned transfers — never mixed in one request", async () => {
     const { fetchRpcRecent } = await import("./rpcSource.js");
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     const getEventsSpy = vi
       .spyOn(rpc.Server.prototype, "getEvents")
       .mockResolvedValue({ events: [], latestLedger: LATEST } as any);
@@ -83,7 +83,7 @@ describe("fetchRpcRecent", () => {
   });
 
   it("memoizes the walk per (address, depth) so the activity and assets cards share it", async () => {
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     const getEventsSpy = vi
       .spyOn(rpc.Server.prototype, "getEvents")
       .mockResolvedValue({ events: [], latestLedger: LATEST } as any);
@@ -98,7 +98,7 @@ describe("fetchRpcRecent", () => {
   it("does NOT memoize a failed walk — the activity page's Retry must actually retry", async () => {
     const { fetchRpcRecent } = await import("./rpcSource.js");
     const err = new Error("rpc blip");
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger")
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger")
       .mockRejectedValueOnce(err) // own walk, first attempt
       .mockRejectedValueOnce(err) // transfers walk, first attempt
       .mockResolvedValue({ sequence: LATEST } as any);
@@ -110,7 +110,7 @@ describe("fetchRpcRecent", () => {
   });
 
   it("never accepts a limit-truncated chunk: a full event page shrinks like a -32001", async () => {
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     const full = { events: Array.from({ length: 1000 }, () => ({})), latestLedger: LATEST };
     const getEventsSpy = vi
       .spyOn(rpc.Server.prototype, "getEvents")
@@ -145,7 +145,7 @@ describe("fetchRpcRecent", () => {
       txHash,
       ledgerClosedAt,
     });
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     vi.spyOn(rpc.Server.prototype, "getEvents").mockImplementation((async (req: any) => ({
       latestLedger: LATEST,
       // own walk sees TXA's admin event; transfers walk sees TXA's payment
@@ -169,7 +169,7 @@ describe("fetchRpcRecent", () => {
 
   it("shrinks the first chunk's span on a processing-limit error, then REJECTS if even the smallest span fails", async () => {
     const { fetchRpcRecent } = await import("./rpcSource.js");
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     // Always throw the dense-range processing-limit error.
     const err = new Error("[-32001] request exceeded processing limit threshold");
     const getEventsSpy = vi.spyOn(rpc.Server.prototype, "getEvents").mockRejectedValue(err);
@@ -190,7 +190,7 @@ describe("fetchRpcRecent", () => {
 
   it("keeps the recent span (does not reject) when an OLDER chunk fails after the first succeeds", async () => {
     const { fetchRpcRecent } = await import("./rpcSource.js");
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     vi.spyOn(rpc.Server.prototype, "getEvents").mockImplementation((async (req: any) => {
       if (req.endLedger === LATEST) return { events: [], latestLedger: LATEST } as any; // chunk 0 ok (both walks)
       throw new Error("[-32001] request exceeded processing limit threshold"); // older chunks fail at every span
@@ -202,7 +202,7 @@ describe("fetchRpcRecent", () => {
 
   it("honors maxChunks so the home card can scan a shallower window", async () => {
     const { fetchRpcRecent } = await import("./rpcSource.js");
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockResolvedValue({ sequence: LATEST } as any);
     const getEventsSpy = vi
       .spyOn(rpc.Server.prototype, "getEvents")
       .mockResolvedValue({ events: [], latestLedger: LATEST } as any);

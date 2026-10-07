@@ -4,6 +4,7 @@ import {
 } from '@nidohq/passkey-sdk';
 import { fetchVerifierAddress, simulateView, isRuleNotFound } from './policyChainFetch.js';
 import { signAndSubmit } from './primaryPasskeySigner.js';
+import { latestLedgerSequence } from './network.js';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 
@@ -15,12 +16,11 @@ export async function delegateSessionKey(args: {
   validUntilOffset: number | null;
   label?: string;
 }): Promise<void> {
-  const server = new rpc.Server(RPC_URL);
-  const latest = await server.getLatestLedger();
+  const latest = await latestLedgerSequence(new rpc.Server(RPC_URL));
   const validUntil =
     args.validUntilOffset == null
       ? undefined
-      : latest.sequence + args.validUntilOffset;
+      : latest + args.validUntilOffset;
 
   const built = await scopedSessionKeyModule.buildInstall({
     account: args.account,
