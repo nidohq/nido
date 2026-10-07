@@ -21,6 +21,7 @@
 import { Buffer } from 'buffer';
 import { Client as AccountClient } from '@nidohq/perch-account';
 import { canonicalJson, docHash } from '@stellar-registry/perch';
+import { docCapProblem } from './caps.js';
 import type { PolicyDoc } from '@stellar-registry/perch';
 import { extractXdrOperations } from '../assembledTx.js';
 import type { TxBuild } from '../policyBlocks/types.js';
@@ -60,6 +61,9 @@ export async function buildApplyDocTx(
       `policyDoc: doc is bound to network "${doc.network}" but the apply targets "${networkPassphrase}"`,
     );
   }
+  // Perch's compiler refuses an over-cap document anyway; say why first.
+  const tooLarge = docCapProblem(doc);
+  if (tooLarge !== undefined) throw new Error(tooLarge);
   const canonical = canonicalJson(doc);
   const client = new AccountClient({
     contractId: args.account,

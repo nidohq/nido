@@ -56,6 +56,13 @@ export { interpreterInstallParamsScVal, spendingLimitInstallParamsScVal } from '
 // Doc-only: apply_doc is the sole policy write path — the per-rule
 // buildDocInstallTxs route is gone with the account's rule mutators.
 export { buildApplyDocTx } from './applyDoc.js';
+export {
+  docCapProblem,
+  MAX_DOC_CANONICAL_BYTES,
+  MAX_DOC_RULES,
+  MAX_DOC_SIGNERS,
+  MAX_RULE_NAME_BYTES,
+} from './caps.js';
 export type { ApplyDocTx, BuildApplyDocArgs } from './applyDoc.js';
 export { DOC_APPLIED_EVENT, readPolicy } from './readPolicy.js';
 export type { PolicyReadTier, ReadPolicyInputs, ReadPolicyResult } from './readPolicy.js';
