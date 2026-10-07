@@ -5,10 +5,11 @@ targets, the Nido contracts still in use, and the contracts this tree retired.
 
 ## Perch release and Nido's factory
 
-Perch's release workstream (stellar-registry/perch#99 WS4) deployed the
-release stack (`fm/perch-epic99-release-p8` at 17f2c9c, built from Perch
-commit 704aa23, caps 8 signers × 11 rules × 8192 bytes) on 2026-10-07 (ledger
-5,074,730) and records it in
+Perch deployed its whole #99 stack on 2026-10-07 (ledger 5,077,086), built
+from the stack's top (Perch commit aa5a78f: the release with its consumer
+interface, stellar-registry/perch#110; caps 8 signers × 11 rules × 8192
+bytes). The deployment record is `fm/perch-epic99-deploy-p8` at 836fdc9
+(stellar-registry/perch#112), which records it in
 [`vendor/perch/deployments/testnet.json`](vendor/perch/deployments/testnet.json):
 every contract by wasm hash and content address under its registry, with the
 commit and toolchain that built it. The SDK's `perch.TESTNET` is that
@@ -18,22 +19,22 @@ checks it field by field.
 | Manifest field (`PerchDeployment`) | Contract | Address or value |
 | --- | --- | --- |
 | `network` | | `Test SDF Network ; September 2015` |
-| `factory` | `nido-factory` (Nido's) | `CCCY6PPRD7ZYNZDH7QMZZ4U57J5WBNJG4ZUQKJ4NYTPJIP35AWA4BKT6` |
-| `webauthnVerifier` | `perch-webauthn-verifier` 0.1.0 | `CCN63JUG7EAMFSQ2VEZA73ZDFDW6WMOCOM67U5Z7ERI5B67KWTMQ6UBG` |
-| `statelessRegistry` | Perch's registry instance | `CBU7P2S72OL4TD63OBJC3WYQSJSPKS7WRLDO4YT5STOKH7CSQ54HCUY5` |
-| `docCompiler` | `perch-doc-compiler` 0.3.0 | `CCECBBCM5WV6KHZULIO6ORWWBT35ZKVLEJTO6ALIOOULRXAVD7JHICO6` |
-| `interpreter` | `perch-interpreter` 0.1.2 | `CDUU5QEXGCZ5TJNK35WVVSPYURIIFM5H5ZNWJJW3QDSZB57B66C3DNHQ` |
-| `spendingLimit` | `perch-spending-limit` 0.1.1 | `CCUM47GUADDA5CQ54CSPPGAKFXGJQHNZYKP7HQH5Z3UX3E2TBTSAINAD` |
-| `recoveryController` | `perch-recovery` 0.1.0 | `CCJGLH3SHOVN3ALAJKBMZ2WVA3ISHFE5ENLYTHZBJKWZ2ELMVA4ZHVWN` |
-| `zkPool` | `perch-zk-pool` 0.1.0 | `CDVEAUJCXT4H3P6PN75JUNWCPJZI26X2T27GI5MZO2KEAKLRSQCDMVH4` |
-| `zkAdapter` | `perch-zk-adapter` 0.1.0 | `CB7PYUMZLBHP3DVT6SF2YVTSTCLSXKZC4EPIII7VHYLJ6BRDJCQZISIU` |
+| `factory` | `nido-factory` (Nido's) | `CAMN56JY2WLIS5H23AL5SJ5YTQUEOFCGR6YRLQDWVIXXJHRM7QD64TBH` |
+| `webauthnVerifier` | `perch-webauthn-verifier` 0.1.0 | `CA2GRIVA5M6QTWEH3TQDBREFIKRKZHQYZJFPWXLATGTVS4NFLEKHLFMH` |
+| `statelessRegistry` | Perch's registry instance | `CB4D5F5N3MYMGWOKN5DUEI4LMJ34GBO5WJKTXNOXPNKAEWRCQSQLBEJL` |
+| `docCompiler` | `perch-doc-compiler` 0.3.0 | `CDFB7XC4HDQCCMNTV2PWWM33W35UOHEJ2UNXW2QNB3SHPT456KZRY74A` |
+| `interpreter` | `perch-interpreter` 0.1.2 | `CBH2R7E5PKLEQ7OMNYK6BHDWFZM7TJUAONFVFUO4ECACIBORNIGCHXLD` |
+| `spendingLimit` | `perch-spending-limit` 0.1.1 | `CAWDTYQ2FMSQCMTRG7DT25UCSTSSSH7QWPX6YJJZWM6KU52ZIHUJSODY` |
+| `recoveryController` | `perch-recovery` 0.1.0 | `CAM67FBUSDD7DLDYU6I4KEYFFTYDVH2PTCY6JG7VCLXCFCW3JICGVYVN` |
+| `zkPool` | `perch-zk-pool` 0.1.0 | `CAZF7RWHUP3F2CT3XOXGBGXQRFQEKGMUEAOGDULKMEOKMW6IHFD6KTBH` |
+| `zkAdapter` | `perch-zk-adapter` 0.1.0 | `CBHPOMMRFZBV5347EOFRJD476TMGS2L4QC5KKCYLLERIYLUMCXVFVBVX` |
 | `circuitId` | | `9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a` |
 | `treeDepth` | | `32` |
-| `accountWasmHash` | `perch-account` 0.3.0 (installed, not deployed) | `7743becf9382698f0a6e36d9987d6bac903ed96ed859c3a93cd4486a9e1474e5` |
+| `accountWasmHash` | `perch-account` 0.3.0 (installed, not deployed) | `238ec4b6d6d7c80eea9386affd153dbeb253b5e561d7e0d95c8cd7f4dc76f4ba` |
 
 **Nido's factory** was deployed by `scripts/deploy-factory.sh` on 2026-10-07
 with a throwaway testnet admin (`GASYOK3SOMRE4OK5GJNFD2H6HNF2ZISK332HHQQGNGW663ZIGSV5IG3S`,
-`stellar-cli` 27.0.0). Wasm `47e03a77…`, built from this tree (#231); it
+`stellar-cli` 27.0.0). Wasm `150a5937…`, built from this tree (#231); it
 embeds the manifest's account wasm and pins Perch's verifier, and the script
 read both back. It is not registered under any registry name. Perch's own
 factory (`perch-account-factory`, in the manifest) doesn't fit Nido:
@@ -80,6 +81,7 @@ Repointing the name is a separate, deliberate step (RUNBOOKS §2.2).
 | --- | --- | --- |
 | Factory (doc-only) | `CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG` | Embeds Nido's former smart account (wasm `fe3b1878…`). Still registered as `factory` and the SDK's registry fallback. |
 | Factory (previous) | `CBQKB6GYPO7P2CGDKN7KYLEFEBBN6FY5NXZJ7HNR43ZK2DDOU5N7NCV5` | Pre-doc smart account (`00825acd…`). |
+| Nido factory (Perch's 17f2c9c deployment, Oct 7) | `CCCY6PPRD7ZYNZDH7QMZZ4U57J5WBNJG4ZUQKJ4NYTPJIP35AWA4BKT6` | Embedded the 17f2c9c release's account (`7743becf…`) and pinned that deployment's verifier (`CCN63JUG…`, registry `CBU7P2S7…`). Superseded the same day by the redeploy above. Perch keeps that history at `fm/perch-epic99-release-p8-archive-17f2c9c`. |
 | Nido factory (Perch's Oct 3 deployment) | `CB6SVLYMOSG6SJN4F5SDE7IHTDTXY26PJCALD3L55D72CGIJUUPMHLRQ` | Embedded the Oct 3 release's account (`5f22b0a7…`) and pinned that deployment's verifier (`CDQOXV6N…`, registry `CDOTZIJU…`). Superseded by the redeploy above. |
 | WebAuthn verifier (Nido's) | `CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY` | `contracts/webauthn-verifier` (removed), admin-upgradeable. Registered as `unverified/verifier`; every account an older factory minted names it. |
 | Recovery controller v2 | `CBYSWPHNWAHYUBZO5TBTO5MCW2ZC45F2C3L4JSUZXYQFNMHTOBOCCHZU` | `contracts/recovery-controller` (removed). |

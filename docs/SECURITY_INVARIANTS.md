@@ -82,6 +82,13 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
   §15). `reserved_hook_names_are_never_authorized_or_executed`.
 - **A7. Ordinary activity runs through document rules, directly and through
   `execute`.** `ordinary_activity_runs_through_document_rules_and_execute`.
+- **A8. A document prepared at an older revision never lands.** An
+  `apply_doc` naming the revision it was prepared at is refused with
+  `StaleRevision` once another apply has moved the account, and leaves the
+  revision; every successful apply advances it by one.
+  `a_document_prepared_at_an_older_revision_is_refused`. The wallet doesn't
+  name a revision yet (MAINNET_READINESS D8), so it doesn't get this
+  protection.
 
 ## Onboarding (`onboarding.rs`)
 
@@ -190,7 +197,7 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
 
 - **B1. Every measured transaction stays under 75% of the instruction,
   memory, write-byte, and write-entry limits.** The suite asserts it per row.
-  The highest row is the promoting `submit_zk` under `Combined`: 119.2M
+  The highest row is the promoting `submit_zk` under `Combined`: 119.3M
   instructions, 29.8% of the 400M limit (the zero-knowledge verifier costs
   more than the non-ZK one did). Memory peaks at 13.7% of 40 MiB.
   `protected_combined_transactions_fit_the_budget`,
@@ -223,7 +230,7 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
   Perch's `deployments/testnet.json` plus Nido's factory, field by field.
   `packages/passkey-sdk/src/perch/deployment.test.ts`.
 - **W7. A completion carries its own recovery-rule auth entry.** The
-  completing `apply_doc(target, 0)` has address credentials for the account,
+  completing `apply_doc(target, 0, None)` has address credentials for the account,
   a fresh nonce, and a signer-free payload selecting the recovery rule, and
   the wallet simulates it in enforcing mode (recording mode never runs the
   controller's `enforce`). `packages/passkey-sdk/src/perch/recovery.test.ts`.
@@ -231,7 +238,7 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
   wallet.** Guardians approve from their own Nidos, the kit proves in the
   page, the delay passes, and the completion lands, against Perch's
   deployed release and Nido's factory. `tests/e2e/testnet/perch-recovery.testnet.spec.ts`
-  (manual tier; last run 2026-10-07 against Perch's 17f2c9c deployment, all
+  (manual tier; last run 2026-10-07 against Perch's 836fdc9 deployment, all
   six plus the policy page, with the relayer-free harness, RUNBOOKS §1).
 - **W9. A document over Perch's caps is refused before it's built.** At most
   8 declared signers, 11 rules, 8192 canonical bytes, and 20-byte rule names:
