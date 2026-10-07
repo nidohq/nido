@@ -5,9 +5,10 @@ audit firm with the freeze commit filled in.
 
 > **Freeze commit:** _TBD: record `git rev-parse HEAD` of the audited tree and
 > `git -C vendor/perch rev-parse HEAD` here._ At the time of writing, Perch is
-> pinned at `17f2c9c` (branch `fm/perch-epic99-release-p8`, the release
-> workstream of stellar-registry/perch#99), whose testnet deployment was built
-> from Perch commit `704aa23`; the pin moves to Perch's published release.
+> pinned at `836fdc9` (branch `fm/perch-epic99-deploy-p8`, the deployment
+> record at the top of stellar-registry/perch#99's stack), whose testnet
+> deployment was built from Perch commit `aa5a78f`; the pin moves to Perch's
+> published release.
 
 ## Reading order
 
@@ -71,6 +72,10 @@ The audit should check that Nido uses Perch as Perch's spec intends:
 
 Perch is a separate project with its own audit package. Nido consumes it from
 the `vendor/perch` submodule; the audited revision is the one recorded above.
+Perch's own scope document,
+[`vendor/perch/docs/audit-scope.md`](../vendor/perch/docs/audit-scope.md),
+maps its stack to two audit units (the backend-independent core and the OZ
+materialization layer) and names the pull request that introduced each path.
 If one engagement covers both, Perch's scope is:
 
 - Contracts: `perch-account` and `perch-smart-account`, `perch-recovery`,

@@ -7,8 +7,8 @@ an auditor can account for each input and rebuild each artifact.
 
 | Item | Pin | Notes |
 | --- | --- | --- |
-| Source | `https://github.com/stellar-registry/perch.git`, branch `fm/perch-epic99-release-p8`, commit `17f2c9c` | Git submodule (`.gitmodules`). The commit is what counts; the branch only names where it came from. |
-| Deployment manifest | `vendor/perch/deployments/testnet.json` at that commit | Every deployed contract's wasm hash, content address, registry, and build pins, plus the Perch commit (`704aa23`, clean) and toolchain (rustc 1.97.1, stellar 27.0.0, scaffold 0.0.27) that built them. |
+| Source | `https://github.com/stellar-registry/perch.git`, branch `fm/perch-epic99-deploy-p8`, commit `836fdc9` | Git submodule (`.gitmodules`). The commit is what counts; the branch only names where it came from. |
+| Deployment manifest | `vendor/perch/deployments/testnet.json` at that commit | Every deployed contract's wasm hash, content address, registry, and build pins, plus the Perch commit (`aa5a78f`, clean) and toolchain (rustc 1.97.1, stellar 27.0.0, scaffold 0.0.27) that built them. |
 | Deployed wasm | `just perch-infra` runs `vendor/perch/scripts/fetch-infra-wasm.sh --stack` against the manifest | Fetches each contract from the chain by the manifest's address (the account by hash) and refuses it unless its sha256 matches and the address is the content address of that hash under the manifest's registry. Nothing is resolved by name. The tests run these bytes, and the factory embeds the fetched `perch-account`. |
 | Pin cache | Same script | Fills `crates/perch-smart-account/wasm/` (registry id, compiler, interpreter, spending limit), which the account's native crate reads at build time, from the same checked bytes. |
 | Rust crates | Path dependencies on `vendor/perch/crates/*` (root `Cargo.toml`) | Clients, types, and the native prover for the tests. One checkout, so Perch's types unify with Nido's; Nido's `Cargo.lock` resolves their dependencies. |
@@ -76,6 +76,14 @@ the relayer channels plugin's `pnpm-lock.yaml`.
 `@stellar-registry/perch-interpreter` comes from npm, with a root `overrides`
 entry keeping it on the workspace's single `@stellar/stellar-sdk`.
 
+The wallet's `@stellar/stellar-sdk` (15.1.0) decodes XDR from before
+protocol 27: it has no `AddressV2` or `AddressWithDelegates` credentials, and
+no released `@stellar/stellar-base` (15.0.0) does yet. Decoding anyone else's
+transaction that uses them throws. `getLatestLedger()` decodes the tip's
+whole close meta, so the wallet reads the tip from the RPC's raw answer
+instead (`latestLedgerSequence`). The example dApp still calls
+`getLatestLedger()`.
+
 `@nidohq/passkey-sdk` is not publishable while it depends on the private
 `@nidohq/perch-*` clients. It becomes publishable when those are replaced by
 Perch's published `@stellar-registry/perch-contracts`.
@@ -93,6 +101,8 @@ Perch's published `@stellar-registry/perch-contracts`.
       packages elsewhere (`just check-vendor-drift`,
       `scripts/check-perch-drift.sh`).
 - [ ] Self-host the proving reference string with a checked hash.
+- [ ] Move to a `@stellar/stellar-sdk` whose XDR knows protocol 27's
+      credentials (see npm above).
 - [ ] Move to an upstream OZ release once it carries the CAP-0071 patch, or
       record the accepted risk.
 - [ ] Make `cargo audit` and `npm audit` gating before mainnet.

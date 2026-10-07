@@ -56,9 +56,13 @@ a prerequisite on top of everything here.
 - [~] **D4. The testnet suite passes against Perch's testnet release.** All
   six profile/mode combinations and the policy page's `apply_doc` pass
   through the wallet on testnet with real proofs and passkey signatures,
-  against Perch's 17f2c9c deployment (2026-10-07, one clean run of seven
-  specs, 20.6 minutes). Accounts were created with the relayer-free harness
-  (`NIDO_E2E_DIRECT_DEPLOY=1`): through the hosted relayer the same day, the
+  against Perch's 836fdc9 deployment (2026-10-07, one clean run of seven
+  specs, 20.4 minutes), as they did against its 17f2c9c deployment earlier
+  that day. The first run on 836fdc9 lost one completion to a wallet bug,
+  since fixed: reading the chain tip decoded other people's protocol 27
+  credentials (SUPPLY_CHAIN.md, npm). Accounts were created with the
+  relayer-free harness
+  (`NIDO_E2E_DIRECT_DEPLOY=1`): through the hosted relayer on 17f2c9c, the
   policy page and the two ZK-only combinations passed, and the other five
   were refused at onboarding ("Too many transactions queued"). Left: a full
   run through relayer-sponsored onboarding.
@@ -71,7 +75,16 @@ a prerequisite on top of everything here.
 - [ ] **D7. The hosted relayer's onboarding queue.** It refused every
   account setup on 2026-10-03, and five of seven on 2026-10-07 after
   accepting the first few, while its health check passed; find out why
-  before relying on it (RUNBOOKS §5).
+  before relying on it (RUNBOOKS §5). Tracked in #236 (channels held under
+  `skipWait`) and #235 (upgrading the relayer and its Channels plugin).
+- [ ] **D8. The wallet on Perch's consumer interface**
+  (stellar-registry/perch#108). The account refuses a document prepared at
+  an older revision when the apply names it (A8), but the wallet's applies
+  name none, so two edits prepared at once end with the later one
+  overwriting the earlier. The same step reads account state through one
+  snapshot, selects rules by name rather than scanning ids, and builds
+  authorization payloads with perch-js. stellar-registry/perch#110's body
+  lists every call site.
 
 ## E. Hardening
 
