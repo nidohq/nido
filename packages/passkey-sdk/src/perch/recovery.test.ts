@@ -5,15 +5,17 @@ import { completionOperation } from './recovery';
 const account = StrKey.encodeContract(Buffer.alloc(32, 7));
 
 describe('completionOperation', () => {
-  it('carries the recovery-rule auth entry for exactly apply_doc(target, 0)', () => {
+  it('carries the recovery-rule auth entry for exactly apply_doc(target, 0, None)', () => {
     const op = completionOperation(account, '{"v":1}', 3, 1000, 42n);
     const invoke = op.body().invokeHostFunctionOp();
     const call = invoke.hostFunction().invokeContract();
     expect(Address.fromScAddress(call.contractAddress()).toString()).toBe(account);
     expect(call.functionName().toString()).toBe('apply_doc');
-    const [doc, until] = call.args().map((a) => scValToNative(a));
+    const [doc, until, revision] = call.args().map((a) => scValToNative(a));
+    expect(call.args()).toHaveLength(3);
     expect(Buffer.from(doc).toString()).toBe('{"v":1}');
     expect(until).toBe(0);
+    expect(revision).toBeNull();
 
     const [entry] = invoke.auth();
     const creds = entry!.credentials().address();

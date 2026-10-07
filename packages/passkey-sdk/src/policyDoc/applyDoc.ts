@@ -1,7 +1,7 @@
 /**
  * Doc-only: the ONE apply route — the SDK half of the Perch account's
- * `apply_doc(doc_json, approval_valid_until)`, the account's sole policy
- * write path (vendor/perch/crates/perch-smart-account).
+ * `apply_doc(doc_json, approval_valid_until, expected_revision)`, the
+ * account's sole policy write path (vendor/perch/crates/perch-smart-account).
  *
  * The account cross-calls Perch's stateless doc compiler to parse, validate,
  * and lower the document on chain, has its recovery controller classify any
@@ -16,6 +16,13 @@
  * `approvalValidUntil` is the freshness bound a `Protected` reconfiguration's
  * recorded evidence was given for (`perch.PerchRecovery.approveChange` /
  * `submitZkChange`); 0 otherwise.
+ *
+ * `expectedRevision` is the account `revision()` the document was prepared
+ * at. The account refuses the apply with `StaleRevision` once another apply
+ * or an executed upgrade has moved it past that, so a document read and
+ * edited at one revision never overwrites a change made since. Omitted, the
+ * apply goes over whatever revision is current, as every apply did before
+ * the revision existed.
  */
 
 import { Buffer } from 'buffer';
@@ -35,6 +42,8 @@ export interface BuildApplyDocArgs {
   networkPassphrase?: string;
   /** See the module docs. Defaults to 0. */
   approvalValidUntil?: number;
+  /** See the module docs. Omitted: no revision check. */
+  expectedRevision?: bigint;
 }
 
 export interface ApplyDocTx extends TxBuild {
@@ -73,6 +82,7 @@ export async function buildApplyDocTx(
   const tx = await client.apply_doc({
     doc_json: Buffer.from(canonical, 'utf8'),
     approval_valid_until: args.approvalValidUntil ?? 0,
+    expected_revision: args.expectedRevision,
   });
 
   return {

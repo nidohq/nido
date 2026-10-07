@@ -160,8 +160,8 @@ function evidenceToChain(e: ZkEvidence): BindingEvidence {
 }
 
 /**
- * The completing `apply_doc(targetCanonical, 0)` as one operation whose auth
- * entry is already complete: address credentials for `account`, a fresh
+ * The completing `apply_doc(targetCanonical, 0, None)` as one operation whose
+ * auth entry is already complete: address credentials for `account`, a fresh
  * nonce, and an `AuthPayload` with no signers that selects the zero-signer
  * recovery rule.
  *
@@ -185,6 +185,9 @@ export function completionOperation(
     args: [
       nativeToScVal(Buffer.from(targetCanonical, 'utf8'), { type: 'bytes' }),
       nativeToScVal(0, { type: 'u32' }),
+      // `expected_revision`: none. The controller's `enforce` already holds
+      // the completion to the exact target the attempt bound.
+      xdr.ScVal.scvVoid(),
     ],
   });
   const entry = new xdr.SorobanAuthorizationEntry({

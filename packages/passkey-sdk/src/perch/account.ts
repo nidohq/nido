@@ -109,9 +109,9 @@ export async function buildScheduleUpgrade(
   };
 }
 
-/** Execute the pending upgrade once its delay has passed. Returns `false`
- *  on chain (and clears the request) if a reconfiguration, recovery, or
- *  other upgrade made it stale. */
+/** Execute the pending upgrade once its delay has passed. Refused on chain
+ *  with `StaleUpgrade` (the request stays) if a reconfiguration, recovery,
+ *  or other upgrade made it stale. */
 export async function buildExecuteUpgrade(args: AccountArgs & { requestId: bigint }): Promise<TxBuild> {
   const tx = await client(args).execute_upgrade({ request_id: args.requestId });
   return { operations: extractXdrOperations(tx, 'execute_upgrade'), description: 'Execute the scheduled upgrade' };
