@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import circuit from '@stellar-registry/perch-zk/artifacts/perch_zk_recovery.json' with { type: 'json' };
-import { commitment, leaf, publicInputs } from '@stellar-registry/perch-zk';
+import { commitment, leaf, publicInputs, verify } from '@stellar-registry/perch-zk';
 import { contractId, statementDigest } from './statement.js';
 import { initZk, proveStatement, type CompiledCircuit } from './zk.js';
 import type { RecoveryStatement } from './statement.js';
@@ -41,7 +41,7 @@ describe("Nido's committed proofs", () => {
     });
   }
 
-  it('proves a lifecycle statement with bb.js, byte-identical to the CLI proof', async () => {
+  it('proves a lifecycle statement with bb.js, and agrees with the CLI proof', async () => {
     const f = fixture('lifecycle-protected-combined');
     const st = f.statement;
     const statement: RecoveryStatement = {
@@ -74,9 +74,15 @@ describe("Nido's committed proofs", () => {
     });
     expect(hex(evidence.root)).toBe(f.root);
     expect(hex(evidence.nullifier)).toBe(f.nullifier);
+    // Zero-knowledge proving is randomized, so the two proofs differ in their
+    // bytes. Both must verify for the same public inputs: bb.js's proof, and
+    // the native CLI proof the Rust suite replays through the deployed adapter.
+    const inputs = { root: evidence.root, nullifier: evidence.nullifier, statementHash: bytes(f.statement_hash) };
+    const c = circuit as unknown as CompiledCircuit;
+    expect(await verify(c, { proof: evidence.proof, publicInputs: inputs })).toBe(true);
     const committed = new Uint8Array(
       readFileSync(new URL('lifecycle-protected-combined/proof', dir)),
     );
-    expect(Buffer.from(evidence.proof).equals(Buffer.from(committed))).toBe(true);
+    expect(await verify(c, { proof: committed, publicInputs: inputs })).toBe(true);
   }, 120_000);
 });

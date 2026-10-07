@@ -18,14 +18,14 @@
  * in. The chain-side inputs come from:
  * - `applied_doc_hash()` — the smart-account view,
  * - the doc JSON, from either source (prefer the view):
- *   - `get_applied_doc()` — the on-chain canonical copy (`storedDocJson`).
+ *   - `applied_doc()` — the on-chain canonical copy (`storedDocJson`).
  *     Lossless and always available while the entry lives; the primary
- *     source.
- *   - the account's latest `DocApplied` contract event (topics
- *     `["doc_applied", <doc_hash: bytes>]`, data `{doc_json: bytes}`), e.g.
- *     via RPC `getEvents` (`eventDocJson`) — the eventual method once an
- *     indexer archives events; used here as the fallback when the view
- *     isn't fetched. NOTE: RPC event retention is finite (days).
+ *     source, and on a Perch account the only one on chain.
+ *   - a copy archived elsewhere (`eventDocJson`), e.g. by an indexer that
+ *     kept each applied document. A Perch account's `DocApplied` event
+ *     (topics `["doc_applied", <doc_hash>]`, data: how many rules, signers,
+ *     and policies the apply added, removed, or edited) names the hash but
+ *     carries no document.
  */
 
 import { docHash, parsePolicyDocJson } from '@stellar-registry/perch';
@@ -49,9 +49,8 @@ export interface ReadPolicyInputs {
   /** The on-chain canonical doc JSON from `get_applied_doc()` — the
    *  primary, lossless doc source (decoded to a string). */
   storedDocJson?: string;
-  /** The doc JSON recovered from the latest `DocApplied` event whose
-   *  `doc_hash` topic equals `appliedDocHash`, if event history still
-   *  reaches it. Fallback source when the view isn't fetched. */
+  /** A document archived elsewhere whose hash should equal
+   *  `appliedDocHash`. Fallback source when the view isn't fetched. */
   eventDocJson?: string;
   /** Context for the decompile fallback. */
   decompileCtx: DecompileContext;

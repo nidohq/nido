@@ -20,7 +20,7 @@ import {
   init,
   prove,
   randomSecret,
-  Tree,
+  IncrementalTree,
   type CompiledCircuit,
   type ZkEvidence,
 } from '@stellar-registry/perch-zk';
@@ -83,7 +83,11 @@ export interface ProveArgs {
 /** Prove `statement` with `credential` and return the controller's
  *  `ZkEvidence` fields. Needs {@link initZk}. */
 export async function proveStatement(args: ProveArgs): Promise<ZkEvidence> {
-  const tree = new Tree(args.leaves, args.treeDepth);
+  const tree = new IncrementalTree({ depth: args.treeDepth });
+  for (const leaf of args.leaves) tree.append(leaf);
+  const { siblings } = await tree.witness(BigInt(args.position.index), (start, count) =>
+    args.leaves.slice(Number(start), Number(start) + count),
+  );
   const proof = await prove(
     args.circuit,
     {
@@ -92,7 +96,7 @@ export async function proveStatement(args: ProveArgs): Promise<ZkEvidence> {
       enrollmentId: args.credential.enrollmentId,
       digest: statementDigest(args.statement),
       leafIndex: BigInt(args.position.index),
-      siblings: tree.path(args.position.index),
+      siblings,
     },
     { threads: args.threads },
   );
