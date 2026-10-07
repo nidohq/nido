@@ -890,7 +890,7 @@ impl World {
     }
 
     /// `execute_upgrade` signed by the admin passkey.
-    pub fn execute_upgrade(&self, account: &Account, request: u64) -> AccountResult<bool> {
+    pub fn execute_upgrade(&self, account: &Account, request: u64) -> AccountResult<()> {
         let root = self.invocation(
             &account.address,
             "execute_upgrade",

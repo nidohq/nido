@@ -80,13 +80,14 @@ fn evidence_free_attempts_block_nothing_and_the_first_authorized_wins() {
         .expect("policy writes continue");
 
     // That rotation changed the lost-key source: an open attempt can collect
-    // evidence but never be authorized over the old snapshot.
+    // evidence but never be authorized over the old snapshot. The approval
+    // that would promote it succeeds and stores it invalidated (Perch spec
+    // T4), so a later document can't revive it.
     w.try_guardian(&e.account, &e.guardians[0], ids[0], Initiate)
         .unwrap();
-    assert_eq!(
-        w.try_guardian(&e.account, &e.guardians[1], ids[0], Initiate),
-        Err(Ok(RecoveryError::AttemptNotLive))
-    );
+    w.try_guardian(&e.account, &e.guardians[1], ids[0], Initiate)
+        .unwrap();
+    assert_eq!(state(&w, &e.account, ids[0]), AttemptState::Invalidated);
     let (a, _, _) = open(&w, &e, "fresh-a");
     let (b, _, _) = open(&w, &e, "fresh-b");
     w.try_guardian(&e.account, &e.guardians[0], a, Initiate)
@@ -463,8 +464,9 @@ fn recovery_state_renewal_needs_no_authorization() {
 // ---------------------------------------------------------------------------
 
 /// If the applied document changes while a lost-key attempt collects, the
-/// agreed snapshot is gone: the attempt can never be authorized, and a fresh
-/// attempt over the new document completes.
+/// agreed snapshot is gone: the promoting approval stores the attempt
+/// invalidated instead of authorizing it, and a fresh attempt over the new
+/// document completes.
 #[test]
 fn a_lost_key_attempt_whose_source_changed_needs_a_fresh_attempt() {
     let w = world();
@@ -476,9 +478,13 @@ fn a_lost_key_attempt_whose_source_changed_needs_a_fresh_attempt() {
     let mut rotated = w.doc(&e.account, Some(e.recovery.clone()));
     rotated.signers[1].1 = Passkey::labelled("stale-source/new-device").pubkey();
     w.apply(&e.account, &rotated, 0).unwrap();
+    w.try_guardian(&e.account, &e.guardians[1], stale, Initiate)
+        .unwrap();
+    assert_eq!(state(&w, &e.account, stale), AttemptState::Invalidated);
     assert_eq!(
-        w.try_guardian(&e.account, &e.guardians[1], stale, Initiate),
-        Err(Ok(RecoveryError::AttemptNotLive))
+        w.try_guardian(&e.account, &e.guardians[2], stale, Initiate),
+        Err(Ok(RecoveryError::AttemptNotLive)),
+        "an invalidated attempt takes no more evidence"
     );
 
     let (fresh, _, replacements) = open(&w, &e, "stale-source/2");

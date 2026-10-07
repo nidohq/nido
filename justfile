@@ -41,9 +41,11 @@ check-vendor-drift:
 # (crates/integration-tests/fixtures/zk/). Installs Perch's pinned nargo/bb
 # under vendor/perch/target/zk-toolchain/, compiles Perch's circuit, and runs
 # the integration suites in prove mode: each ZK test builds its statement through
-# the real controller, proves it natively, and writes the fixture. Proofs are
-# deterministic, so `git diff --exit-code crates/integration-tests/fixtures/zk`
-# afterwards checks reproduction.
+# the real controller, proves it natively, verifies it through the deployed
+# adapter, and writes the fixture. The proofs are zero-knowledge, so proving is
+# randomized and the proof bytes change on every run; the fixture metadata
+# (statement digest, root, nullifier) must not:
+# `git diff --exit-code -- 'crates/integration-tests/fixtures/zk/*/fixture.json'`.
 gen-zk-fixtures:
     #!/usr/bin/env bash
     set -euo pipefail

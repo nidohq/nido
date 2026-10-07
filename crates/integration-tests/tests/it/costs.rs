@@ -224,7 +224,7 @@ fn protected_combined_transactions_fit_the_budget() {
     let request = w.schedule_upgrade(&owner, &code, until).unwrap();
     report.row(&w, "protected_schedule_upgrade");
     w.advance(ACCOUNT_UPGRADE_DELAY_LEDGERS);
-    assert_eq!(w.execute_upgrade(&owner, request), Ok(true));
+    assert_eq!(w.execute_upgrade(&owner, request), Ok(()));
     report.row(&w, "execute_upgrade");
 
     report.assert_within_budget();

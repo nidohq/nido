@@ -89,14 +89,15 @@ jobs:
         run: cargo test --workspace
 
       # Re-prove every committed fixture from source with Perch's pinned,
-      # checksum-verified nargo/bb (vendor/perch/scripts/zk-toolchain.sh) and
-      # fail on any byte of drift: proofs are deterministic, so a diff means
-      # the statement, the circuit, or the toolchain changed without the
-      # fixtures being regenerated.
+      # checksum-verified nargo/bb (vendor/perch/scripts/zk-toolchain.sh); each
+      # fresh proof must verify through the deployed adapter. The proofs are
+      # zero-knowledge, so their bytes differ on every run, but each fixture's
+      # statement digest, root, and nullifier must not: a diff there means a
+      # statement changed without the fixtures being regenerated.
       - name: Reproduce the real-proof fixtures
         run: |
           just gen-zk-fixtures
-          git diff --exit-code crates/integration-tests/fixtures/zk
+          git diff --exit-code -- 'crates/integration-tests/fixtures/zk/*/fixture.json'
 
   unit:
     name: Unit (TestAuthenticator)

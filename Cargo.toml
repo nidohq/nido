@@ -23,20 +23,22 @@ soroban-sdk = "27.0.2"
 # verifier, name-registry and factory contracts. Published by theahaco
 # (https://github.com/theahaco/admin-sep); Apache-2.0.
 admin-sep = "0.27.0"
-# Perch's pinned OZ fork (theahaco/stellar-contracts-OZ PR #3, the CAP-0071
-# delegated-auth patch on upstream fbfde38), the same rev
-# vendor/perch/Cargo.toml pins. Nido's contracts and Perch's account,
-# controller and compiler must share ONE `stellar-accounts` crate: the factory
-# hands the account `Signer`s, and the tests build `AuthPayload`s for it.
-# Upstream adoption is tracked by Perch (docs/recovery/cap-0071.md there).
-stellar-accounts = { git = "https://github.com/theahaco/stellar-contracts-OZ.git", rev = "82002206b1da48167091f33fe2ecfc97ce915857", package = "stellar-accounts" }
+# Perch's pinned OZ fork, the same rev vendor/perch/Cargo.toml pins:
+# theahaco/stellar-contracts-OZ PR #5 (head 3372676), stacked on PR #4 and the
+# CAP-0071 delegated-auth patch (PR #3, on upstream fbfde38). PR #4 adds the
+# `*_no_events` mutations (apply_doc emits one DocApplied instead) and PR #5
+# `reconcile_signers`. Nido's contracts and Perch's account, controller and
+# compiler must share ONE `stellar-accounts` crate: the factory hands the
+# account `Signer`s, and the tests build `AuthPayload`s for it. Upstream
+# adoption is tracked by Perch (docs/recovery/cap-0071.md there).
+stellar-accounts = { version = "0.7.1", git = "https://github.com/theahaco/stellar-contracts-OZ.git", rev = "33726766a1fd5e7e3d2977d79f64ee29e1ea3ca9", package = "stellar-accounts" }
 # soroban-sdk-tools 0.1.3 (crates.io) targets soroban-sdk 27.
 soroban-sdk-tools = "0.1.3"
 
 # The Perch stack (stellar-registry/perch epic #99), consumed from the
 # vendor/perch submodule, which pins the release workstream's branch
-# (WS4, fm/perch-epic99-release-p8) and its testnet deployment manifest
-# (deployments/testnet.json). These move to published packages once Perch
+# (WS4, fm/perch-epic99-release-p8 at 17f2c9c) and its testnet deployment
+# manifest (deployments/testnet.json). These move to published packages once Perch
 # merges and publishes that release.
 #
 # Path dependencies rather than git dependencies because

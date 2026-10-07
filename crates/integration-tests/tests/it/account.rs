@@ -273,7 +273,7 @@ fn an_upgrade_waits_seven_days_and_installs_the_scheduled_wasm() {
         err(w.execute_upgrade(&alice, id + 1)),
         PerchAccountError::UpgradeRequestMismatch
     );
-    assert_eq!(w.execute_upgrade(&alice, id), Ok(true));
+    assert_eq!(w.execute_upgrade(&alice, id), Ok(()));
     // The account now runs the scheduled Wasm (the factory's): its
     // entry points answer at the account's address.
     let as_factory = nido_integration_tests::world::FactoryClient::new(&w.env, &alice.address);

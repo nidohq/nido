@@ -66,7 +66,7 @@ fn a_protected_upgrade_needs_the_guardian_quorum() {
         .expect("approved upgrade");
     let epoch = w.ctl().epoch(&e.account.address);
     w.advance(ACCOUNT_UPGRADE_DELAY_LEDGERS);
-    assert_eq!(w.execute_upgrade(&e.account, id), Ok(true));
+    assert_eq!(w.execute_upgrade(&e.account, id), Ok(()));
     assert_eq!(w.ctl().epoch(&e.account.address), epoch + 1);
 }
 
@@ -94,7 +94,7 @@ fn a_protected_zk_upgrade_needs_a_proof_over_the_upgrade_statement() {
         .schedule_upgrade(&e.account, &code, until)
         .expect("proven");
     w.advance(ACCOUNT_UPGRADE_DELAY_LEDGERS);
-    assert_eq!(w.execute_upgrade(&e.account, id), Ok(true));
+    assert_eq!(w.execute_upgrade(&e.account, id), Ok(()));
 }
 
 /// While an attempt is authorized, neither scheduling nor execution runs;
@@ -136,7 +136,8 @@ fn upgrades_are_blocked_in_the_window_and_dropped_by_a_completion() {
 }
 
 /// A request queued before a reconfiguration is stale afterwards: executing
-/// it clears it and returns `false` instead of running the old approval.
+/// it refuses with `StaleUpgrade` instead of running the old approval. The
+/// request stays (a failed call keeps no writes) but can never run.
 #[test]
 fn a_reconfiguration_makes_a_queued_upgrade_stale() {
     let w = world();
@@ -148,8 +149,11 @@ fn a_reconfiguration_makes_a_queued_upgrade_stale() {
     w.apply(&e.account, &w.doc(&e.account, Some(quorum_one)), 0)
         .unwrap();
     w.advance(ACCOUNT_UPGRADE_DELAY_LEDGERS);
-    assert_eq!(w.execute_upgrade(&e.account, id), Ok(false));
-    assert_eq!(w.account(&e.account).pending_upgrade(), None);
+    assert_eq!(
+        err(w.execute_upgrade(&e.account, id)),
+        PerchAccountError::StaleUpgrade
+    );
+    assert!(w.account(&e.account).pending_upgrade().is_some());
     assert!(
         w.account(&e.account).try_applied_doc_hash().is_ok(),
         "the code is unchanged"

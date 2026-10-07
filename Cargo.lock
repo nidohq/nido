@@ -1966,7 +1966,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "stellar-accounts"
 version = "0.7.1"
-source = "git+https://github.com/theahaco/stellar-contracts-OZ.git?rev=82002206b1da48167091f33fe2ecfc97ce915857#82002206b1da48167091f33fe2ecfc97ce915857"
+source = "git+https://github.com/theahaco/stellar-contracts-OZ.git?rev=33726766a1fd5e7e3d2977d79f64ee29e1ea3ca9#33726766a1fd5e7e3d2977d79f64ee29e1ea3ca9"
 dependencies = [
  "serde",
  "serde-json-core",

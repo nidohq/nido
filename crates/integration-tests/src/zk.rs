@@ -17,6 +17,10 @@
 //!   proved for exactly this statement digest, root, and nullifier. A drifted
 //!   statement fails here, with the regeneration command, rather than as an
 //!   opaque `ProofRejected` from the chain.
+//!
+//! The proofs are zero-knowledge (the verifier's `UltraKeccakZKFlavor`), so
+//! proving is randomized: a re-proof of the same statement has different
+//! bytes. What a regeneration must reproduce is each `fixture.json`.
 
 extern crate std;
 
