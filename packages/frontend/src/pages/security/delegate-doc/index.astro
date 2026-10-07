@@ -150,7 +150,7 @@ import Icon from '../../../components/Icon.astro';
   import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
-  import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchAppliedDocJson, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
   import { fetchDefaultRuleAuthInfo } from '../../../lib/policyChainFetch.js';
   import { bytesToHex } from '../../../lib/policy/policyView.js';
   import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../../../lib/spendingLimitParams.js';
@@ -242,7 +242,7 @@ import Icon from '../../../components/Icon.astro';
               "This account's contract predates policy documents — it cannot accept this request.",
             );
           } else if (surface.appliedDocHash !== null) {
-            const recovered = await fetchAppliedDocJson(account, toHex(surface.appliedDocHash));
+            const recovered = await fetchAppliedDocJson(account);
             if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
             else {
               // A document is applied but not recoverable: an update built

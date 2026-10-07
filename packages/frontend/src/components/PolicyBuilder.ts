@@ -35,7 +35,7 @@ import { esc } from '../lib/html.js';
 import { toast } from '../lib/toast.js';
 import { RPC_URL } from '../lib/network.js';
 import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../lib/policyChainFetch.js';
-import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../lib/policy/docPolicyFetch.js';
+import { fetchAppliedDocJson, fetchDocSurface } from '../lib/policy/docPolicyFetch.js';
 import { stroopsFromXlm, PERIOD_LEDGERS } from '../lib/spendingLimitParams.js';
 import { signAndSubmit } from '../lib/primaryPasskeySigner.js';
 import {
@@ -93,7 +93,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
         baselineBlocked =
           "This account's contract has no policy-document surface — it cannot take document updates.";
       } else if (surface.appliedDocHash !== null) {
-        const recovered = await fetchAppliedDocJson(opts.account, toHex(surface.appliedDocHash));
+        const recovered = await fetchAppliedDocJson(opts.account);
         if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
         else {
           baselineBlocked =

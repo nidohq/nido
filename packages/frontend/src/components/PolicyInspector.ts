@@ -262,9 +262,7 @@ export function renderDocPolicy(
     ? ''
     : ctx.source === 'storage'
       ? '<span class="pol-badge">Stored on chain</span>'
-      : ctx.source === 'events'
-        ? '<span class="pol-badge">From event history</span>'
-        : '';
+      : '';
 
   container.innerHTML = `
     <article class="card pol-card pol-doc-head" style="padding:16px;">

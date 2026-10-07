@@ -155,7 +155,7 @@ import Icon from '../../../components/Icon.astro';
   import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
-  import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchAppliedDocJson, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
   import { bytesToHex } from '../../../lib/policy/policyView.js';
   import {
     PERIOD_LEDGERS,
@@ -279,7 +279,7 @@ import Icon from '../../../components/Icon.astro';
                 "This account's contract predates policy documents — it cannot accept this request.",
               );
             } else if (surface.appliedDocHash !== null) {
-              const recovered = await fetchAppliedDocJson(account, toHex(surface.appliedDocHash));
+              const recovered = await fetchAppliedDocJson(account);
               if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
               else {
                 refuse(

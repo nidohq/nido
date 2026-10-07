@@ -8,10 +8,9 @@
 // resolve to "no document", which `readPolicy` classifies as tier c and the
 // inspector renders as the raw rule cards.
 
-import { rpc, Contract, scValToNative, xdr } from '@stellar/stellar-sdk';
+import { rpc, Contract, scValToNative } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
 import {
-  DOC_APPLIED_EVENT,
   perchTestnetAddresses,
   readPolicy,
   type ChainRule,
@@ -28,12 +27,11 @@ import { perchDeployment } from '../recovery/deployment.js';
 /** How far back the `DocApplied` event fallback scans. Testnet RPC keeps
  *  roughly a day of events; ask for a bit less so the request never starts
  *  before retention (which errors rather than clamping). */
-const EVENT_LOOKBACK_LEDGERS = 16000;
 
 /** Where the applied doc's JSON was recovered from. `storage` is the
  *  lossless on-chain copy (`applied_doc`); `events` is the `DocApplied`
  *  event history, which only reaches back as far as RPC retention. */
-export type DocJsonSource = 'storage' | 'events';
+export type DocJsonSource = 'storage';
 
 export interface DocSurface {
   /** False when the account predates the `apply_doc` surface (the probe
@@ -64,29 +62,6 @@ export async function fetchDocSurface(account: string): Promise<DocSurface> {
   return { supported: true, appliedDocHash };
 }
 
-/** Decode a `DocApplied` event's data payload to the doc JSON string.
- *  Exported for tests. The generated event data is `{ doc_json: Bytes }`;
- *  accept a bare bytes payload too, so a wire-shape drift degrades to "still
- *  works" rather than "silently tier c". */
-export function docJsonFromEventValue(native: unknown): string | null {
-  // Realm-safe bytes check: scValToNative yields Buffer, and test
-  // environments (jsdom) hand over Uint8Arrays from another realm, so a
-  // plain `instanceof` misses both.
-  const isBytes = (v: unknown): v is Uint8Array =>
-    v instanceof Uint8Array || Object.prototype.toString.call(v) === '[object Uint8Array]';
-  const bytes = isBytes(native)
-    ? native
-    : native != null && typeof native === 'object' && isBytes((native as Record<string, unknown>).doc_json)
-      ? ((native as Record<string, unknown>).doc_json as Uint8Array)
-      : null;
-  if (bytes === null) return null;
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    return null;
-  }
-}
-
 /** Lowercase hex of raw bytes (no deps — small enough to keep local). */
 export function toHex(bytes: Uint8Array): string {
   let out = '';
@@ -100,16 +75,13 @@ export interface RecoveredDocJson {
 }
 
 /**
- * Recover the applied document's JSON. Prefers the lossless on-chain copy
- * (the `applied_doc` view, stored by `apply_doc`); falls back to the
- * account's latest `DocApplied` event whose `doc_hash` topic matches the
- * stored hash. Returns null when neither path reaches a document (readPolicy
- * then classifies the account as tier c).
+ * Recover the applied document's JSON from the lossless on-chain copy (the
+ * `applied_doc` view, stored by `apply_doc`). A Perch account's `DocApplied`
+ * event names the hash and counts the changes but carries no document, so
+ * there is no event fallback. Returns null when the view doesn't answer
+ * (readPolicy then classifies the account as tier c).
  */
-export async function fetchAppliedDocJson(
-  account: string,
-  storedHashHex: string,
-): Promise<RecoveredDocJson | null> {
+export async function fetchAppliedDocJson(account: string): Promise<RecoveredDocJson | null> {
   let server: rpc.Server;
   try {
     server = new rpc.Server(RPC_URL);
@@ -125,33 +97,9 @@ export async function fetchAppliedDocJson(
       return { json: Buffer.from(native).toString('utf8'), source: 'storage' };
     }
   } catch {
-    // View absent (wasm predates doc-JSON storage) — fall through to events.
+    // View absent (wasm predates doc-JSON storage).
   }
 
-  // Event fallback: newest DocApplied whose doc_hash topic == stored hash.
-  try {
-    const latest = await server.getLatestLedger();
-    const startLedger = Math.max(1, latest.sequence - EVENT_LOOKBACK_LEDGERS);
-    const resp = await server.getEvents({
-      startLedger,
-      filters: [
-        {
-          type: 'contract',
-          contractIds: [account],
-          topics: [[xdr.ScVal.scvSymbol(DOC_APPLIED_EVENT).toXDR('base64'), '*']],
-        },
-      ],
-      limit: 100,
-    });
-    for (const ev of [...resp.events].reverse()) {
-      const hashTopic = ev.topic[1] !== undefined ? (scValToNative(ev.topic[1]) as Uint8Array) : null;
-      if (hashTopic === null || toHex(new Uint8Array(hashTopic)) !== storedHashHex) continue;
-      const json = docJsonFromEventValue(scValToNative(ev.value));
-      if (json !== null) return { json, source: 'events' };
-    }
-  } catch {
-    // Retention exceeded / RPC hiccup — no document recoverable.
-  }
   return null;
 }
 
@@ -217,7 +165,7 @@ export async function readDocPolicy(
 ): Promise<DocPolicyRead> {
   const surface = await fetchDocSurface(account);
   const storedHex = surface.appliedDocHash === null ? null : toHex(surface.appliedDocHash);
-  const recovered = storedHex === null ? null : await fetchAppliedDocJson(account, storedHex);
+  const recovered = storedHex === null ? null : await fetchAppliedDocJson(account);
   // Every live rule but the zero-signer recovery rule came from the
   // document (`apply_doc` replaces the whole set).
   const docRuleIds = surface.appliedDocHash === null
@@ -232,10 +180,8 @@ export async function readDocPolicy(
   const result = readPolicy({
     chainRules,
     appliedDocHash: surface.appliedDocHash,
-    // View-first, matching the SDK's input surface: the on-chain canonical
-    // copy is `storedDocJson`; an event-recovered doc is the fallback field.
-    ...(recovered?.source === 'storage' ? { storedDocJson: recovered.json } : {}),
-    ...(recovered?.source === 'events' ? { eventDocJson: recovered.json } : {}),
+    // The on-chain canonical copy; readPolicy checks it against the stored hash.
+    ...(recovered ? { storedDocJson: recovered.json } : {}),
     decompileCtx: {
       account,
       interpreterAddress: interpreterAddress(),
