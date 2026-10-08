@@ -1,0 +1,101 @@
+[
+  {
+    "config_hash": "59aead71fc805ed0556e620737690c3f85d4cd2f901f649c3344908d8bdbb46e",
+    "label": "vec-loss-guardian",
+    "recovery": {
+      "controller": "CDFNHMEOY6PFDTAM2T2ZIGSW2SOX36DC7EBKP2RARQ6BQCNJG6FZI6GP",
+      "delay-ledgers": 10,
+      "expiry-ledgers": 100,
+      "max-cancels": 3,
+      "mode": {
+        "guardians": [
+          "CCMOHCNJH5YMYQANRRDN3AVOM5TC4EJYGZU7OTDIA52MKVJUFXWRGWA4",
+          "CBL5PJKCQDSHQ57L4B6TTH2BRR3CUVYBZ774WJ56U7MZHTAGXZRYGO7L",
+          "CAZJKJAT4UDFW662IGYZBYPUCAY7KWTXNAB4OHLIOO6AJP2UMLGKK4AB"
+        ],
+        "quorum": 2,
+        "type": "guardian-only"
+      },
+      "profile": "loss",
+      "replaceable": [
+        "owner"
+      ]
+    }
+  },
+  {
+    "config_hash": "5631ee86c0c83573b386f831b3ac4c00f5a238969537300f6f671801e01867cb",
+    "label": "vec-loss-zk",
+    "recovery": {
+      "controller": "CDFNHMEOY6PFDTAM2T2ZIGSW2SOX36DC7EBKP2RARQ6BQCNJG6FZI6GP",
+      "delay-ledgers": 10,
+      "expiry-ledgers": 100,
+      "max-cancels": 3,
+      "mode": {
+        "adapter": "CB4KOZ5AVO7SMIQD34QDQU64COEMQGDOUBUAKXUY23C4NCCY6POVA35Y",
+        "circuit-id": "9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a",
+        "commitment": "1b387da3b4fe53aa7a4ffc71247ab611d75cde79988e2d7e88028518c43493e2",
+        "enrollment-id": "8cb886749020168a1a329cc5ff35f76a37b21a0694d391dd8c58789ab978d2df",
+        "pool": "CCNQAK743QXJXUC7TUEISQLJ5PMRCWMXMTTD4UYQJVJUCOTSCZD7ELJV",
+        "type": "zk-only"
+      },
+      "profile": "loss",
+      "replaceable": [
+        "owner"
+      ]
+    }
+  },
+  {
+    "config_hash": "6ad7dc84e7effd59ba7c3c1f60455129cc3547620f6a056ecd601ce478fb3a2f",
+    "label": "vec-protected-combined-baseline",
+    "recovery": {
+      "baseline": {
+        "doc-hash": "4242424242424242424242424242424242424242424242424242424242424242"
+      },
+      "controller": "CDFNHMEOY6PFDTAM2T2ZIGSW2SOX36DC7EBKP2RARQ6BQCNJG6FZI6GP",
+      "delay-ledgers": 10,
+      "expiry-ledgers": 100,
+      "max-cancels": 3,
+      "mode": {
+        "adapter": "CB4KOZ5AVO7SMIQD34QDQU64COEMQGDOUBUAKXUY23C4NCCY6POVA35Y",
+        "circuit-id": "9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a",
+        "commitment": "3040bc37a9e5cbc8b38cae0e1b5eaae1ed8f9d7a04c3135e6854897d183feede",
+        "enrollment-id": "b8d0b22fdf55fefd2cf4c6ce7ba2e7baa98cba5cc77f599d945c9d255afd1d7b",
+        "guardians": [
+          "CDEOT2XJMKDSLHYSJ67WLWUZYXY5EZRSHZLRLI45OCZF7GEBIQU7LLAC",
+          "CARLZ3X5D6CPL2MVW2HT74EQ4656AIQP4X7XWUTZZHA3B5RKRN5TXCHY",
+          "CC3YCYZSYSC45HNN3GF7PBH753KLFWZRPHWU2P4GYXBV25YBEWWXV7KB"
+        ],
+        "pool": "CCNQAK743QXJXUC7TUEISQLJ5PMRCWMXMTTD4UYQJVJUCOTSCZD7ELJV",
+        "quorum": 2,
+        "type": "combined"
+      },
+      "profile": "protected",
+      "replaceable": [
+        "owner"
+      ]
+    }
+  },
+  {
+    "config_hash": "389f9d8b9c389304ecc14dccbca70a1f273cba4cc41e9d5bc0642526e09cc1ed",
+    "label": "vec-protected-guardian",
+    "recovery": {
+      "controller": "CDFNHMEOY6PFDTAM2T2ZIGSW2SOX36DC7EBKP2RARQ6BQCNJG6FZI6GP",
+      "delay-ledgers": 10,
+      "expiry-ledgers": 100,
+      "max-cancels": 3,
+      "mode": {
+        "guardians": [
+          "CD3WXXT2CQL265WUU2LJ35WGFW7RE5F4PBR5TDPHHOT4JPOSPVXUQP5S",
+          "CDIFEL2K5GCTN4N4EJOIOFT5QPRLD2ZVMK3KSKCGW6SCWKPVSOCVDPKC",
+          "CAHE6B4RQXL4OGO5KDIP5IPMI4MSBNZBJ7WFUKJEUQU4D5ED5KANJKRB"
+        ],
+        "quorum": 2,
+        "type": "guardian-only"
+      },
+      "profile": "protected",
+      "replaceable": [
+        "owner"
+      ]
+    }
+  }
+]
