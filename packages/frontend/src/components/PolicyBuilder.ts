@@ -43,6 +43,7 @@ import {
   adminRules,
   nextAdminRuleName,
   adminBaseline,
+  recoveryEditProblem,
   removeAdminRule,
   upsertSessionRule,
   validateAdminKeyDraft,
@@ -688,6 +689,12 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
         return;
       }
       const doc = args.buildDoc();
+      const recoveryProblem = recoveryEditProblem(baselineDoc, doc);
+      if (recoveryProblem !== undefined) {
+        args.showErrors([recoveryProblem]);
+        setStatus('');
+        return;
+      }
 
       setStatus('Building the apply_doc transaction…');
       const tx = await buildApplyDocTx(doc, {
