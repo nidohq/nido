@@ -32,4 +32,4 @@ export default defineConfig({
       exclude: ['@aztec/bb.js', '@noir-lang/noirc_abi', '@noir-lang/acvm_js'],
     },
   },
-});
+);
