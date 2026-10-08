@@ -316,4 +316,27 @@ describe('policy edits never reconfigure recovery', () => {
     expect(recoveryEditProblem(null, perch.withRecovery(legacy, undefined))).toBeUndefined();
   });
 
+  it('refuses to remove the last admin key recovery can restore', () => {
+    const base = perch.withRecovery(
+      adminBaseline({ verifier: VERIFIER, publicKeyHex: OWNER_KEY }, Networks.TESTNET),
+      recovery(['admin']),
+    );
+    const twoAdmins = addAdminKey(
+      base,
+      { name: 'admin-2', signer: { kind: 'delegated', address: G2 } },
+      Networks.TESTNET,
+    ).doc;
+    expect(() => removeAdminRule(twoAdmins, 'admin', Networks.TESTNET)).toThrow(
+      /last admin key your recovery can restore/,
+    );
+    // The other admin can go: recovery still restores `admin`.
+    expect(removeAdminRule(twoAdmins, 'admin-2', Networks.TESTNET).rules.map((r) => r.name)).toEqual([
+      'admin',
+    ]);
+    // With both restorable, either can go.
+    const bothRestorable = perch.withRecovery(twoAdmins, recovery(['admin', 'admin-2']));
+    expect(removeAdminRule(bothRestorable, 'admin', Networks.TESTNET).rules.map((r) => r.name)).toEqual([
+      'admin-2',
+    ]);
+  });
 });

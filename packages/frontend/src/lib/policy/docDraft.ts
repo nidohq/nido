@@ -320,6 +320,12 @@ export function recoveryEditProblem(current: PolicyDoc | null, next: PolicyDoc):
     : undefined;
 }
 
+/** Whether lost-key recovery can restore `rule`: one of its signers is a
+ *  credential the recovery member declares replaceable. */
+function recoveryRestores(rule: WireRule, replaceable: readonly string[]): boolean {
+  return rule.principals.type !== 'self-authenticating' && rule.principals.signers.some((id) => replaceable.includes(id));
+}
+
 /** Drop declarations no rule references, migrate legacy ids, then
  *  re-validate through the schema so a malformed merge fails closed here,
  *  not at the compiler. */
@@ -486,6 +492,12 @@ export function addAdminKey(
  * `DocAdminLockout` anti-brick check would reject the document anyway, so
  * the refusal surfaces here with a human-readable reason instead of a
  * failed simulation.
+ *
+ * Also refuses to remove the last admin rule that lost-key recovery can
+ * restore. The recovery member's replaceable signers stay declared, so the
+ * document would still compile, but a recovery would then replace a key no
+ * rule uses and hand back no admin access. Changing which keys recovery
+ * restores is a reconfiguration, done on the recovery page.
  */
 export function removeAdminRule(
   base: PolicyDoc,
@@ -503,6 +515,15 @@ export function removeAdminRule(
   if (adminRules(base).length <= 1) {
     throw new Error(
       'policy doc: cannot remove the last admin key — the account would have no admin authority (the contract refuses such documents)',
+    );
+  }
+  const replaceable = base.recovery?.replaceable ?? [];
+  if (
+    recoveryRestores(target, replaceable) &&
+    !adminRules(base).some((r) => r.name !== ruleName && recoveryRestores(r, replaceable))
+  ) {
+    throw new Error(
+      `policy doc: cannot remove "${ruleName}" — it is the last admin key your recovery can restore. Change which keys recovery restores on the Recovery page first.`,
     );
   }
   return rebuildDoc(
