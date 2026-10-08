@@ -86,9 +86,11 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
   `apply_doc` naming the revision it was prepared at is refused with
   `StaleRevision` once another apply has moved the account, and leaves the
   revision; every successful apply advances it by one.
-  `a_document_prepared_at_an_older_revision_is_refused`. The wallet doesn't
-  name a revision yet (MAINNET_READINESS D8), so it doesn't get this
-  protection.
+  `a_document_prepared_at_an_older_revision_is_refused`. The wallet names
+  the revision each document was composed from: owner applies go through
+  perch-js's `applyDocument` (`applyDocWithPasskey` in
+  `packages/frontend/src/lib/primaryPasskeySigner.ts`), and a dApp request
+  carries it as `expectedRevision` (`docRequest.test.ts`).
 
 ## Onboarding (`onboarding.rs`)
 
@@ -230,16 +232,19 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
   Perch's `deployments/testnet.json` plus Nido's factory, field by field.
   `packages/passkey-sdk/src/perch/deployment.test.ts`.
 - **W7. A completion carries its own recovery-rule auth entry.** The
-  completing `apply_doc(target, 0, None)` has address credentials for the account,
-  a fresh nonce, and a signer-free payload selecting the recovery rule, and
-  the wallet simulates it in enforcing mode (recording mode never runs the
+  completing `apply_doc(target, 0, Some(revision))` has address credentials
+  for the account, a fresh nonce, and perch-js's signer-free `AuthPayload`
+  for the recovery rule, selected (`selectRecoveryRule`) in the same snapshot
+  the target was derived from; `revision` is that snapshot's. The wallet
+  simulates it in enforcing mode (recording mode never runs the
   controller's `enforce`). `packages/passkey-sdk/src/perch/recovery.test.ts`.
 - **W8. Every profile/mode combination recovers on testnet through the
   wallet.** Guardians approve from their own Nidos, the kit proves in the
   page, the delay passes, and the completion lands, against Perch's
   deployed release and Nido's factory. `tests/e2e/testnet/perch-recovery.testnet.spec.ts`
-  (manual tier; last run 2026-10-07 against Perch's 836fdc9 deployment, all
-  six plus the policy page, with the relayer-free harness, RUNBOOKS §1).
+  (manual tier; last run 2026-10-08 against Perch's 836fdc9 deployment with
+  the wallet on perch-js's consumer interface, all six plus the policy page,
+  with the relayer-free harness, RUNBOOKS §1).
 - **W9. A document over Perch's caps is refused before it's built.** At most
   8 declared signers, 11 rules, 8192 canonical bytes, and 20-byte rule names:
   `buildApplyDocTx` says which cap a document breaks, and the admin-key form
@@ -247,6 +252,16 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
   Perch's compiler source in the test.
   `packages/passkey-sdk/src/policyDoc/caps.test.ts`,
   `packages/frontend/src/lib/policy/docDraft.test.ts`.
+
+- **W10. Rules are selected from the account's own record, never by an id
+  scan.** OZ never reuses a rule id and a document gives a replaced rule a
+  new one, so ids grow without bound (nidohq/nido#240). Signing, the
+  recovery completion, and the policy and security pages read the
+  installed rules from `configuration()` and select by name, scope, and key;
+  the integration harness does the same. The signing digest and the
+  `AuthPayload` are perch-js's, matched against Perch's Rust-written vectors.
+  `packages/frontend/src/lib/policyChainParse.test.ts`,
+  `packages/passkey-sdk/src/authVectors.test.ts`.
 
 ## Nido's pre-Perch policies
 
