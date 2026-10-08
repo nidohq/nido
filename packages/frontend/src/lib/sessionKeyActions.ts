@@ -1,8 +1,8 @@
-import { rpc, Contract, nativeToScVal } from '@stellar/stellar-sdk';
+import { rpc } from '@stellar/stellar-sdk';
 import {
   scopedSessionKeyModule, forgetSessionKeyMaterial, loadSessionKeyMaterial,
 } from '@nidohq/passkey-sdk';
-import { fetchVerifierAddress, simulateView, isRuleNotFound } from './policyChainFetch.js';
+import { fetchVerifierAddress, readAccountConfiguration } from './policyChainFetch.js';
 import { signAndSubmit } from './primaryPasskeySigner.js';
 import { latestLedgerSequence } from './network.js';
 
@@ -45,23 +45,16 @@ export async function delegateSessionKey(args: {
   });
 }
 
-/** Check whether a context rule still exists on-chain.
+/** Check whether a context rule is still installed, by its id in the
+ *  account's `configuration()` (one read, no per-id probe).
  *  Returns true if the rule exists, false if it is gone.
  *  On transient/unexpected errors returns true (conservative — let the caller
  *  surface the original failure rather than silently swallowing it).
  */
 export async function ruleStillExists(account: string, ruleId: number): Promise<boolean> {
   try {
-    const server = new rpc.Server(RPC_URL);
-    await simulateView(
-      server,
-      new Contract(account),
-      'get_context_rule',
-      nativeToScVal(ruleId, { type: 'u32' }),
-    );
-    return true;
-  } catch (err) {
-    if (isRuleNotFound(err)) return false;
+    return (await readAccountConfiguration(account)).rules.some((r) => r.id === ruleId);
+  } catch {
     // Can't verify either way — let the caller surface the original failure.
     return true;
   }

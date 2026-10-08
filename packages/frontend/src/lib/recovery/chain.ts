@@ -2,8 +2,10 @@
  * The wallet's recovery operations against the chain: reads, and the three
  * ways a recovery transaction gets authorized.
  *
- * - Owner-signed (`submitAsOwner`): the account's own passkey through
- *   `signAndSubmit`, for `apply_doc`, `cancel_recovery`, and upgrades.
+ * - Owner-signed: the account's own passkey. `applyDoc` runs perch-js's apply
+ *   lifecycle (`applyDocWithPasskey`) against the revision the document was
+ *   composed from; `submitAsOwner` signs `cancel_recovery` and upgrades
+ *   through `signAndSubmit`.
  * - Guardian-signed (`submitAsGuardian`): a Nido guardian's passkey through
  *   its `guardian` rule (scoped to the controller), or a classic Stellar
  *   wallet for a `G…` guardian.
@@ -12,11 +14,11 @@
  */
 
 import type { xdr } from '@stellar/stellar-sdk';
-import { buildApplyDocTx, loadCredential, parsePolicyDocJson, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
+import { loadCredential, parsePolicyDocJson, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { NETWORK_PASSPHRASE, RPC_URL, latestLedgerSequence } from '../network.js';
 import { adminBaseline } from '../policy/docDraft.js';
 import { fetchVerifierAddress } from '../policyChainFetch.js';
-import { getSubmitter, signAndSubmit } from '../primaryPasskeySigner.js';
+import { applyDocWithPasskey, getSubmitter, signAndSubmit } from '../primaryPasskeySigner.js';
 import { submitGuardianOp, submitPermissionlessOp } from '../recoverySubmit.js';
 import { requireDeployment } from './deployment.js';
 import { summarizeRecovery, type RecoverySummary } from './model.js';
@@ -34,6 +36,9 @@ export function accountArgs(account: string): perch.AccountArgs {
 
 export interface RecoveryState {
   doc: PolicyDoc | undefined;
+  /** The configuration revision `doc` belongs to: what an apply composed
+   *  from it names as `expected_revision`. */
+  revision: bigint;
   summary: RecoverySummary | undefined;
   gate: perch.ActivityGate | undefined;
   epoch: bigint;
@@ -43,41 +48,46 @@ export interface RecoveryState {
  *  attempt is authorized right now. */
 export async function readRecoveryState(account: string): Promise<RecoveryState> {
   const client = recoveryClient();
-  const json = await client.appliedDoc(account);
-  const doc = json ? parsePolicyDocJson(json) : undefined;
+  const { revision, canonical } = await client.document(account);
+  const doc = canonical ? parsePolicyDocJson(canonical) : undefined;
   const summary = summarizeRecovery(doc);
   const [gate, epoch] = summary
     ? await Promise.all([client.activityGate(account), client.epoch(account)])
     : [undefined, 0n];
-  return { doc, summary, gate, epoch };
+  return { doc, revision, summary, gate, epoch };
 }
 
 /** The account's applied document, or, before its first `apply_doc`, the
- *  baseline every first apply composes against: this browser's passkey as
- *  the admin. */
-export async function currentOrFirstDoc(account: string): Promise<PolicyDoc> {
-  const json = await recoveryClient().appliedDoc(account);
-  if (json) return parsePolicyDocJson(json);
+ *  baseline every first apply composes against (this browser's passkey as
+ *  the admin), with the revision it was read at. */
+export async function currentOrFirstDoc(account: string): Promise<{ doc: PolicyDoc; revision: bigint }> {
+  const { revision, canonical } = await recoveryClient().document(account);
+  if (canonical) return { doc: parsePolicyDocJson(canonical), revision };
   const cred = loadCredential(account);
   if (!cred) throw new Error('This browser has no passkey for this Nido.');
-  return adminBaseline({ verifier: await fetchVerifierAddress(account), publicKeyHex: cred.publicKey }, NETWORK_PASSPHRASE);
+  const doc = adminBaseline({ verifier: await fetchVerifierAddress(account), publicKeyHex: cred.publicKey }, NETWORK_PASSPHRASE);
+  return { doc, revision };
 }
 
 export async function latestLedger(): Promise<number> {
   return latestLedgerSequence();
 }
 
-/** Apply `doc` with the owner's passkey. `approvalValidUntil` is the bound a
+/** Apply `doc` with the owner's passkey, landing only at `baseRevision`,
+ *  the revision `doc` was composed from. `approvalValidUntil` is the bound a
  *  `Protected` change's recorded evidence was given for. */
-export async function applyDoc(account: string, doc: PolicyDoc, approvalValidUntil = 0): Promise<string> {
-  const tx = await buildApplyDocTx(doc, {
+export async function applyDoc(
+  account: string,
+  doc: PolicyDoc,
+  opts: { baseRevision: bigint; approvalValidUntil?: number },
+): Promise<string> {
+  const { hash } = await applyDocWithPasskey({
     account,
-    rpcUrl: RPC_URL,
-    networkPassphrase: NETWORK_PASSPHRASE,
-    approvalValidUntil,
+    doc,
+    baseRevision: opts.baseRevision,
+    approvalValidUntil: opts.approvalValidUntil,
   });
-  const result = await submitAsOwner(account, tx.operations[0]!);
-  return result;
+  return hash;
 }
 
 export async function submitAsOwner(account: string, operation: xdr.Operation): Promise<string> {

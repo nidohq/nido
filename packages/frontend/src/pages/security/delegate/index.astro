@@ -154,7 +154,7 @@ import Icon from '../../../components/Icon.astro';
   import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
-  import { fetchAppliedDocJson, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchAppliedDocument, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
   import { bytesToHex } from '../../../lib/policy/policyView.js';
   import {
     PERIOD_LEDGERS,
@@ -259,6 +259,9 @@ import Icon from '../../../components/Icon.astro';
   // The merge baseline and the diff's "before" side — same discipline as
   // /security/delegate-doc/: refuse rather than build over unknown state.
   let baselineDoc: PolicyDoc | null = null;
+  /** The configuration revision the baseline was read at: the request's
+   *  `expectedRevision`. */
+  let baselineRevision = 0n;
   let isFirstApply = false;
   let baselineLoaded = false;
   let docBaselineBlocked = false;
@@ -277,14 +280,16 @@ import Icon from '../../../components/Icon.astro';
                 "This account's contract predates policy documents — it cannot accept this request.",
               );
             } else if (surface.appliedDocHash !== null) {
-              const recovered = await fetchAppliedDocJson(account);
-              if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
+              const applied = await fetchAppliedDocument(account);
+              baselineRevision = applied.revision;
+              if (applied.json !== undefined) baselineDoc = parsePolicyDocJson(applied.json);
               else {
                 refuse(
                   'The account has an applied policy document that could not be read — cannot build a safe update.',
                 );
               }
             } else {
+              baselineRevision = (await fetchAppliedDocument(account)).revision;
               const info = await fetchDefaultRuleAuthInfo(account);
               const passkey = info.externalSigners[0];
               if (passkey === undefined) {
@@ -455,6 +460,7 @@ import Icon from '../../../components/Icon.astro';
         account,
         operation: buildSessionGrantOperation({
           baseline: baselineDoc,
+          baselineRevision,
           isFirstApply,
           draft,
           networkPassphrase: NETWORK_PASSPHRASE,

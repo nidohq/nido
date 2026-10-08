@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseRule, selectRemovableSigner } from "./policyChainFetch.js";
+import { chainRuleOf, parseRule, selectRemovableSigner, selectSignerRule } from "./policyChainFetch.js";
 import type { ChainSigner } from "@nidohq/passkey-sdk";
 
 // These fixtures mirror exactly what `scValToNative(scv)` (NO type hint) returns
@@ -106,6 +106,63 @@ describe("selectRemovableSigner (recovery: pick the lost device's key)", () => {
     expect(selectRemovableSigner([friend("CFRIEND"), ext([1])], [0])).toEqual({
       ok: false,
       reason: "unreadable",
+    });
+  });
+});
+
+describe("signer-rule selection over configuration()", () => {
+  const account = "CACCOUNT";
+  const controller = "CCONTROLLER";
+  const key = (n: number) => new Uint8Array(65).fill(n);
+  const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  const rule = (id: number, name: string, contract: string, keys: Uint8Array[], recovery = false) => ({
+    id,
+    recovery,
+    name,
+    contract,
+    validUntil: null,
+    signers: keys.map((k) => ({ kind: "external" as const, verifier: "CVERIFIER", key: k })),
+    policies: [],
+  });
+  // A guardian rule (scoped to the controller) listed before the admin rule,
+  // both holding the owner's key, and a recovery rule.
+  const config = {
+    revision: 7n,
+    docHash: null,
+    rules: [
+      rule(12, "guardian", controller, [key(1)]),
+      rule(14, "admin", account, [key(1)]),
+      rule(15, "recovery", account, [], true),
+    ],
+    recoveryController: controller,
+    recoveryRule: 15,
+    gate: null,
+    recoveryGeneration: 0n,
+    infra: { docCompiler: "C1", interpreter: "C2", spendingLimit: "C3" },
+  };
+
+  it("picks the rule scoped to the account, with the revision it read", () => {
+    expect(selectSignerRule(config, account, hex(key(1)))).toEqual({
+      ruleId: 14,
+      ruleName: "admin",
+      verifier: "CVERIFIER",
+      revision: 7n,
+    });
+  });
+
+  it("selects a named rule when asked, and nothing for an unknown key", () => {
+    expect(selectSignerRule(config, account, hex(key(1)), "guardian")?.ruleId).toBe(12);
+    expect(selectSignerRule(config, account, hex(key(2)))).toBeNull();
+  });
+
+  it("maps an installed rule into the UI's ChainRule", () => {
+    expect(chainRuleOf(config.rules[1]!)).toMatchObject({
+      ruleId: 14,
+      name: "admin",
+      contextType: { kind: "call-contract", contract: account },
+      signers: [{ kind: "external", verifier: "CVERIFIER" }],
+      policies: [],
+      validUntil: null,
     });
   });
 });

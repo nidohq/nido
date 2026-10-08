@@ -20,6 +20,7 @@ import { esc } from '../html.js';
 import { toast } from '../toast.js';
 import { connect as connectWallet, initWalletKit } from '../walletConnect.js';
 import { applyDoc, currentOrFirstDoc, GUARDIAN_RULE, recoveryClient, submitAsGuardian, readRecoveryState } from './chain.js';
+import { readAccountConfiguration } from '../policyChainFetch.js';
 import { perchDeployment, requireDeployment } from './deployment.js';
 import {
   attemptLinkProblem,
@@ -91,7 +92,8 @@ export async function mountGuardian(root: HTMLElement): Promise<void> {
     await new Promise<void>((resolve) =>
       allow.addEventListener('click', () =>
         busy(allow, status, 'Updating your Nido…', async () => {
-          await applyDoc(nidoGuardian, withGuardianRule(await currentOrFirstDoc(nidoGuardian)));
+          const own = await currentOrFirstDoc(nidoGuardian);
+          await applyDoc(nidoGuardian, withGuardianRule(own.doc), { baseRevision: own.revision });
           allow.remove();
           status.textContent = '';
           resolve();
@@ -184,12 +186,14 @@ async function describe(request: GuardianRequest, doc: PolicyDoc): Promise<{ htm
   };
 }
 
+/** Whether `account` has the guardian rule installed: a rule named
+ *  `guardian` scoped to the controller, as its `configuration()` reports
+ *  (perch-js selection by name and scope). */
 async function hasGuardianRule(account: string): Promise<boolean> {
-  const json = await recoveryClient().appliedDoc(account);
-  if (!json) return false;
-  const doc = parsePolicyDocJson(json);
   const controller = requireDeployment().recoveryController;
-  return doc.rules.some((r) => r.name === GUARDIAN_RULE && r.scope.type === 'contract' && r.scope.address === controller);
+  return (await readAccountConfiguration(account)).rules.some(
+    (r) => !r.recovery && r.name === GUARDIAN_RULE && r.contract === controller,
+  );
 }
 
 /** `doc` with a rule letting its admin signers act at the controller. */

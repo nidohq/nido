@@ -1,7 +1,8 @@
 // The policy builder: compose a policy-document update and apply it.
 //
 // DOC-ONLY by ruling: every policy write goes through the account's
-// one-transaction `apply_doc` surface (`buildApplyDocTx`). Two tabs:
+// one-transaction `apply_doc` surface, through perch-js's apply lifecycle
+// (`applyDocWithPasskey`), landing only at the baseline's revision. Two tabs:
 //
 // - **Session key** — the canned v1 template: one scoped session key (a
 //   delegated signer restricted to one contract's named functions, with an
@@ -19,11 +20,10 @@
 // (canonical JSON + doc_hash) AND the diff against the applied one —
 // exactly what changes — before the user confirms. Validation and the
 // merge/diff logic live in the pure libs (lib/policy/docDraft,
-// lib/policy/docDiff); submission goes through the account's existing
-// passkey signing path (signAndSubmit). This module never signs silently.
+// lib/policy/docDiff); submission goes through the account's passkey
+// (applyDocWithPasskey). This module never signs silently.
 
 import {
-  buildApplyDocTx,
   canonicalJson,
   createSessionPasskey,
   docHash,
@@ -33,11 +33,10 @@ import {
 import { Networks } from '@stellar/stellar-sdk';
 import { esc } from '../lib/html.js';
 import { toast } from '../lib/toast.js';
-import { RPC_URL } from '../lib/network.js';
 import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../lib/policyChainFetch.js';
-import { fetchAppliedDocJson, fetchDocSurface } from '../lib/policy/docPolicyFetch.js';
+import { fetchAppliedDocument, fetchDocSurface } from '../lib/policy/docPolicyFetch.js';
 import { stroopsFromXlm, PERIOD_LEDGERS } from '../lib/spendingLimitParams.js';
-import { signAndSubmit } from '../lib/primaryPasskeySigner.js';
+import { applyDocWithPasskey } from '../lib/primaryPasskeySigner.js';
 import {
   addAdminKey,
   adminRules,
@@ -73,6 +72,9 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
   // without a policy-free self-admin rule, so the account's own passkey
   // must ride along from the start).
   let baselineDoc: PolicyDoc | null = null;
+  /** The configuration revision `baselineDoc` was read at: every submit
+   *  lands only there (`expected_revision`). */
+  let baselineRevision = 0n;
   /** True when nothing is applied yet (diff renders all-new). */
   let isFirstApply = false;
   /** Human-readable reason the baseline could not be established — the
@@ -94,8 +96,9 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
         baselineBlocked =
           "This account's contract has no policy-document surface — it cannot take document updates.";
       } else if (surface.appliedDocHash !== null) {
-        const recovered = await fetchAppliedDocJson(opts.account);
-        if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
+        const applied = await fetchAppliedDocument(opts.account);
+        baselineRevision = applied.revision;
+        if (applied.json !== undefined) baselineDoc = parsePolicyDocJson(applied.json);
         else {
           baselineBlocked =
             'The applied policy document could not be read — cannot build a safe update.';
@@ -103,6 +106,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
       } else {
         // First apply: anchor the anti-brick admin rule on the account's
         // live primary passkey (the constructor default rule).
+        baselineRevision = (await fetchAppliedDocument(opts.account)).revision;
         const info = await fetchDefaultRuleAuthInfo(opts.account);
         const passkey = info.externalSigners[0];
         if (passkey === undefined) {
@@ -123,9 +127,11 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     }
   })();
 
-  // After a successful apply the new document IS the applied one.
-  function adoptApplied(doc: PolicyDoc): void {
+  // After a successful apply the new document IS the applied one, at the
+  // revision the apply moved the account to.
+  function adoptApplied(doc: PolicyDoc, revision: bigint): void {
     baselineDoc = doc;
+    baselineRevision = revision;
     isFirstApply = false;
     pendingRemoval = null;
   }
@@ -662,8 +668,8 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     box.innerHTML = `<ul style="margin:0;padding-left:18px;">${errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>`;
   }
 
-  /** Build the doc (against the LOADED baseline), submit one apply_doc
-   *  through the passkey signing path, and refresh on success. */
+  /** Build the doc (against the LOADED baseline), apply it with the
+   *  passkey at the baseline's revision, and refresh on success. */
   async function applyUpdate(args: {
     wrap: HTMLElement;
     submitSel: string;
@@ -697,20 +703,17 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
       }
 
       setStatus('Building the apply_doc transaction…');
-      const tx = await buildApplyDocTx(doc, {
+      // perch-js's apply lifecycle: lands only at the baseline's revision.
+      const { revision } = await applyDocWithPasskey({
         account: opts.account,
-        rpcUrl: RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-      });
-      await signAndSubmit({
-        account: opts.account,
-        operation: tx.operations[0]!,
+        doc,
+        baseRevision: baselineRevision,
         onProgress: (p) => setStatus(`${p.phase}${p.detail ? `: ${p.detail}` : ''}…`),
       });
 
       toast(args.successToast);
       setStatus('');
-      adoptApplied(doc);
+      adoptApplied(doc, revision);
       args.rerender();
       opts.onSubmitted?.();
     } catch (err) {

@@ -11,13 +11,14 @@
 import { rpc, Contract, scValToNative } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
 import {
+  perch,
   perchTestnetAddresses,
   readPolicy,
   type ChainRule,
   type PolicyDoc,
   type ReadPolicyResult,
 } from '@nidohq/passkey-sdk';
-import { fetchDefaultRuleAuthInfo } from '../policyChainFetch.js';
+import { fetchDefaultRuleAuthInfo, readAccountConfiguration } from '../policyChainFetch.js';
 import { adminBaseline } from './docDraft.js';
 import { Client as InterpreterClient } from '@stellar-registry/perch-interpreter';
 import { fetchRegistryAddress, simulateView } from '../policyChainFetch.js';
@@ -72,35 +73,43 @@ export function toHex(bytes: Uint8Array): string {
 export interface RecoveredDocJson {
   json: string;
   source: DocJsonSource;
+  /** The configuration revision the document belongs to: what an apply
+   *  composed from it names as `expected_revision`. */
+  revision: bigint;
+}
+
+/**
+ * The applied document's canonical JSON and the configuration revision it
+ * belongs to, from the account's `document()` view (one read, stellar-
+ * registry/perch#108). `json` is undefined before the first `apply_doc`;
+ * the revision is still the account's (0 after the constructor). Throws
+ * when the view doesn't answer.
+ */
+export async function fetchAppliedDocument(account: string): Promise<{ revision: bigint; json: string | undefined }> {
+  const { revision, canonical } = await perch.readDocument({
+    account,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+  return { revision, json: canonical };
 }
 
 /**
  * Recover the applied document's JSON from the lossless on-chain copy (the
- * `applied_doc` view, stored by `apply_doc`). A Perch account's `DocApplied`
- * event names the hash and counts the changes but carries no document, so
- * there is no event fallback. Returns null when the view doesn't answer
- * (readPolicy then classifies the account as tier c).
+ * `document()` view, stored by `apply_doc`), with its revision. A Perch
+ * account's `DocApplied` event names the hash and counts the changes but
+ * carries no document, so there is no event fallback. Returns null when
+ * there is no document or the view doesn't answer (readPolicy then
+ * classifies the account as tier c).
  */
 export async function fetchAppliedDocJson(account: string): Promise<RecoveredDocJson | null> {
-  let server: rpc.Server;
   try {
-    server = new rpc.Server(RPC_URL);
+    const { revision, json } = await fetchAppliedDocument(account);
+    return json === undefined ? null : { json, source: 'storage', revision };
   } catch {
+    // View absent (an account without Perch's consumer interface).
     return null;
   }
-
-  // Lossless path: the canonical doc JSON in persistent storage.
-  try {
-    const rv = await simulateView(server, new Contract(account), 'applied_doc');
-    const native = scValToNative(rv) as Uint8Array | Buffer | null | undefined;
-    if (native != null) {
-      return { json: Buffer.from(native).toString('utf8'), source: 'storage' };
-    }
-  } catch {
-    // View absent (wasm predates doc-JSON storage).
-  }
-
-  return null;
 }
 
 /** The interpreter the account's pinned build attaches: from the Perch
@@ -167,10 +176,12 @@ export async function readDocPolicy(
   const storedHex = surface.appliedDocHash === null ? null : toHex(surface.appliedDocHash);
   const recovered = storedHex === null ? null : await fetchAppliedDocJson(account);
   // Every live rule but the zero-signer recovery rule came from the
-  // document (`apply_doc` replaces the whole set).
+  // document (`apply_doc` replaces the whole set). The recovery rule is
+  // known by the account's own flag, never by its name: a document may name
+  // a rule "recovery".
   const docRuleIds = surface.appliedDocHash === null
     ? []
-    : chainRules.filter((r) => r.name !== 'recovery').map((r) => r.ruleId);
+    : (await readAccountConfiguration(account)).rules.filter((r) => !r.recovery).map((r) => r.id);
   const programs = await fetchInterpreterPrograms(account, docRuleIds);
   const deployment = perchDeployment();
   const spendingLimitAddress =

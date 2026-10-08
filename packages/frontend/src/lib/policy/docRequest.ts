@@ -120,6 +120,8 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
  */
 export function buildSessionGrantOperation(args: {
   baseline: PolicyDoc;
+  /** The configuration revision `baseline` was read at. */
+  baselineRevision: bigint;
   /** True when nothing is applied yet — no prevDocJson (all-new diff). */
   isFirstApply: boolean;
   draft: SessionDocDraft;
@@ -132,6 +134,7 @@ export function buildSessionGrantOperation(args: {
     type: 'apply-policy-doc',
     docJson: canonicalJson(doc),
     ...(args.isFirstApply ? {} : { prevDocJson: canonicalJson(args.baseline) }),
+    expectedRevision: args.baselineRevision.toString(),
     expiryLabel: args.expiryLabel,
   };
 }
