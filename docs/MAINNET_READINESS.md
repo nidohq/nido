@@ -70,8 +70,9 @@ a prerequisite on top of everything here.
   so they hide the secret, but Perch's `UltraKeccakZKFlavor` delta on the
   audited verifier is not audited yet (THREAT_MODEL 13); Perch lists that
   audit as a release criterion.
-- [ ] **D6. Product calls made:** retire or port Nido's pre-Perch policies;
-  retire `infra/recovery-relay`.
+- [ ] **D6. Product calls made:** retire or port Nido's pre-Perch policies
+  (#237); delete the recovery relay's deployed worker and KV namespace (its
+  code is gone, #233).
 - [ ] **D7. The hosted relayer's onboarding queue.** It refused every
   account setup on 2026-10-03, and five of seven on 2026-10-07 after
   accepting the first few, while its health check passed; find out why
@@ -114,10 +115,13 @@ a prerequisite on top of everything here.
 
 1. Everything above green on the frozen, audited commits.
 2. Perch's mainnet deployment exists and its manifest verifies (A1).
-3. Deploy the registry instance (A4) and, if needed, the WebAuthn verifier,
-   with multisig admins (B1).
+3. Deploy the registry instance (A4), its owner the multisig (B2). Nido
+   deploys no WebAuthn verifier: accounts use Perch's, which is
+   constructorless and has no admin, at the address the verified manifest
+   gives (step 2).
 4. Build the factory around the published account wasm, deploy it, upload the
-   account wasm, pin the verifier, register the factory (RUNBOOKS §2.2).
+   account wasm, pin the manifest's verifier (`set_registry_pins`), hand the
+   factory to the multisig (B1), and register it (RUNBOOKS §2.2).
 5. Relayer on KMS (A3), alerts live, incident drill run.
 6. Front end built with the mainnet manifest; smoke-test onboarding and one
    full recovery.
