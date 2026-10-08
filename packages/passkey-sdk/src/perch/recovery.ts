@@ -37,9 +37,17 @@ import type {
   ZkEvidence as BindingEvidence,
 } from '@nidohq/perch-recovery';
 import { Address, nativeToScVal, Operation, xdr } from '@stellar/stellar-sdk';
+import {
+  buildAuthPayload,
+  selectRecoveryRule,
+  type RuleSelection,
+  type Snapshot,
+  type SnapshotOptions,
+} from '@stellar-registry/perch';
 import { extractXdrOperations } from '../assembledTx.js';
 import { DEFAULT_EXPIRATION_OFFSET } from '../auth.js';
 import type { TxBuild } from '../policyBlocks/types.js';
+import { readAccountSnapshot } from './account.js';
 import type { PerchDeployment } from './deployment.js';
 import {
   sortReplacements,
@@ -160,10 +168,16 @@ function evidenceToChain(e: ZkEvidence): BindingEvidence {
 }
 
 /**
- * The completing `apply_doc(targetCanonical, 0, None)` as one operation whose
- * auth entry is already complete: address credentials for `account`, a fresh
- * nonce, and an `AuthPayload` with no signers that selects the zero-signer
- * recovery rule.
+ * The completing `apply_doc(targetCanonical, 0, Some(revision))` as one
+ * operation whose auth entry is already complete: address credentials for
+ * `account`, a fresh nonce, and an `AuthPayload` with no signers that
+ * selects the zero-signer recovery rule (perch-js `buildAuthPayload` over
+ * `selection`, from `selectRecoveryRule`).
+ *
+ * `selection.revision` goes in as `expected_revision`: it is the revision
+ * of the snapshot whose document the target was derived from, so the
+ * completion executes only at that configuration (`StaleRevision`
+ * otherwise).
  *
  * It can't come from recording-mode simulation, the usual way a client
  * learns its auth entries: recording never runs `__check_auth`, so the
@@ -175,19 +189,20 @@ function evidenceToChain(e: ZkEvidence): BindingEvidence {
 export function completionOperation(
   account: string,
   targetCanonical: string,
-  recoveryRuleId: number,
+  selection: RuleSelection,
   lastLedger: number,
   nonce: bigint = randomNonce(),
 ): xdr.Operation {
+  if (selection.account !== account) {
+    throw new Error(`the selection is for ${selection.account}, not ${account}`);
+  }
   const call = new xdr.InvokeContractArgs({
     contractAddress: Address.fromString(account).toScAddress(),
     functionName: 'apply_doc',
     args: [
       nativeToScVal(Buffer.from(targetCanonical, 'utf8'), { type: 'bytes' }),
       nativeToScVal(0, { type: 'u32' }),
-      // `expected_revision`: none. The controller's `enforce` already holds
-      // the completion to the exact target the attempt bound.
-      xdr.ScVal.scvVoid(),
+      nativeToScVal(selection.revision, { type: 'u64' }),
     ],
   });
   const entry = new xdr.SorobanAuthorizationEntry({
@@ -196,7 +211,7 @@ export function completionOperation(
         address: Address.fromString(account).toScAddress(),
         nonce: xdr.Int64.fromString(nonce.toString()),
         signatureExpirationLedger: lastLedger + DEFAULT_EXPIRATION_OFFSET,
-        signature: recoveryRulePayload(recoveryRuleId),
+        signature: xdr.ScVal.fromXDR(Buffer.from(buildAuthPayload(selection, []))),
       }),
     ),
     rootInvocation: new xdr.SorobanAuthorizedInvocation({
@@ -208,19 +223,6 @@ export function completionOperation(
     func: xdr.HostFunction.hostFunctionTypeInvokeContract(call),
     auth: [entry],
   });
-}
-
-/** OZ's `AuthPayload` selecting `ruleId` with no signers (`buildAuthPayloadScVal`
- *  requires at least one): `{ context_rule_ids: [ruleId], signers: {} }`,
- *  keys in symbol order. */
-export function recoveryRulePayload(ruleId: number): xdr.ScVal {
-  return xdr.ScVal.scvMap([
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol('context_rule_ids'),
-      val: xdr.ScVal.scvVec([xdr.ScVal.scvU32(ruleId)]),
-    }),
-    new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('signers'), val: xdr.ScVal.scvMap([]) }),
-  ]);
 }
 
 /** A random non-negative `i64` nonce. */
@@ -305,27 +307,41 @@ export class PerchRecovery {
     return (await this.controller.nullifier_spent({ account, nullifier: b(nullifier) })).result;
   }
 
-  /** The canonical JSON of the account's applied document. */
-  async appliedDoc(account: string): Promise<string | undefined> {
-    const doc = (await this.account(account).applied_doc()).result;
-    return doc ? Buffer.from(doc).toString('utf8') : undefined;
+  /** One consistent read of `account` at one configuration revision
+   *  (perch-js `readSnapshot`; see `readAccountSnapshot`). */
+  snapshot(account: string, options?: SnapshotOptions): Promise<Snapshot> {
+    return readAccountSnapshot(
+      {
+        account,
+        rpcUrl: this.args.rpcUrl,
+        networkPassphrase: this.args.deployment.network,
+        docCompiler: this.args.deployment.docCompiler,
+      },
+      options,
+    );
   }
 
-  /** The id of the account's zero-signer recovery rule, from its rules. */
-  async recoveryRuleId(account: string): Promise<number | undefined> {
-    const client = this.account(account);
-    const count = (await client.get_context_rules_count()).result;
-    // Rule ids are never reused and `apply_doc` re-creates every rule, so
-    // scan downward from the newest id that could exist.
-    for (let id = count + 64; id >= 0; id--) {
-      try {
-        const rule = (await client.get_context_rule({ context_rule_id: id })).result;
-        if (rule.name === 'recovery') return id;
-      } catch {
-        // A gap: the rule was replaced.
-      }
-    }
-    return undefined;
+  /** The canonical JSON of the account's applied document and the revision
+   *  it belongs to, from one snapshot. */
+  async document(account: string): Promise<{ revision: bigint; canonical: string | undefined }> {
+    const snap = await this.snapshot(account, { document: true });
+    return {
+      revision: snap.configuration.revision,
+      canonical: snap.document ? Buffer.from(snap.document).toString('utf8') : undefined,
+    };
+  }
+
+  /** The canonical JSON of the account's applied document. */
+  async appliedDoc(account: string): Promise<string | undefined> {
+    return (await this.document(account)).canonical;
+  }
+
+  /** The account's zero-signer recovery rule at its current revision
+   *  (perch-js `selectRecoveryRule`): the account's own record of the rule,
+   *  never an id scan, so it holds however many rules past applies
+   *  replaced (nidohq/nido#240). */
+  async recoverySelection(account: string): Promise<RuleSelection> {
+    return selectRecoveryRule(await this.snapshot(account));
   }
 
   // --- attempts ----------------------------------------------------------
@@ -427,7 +443,19 @@ export class PerchRecovery {
     action: 'lost-key' | 'compromise',
     replacements: ReplacementSet,
   ): Promise<string> {
-    const current = (await this.account(account).applied_doc()).result;
+    return (await this.prepareCompletion(account, action, replacements)).target;
+  }
+
+  /** What a completion needs, from one snapshot: the target derived from
+   *  the document applied at that revision, and the recovery rule selected
+   *  at the same revision, which `completion` sends as `expected_revision`. */
+  async prepareCompletion(
+    account: string,
+    action: 'lost-key' | 'compromise',
+    replacements: ReplacementSet,
+  ): Promise<{ target: string; selection: RuleSelection }> {
+    const snap = await this.snapshot(account, { document: true });
+    const current = snap.document;
     if (!current) throw new Error('the account has no applied document');
     const source =
       action === 'lost-key' ? current : (await this.controller.baseline({ account })).result;
@@ -443,7 +471,10 @@ export class PerchRecovery {
       action: action === 'lost-key' ? BindingAction.LostKey : BindingAction.Compromise,
       replacements: replacementSetToChain(replacements),
     });
-    return Buffer.from(ok(derived.result).canonical).toString('utf8');
+    return {
+      target: Buffer.from(ok(derived.result).canonical).toString('utf8'),
+      selection: selectRecoveryRule(snap),
+    };
   }
 
   /** The completing `apply_doc` of `targetCanonical`, authorized by
@@ -454,11 +485,11 @@ export class PerchRecovery {
   async completion(
     account: string,
     targetCanonical: string,
-    recoveryRuleId: number,
+    selection: RuleSelection,
     lastLedger: number,
   ): Promise<TxBuild> {
     return {
-      operations: [completionOperation(account, targetCanonical, recoveryRuleId, lastLedger)],
+      operations: [completionOperation(account, targetCanonical, selection, lastLedger)],
       description: 'Complete the recovery',
       authMode: 'enforce',
     };

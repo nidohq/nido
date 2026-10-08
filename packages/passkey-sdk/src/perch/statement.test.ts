@@ -110,7 +110,7 @@ describe("Perch's statement vectors", () => {
     expect(sortReplacements(unsorted).signers.map((s) => s.signerId)).toEqual(['a', 'b']);
     expect(() =>
       sortReplacements({ signers: [{ signerId: 'a', credential: c }, { signerId: 'a', credential: c }] }),
-    ).toThrow(/duplicate/);
+    ).toThrow(/repeated/);
   });
 });
 
