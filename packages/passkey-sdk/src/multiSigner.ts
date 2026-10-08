@@ -31,7 +31,8 @@
  * `recoveryActions`.
  */
 
-import { Address, xdr } from '@stellar/stellar-sdk';
+import { xdr } from '@stellar/stellar-sdk';
+import { authPayloadXdr, type SignerKey } from '@stellar-registry/perch';
 import type { PasskeySignature } from './types.js';
 
 /** One signer to include in a multi-signer `AuthPayload`. */
@@ -84,71 +85,33 @@ function webAuthnSigDataBytes(sig: PasskeySignature): Buffer {
   return sigDataScVal.toXDR();
 }
 
-/** Build the `Signer` enum ScVal key for a single signer. */
-function signerScVal(s: SignerSignature): xdr.ScVal {
-  if (s.kind === 'external') {
-    // Signer::External(verifier_address, public_key)
-    // → Vec[Symbol("External"), Address, Bytes]
-    return xdr.ScVal.scvVec([
-      xdr.ScVal.scvSymbol('External'),
-      Address.fromString(s.verifierAddress).toScVal(),
-      xdr.ScVal.scvBytes(Buffer.from(s.publicKey)),
-    ]);
-  }
-  // Signer::Delegated(address) → Vec[Symbol("Delegated"), Address]
-  return xdr.ScVal.scvVec([
-    xdr.ScVal.scvSymbol('Delegated'),
-    Address.fromString(s.address).toScVal(),
-  ]);
-}
-
-/** Build the `Bytes` value stored against a signer in the `signers` map. */
-function sigDataScVal(s: SignerSignature): xdr.ScVal {
-  if (s.kind === 'external') {
-    return xdr.ScVal.scvBytes(webAuthnSigDataBytes(s.passkeySignature));
-  }
-  // Delegated: bytes are ignored on-chain; emit an empty Bytes (or any
-  // provided placeholder) so the map entry exists and `authenticate` runs.
-  return xdr.ScVal.scvBytes(Buffer.from(s.sigData ?? new Uint8Array(0)));
+/** `s` as perch-js's signer key and signature bytes. A `Delegated`
+ *  signer's bytes are ignored on chain (authorization flows through its own
+ *  auth entry), so they default to empty. */
+function toPerch(s: SignerSignature): { signer: SignerKey; signature: Uint8Array } {
+  return s.kind === 'external'
+    ? {
+        signer: { kind: 'external', verifier: s.verifierAddress, key: s.publicKey },
+        signature: webAuthnSigDataBytes(s.passkeySignature),
+      }
+    : { signer: { kind: 'delegated', address: s.address }, signature: s.sigData ?? new Uint8Array(0) };
 }
 
 /**
- * Construct the OZ v0.7 `AuthPayload` ScVal for one or more signers.
- *
- * The result is an `ScMap` with Symbol keys `context_rule_ids` and `signers`
- * (alphabetical order, as Soroban requires for struct encoding). Set it as
- * the credential signature of a `SorobanAddressCredentials` entry.
+ * Construct the OZ v0.7 `AuthPayload` ScVal for one or more signers, as
+ * perch-js's `authPayloadXdr` encodes it: an `ScMap` with Symbol keys
+ * `context_rule_ids` and `signers`, the signers in the host's key order
+ * (`Delegated` before `External`, then field by field), a repeated signer
+ * refused. Set it as the credential signature of a
+ * `SorobanAddressCredentials` entry.
  */
 export function buildAuthPayloadScVal(spec: AuthPayloadSpec): xdr.ScVal {
   if (spec.signers.length === 0) {
     throw new Error('buildAuthPayloadScVal: at least one signer required');
   }
-  // Soroban requires ScMap entries to be sorted by key. The host orders
-  // ScVal keys by their XDR-serialized byte sequence, so sort entries by the
-  // signer key's XDR before assembling the map — otherwise multi-signer maps
-  // trap on deserialization with a "map keys out of order" error.
-  const entries = spec.signers
-    .map((s) => ({
-      key: signerScVal(s),
-      val: sigDataScVal(s),
-    }))
-    .sort((a, b) =>
-      Buffer.compare(a.key.toXDR(), b.key.toXDR()),
-    )
-    .map((e) => new xdr.ScMapEntry({ key: e.key, val: e.val }));
-  const signersMap = xdr.ScVal.scvMap(entries);
-  const contextRuleIdsVec = xdr.ScVal.scvVec(
-    spec.contextRuleIds.map((id) => xdr.ScVal.scvU32(id)),
-  );
-  // ScMap with Symbol keys in alphabetical order (context_rule_ids < signers).
-  return xdr.ScVal.scvMap([
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol('context_rule_ids'),
-      val: contextRuleIdsVec,
-    }),
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol('signers'),
-      val: signersMap,
-    }),
-  ]);
+  const bytes = authPayloadXdr({
+    contextRuleIds: [...spec.contextRuleIds],
+    signers: spec.signers.map(toPerch),
+  });
+  return xdr.ScVal.fromXDR(Buffer.from(bytes));
 }

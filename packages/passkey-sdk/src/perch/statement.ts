@@ -15,7 +15,6 @@
  * controller (`crates/integration-tests/fixtures/zk/`).
  */
 
-import { StrKey } from '@stellar/stellar-sdk';
 import * as perchjs from '@stellar-registry/perch';
 
 export type Bytes32 = Uint8Array;
@@ -50,10 +49,11 @@ export interface RecoveryStatement {
   subject: StatementSubject;
 }
 
-/** A contract address's 32-byte id. */
+/** A contract address's 32-byte id (perch-js `addressPayload`). */
 export function contractId(address: string): Bytes32 {
-  if (!StrKey.isValidContract(address)) throw new Error(`not a contract address: ${address}`);
-  return new Uint8Array(StrKey.decodeContract(address));
+  const { tag, payload } = perchjs.addressPayload(address);
+  if (tag !== 1) throw new Error(`not a contract address: ${address}`);
+  return payload;
 }
 
 /** `s` in perch-js's shape. */
@@ -99,28 +99,10 @@ export interface ReplacementSet {
   zkEnrollment?: { id: Bytes32; commitment: Bytes32 };
 }
 
-const enc = new TextEncoder();
-
-function compareBytes(a: Uint8Array, b: Uint8Array): number {
-  for (let i = 0; i < Math.min(a.length, b.length); i++) {
-    if (a[i] !== b[i]) return a[i]! - b[i]!;
-  }
-  return a.length - b.length;
-}
-
 /** Replacements in the one canonical order the controller accepts: signer
- *  ids strictly ascending by bytes. Refuses duplicates. */
-export function sortReplacements(set: ReplacementSet): ReplacementSet {
-  const signers = [...set.signers].sort((a, b) =>
-    compareBytes(enc.encode(a.signerId), enc.encode(b.signerId)),
-  );
-  for (let i = 1; i < signers.length; i++) {
-    if (signers[i - 1]!.signerId === signers[i]!.signerId) {
-      throw new Error(`duplicate replacement for signer "${signers[i]!.signerId}"`);
-    }
-  }
-  return { ...set, signers };
-}
+ *  ids strictly ascending by bytes (perch-js `sortReplacements`). Refuses
+ *  duplicates. */
+export const sortReplacements: (set: ReplacementSet) => ReplacementSet = perchjs.sortReplacements;
 
 /** The encoding; ids must already be in canonical order (`sortReplacements`). */
 export const encodeReplacementSet: (set: ReplacementSet) => Uint8Array = perchjs.encodeReplacementSet;

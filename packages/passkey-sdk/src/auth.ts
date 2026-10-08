@@ -1,5 +1,6 @@
 import { hash, xdr, rpc, Operation } from "@stellar/stellar-sdk";
 import { derToCompact } from "./signature.js";
+import { signingDigest } from "@stellar-registry/perch";
 import { buildAuthPayloadScVal } from "./multiSigner.js";
 import type { SignerSignature } from "./multiSigner.js";
 import type { PasskeySignature } from "./types.js";
@@ -68,7 +69,7 @@ export function buildAuthHashAt(
 
 /**
  * Compute the OZ v0.7+ auth digest the smart account's `do_check_auth` will
- * verify each signer's signature against:
+ * verify each signer's signature against (perch-js `signingDigest`):
  *
  *     auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
  *
@@ -78,21 +79,15 @@ export function buildAuthHashAt(
  *
  * `signature_payload` is the 32-byte result from `buildAuthHash`.
  * `contextRuleIds` is the same array passed to `injectPasskeySignature`'s
- *   `contextRuleIds` parameter; default `[0]` (the Default rule).
- *
- * Matches `compute_auth_digest` in `crates/integration-tests/src/lib.rs`.
+ *   `contextRuleIds` parameter: one selected rule per authorization context.
+ *   There is no default; select the rule (perch-js `selectRules`), since ids
+ *   move when a document replaces a rule.
  */
 export function computeAuthDigest(
   signaturePayload: Uint8Array,
-  contextRuleIds: readonly number[] = [0],
+  contextRuleIds: readonly number[],
 ): Buffer {
-  // context_rule_ids.to_xdr() in Rust serializes the Vec<u32> as the
-  // ScVal::Vec form. The JS equivalent is xdr.ScVal.scvVec([scvU32(...)]).
-  const ctxIdsXdr = xdr.ScVal.scvVec(
-    contextRuleIds.map((id) => xdr.ScVal.scvU32(id)),
-  ).toXDR();
-  const preimage = Buffer.concat([Buffer.from(signaturePayload), ctxIdsXdr]);
-  return hash(preimage);
+  return Buffer.from(signingDigest(signaturePayload, contextRuleIds));
 }
 
 /**
@@ -138,10 +133,10 @@ export function parseAssertionResponse(assertionResponse: {
  * @param verifierAddress - Address of the WebAuthn verifier contract
  * @param publicKey - 65-byte uncompressed P-256 public key
  * @param lastLedger - Current ledger sequence number
- * @param expirationLedgerOffset - How many ledgers the signature is valid for (default 10000 ≈ 14h)
- * @param contextRuleIds - Context-rule IDs authorizing each auth context (index-aligned).
- *                        Defaults to `[0]` — the Default rule that ships with every
- *                        smart account and authorizes self-modification.
+ * @param expirationLedgerOffset - How many ledgers the signature is valid for
+ *                                 (`undefined`: 10000 ≈ 14h)
+ * @param contextRuleIds - Context-rule IDs authorizing each auth context (index-aligned),
+ *                        as selected for this account (no default: ids move).
  */
 export function injectPasskeySignature(
   transaction: { operations: readonly Operation[] },
@@ -149,8 +144,8 @@ export function injectPasskeySignature(
   verifierAddress: string,
   publicKey: Uint8Array,
   lastLedger: number,
-  expirationLedgerOffset: number = DEFAULT_EXPIRATION_OFFSET,
-  contextRuleIds: readonly number[] = [0],
+  expirationLedgerOffset: number | undefined,
+  contextRuleIds: readonly number[],
 ): void {
   injectSignedAuthPayload(
     transaction,
@@ -176,8 +171,8 @@ export function injectSignedAuthPayload(
   transaction: { operations: readonly Operation[] },
   signers: readonly SignerSignature[],
   lastLedger: number,
-  expirationLedgerOffset: number = DEFAULT_EXPIRATION_OFFSET,
-  contextRuleIds: readonly number[] = [0],
+  expirationLedgerOffset: number | undefined,
+  contextRuleIds: readonly number[],
 ): void {
   // Mutate via clone-and-replace, not in-place. The canonical
   // `authorizeEntry` helper in stellar-base does the same — and for good
@@ -195,7 +190,7 @@ export function injectSignedAuthPayload(
   const signedEntry = xdr.SorobanAuthorizationEntry.fromXDR(original.toXDR());
   const creds = signedEntry.credentials().address();
 
-  creds.signatureExpirationLedger(lastLedger + expirationLedgerOffset);
+  creds.signatureExpirationLedger(lastLedger + (expirationLedgerOffset ?? DEFAULT_EXPIRATION_OFFSET));
   creds.signature(buildAuthPayloadScVal({ contextRuleIds, signers }));
 
   // Replace the original auth entry with the freshly-constructed signed
