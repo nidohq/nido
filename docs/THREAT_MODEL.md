@@ -17,9 +17,9 @@ file adds what Nido's contracts, wallet, and infrastructure bring.
 | Passkey private key | The user's authenticator; never leaves it | Full control under `Loss`; ordinary activity under `Protected`. |
 | Recovery kit (ZK secret) | A JSON file the user downloads | The ZK factor: alone under `ZkOnly`, half of `Combined`. |
 | Guardian accounts | Each guardian's own Nido or G wallet | One guardian's share of the quorum. |
-| Setup key (salt) | URL fragment, a `nido_setup_<account>` cookie on the parent domain (30 minutes), and the browser's `nido:pending` storage until the account exists | Whoever uses it first owns the address it derives. |
+| Setup key (salt) | URL fragment, a `nido_setup_<account>` cookie on the parent domain (30 minutes), and the browser's `nido:pending` storage until the account exists; the relayer sees it in the setup transaction | Whoever uses it first owns the address it derives. |
 | Factory admin key | Nido operators | The account code and the verifier new accounts get (adversary 8). |
-| Relayer keys | Fly.io host | Sponsor budget; censorship. |
+| Relayer keys | Fly.io host | Sponsor budget; censorship; claiming accounts that are being set up (adversary 10). |
 | The wallet's deployment (`perch.TESTNET`, or a `PUBLIC_PERCH_DEPLOYMENT` override) | Baked into the wallet at build time | Which factory, controller, pool, adapter, and verifier the wallet tells users to trust (adversary 9). |
 
 ## Adversaries
@@ -59,7 +59,8 @@ file adds what Nido's contracts, wallet, and infrastructure bring.
    subdomains, so it reaches the worker and Pages logs if they record
    cookies) and in `nido:pending`, shared with the apex through the storage
    bridge. A second `create_account` with the same salt fails (F2), so
-   the risk is a race before the first deploy, not a takeover after.
+   the risk is a race before the first deploy, not a takeover after. The
+   relayer sees every salt (adversary 10).
 6. **Script in the wallet origin (XSS, malicious extension, compromised CDN).**
    Can't read the passkey, but can ask the authenticator to sign whatever the
    page builds, read the setup keys in `nido:pending`, and swap the recovery
@@ -88,9 +89,24 @@ file adds what Nido's contracts, wallet, and infrastructure bring.
    that manifest against the chain by hash and content address. A
    `PUBLIC_PERCH_DEPLOYMENT` override bypasses the first check.
 10. **Compromised relayer.** Can refuse or delay transactions and spend its
-    sponsor budget. It can't forge authorization: every transaction it submits
-    already carries the account's signed auth entries. It sponsors any call
-    with valid auth, not only Nido's (AGENTS.md, "Relayer channels plugin").
+    sponsor budget. For an existing account it can't forge authorization:
+    every transaction it submits already carries the account's signed auth
+    entries. It sponsors any call with valid auth, not only Nido's (AGENTS.md,
+    "Relayer channels plugin").
+
+    **An account being set up is the exception.** `create_account(salt, key)`
+    is permissionless, and the address derives from the salt alone, because
+    a Nido passkey's RP ID is that address and it has to exist before the
+    passkey. The relayer receives the setup transaction, salt included,
+    before it lands. A compromised relayer can submit
+    `create_account(salt, its_own_key)` first and own the address the user's
+    passkey was made for; the user's own call then fails as a reused salt
+    (F2). Nothing in the code prevents or detects this today: the wallet
+    doesn't check the new account's admin key before trusting it or moving
+    the testnet funding into it. It is a known risk, tracked with the
+    candidate mitigations in #245 (a wallet check of the admin key, or a
+    factory commitment to the key before the salt is revealed).
+
     An unavailable relayer blocks onboarding, which only it sponsors; on
     2026-10-03 the testnet relayer refused every account setup ("Too many
     transactions queued") while its health check passed.

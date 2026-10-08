@@ -146,9 +146,12 @@ name, have no admin.
 
 ## 5. Relayer incidents
 
-The relayer (`infra/relayer`, Fly.io) sponsors and submits transactions. It
-can't forge account authorization, so the worst case is censorship or a
-drained sponsor budget.
+The relayer (`infra/relayer`, Fly.io) sponsors and submits transactions. For
+an existing account it can't forge authorization, so there the worst case is
+censorship or a drained sponsor budget. For an account being set up it is
+worse: the relayer sees the setup salt before the account exists, and a
+compromised host can create that account with its own key first
+(THREAT_MODEL 10, #245).
 
 **Defences in place.** A per-IP token bucket in Caddy (30 relays per minute
 per `Fly-Client-IP`) under the relayer's global 20 req/s; the channels
@@ -170,6 +173,15 @@ with metrics on.
 (outage, drain, abuse, key compromise), contain (lower `FEE_LIMIT` or pause a
 relayer for drains, redeploy via `deploy-relayer.yml` for outages, rotate keys
 for compromise), confirm recovery, write the post-mortem here.
+
+**Host compromise.** Treat every account set up through the relayer during
+the window as possibly claimed. Stop onboarding first (pause the relayer, or
+ship a wallet build without `PUBLIC_RELAYER_URL`, which refuses setup). Then
+check each account created in the window on chain: its admin key must be the
+passkey its user registered, with the deployment's verifier. Before its first
+document that key is in the constructor's rule (`get_context_rule(0)`); after,
+it is the admin signer in `applied_doc()`. Tell the owner of any account that
+fails the check to send nothing to it and to set up a new Nido.
 
 ## 6. Recovery operations
 
