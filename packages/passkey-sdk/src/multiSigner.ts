@@ -65,8 +65,10 @@ export interface AuthPayloadSpec {
   signers: readonly SignerSignature[];
 }
 
-/** Encode the `WebAuthnSigData` struct an External signer's bytes carry. */
-function webAuthnSigDataBytes(sig: PasskeySignature): Buffer {
+/** Encode the `WebAuthnSigData` struct an External signer's bytes carry:
+ *  the signature bytes a passkey signer contributes to an `AuthPayload`
+ *  (perch-js `SignerSignature.signature`). */
+export function webAuthnSigDataBytes(sig: PasskeySignature): Buffer {
   // Soroban struct → ScMap with Symbol keys in alphabetical order.
   const sigDataScVal = xdr.ScVal.scvMap([
     new xdr.ScMapEntry({
