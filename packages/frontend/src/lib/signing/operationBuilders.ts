@@ -25,6 +25,8 @@ import type { OperationDescriptor } from "./signRequest";
 import { buildSendOperation } from "../transfer/buildSend.js";
 import { fetchRegistryAddress } from "../policyChainFetch.js";
 import { RPC_URL } from "../network.js";
+import { recoveryEditProblem } from "../policy/docDraft.js";
+import { fetchAppliedDocJson } from "../policy/docPolicyFetch.js";
 
 const NETWORK_PASSPHRASE = Networks.TESTNET;
 
@@ -89,6 +91,14 @@ export async function buildOperation(
       // the ONLY policy write path (doc-only ruling; the per-rule
       // add_context_rule lowering for docs is gone).
       const doc = parsePolicyDocJson(d.docJson);
+      // A request never reconfigures recovery: that is the recovery page's,
+      // with whatever approval the account's profile needs.
+      const applied = await fetchAppliedDocJson(account);
+      const recoveryProblem = recoveryEditProblem(
+        applied === null ? null : parsePolicyDocJson(applied.json),
+        doc,
+      );
+      if (recoveryProblem !== undefined) throw new Error(recoveryProblem);
       const tx = await buildApplyDocTx(doc, {
         account,
         rpcUrl: RPC_URL,

@@ -13,6 +13,7 @@ import {
   MAX_DOC_RULES,
   MAX_DOC_SIGNERS,
   parsePolicyDoc,
+  perch,
   scopedSessionKeyDoc,
   type PolicyDoc,
 } from '@nidohq/passkey-sdk';
@@ -274,21 +275,19 @@ function mergeSignerDecl(
  * two different keys. Pure; every composed update flows through it (via
  * rebuildDoc), so the rename lands with the user's NEXT doc update and
  * shows up in the diff preview as the owner → admin signer change.
+ *
+ * It never touches a recovery member. Perch's controller hashes the whole
+ * member, `replaceable` included (perch-js `configHash`), so renaming
+ * `owner` there would be a reconfiguration: it ends any attempt in flight,
+ * and `Protected` refuses it without the enrolled condition's approval. A
+ * document whose recovery restores `owner` keeps the legacy id.
  */
 export function renameLegacyOwner(doc: PolicyDoc): PolicyDoc {
   const hasOwner = doc.signers.some((s) => s.id === 'owner');
   const hasAdmin = doc.signers.some((s) => s.id === 'admin');
-  if (!hasOwner || hasAdmin) return doc;
+  if (!hasOwner || hasAdmin || doc.recovery?.replaceable.includes('owner')) return doc;
   return {
     ...doc,
-    ...(doc.recovery
-      ? {
-          recovery: {
-            ...doc.recovery,
-            replaceable: doc.recovery.replaceable.map((id) => (id === 'owner' ? 'admin' : id)),
-          },
-        }
-      : {}),
     signers: doc.signers.map((s) => (s.id === 'owner' ? { ...s, id: 'admin' } : s)),
     rules: doc.rules.map((r) =>
       r.principals.type === 'self-authenticating'
@@ -302,6 +301,29 @@ export function renameLegacyOwner(doc: PolicyDoc): PolicyDoc {
           },
     ),
   };
+}
+
+/**
+ * Why `next` can't be applied as a policy edit of `current` (the applied
+ * document, or null before the first apply), or undefined when it can.
+ * A different recovery `configHash` is a reconfiguration: it advances the
+ * recovery epoch, ending any attempt in flight, and under `Protected` it
+ * needs the enrolled condition's recorded approval. Only the recovery page
+ * (`lib/recovery/settingsPage.ts`) collects that, so every other policy
+ * write (admin keys, app grants, dApp requests) refuses such a document.
+ */
+export function recoveryEditProblem(current: PolicyDoc | null, next: PolicyDoc): string | undefined {
+  const changed =
+    current === null ? next.recovery !== undefined : perch.recoveryChange(current, next).kind !== 'none';
+  return changed
+    ? 'This update would change how your Nido recovers. Change recovery on the Recovery page (Security, then Recovery), which collects any approval it needs.'
+    : undefined;
+}
+
+/** Whether lost-key recovery can restore `rule`: one of its signers is a
+ *  credential the recovery member declares replaceable. */
+function recoveryRestores(rule: WireRule, replaceable: readonly string[]): boolean {
+  return rule.principals.type !== 'self-authenticating' && rule.principals.signers.some((id) => replaceable.includes(id));
 }
 
 /** Drop declarations no rule references, migrate legacy ids, then
@@ -470,6 +492,12 @@ export function addAdminKey(
  * `DocAdminLockout` anti-brick check would reject the document anyway, so
  * the refusal surfaces here with a human-readable reason instead of a
  * failed simulation.
+ *
+ * Also refuses to remove the last admin rule that lost-key recovery can
+ * restore. The recovery member's replaceable signers stay declared, so the
+ * document would still compile, but a recovery would then replace a key no
+ * rule uses and hand back no admin access. Changing which keys recovery
+ * restores is a reconfiguration, done on the recovery page.
  */
 export function removeAdminRule(
   base: PolicyDoc,
@@ -487,6 +515,15 @@ export function removeAdminRule(
   if (adminRules(base).length <= 1) {
     throw new Error(
       'policy doc: cannot remove the last admin key — the account would have no admin authority (the contract refuses such documents)',
+    );
+  }
+  const replaceable = base.recovery?.replaceable ?? [];
+  if (
+    recoveryRestores(target, replaceable) &&
+    !adminRules(base).some((r) => r.name !== ruleName && recoveryRestores(r, replaceable))
+  ) {
+    throw new Error(
+      `policy doc: cannot remove "${ruleName}" — it is the last admin key your recovery can restore. Change which keys recovery restores on the Recovery page first.`,
     );
   }
   return rebuildDoc(

@@ -121,6 +121,7 @@ export function parsePerchDeployment(value: unknown): PerchDeployment {
     if (typeof x !== 'string' || x.length === 0) throw new Error(`perch deployment: missing ${k}`);
     return x;
   };
+  str('network');
   for (const k of CONTRACT_FIELDS) {
     if (!StrKey.isValidContract(str(k))) throw new Error(`perch deployment: ${k} is not a contract`);
   }

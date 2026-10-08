@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Networks, StrKey } from '@stellar/stellar-sdk';
-import { canonicalJson, docHash } from '@nidohq/passkey-sdk';
+import { buildPolicyDoc, canonicalJson, docHash, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
 import {
   addAdminKey,
   adminRules,
@@ -9,6 +9,7 @@ import {
   nextAdminRuleName,
   adminBaseline,
   parseFunctionsInput,
+  recoveryEditProblem,
   removeAdminRule,
   upsertSessionRule,
   validateAdminKeyDraft,
@@ -248,5 +249,94 @@ describe('passkey session signers (legacy delegate flow)', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.errors).toHaveLength(2);
+  });
+});
+
+describe('policy edits never reconfigure recovery', () => {
+  const sessionDraft = {
+    name: 'session',
+    signer: { kind: 'delegated' as const, address: SESSION_G },
+    targetContract: TARGET,
+    functionsInput: 'udpate_message',
+    notAfterLedger: 900,
+    cap: null,
+  };
+  const recovery = (replaceable: string[]) =>
+    perch.recoverySpec(perch.TESTNET, {
+      profile: 'protected',
+      mode: 'guardian-only',
+      guardians: [G2],
+      quorum: 1,
+      replaceable,
+    });
+  const hashHex = (doc: PolicyDoc) => Buffer.from(perch.configHash(doc)!).toString('hex');
+
+  // An early document: the founder is `owner`, and Protected recovery
+  // restores it.
+  const legacy = perch.withRecovery(
+    buildPolicyDoc({
+      network: Networks.TESTNET,
+      signers: [{ id: 'owner', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY }],
+      permissions: [{ name: 'admin', on: 'self-admin', by: ['owner'] }],
+    }),
+    recovery(['owner']),
+  );
+
+  it('keeps the legacy owner id when recovery restores it, so the config hash holds', () => {
+    const granted = upsertSessionRule(legacy, sessionDraft, Networks.TESTNET).doc;
+    const withAdmin = addAdminKey(
+      legacy,
+      { name: 'admin-2', signer: { kind: 'delegated', address: G2 } },
+      Networks.TESTNET,
+    ).doc;
+    for (const next of [granted, withAdmin]) {
+      expect(next.signers.map((s) => s.id)).toContain('owner');
+      expect(next.recovery?.replaceable).toEqual(['owner']);
+      expect(hashHex(next)).toBe(hashHex(legacy));
+      expect(recoveryEditProblem(legacy, next)).toBeUndefined();
+    }
+  });
+
+  it('still renames owner to admin when recovery does not restore it', () => {
+    const plain = buildPolicyDoc({
+      network: Networks.TESTNET,
+      signers: [{ id: 'owner', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY }],
+      permissions: [{ name: 'admin', on: 'self-admin', by: ['owner'] }],
+    });
+    const next = upsertSessionRule(plain, sessionDraft, Networks.TESTNET).doc;
+    expect(next.signers.map((s) => s.id)).toEqual(['admin', 'session']);
+  });
+
+  it('refuses a policy write that changes, sets, or removes recovery', () => {
+    const changed = perch.withRecovery(legacy, recovery(['owner', 'session']));
+    const removed = perch.withRecovery(legacy, undefined);
+    expect(recoveryEditProblem(legacy, changed)).toMatch(/Recovery page/);
+    expect(recoveryEditProblem(legacy, removed)).toMatch(/Recovery page/);
+    expect(recoveryEditProblem(null, legacy)).toMatch(/Recovery page/);
+    expect(recoveryEditProblem(null, perch.withRecovery(legacy, undefined))).toBeUndefined();
+  });
+
+  it('refuses to remove the last admin key recovery can restore', () => {
+    const base = perch.withRecovery(
+      adminBaseline({ verifier: VERIFIER, publicKeyHex: OWNER_KEY }, Networks.TESTNET),
+      recovery(['admin']),
+    );
+    const twoAdmins = addAdminKey(
+      base,
+      { name: 'admin-2', signer: { kind: 'delegated', address: G2 } },
+      Networks.TESTNET,
+    ).doc;
+    expect(() => removeAdminRule(twoAdmins, 'admin', Networks.TESTNET)).toThrow(
+      /last admin key your recovery can restore/,
+    );
+    // The other admin can go: recovery still restores `admin`.
+    expect(removeAdminRule(twoAdmins, 'admin-2', Networks.TESTNET).rules.map((r) => r.name)).toEqual([
+      'admin',
+    ]);
+    // With both restorable, either can go.
+    const bothRestorable = perch.withRecovery(twoAdmins, recovery(['admin', 'admin-2']));
+    expect(removeAdminRule(bothRestorable, 'admin', Networks.TESTNET).rules.map((r) => r.name)).toEqual([
+      'admin-2',
+    ]);
   });
 });
