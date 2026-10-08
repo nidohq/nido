@@ -106,9 +106,8 @@ Nido's tests run those exact bytes, fetched by hash (see
 | Wallet | `packages/frontend/` | Static Astro site on Cloudflare Pages. Each account lives at its own subdomain, `<contract-id>.nido.fyi`, served by the worker proxy in `frontend/worker-proxy-nido/`. All chain access is client-side. |
 | Passkey SDK | `packages/passkey-sdk/` | WebAuthn parsing, Soroban auth, policy documents, and the `perch` namespace: statement encodings, recovery as document changes, controller and account clients. `@nidohq/passkey-sdk/perch-zk` proves. |
 | Contract bindings | `packages/contract-bindings/` | Generated clients, including `perch-*` clients generated from the deployed Perch wasm (private until Perch publishes `@stellar-registry/perch-contracts`). |
-| Relayer | `infra/relayer/` | OpenZeppelin relayer with the channels plugin. Pays fees for transactions whose authorization is already complete. It cannot authorize anything. |
+| Relayer | `infra/relayer/` | OpenZeppelin relayer with the channels plugin. Pays fees for transactions whose authorization is already complete. It cannot authorize anything for an existing account; it does see each setup salt before the account exists (THREAT_MODEL 10). |
 | Name resolver | `infra/nido-resolver/` | Serves `/.well-known/nido.json` from the name registry. Read-only. |
-| Recovery relay | `infra/recovery-relay/` | Held friend signatures for the retired recovery. The wallet no longer uses it. |
 
 ## 2. Subdomain isolation
 
