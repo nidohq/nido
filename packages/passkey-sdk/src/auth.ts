@@ -182,6 +182,40 @@ export function injectSignedAuthPayload(
   // sync under in-place mutation. Round-tripping via XDR produces a fresh
   // entry that becomes the new array element — guaranteeing the signed
   // payload reaches the wire.
+  setAuthPayload(
+    transaction,
+    buildAuthPayloadScVal({ contextRuleIds, signers }),
+    lastLedger,
+    expirationLedgerOffset,
+  );
+}
+
+/**
+ * Inject a complete `AuthPayload`, as the `ScVal` XDR perch-js's
+ * `buildAuthPayload` (or `applyDocument`'s `submit`) produces, into a
+ * transaction's first Soroban auth entry, with the expiration its signature
+ * payload was computed for.
+ */
+export function injectAuthPayloadXdr(
+  transaction: { operations: readonly Operation[] },
+  authPayloadXdr: Uint8Array,
+  lastLedger: number,
+  expirationLedgerOffset: number | undefined,
+): void {
+  setAuthPayload(
+    transaction,
+    xdr.ScVal.fromXDR(Buffer.from(authPayloadXdr)),
+    lastLedger,
+    expirationLedgerOffset,
+  );
+}
+
+function setAuthPayload(
+  transaction: { operations: readonly Operation[] },
+  payload: xdr.ScVal,
+  lastLedger: number,
+  expirationLedgerOffset: number | undefined,
+): void {
   const op = transaction.operations[0] as Operation.InvokeHostFunction;
   if (!op.auth || op.auth.length === 0) {
     throw new Error("No authorization entries in transaction");
@@ -191,7 +225,7 @@ export function injectSignedAuthPayload(
   const creds = signedEntry.credentials().address();
 
   creds.signatureExpirationLedger(lastLedger + (expirationLedgerOffset ?? DEFAULT_EXPIRATION_OFFSET));
-  creds.signature(buildAuthPayloadScVal({ contextRuleIds, signers }));
+  creds.signature(payload);
 
   // Replace the original auth entry with the freshly-constructed signed
   // entry. `op.auth` is the same array referenced by the inner XDR

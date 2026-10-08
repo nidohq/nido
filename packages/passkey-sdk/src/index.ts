@@ -20,6 +20,7 @@ export {
   parseAssertionResponse,
   injectPasskeySignature,
   injectSignedAuthPayload,
+  injectAuthPayloadXdr,
   DEFAULT_EXPIRATION_OFFSET,
 } from "./auth.js";
 
