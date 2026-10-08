@@ -65,8 +65,11 @@ The audit should check that Nido uses Perch as Perch's spec intends:
   custody.
 - `infra/nido-resolver/`: name resolution worker.
 - `frontend/worker-proxy-nido/`: subdomain proxy and security headers.
-- `infra/recovery-relay/` is unused by the wallet since the move to Perch and
-  should be retired rather than audited.
+
+The recovery relay that held friend signatures for the retired recovery is
+removed from the tree (#233). Its deployed worker (`relay.nido.fyi`) and KV
+namespace remain until the Cloudflare account owner deletes them; no wallet
+code calls them.
 
 ## Perch's scope
 
