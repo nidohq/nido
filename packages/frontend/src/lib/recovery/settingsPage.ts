@@ -263,7 +263,7 @@ function configureCard(account: string, state: RecoveryState): HTMLElement {
         throw new Error('Create your recovery kit first.');
       }
       if (newKit && !kitSaved) throw new Error('Confirm you saved your recovery kit first.');
-      const base = state.doc ?? (await currentOrFirstDoc(account));
+      const base = state.doc ?? (await currentOrFirstDoc(account)).doc;
       const zk =
         mode === 'guardian-only'
           ? undefined
@@ -324,7 +324,10 @@ async function apply(account: string, state: RecoveryState, next: PolicyDoc, sta
     if ((await latestLedger()) > validUntil) throw new Error('The approvals expired; try again.');
   }
   status.textContent = 'Confirm with your passkey…';
-  await applyDoc(account, next, validUntil);
+  // Lands only at the revision `state` was read at: the approvals were
+  // collected for this change to that document, and a change that has
+  // landed since means starting over.
+  await applyDoc(account, next, { baseRevision: state.revision, approvalValidUntil: validUntil });
 }
 
 function currentZk(doc: PolicyDoc): perch.ZkEnrollmentSpec {

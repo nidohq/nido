@@ -29,6 +29,10 @@ export type OperationDescriptor =
       /** Canonical JSON of the CURRENTLY applied document at request-build
        *  time; absent on a first apply. Display-only (the diff panel). */
       prevDocJson?: string;
+      /** The configuration revision (decimal) `docJson` was composed from.
+       *  The apply names it as `expected_revision`, so it lands only if the
+       *  account hasn't changed since. */
+      expectedRevision?: string;
       /** Human-readable expiry label (e.g. "24 hours"), as for add-context-rule. */
       expiryLabel?: string;
     }

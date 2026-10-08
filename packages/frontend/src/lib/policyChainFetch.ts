@@ -10,7 +10,7 @@ import {
   xdr,
 } from '@stellar/stellar-sdk';
 import type { ChainRule, ChainSigner, PolicyState } from '@nidohq/passkey-sdk';
-import { fetchRegistryAddress as sdkFetchRegistryAddress } from '@nidohq/passkey-sdk';
+import { fetchRegistryAddress as sdkFetchRegistryAddress, perch } from '@nidohq/passkey-sdk';
 import { Client as SpendingLimitPolicyClient } from '@nidohq/spending-limit-policy';
 import { perchDeployment } from './recovery/deployment.js';
 
@@ -60,52 +60,44 @@ export function isRuleNotFound(err: unknown): boolean {
   return /Error\(Contract, #3000\)|ContextRuleNotFound/.test(msg);
 }
 
-/** Read all installed context rules from a smart account.
- *
- *  Decodes rules RAW (`scValToNative` with no type hint) rather than through the
- *  typed `smart-account` bindings. The typed Spec decode is strict and throws
- *  `Type … was not vec, but … is` (stellar-sdk `spec.js` `scValToNative`) when an
- *  account's on-chain `ContextRule` shape predates the regenerated bindings —
- *  e.g. built against a slightly different soroban-sdk minor. `findRuleForPubkey`
- *  and `fetchVerifierAddress` already decode raw for exactly this reason; this is
- *  the last loader to follow suit, so the Trusted-friends list no longer breaks
- *  with "Couldn't load: Type [object Object] was not vec…". */
+/** The account's `configuration()` view: every installed rule (its OZ id,
+ *  name, scope, signers, policies, and whether it is the recovery rule),
+ *  the recovery rule's id, the freeze, and the revision they all belong to,
+ *  in one read (stellar-registry/perch#108). Selection runs on this, never
+ *  on an id scan: ids move when a document replaces a rule, and OZ never
+ *  reuses one. */
+export async function readAccountConfiguration(account: string): Promise<perch.AccountConfiguration> {
+  const deployment = perchDeployment();
+  if (!deployment) throw new Error('This build has no Perch deployment.');
+  const reader = perch.accountSnapshotReader({
+    account,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    docCompiler: deployment.docCompiler,
+  });
+  return (await reader.configuration()).value;
+}
+
+/** An installed Perch rule in the `ChainRule` shape the UI consumes. */
+export function chainRuleOf(r: perch.InstalledRule): ChainRule {
+  return {
+    ruleId: r.id,
+    contextType: { kind: 'call-contract', contract: r.contract },
+    name: r.name,
+    signers: r.signers.map((s): ChainSigner =>
+      s.kind === 'delegated'
+        ? { kind: 'delegated', address: s.address }
+        : { kind: 'external', verifier: s.verifier, publicKey: s.key },
+    ),
+    policies: r.policies.map((x) => x.policy),
+    validUntil: r.validUntil,
+  };
+}
+
+/** Every rule installed on a smart account, the recovery rule included, from
+ *  one `configuration()` read. */
 export async function fetchAllChainRules(account: string): Promise<ChainRule[]> {
-  const server = new rpc.Server(RPC_URL);
-  const contract = new Contract(account);
-
-  const countRv = await simulateView(server, contract, 'get_context_rules_count');
-  const count = scValToNative(countRv) as number;
-
-  const out: ChainRule[] = [];
-  // Scan ids upward, skipping revoke-created gaps, until `count` rules are
-  // found. The scan bound only guards a pathological account (more than 100
-  // revoked rules below the live ones) from looping forever.
-  for (let id = 0, found = 0; found < count && id < count + 100; id++) {
-    let ruleRv;
-    try {
-      ruleRv = await simulateView(
-        server,
-        contract,
-        'get_context_rule',
-        nativeToScVal(id, { type: 'u32' }),
-      );
-    } catch (err) {
-      if (isRuleNotFound(err)) continue;
-      throw err;
-    }
-    out.push(parseRule(scValToNative(ruleRv)));
-    found++;
-  }
-  // A truncated scan must be LOUD: returning a silently short list re-creates
-  // the original invisible-rule symptom (and callers may react destructively,
-  // e.g. wiping material and re-delegating at an even higher id).
-  if (out.length < count) {
-    throw new Error(
-      `context-rule scan exhausted: found ${out.length} of ${count} live rules within ids 0..${count + 99}`,
-    );
-  }
-  return out;
+  return (await readAccountConfiguration(account)).rules.map(chainRuleOf);
 }
 
 /** For each policy address attached to a rule, fetch its per-(account,rule)
@@ -220,32 +212,9 @@ export async function fetchFactoryAddress(): Promise<string> {
   return perchDeployment()?.factory ?? fetchRegistryAddress('factory');
 }
 
-/** Resolve the verifier address that THIS account actually trusts for its
- *  primary passkey, by reading the External signer on the default rule.
- *
- *  Critical: do NOT just look up `unverified/verifier` in the registry.
- *  Accounts created by an old factory (pre-Architecture-C) reference a
- *  verifier contract whose address differs from the currently-registered
- *  one — the factory hardcodes a wasm hash and lazy-deploys, which yields
- *  a different deterministic address per factory build. If we sign citing
- *  a verifier the rule doesn't list, the smart account's signer-map
- *  lookup fails and __check_auth traps with Auth/InvalidAction even
- *  though the signature itself is perfectly valid.
- *
- *  Falls back to the registry if the account has no External signer on
- *  rule 0 (would only happen on a non-standard / freshly-uninstalled
- *  account), so existing call sites that pass an arbitrary account don't
- *  crash.
- */
-/** Find the context-rule id on `account` that contains an External signer
- *  with the given public key. Returns `null` if no such rule exists (e.g.
- *  delegation install transaction never actually committed, or the rule
- *  has been revoked).
- *
- *  Scans rule ids (gap-tolerant) until `get_context_rules_count()` rules
- *  have been seen. Used to discover which rule_id our session
- *  passkey lives under so the signing-side AuthPayload + computed digest
- *  both reference the correct rule. */
+/** The id of the rule on `account` that holds an External signer with the
+ *  given public key (see `resolveSignerRule`), or `null` when none does
+ *  (e.g. the delegation never committed, or the rule was removed). */
 export async function findRuleForPubkey(
   account: string,
   pubkeyHex: string,
@@ -254,141 +223,92 @@ export async function findRuleForPubkey(
   return resolved ? resolved.ruleId : null;
 }
 
-/** The rule a passkey signs under, plus the verifier that rule's External
- *  signer is registered against. Returns both from ONE gap-tolerant scan so a
- *  caller needs neither a separate `get_context_rule(0)` (fetchVerifierAddress)
- *  nor a second scan — and the verifier comes from the RESOLVED rule, not an
- *  assumed rule 0 (which diverges for a recovered account whose new passkey
- *  lives in a later rule). `null` when the pubkey is on no rule. */
+const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+
+/** The rule a passkey signs under, the verifier its External signer names,
+ *  and the configuration revision they were read at, from one
+ *  `configuration()` read (see `selectSignerRule`). `null` when no rule
+ *  holds the passkey. */
 export async function resolveSignerRule(
   account: string,
   pubkeyHex: string,
   ruleName?: string,
-): Promise<{ ruleId: number; verifier: string } | null> {
-  const server = new rpc.Server(RPC_URL);
-  const countRv = await simulateView(server, new Contract(account), 'get_context_rules_count');
-  const count = scValToNative(countRv) as number;
-  const lowerHex = pubkeyHex.toLowerCase();
-  // Gap-tolerant id scan — see isRuleNotFound for why ids aren't contiguous.
-  let found = 0;
-  for (let id = 0; found < count && id < count + 100; id++) {
-    let ruleRv;
-    try {
-      ruleRv = await simulateView(
-        server,
-        new Contract(account),
-        'get_context_rule',
-        nativeToScVal(id, { type: 'u32' }),
-      );
-    } catch (err) {
-      if (isRuleNotFound(err)) continue;
-      throw err;
-    }
-    found++;
-    const native = scValToNative(ruleRv) as { id?: number; name?: string; signers?: unknown[] };
-    if (ruleName !== undefined && native.name !== ruleName) continue;
-    for (const s of native.signers ?? []) {
-      // ["External", verifier, pubkey_bytes_as_array_or_buffer]
-      if (Array.isArray(s) && s[0] === 'External') {
-        const raw = s[2];
-        let candidateHex: string | null = null;
-        if (raw instanceof Uint8Array) {
-          candidateHex = Array.from(raw, (b) => b.toString(16).padStart(2, '0')).join('');
-        } else if (Array.isArray(raw)) {
-          candidateHex = (raw as number[])
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join('');
-        } else if (typeof raw === 'object' && raw !== null) {
-          // scValToNative sometimes hands back the buffer as an object with
-          // numeric keys; rebuild as bytes.
-          const obj = raw as Record<string, number>;
-          const ordered: number[] = [];
-          for (let j = 0; obj[j as unknown as string] !== undefined; j++) {
-            ordered.push(obj[j as unknown as string]);
-          }
-          if (ordered.length > 0) {
-            candidateHex = ordered.map((b) => b.toString(16).padStart(2, '0')).join('');
-          }
-        }
-        if (candidateHex && candidateHex === lowerHex) {
-          const verifier = typeof s[1] === 'string' ? s[1] : String(s[1]);
-          return { ruleId: native.id ?? id, verifier };
-        }
-      }
-    }
-  }
-  // A truncated scan must be LOUD: returning a silently short list re-creates
-  // the original invisible-rule symptom (and callers may react destructively,
-  // e.g. wiping material and re-delegating at an even higher id).
-  if (found < count) {
-    throw new Error(
-      `context-rule scan exhausted: found ${found} of ${count} live rules within ids 0..${count + 99}`,
-    );
-  }
-  return null;
+): Promise<{ ruleId: number; ruleName: string; verifier: string; revision: bigint } | null> {
+  return selectSignerRule(await readAccountConfiguration(account), account, pubkeyHex, ruleName);
 }
 
-/** Read the verifier address the account's default rule references.
- *
- *  Reads `get_context_rule(0).signers` via raw `scValToNative` (not the
- *  typed bindings, whose ContextRule shape would mismatch if the account
- *  was built against a slightly different soroban-sdk minor). Returns the
- *  first External signer's verifier address, falling back to the registry
- *  if the account hasn't been queryable or has no external signer. */
+/** Pure selection over one configuration: with `ruleName`, only that rule;
+ *  without, a rule scoped to the account itself (the admin authority
+ *  `execute` and `apply_doc` need) before any other. The recovery rule never
+ *  matches. Exported for unit testing. */
+export function selectSignerRule(
+  config: perch.AccountConfiguration,
+  account: string,
+  pubkeyHex: string,
+  ruleName?: string,
+): { ruleId: number; ruleName: string; verifier: string; revision: bigint } | null {
+  const wanted = pubkeyHex.toLowerCase();
+  const holders = config.rules
+    .filter((r) => !r.recovery && (ruleName === undefined || r.name === ruleName))
+    .flatMap((r) =>
+      r.signers
+        .filter((sg) => sg.kind === 'external' && toHex(sg.key) === wanted)
+        .map((sg) => ({ rule: r, verifier: (sg as { verifier: string }).verifier })),
+    );
+  const pick = holders.find((h) => h.rule.contract === account) ?? holders[0];
+  return pick
+    ? { ruleId: pick.rule.id, ruleName: pick.rule.name, verifier: pick.verifier, revision: config.revision }
+    : null;
+}
+
+/** The verifier the account's admin passkey is registered against: the
+ *  first External signer of its `admin` rule (selected by name, as perch-js
+ *  does), falling back to the deployment's verifier, then the registry's. */
 export async function fetchVerifierAddress(account: string): Promise<string> {
   try {
-    const server = new rpc.Server(RPC_URL);
-    const rv = await simulateView(
-      server,
-      new Contract(account),
-      'get_context_rule',
-      nativeToScVal(0, { type: 'u32' }),
+    const admin = (await readAccountConfiguration(account)).rules.find(
+      (r) => !r.recovery && r.name === 'admin' && r.contract === account,
     );
-    const native = scValToNative(rv) as { signers?: unknown[] };
-    for (const s of native.signers ?? []) {
-      // scValToNative decodes a Soroban Signer enum (tuple variant) as a
-      // plain array: ["External", verifier_address, pubkey_bytes].
-      if (Array.isArray(s) && s[0] === 'External' && typeof s[1] === 'string') {
-        return s[1];
-      }
-    }
+    const external = admin?.signers.find((sg) => sg.kind === 'external');
+    if (external?.kind === 'external') return external.verifier;
   } catch {
     // fall through to the deployment's verifier, then the registry
   }
   return perchDeployment()?.webauthnVerifier ?? fetchRegistryAddress('verifier');
 }
 
-/** What the wallet's sign ceremony needs to know about the default rule
- *  (id 0) before running WebAuthn (issue #87). */
+/** What the wallet's sign ceremony needs to know about the signing rule
+ *  (the account's `admin` rule unless another is named) before running
+ *  WebAuthn (issue #87). */
 export interface DefaultRuleAuthInfo {
-  /** External (passkey) signers on rule 0. */
+  /** External (passkey) signers on the rule. */
   externalSigners: { verifier: string; publicKey: Uint8Array }[];
-  /** Delegated (account-address) signers on rule 0. */
+  /** Delegated (account-address) signers on the rule. */
   delegatedCount: number;
-  /** Number of policies attached to rule 0. */
+  /** Number of policies attached to the rule. */
   policyCount: number;
   /** Simple-threshold M, when one of the policies exposes `get_threshold`
    *  (> 0 means installed); null when no policy reports a threshold. */
   threshold: number | null;
 }
 
-/** Read rule 0's signers, policies, and (if installed) the simple-threshold
- *  M. Drives the sign-ceremony preflight: a policy-less multi-signer rule is
+/** Read the signing rule's signers, policies, and (if installed) the
+ *  simple-threshold M: rule `ruleId`, or the account's `admin` rule. Drives the sign-ceremony preflight: a policy-less multi-signer rule is
  *  N-of-N under OZ semantics, so the ceremony must collect N signatures (or
  *  bail out with a human-readable explanation) instead of letting the
  *  enforce-simulation fail with a raw #3002 HostError. */
 export async function fetchDefaultRuleAuthInfo(
   account: string,
-  ruleId = 0,
+  ruleId?: number,
 ): Promise<DefaultRuleAuthInfo> {
-  const server = new rpc.Server(RPC_URL);
-  const rv = await simulateView(
-    server,
-    new Contract(account),
-    'get_context_rule',
-    nativeToScVal(ruleId, { type: 'u32' }),
-  );
-  const rule = parseRule(scValToNative(rv) as RawContextRule);
+  // The named rule, or the account's `admin` rule, from `configuration()`.
+  const rules = (await readAccountConfiguration(account)).rules;
+  const installed =
+    ruleId === undefined
+      ? rules.find((r) => !r.recovery && r.name === 'admin' && r.contract === account)
+      : rules.find((r) => r.id === ruleId);
+  if (!installed) throw new Error(`no ${ruleId === undefined ? 'admin' : `#${ruleId}`} rule on ${account}`);
+  const rule = chainRuleOf(installed);
 
   const externalSigners = rule.signers
     .filter((s): s is { kind: 'external'; verifier: string; publicKey: Uint8Array } => s.kind === 'external')

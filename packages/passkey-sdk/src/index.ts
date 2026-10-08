@@ -20,12 +20,13 @@ export {
   parseAssertionResponse,
   injectPasskeySignature,
   injectSignedAuthPayload,
+  injectAuthPayloadXdr,
   DEFAULT_EXPIRATION_OFFSET,
 } from "./auth.js";
 
 export { identifyAssertionSigner } from "./assertionMatch.js";
 
-export { buildAuthPayloadScVal } from "./multiSigner.js";
+export { buildAuthPayloadScVal, webAuthnSigDataBytes } from "./multiSigner.js";
 export type { SignerSignature, AuthPayloadSpec } from "./multiSigner.js";
 
 export {

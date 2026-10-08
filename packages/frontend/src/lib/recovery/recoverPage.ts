@@ -285,10 +285,11 @@ async function progressCard(
   finish.addEventListener('click', () =>
     busy(finish, status, 'Finishing…', async () => {
       const replacements = replacementsFromWire(pending.replacements);
-      const target = await client.deriveTarget(account, pending.action, replacements);
-      const ruleId = await client.recoveryRuleId(account);
-      if (ruleId === undefined) throw new Error('This Nido has no recovery rule.');
-      const op = await client.completion(account, target, ruleId, await latestLedger());
+      // The target and the recovery rule from one snapshot; the completion
+      // names that revision, so it lands only at the document it was
+      // derived from.
+      const { target, selection } = await client.prepareCompletion(account, pending.action, replacements);
+      const op = await client.completion(account, target, selection, await latestLedger());
       await submitOpen(op.operations[0]!, op.authMode);
       location.reload();
     }),

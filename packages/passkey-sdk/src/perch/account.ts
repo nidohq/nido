@@ -14,6 +14,16 @@
 import { Buffer } from 'buffer';
 import { Client as AccountClient } from '@nidohq/perch-account';
 import type { FreezeGate, UpgradeRequest } from '@nidohq/perch-account';
+import { Client as CompilerClient } from '@nidohq/perch-doc-compiler';
+import {
+  accountReader,
+  readSnapshot,
+  type AccountBindings,
+  type AccountReader,
+  type CompilerBindings,
+  type Snapshot,
+  type SnapshotOptions,
+} from '@stellar-registry/perch';
 import { nativeToScVal, type xdr } from '@stellar/stellar-sdk';
 import { extractXdrOperations } from '../assembledTx.js';
 import type { TxBuild } from '../policyBlocks/types.js';
@@ -69,17 +79,55 @@ export async function buildExecute(
   return { operations: extractXdrOperations(tx, 'execute'), description: `Call ${args.fn} as the account` };
 }
 
-/** The applied document's canonical JSON, or `undefined` before the first
- *  `apply_doc`. Its sha256 is the account's `applied_doc_hash`. */
-export async function readAppliedDoc(args: AccountArgs): Promise<string | undefined> {
-  const doc = (await client(args).applied_doc()).result;
-  return doc ? Buffer.from(doc).toString('utf8') : undefined;
+/** perch-js's account reader over the generated clients: the account's
+ *  `configuration()`, `revision()`, `document()`, and `capabilities()`
+ *  views, and `limits()` of `docCompiler`, the compiler the account pins
+ *  (the deployment's). */
+export function accountSnapshotReader(args: AccountArgs & { docCompiler: string }): AccountReader {
+  const compiler = new CompilerClient({
+    contractId: args.docCompiler,
+    networkPassphrase: args.networkPassphrase,
+    rpcUrl: args.rpcUrl,
+  });
+  return accountReader(
+    args.account,
+    client(args) as unknown as AccountBindings,
+    compiler as unknown as CompilerBindings,
+  );
 }
 
-/** The `Protected` freeze mirror, if one is set. In force while the current
- *  ledger is below `until`. */
+/** One consistent read of the account (perch-js `readSnapshot`): its rules,
+ *  recovery rule, freeze, and document limits at one configuration
+ *  revision, and with `{ document: true }` the applied canonical bytes of
+ *  that revision. Select rules from it, and name its revision as an
+ *  apply's `expected_revision`. */
+export function readAccountSnapshot(
+  args: AccountArgs & { docCompiler: string },
+  options?: SnapshotOptions,
+): Promise<Snapshot> {
+  return readSnapshot(accountSnapshotReader(args), options);
+}
+
+/** The applied document's canonical JSON and the configuration revision it
+ *  belongs to (`document()`, one read); `canonical` is undefined before the
+ *  first `apply_doc`. Its sha256 is the account's `applied_doc_hash`. */
+export async function readDocument(
+  args: AccountArgs,
+): Promise<{ revision: bigint; canonical: string | undefined }> {
+  const [revision, doc] = (await client(args).document()).result;
+  return { revision: BigInt(revision), canonical: doc ? Buffer.from(doc).toString('utf8') : undefined };
+}
+
+/** The applied document's canonical JSON, or `undefined` before the first
+ *  `apply_doc`. */
+export async function readAppliedDoc(args: AccountArgs): Promise<string | undefined> {
+  return (await readDocument(args)).canonical;
+}
+
+/** The `Protected` freeze mirror, if one is set, from `configuration()`. In
+ *  force while the current ledger is below `until`. */
 export async function readRecoveryGate(args: AccountArgs): Promise<FreezeGate | undefined> {
-  return (await client(args).recovery_gate()).result ?? undefined;
+  return (await client(args).configuration()).result.gate[0];
 }
 
 export async function readRecoveryController(args: AccountArgs): Promise<string | undefined> {

@@ -51,7 +51,7 @@ use soroban_sdk::{
 use std::cell::Cell;
 use std::format;
 use std::string::String;
-use stellar_accounts::smart_account::{AuthPayload, Signer, SmartAccountStorageKey};
+use stellar_accounts::smart_account::{AuthPayload, Signer};
 use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
 
 /// The network every document names (its hash is the test ledger's id).
@@ -740,23 +740,23 @@ impl World {
         }
     }
 
-    /// The id of `account`'s live rule named `name`. `apply_doc` re-creates
-    /// every rule, so ids move; the newest match wins.
+    /// The id of `account`'s live rule named `name`, or of its zero-signer
+    /// recovery rule for `recovery`, as the account's `configuration()` view
+    /// reports them: selection by name at one revision, as perch-js does.
+    /// `apply_doc` gives a replaced rule a new id, so ids move. `u32::MAX`
+    /// when there is no such rule.
     #[must_use]
     pub fn rule_id(&self, account: &Address, name: &str) -> u32 {
-        let next: u32 = self.env.as_contract(account, || {
-            self.env
-                .storage()
-                .instance()
-                .get(&SmartAccountStorageKey::NextId)
-                .unwrap_or(0)
-        });
-        let client = PerchAccountClient::new(&self.env, account);
+        let config = PerchAccountClient::new(&self.env, account).configuration();
+        if name == "recovery" {
+            return config.recovery_rule.unwrap_or(u32::MAX);
+        }
         let wanted = soroban_sdk::String::from_str(&self.env, name);
-        (0..next)
-            .rev()
-            .find(|id| matches!(client.try_get_context_rule(id), Ok(Ok(r)) if r.name == wanted))
-            .unwrap_or(u32::MAX)
+        config
+            .rules
+            .iter()
+            .find(|r| !r.recovery && r.name == wanted)
+            .map_or(u32::MAX, |r| r.id)
     }
 
     /// Run `f` with exactly `entries` authorized, then return to enforcing
