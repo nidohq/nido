@@ -34,7 +34,11 @@ checks it field by field.
 
 **Nido's factory** was deployed by `scripts/deploy-factory.sh` on 2026-10-07
 with a throwaway testnet admin (`GASYOK3SOMRE4OK5GJNFD2H6HNF2ZISK332HHQQGNGW663ZIGSV5IG3S`,
-`stellar-cli` 27.0.0). Wasm `150a5937…`, built from this tree (#231); it
+`stellar-cli` 27.0.0). Wasm
+`150a5937482b33c4b5b9837afa74c11939cf06c81eb0a4d692fbed98dd5746b1`, built
+by `just build-contracts` from Nido commit
+`4a6ee979160aa875bb519d5248afdfcd31511a0b` (#231; rustc 1.96.0,
+`stellar-cli` 27.0.0) and reproduced from the same sources on 2026-10-08. It
 embeds the manifest's account wasm and pins Perch's verifier, and the script
 read both back. It is not registered under any registry name. Perch's own
 factory (`perch-account-factory`, in the manifest) doesn't fit Nido:
