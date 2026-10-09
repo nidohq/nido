@@ -12,12 +12,13 @@ import {
   buildPolicyDoc,
   MAX_DOC_RULES,
   MAX_DOC_SIGNERS,
+  MAX_RULE_NAME_BYTES,
   parsePolicyDoc,
   perch,
   scopedSessionKeyDoc,
   type PolicyDoc,
 } from '@nidohq/passkey-sdk';
-import { isContractAddress, isStellarAddress, MAX_RULE_NAME_LEN } from './policyDraft.js';
+import { isContractAddress, isStellarAddress } from './policyDraft.js';
 
 /** Soroban symbol constraints for function names (SCSymbol: [A-Za-z0-9_],
  *  max 32 bytes). Checked client-side so a typo'd function list fails with a
@@ -65,8 +66,8 @@ export function validateSessionDocDraft(draft: SessionDocDraft): DocValidationRe
 
   const name = draft.name.trim();
   if (name.length === 0) errors.push('Give the rule a name.');
-  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_LEN) {
-    errors.push(`Name must be at most ${MAX_RULE_NAME_LEN} bytes.`);
+  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_BYTES) {
+    errors.push(`Name must be at most ${MAX_RULE_NAME_BYTES} bytes.`);
   }
 
   if (draft.signer.kind === 'delegated') {
@@ -397,8 +398,8 @@ export function validateAdminKeyDraft(draft: AdminKeyDraft, base: PolicyDoc): Do
 
   const name = draft.name.trim();
   if (name.length === 0) errors.push('Give the admin rule a name.');
-  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_LEN) {
-    errors.push(`Name must be at most ${MAX_RULE_NAME_LEN} bytes.`);
+  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_BYTES) {
+    errors.push(`Name must be at most ${MAX_RULE_NAME_BYTES} bytes.`);
   } else if (base.rules.some((r) => r.name === name)) {
     // Never silently REPLACE an existing rule from the admin form — a
     // colliding name must be an explicit error, not a surprise overwrite.
