@@ -34,7 +34,7 @@ import { Networks } from '@stellar/stellar-sdk';
 import { esc } from '../lib/html.js';
 import { toast } from '../lib/toast.js';
 import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../lib/policyChainFetch.js';
-import { fetchAppliedDocument, fetchDocSurface } from '../lib/policy/docPolicyFetch.js';
+import { fetchAppliedDocument, fetchDocLimits, fetchDocSurface } from '../lib/policy/docPolicyFetch.js';
 import { stroopsFromXlm, PERIOD_LEDGERS } from '../lib/spendingLimitParams.js';
 import { applyDocWithPasskey } from '../lib/primaryPasskeySigner.js';
 import {
@@ -48,6 +48,7 @@ import {
   validateAdminKeyDraft,
   validateSessionDocDraft,
   type AdminKeyDraft,
+  type DocLimits,
   type SessionDocDraft,
 } from '../lib/policy/docDraft.js';
 import { diffPolicyDocs } from '../lib/policy/docDiff.js';
@@ -75,6 +76,9 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
   /** The configuration revision `baselineDoc` was read at: every submit
    *  lands only there (`expected_revision`). */
   let baselineRevision = 0n;
+  /** The account's document limits (its compiler's `limits()`), loaded
+   *  with the baseline: every form validates against these. */
+  let docLimits: DocLimits | null = null;
   /** True when nothing is applied yet (diff renders all-new). */
   let isFirstApply = false;
   /** Human-readable reason the baseline could not be established — the
@@ -92,6 +96,8 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
   const baselineReady: Promise<void> = (async () => {
     try {
       const surface = await fetchDocSurface(opts.account);
+      // The limits come first: a baseline is never usable without them.
+      if (surface.supported) docLimits = await fetchDocLimits(opts.account);
       if (!surface.supported) {
         baselineBlocked =
           "This account's contract has no policy-document surface — it cannot take document updates.";
@@ -271,9 +277,9 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
   /** The merged document for the current form state, or null while the
    *  form is invalid or the baseline is unavailable. */
   function mergedFromForm(): PolicyDoc | null {
-    if (baselineDoc === null) return null;
+    if (baselineDoc === null || docLimits === null) return null;
     const draft = collectDraft();
-    if (!validateSessionDocDraft(draft).ok) return null;
+    if (!validateSessionDocDraft(draft, docLimits).ok) return null;
     try {
       return upsertSessionRule(baselineDoc, draft, NETWORK_PASSPHRASE).doc;
     } catch {
@@ -313,9 +319,21 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
 
   async function submitSession(): Promise<void> {
     const draft = collectDraft();
-    const check = validateSessionDocDraft(draft);
+    // The form's own checks first (no chain needed), then again with the
+    // account's limits once they're read.
+    const check = validateSessionDocDraft(draft, docLimits);
     if (!check.ok) {
       showSessionErrors(check.errors);
+      return;
+    }
+    await baselineReady;
+    if (docLimits === null) {
+      showSessionErrors([baselineBlocked ?? "Could not read the account's document limits."]);
+      return;
+    }
+    const withLimits = validateSessionDocDraft(draft, docLimits);
+    if (!withLimits.ok) {
+      showSessionErrors(withLimits.errors);
       return;
     }
     showSessionErrors([]);
@@ -490,7 +508,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
       diffEl.textContent = msg;
     };
     if (!baselineLoaded) return showNone('Reading the applied document…');
-    if (baselineBlocked !== null || baselineDoc === null) {
+    if (baselineBlocked !== null || baselineDoc === null || docLimits === null) {
       return showNone(baselineBlocked ?? 'Unavailable.');
     }
 
@@ -510,7 +528,7 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
           `A new passkey will be created in this device's authenticator when you submit, then enrolled as admin rule "${name}". The exact document (and its hash) appears at the confirm step.`,
         );
       }
-      if (!validateAdminKeyDraft(draft, baselineDoc).ok) {
+      if (!validateAdminKeyDraft(draft, baselineDoc, docLimits).ok) {
         return showNone('Fill in the key to see what would change.');
       }
       try {
@@ -590,8 +608,12 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
       }
     }
     if (draft === null) return;
+    if (docLimits === null) {
+      showAdminErrors([baselineBlocked ?? "Could not read the account's document limits."]);
+      return;
+    }
 
-    const check = validateAdminKeyDraft(draft, baselineDoc);
+    const check = validateAdminKeyDraft(draft, baselineDoc, docLimits);
     if (!check.ok) {
       showAdminErrors(check.errors);
       return;

@@ -26,7 +26,7 @@ import { buildSendOperation } from "../transfer/buildSend.js";
 import { fetchRegistryAddress } from "../policyChainFetch.js";
 import { RPC_URL } from "../network.js";
 import { recoveryEditProblem } from "../policy/docDraft.js";
-import { fetchAppliedDocument } from "../policy/docPolicyFetch.js";
+import { fetchAppliedDocument, fetchDocLimits } from "../policy/docPolicyFetch.js";
 
 const NETWORK_PASSPHRASE = Networks.TESTNET;
 
@@ -106,6 +106,9 @@ export async function buildOperation(
         rpcUrl: RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
         expectedRevision: d.expectedRevision !== undefined ? BigInt(d.expectedRevision) : applied.revision,
+        // The account's own limits: an over-limit request is refused here,
+        // with the reason, before anything is simulated.
+        limits: await fetchDocLimits(account),
       });
       return tx.operations[0]!;
     }

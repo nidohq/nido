@@ -95,6 +95,24 @@ export async function fetchAppliedDocument(account: string): Promise<{ revision:
 }
 
 /**
+ * The account's document limits: `limits()` of the doc compiler the account
+ * pins (its `configuration().infra.docCompiler`), through perch-js's reader.
+ * Every policy form validates against these, never against constants, so a
+ * Perch release that changes a limit changes the wallet with it. Throws when
+ * the views don't answer.
+ */
+export async function fetchDocLimits(account: string): Promise<perch.FlatDocLimits> {
+  const config = await readAccountConfiguration(account);
+  const reader = perch.accountSnapshotReader({
+    account,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    docCompiler: config.infra.docCompiler,
+  });
+  return (await reader.limits()).value;
+}
+
+/**
  * Recover the applied document's JSON from the lossless on-chain copy (the
  * `document()` view, stored by `apply_doc`), with its revision. A Perch
  * account's `DocApplied` event names the hash and counts the changes but

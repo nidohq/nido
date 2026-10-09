@@ -115,7 +115,7 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
  * pages (passkey and delegated-key requests) build their /sign/ handoff
  * through this helper, so the invariant is testable in one place.
  *
- * Precondition: `validateSessionDocDraft(draft).ok` and a loaded baseline
+ * Precondition: `validateSessionDocDraft(draft, limits).ok` and a loaded baseline
  * (the applied doc, or the owner-admin baseline on a first apply).
  */
 export function buildSessionGrantOperation(args: {

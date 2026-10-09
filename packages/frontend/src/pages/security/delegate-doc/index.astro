@@ -144,12 +144,13 @@ import Icon from '../../../components/Icon.astro';
     adminBaseline,
     upsertSessionRule,
     validateSessionDocDraft,
+    type DocLimits,
     type SessionDocDraft,
   } from '../../../lib/policy/docDraft.js';
   import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
-  import { fetchAppliedDocument, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchAppliedDocument, fetchDocLimits, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
   import { fetchDefaultRuleAuthInfo } from '../../../lib/policyChainFetch.js';
   import { bytesToHex } from '../../../lib/policy/policyView.js';
   import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../../../lib/spendingLimitParams.js';
@@ -225,6 +226,9 @@ import Icon from '../../../components/Icon.astro';
   /** The configuration revision the baseline was read at: the request's
    *  `expectedRevision`. */
   let baselineRevision = 0n;
+  /** The account's document limits (its compiler's `limits()`), loaded
+   *  with the baseline: the form validates against these. */
+  let docLimits: DocLimits | null = null;
   let isFirstApply = false;
   let baselineLoaded = false;
   // Set when the baseline read refused the flow — approve must never proceed.
@@ -238,6 +242,7 @@ import Icon from '../../../components/Icon.astro';
     ? (async () => {
         try {
           const surface = await fetchDocSurface(account);
+          if (surface.supported) docLimits = await fetchDocLimits(account);
           if (!surface.supported) {
             refuse(
               "This account's contract predates policy documents — it cannot accept this request.",
@@ -324,7 +329,13 @@ import Icon from '../../../components/Icon.astro';
 
     const draft = draftFromControls();
     if (!draft) return;
-    const check = validateSessionDocDraft(draft);
+    if (docLimits === null) {
+      docDiffEl.textContent = docBaselineBlocked
+        ? (status.textContent ?? 'Unavailable.')
+        : 'Reading the applied document…';
+      return;
+    }
+    const check = validateSessionDocDraft(draft, docLimits);
     if (!check.ok) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = check.errors.join(' ');
@@ -406,10 +417,10 @@ import Icon from '../../../components/Icon.astro';
       }
       status.textContent = 'Reading the applied document…';
       await baselineReady;
-      if (docBaselineBlocked || baselineDoc === null) return; // refusal above already set status + disabled
+      if (docBaselineBlocked || baselineDoc === null || docLimits === null) return; // refusal above already set status + disabled
 
       const draft = draftFromControls()!;
-      const check = validateSessionDocDraft(draft);
+      const check = validateSessionDocDraft(draft, docLimits);
       if (!check.ok) {
         status.textContent = check.errors.join(' ');
         approveBtn.disabled = false;
