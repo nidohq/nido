@@ -242,9 +242,9 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
   wallet.** Guardians approve from their own Nidos, the kit proves in the
   page, the delay passes, and the completion lands, against Perch's
   deployed release and Nido's factory. `tests/e2e/testnet/perch-recovery.testnet.spec.ts`
-  (manual tier; last run 2026-10-08 against Perch's 836fdc9 deployment with
-  the wallet on perch-js's consumer interface, all six plus the policy page,
-  with the relayer-free harness, RUNBOOKS §1).
+  (manual tier; last run 2026-10-09 against the redeploy of Perch's merged
+  main, 95601de, all six plus the policy page, with the relayer-free
+  harness, RUNBOOKS §1).
 - **W9. A document over Perch's limits is refused before it's built.** The
   wallet checks the limits the account's own compiler reports (`limits()`,
   read through perch-js; today 8 declared signers, 11 rules, 8192 canonical

@@ -5,10 +5,10 @@ audit firm with the freeze commit filled in.
 
 > **Freeze commit:** _TBD: record `git rev-parse HEAD` of the audited tree and
 > `git -C vendor/perch rev-parse HEAD` here._ At the time of writing, Perch is
-> pinned at `836fdc9` (branch `fm/perch-epic99-deploy-p8`, the deployment
-> record at the top of stellar-registry/perch#99's stack), whose testnet
-> deployment was built from Perch commit `aa5a78f`; the pin moves to Perch's
-> published release.
+> pinned at `95601de` (branch `fm/perch-epic99-deploy-p8`, the deployment
+> record on Perch's merged main, stellar-registry/perch#112), whose testnet
+> deployment was built from main's `7ae915d`; the pin moves to main once #112
+> merges, and to Perch's published release.
 
 ## Reading order
 

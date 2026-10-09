@@ -56,14 +56,15 @@ a prerequisite on top of everything here.
 - [~] **D4. The testnet suite passes against Perch's testnet release.** All
   six profile/mode combinations and the policy page's `apply_doc` pass
   through the wallet on testnet with real proofs and passkey signatures,
-  against Perch's 836fdc9 deployment (2026-10-07, one clean run of seven
-  specs, 20.4 minutes), as they did against its 17f2c9c deployment earlier
-  that day, and again on 2026-10-08 after the wallet moved onto perch-js's
-  consumer interface (D8; 20.6 minutes). The first run on 836fdc9 lost one completion to a wallet bug,
-  since fixed: reading the chain tip decoded other people's protocol 27
-  credentials (SUPPLY_CHAIN.md, npm). Accounts were created with the
-  relayer-free harness
-  (`NIDO_E2E_DIRECT_DEPLOY=1`): through the hosted relayer on 17f2c9c, the
+  against the redeploy of Perch's merged main (95601de, 2026-10-09; one
+  clean run of seven specs, 21.0 minutes). They passed on each earlier
+  deployment too: 17f2c9c and 836fdc9 on 2026-10-07, and 836fdc9 again on
+  2026-10-08 after the wallet moved onto perch-js's consumer interface (D8).
+  The first run on 836fdc9 lost one completion to a wallet bug, since fixed:
+  reading the chain tip decoded other people's protocol 27 credentials
+  (SUPPLY_CHAIN.md, npm). Accounts were created with the relayer-free
+  harness (`NIDO_E2E_DIRECT_DEPLOY=1`): through the hosted relayer on
+  17f2c9c, the
   policy page and the two ZK-only combinations passed, and the other five
   were refused at onboarding ("Too many transactions queued"). Left: a full
   run through relayer-sponsored onboarding.
