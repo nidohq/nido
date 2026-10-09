@@ -245,12 +245,18 @@ Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
   (manual tier; last run 2026-10-08 against Perch's 836fdc9 deployment with
   the wallet on perch-js's consumer interface, all six plus the policy page,
   with the relayer-free harness, RUNBOOKS §1).
-- **W9. A document over Perch's caps is refused before it's built.** At most
-  8 declared signers, 11 rules, 8192 canonical bytes, and 20-byte rule names:
-  `buildApplyDocTx` says which cap a document breaks, and the admin-key form
-  stops at the eighth key or eleventh rule. The constants are read from
-  Perch's compiler source in the test.
+- **W9. A document over Perch's limits is refused before it's built.** The
+  wallet checks the limits the account's own compiler reports (`limits()`,
+  read through perch-js; today 8 declared signers, 11 rules, 8192 canonical
+  bytes, and 20-byte rule names), never constants of its own. The policy
+  and delegate forms refuse a 21-byte rule name, a ninth key, or a twelfth
+  rule before submission. `buildApplyDocTx` and `applyDocument` say which
+  limit a document breaks. The SDK test pins the messages against Perch's
+  compiler source. Interpreter programs are bounded by perch-program's
+  limits (256 ops, stack depth 128), which no Perch view reports; the SDK
+  mirrors them and its test pins them to perch-program's source.
   `packages/passkey-sdk/src/policyDoc/caps.test.ts`,
+  `packages/passkey-sdk/src/policyDoc/lower.test.ts`,
   `packages/frontend/src/lib/policy/docDraft.test.ts`.
 
 - **W10. Rules are selected from the account's own record, never by an id
