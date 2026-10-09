@@ -6,10 +6,8 @@
 // page does). Kept pure so the rules that decide what's a valid policy are
 // unit-tested without a wallet or RPC.
 
-/** Client-side mirror of OZ's on-chain context-rule name limit. The chain
- *  rejects longer names; catching it here gives a real error instead of a
- *  failed simulation. */
-export const MAX_RULE_NAME_LEN = 32;
+import { MAX_RULE_NAME_BYTES } from '@nidohq/passkey-sdk';
+
 /** OZ verifier key_data cap (bytes). */
 export const MAX_SIGNER_KEY_BYTES = 256;
 
@@ -66,8 +64,8 @@ export function validateDraft(draft: RuleDraft): ValidationResult {
 
   const name = draft.name?.trim() ?? '';
   if (name.length === 0) errors.push('Give the rule a name.');
-  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_LEN) {
-    errors.push(`Name must be at most ${MAX_RULE_NAME_LEN} bytes.`);
+  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_BYTES) {
+    errors.push(`Name must be at most ${MAX_RULE_NAME_BYTES} bytes.`);
   }
 
   if (draft.scope.kind === 'call-contract') {
