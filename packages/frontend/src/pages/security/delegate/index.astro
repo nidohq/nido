@@ -149,12 +149,13 @@ import Icon from '../../../components/Icon.astro';
     adminBaseline,
     upsertSessionRule,
     validateSessionDocDraft,
+    type DocLimits,
     type SessionDocDraft,
   } from '../../../lib/policy/docDraft.js';
   import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
-  import { fetchAppliedDocument, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchAppliedDocument, fetchDocLimits, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
   import { bytesToHex } from '../../../lib/policy/policyView.js';
   import {
     PERIOD_LEDGERS,
@@ -262,6 +263,9 @@ import Icon from '../../../components/Icon.astro';
   /** The configuration revision the baseline was read at: the request's
    *  `expectedRevision`. */
   let baselineRevision = 0n;
+  /** The account's document limits (its compiler's `limits()`), loaded
+   *  with the baseline: the form validates against these. */
+  let docLimits: DocLimits | null = null;
   let isFirstApply = false;
   let baselineLoaded = false;
   let docBaselineBlocked = false;
@@ -275,6 +279,7 @@ import Icon from '../../../components/Icon.astro';
       ? (async () => {
           try {
             const surface = await fetchDocSurface(account);
+            if (surface.supported) docLimits = await fetchDocLimits(account);
             if (!surface.supported) {
               refuse(
                 "This account's contract predates policy documents — it cannot accept this request.",
@@ -358,13 +363,13 @@ import Icon from '../../../components/Icon.astro';
       docDiffEl.textContent = status.textContent ?? 'Unavailable.';
       return;
     }
-    if (!baselineLoaded || baselineDoc === null || verifierAddress === null) {
+    if (!baselineLoaded || baselineDoc === null || docLimits === null || verifierAddress === null) {
       docDiffEl.textContent = 'Reading the applied document…';
       return;
     }
     const draft = draftFromControls();
     if (draft === null) return;
-    const check = validateSessionDocDraft(draft);
+    const check = validateSessionDocDraft(draft, docLimits);
     if (!check.ok) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = check.errors.join(' ');
@@ -444,10 +449,10 @@ import Icon from '../../../components/Icon.astro';
       }
       status.textContent = 'Reading the applied document…';
       await baselineReady;
-      if (docBaselineBlocked || baselineDoc === null) return; // refusal already on screen
+      if (docBaselineBlocked || baselineDoc === null || docLimits === null) return; // refusal already on screen
 
       const draft = draftFromControls()!;
-      const check = validateSessionDocDraft(draft);
+      const check = validateSessionDocDraft(draft, docLimits);
       if (!check.ok) {
         status.textContent = check.errors.join(' ');
         approveBtn.disabled = false;

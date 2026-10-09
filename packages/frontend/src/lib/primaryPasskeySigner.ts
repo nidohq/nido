@@ -13,6 +13,7 @@ import {
   computeAuthDigest,
   getAuthEntry,
   injectAuthPayloadXdr,
+  overLimitsMessage,
   injectPasskeySignature,
   parseAssertionResponse,
   perch,
@@ -368,6 +369,8 @@ export async function applyDocWithPasskey(args: {
     if (err instanceof perch.StaleRevision) {
       throw new Error('Your Nido changed after this page read it. Reload the page and make the change again.');
     }
+    // perch-js checked the document against the account's own limits.
+    if (err instanceof perch.OverLimits) throw new Error(overLimitsMessage(err, args.doc));
     throw err;
   }
 }

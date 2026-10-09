@@ -18,6 +18,12 @@ import {
   type SessionDocDraft,
 } from './docDraft.js';
 
+// The account's document limits, as its compiler's `limits()` reports them
+// on the deployed stack (the SDK's caps.test.ts pins these values to Perch's
+// compiler source). The validators take them as an argument; nothing in the
+// wallet hard-codes them.
+const LIMITS = { maxSigners: 8, maxRules: 11, maxCanonicalBytes: 8192, maxRuleNameBytes: 20 };
+
 const SESSION_G = 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ';
 const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
 const VERIFIER = 'CD4IF75DNQJKCT35PAJAQDPW3K337EK6SJZDMQEVLXAH65K7ZVZMLXYN';
@@ -47,12 +53,27 @@ describe('parseFunctionsInput', () => {
 
 describe('validateSessionDocDraft', () => {
   it('accepts the filled template', () => {
-    expect(validateSessionDocDraft(draft())).toEqual({ ok: true, errors: [] });
+    expect(validateSessionDocDraft(draft(), LIMITS)).toEqual({ ok: true, errors: [] });
+  });
+
+  it("refuses a 21-byte rule name before submission (Perch's 20-byte limit)", () => {
+    expect(validateSessionDocDraft(draft({ name: 'x'.repeat(20) }), LIMITS).ok).toBe(true);
+    const r = validateSessionDocDraft(draft({ name: 'x'.repeat(21) }), LIMITS);
+    expect(r.ok).toBe(false);
+    expect(r.errors).toEqual(['Name must be at most 20 bytes (this one is 21).']);
+  });
+
+  it('checks the form alone while the limits load, and the name once they arrive', () => {
+    const long = draft({ name: 'x'.repeat(21) });
+    expect(validateSessionDocDraft(long, null).ok).toBe(true);
+    expect(validateSessionDocDraft(long, LIMITS).ok).toBe(false);
+    expect(validateSessionDocDraft(draft({ targetContract: 'nope' }), null).ok).toBe(false);
   });
 
   it('rejects a bad session address, target, and function name', () => {
     const r = validateSessionDocDraft(
       draft({ signer: { kind: 'delegated' as const, address: 'nope' }, targetContract: 'also-no', functionsInput: 'bad-fn!' }),
+      LIMITS,
     );
     expect(r.ok).toBe(false);
     expect(r.errors).toHaveLength(3);
@@ -61,6 +82,7 @@ describe('validateSessionDocDraft', () => {
   it('rejects a zero cap and a negative expiry', () => {
     const r = validateSessionDocDraft(
       draft({ cap: { stroops: '0', periodLedgers: 17280 }, notAfterLedger: -1 }),
+      LIMITS,
     );
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.includes('cap'))).toBe(true);
@@ -127,7 +149,13 @@ describe('admin keys', () => {
 
   describe('validateAdminKeyDraft', () => {
     it('accepts a fresh delegated key', () => {
-      expect(validateAdminKeyDraft(delegatedDraft, base)).toEqual({ ok: true, errors: [] });
+      expect(validateAdminKeyDraft(delegatedDraft, base, LIMITS)).toEqual({ ok: true, errors: [] });
+    });
+
+    it("refuses a 21-byte admin rule name before submission", () => {
+      const r = validateAdminKeyDraft({ ...delegatedDraft, name: 'a'.repeat(21) }, base, LIMITS);
+      expect(r.ok).toBe(false);
+      expect(r.errors[0]).toBe('Name must be at most 20 bytes (this one is 21).');
     });
 
     it("refuses a ninth key or a twelfth rule (Perch's caps)", () => {
@@ -135,16 +163,16 @@ describe('admin keys', () => {
         id: `k${i}`,
         address: StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x40 + i)),
       }));
-      const nine = validateAdminKeyDraft(delegatedDraft, { ...base, signers });
+      const nine = validateAdminKeyDraft(delegatedDraft, { ...base, signers }, LIMITS);
       expect(nine.ok).toBe(false);
       expect(nine.errors.join(' ')).toMatch(/already holds 8 keys/);
       const rules = Array.from({ length: 11 }, (_, i) => ({ ...base.rules[0]!, name: `r${i}` }));
-      const twelve = validateAdminKeyDraft(delegatedDraft, { ...base, rules });
+      const twelve = validateAdminKeyDraft(delegatedDraft, { ...base, rules }, LIMITS);
       expect(twelve.errors.join(' ')).toMatch(/already has 11 rules/);
     });
 
     it('rejects a duplicate rule name instead of replacing the rule', () => {
-      const r = validateAdminKeyDraft({ ...delegatedDraft, name: 'session' }, base);
+      const r = validateAdminKeyDraft({ ...delegatedDraft, name: 'session' }, base, LIMITS);
       expect(r.ok).toBe(false);
       expect(r.errors[0]).toContain('already has a rule named');
     });
@@ -154,11 +182,13 @@ describe('admin keys', () => {
         validateAdminKeyDraft(
           { name: 'a2', signer: { kind: 'delegated', address: 'nope' } },
           base,
+          LIMITS,
         ).errors[0],
       ).toContain('not a valid');
       const r = validateAdminKeyDraft(
         { name: 'a2', signer: { kind: 'passkey', verifier: 'bad', publicKeyHex: 'xyz' } },
         base,
+        LIMITS,
       );
       expect(r.ok).toBe(false);
       expect(r.errors).toHaveLength(2);
@@ -168,6 +198,7 @@ describe('admin keys', () => {
       const r = validateAdminKeyDraft(
         { name: 'a2', signer: { kind: 'passkey', verifier: VERIFIER, publicKeyHex: OWNER_KEY } },
         base,
+        LIMITS,
       );
       expect(r.ok).toBe(false);
       expect(r.errors[0]).toContain('already an admin');
@@ -234,7 +265,7 @@ describe('passkey session signers (legacy delegate flow)', () => {
   };
 
   it('validates and builds an external-signer session doc', () => {
-    expect(validateSessionDocDraft(draft)).toEqual({ ok: true, errors: [] });
+    expect(validateSessionDocDraft(draft, LIMITS)).toEqual({ ok: true, errors: [] });
     const doc = draftToDoc(draft, Networks.TESTNET);
     expect(doc.signers).toEqual([
       { id: 'session', verifier: VERIFIER, key: '04' + 'b0'.repeat(64) },
@@ -246,7 +277,7 @@ describe('passkey session signers (legacy delegate flow)', () => {
     const r = validateSessionDocDraft({
       ...draft,
       signer: { kind: 'passkey', verifier: 'nope', publicKeyHex: 'zz' },
-    });
+    }, LIMITS);
     expect(r.ok).toBe(false);
     expect(r.errors).toHaveLength(2);
   });
