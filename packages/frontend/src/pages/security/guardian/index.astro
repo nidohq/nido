@@ -1,0 +1,39 @@
+---
+// Approve as a friend. The page is a thin shell: the flow lives in
+// src/lib/recovery/guardianPage.ts, on the Perch SDK (`perch` namespace of
+// @nidohq/passkey-sdk).
+import NidoLayout from '../../../layouts/NidoLayout.astro';
+import Toast from '../../../components/Toast.astro';
+import PasskeySheet from '../../../components/PasskeySheet.astro';
+import Icon from '../../../components/Icon.astro';
+---
+<NidoLayout title="Approve">
+  <div class="col-scroll scroll-hide screen-in">
+    <div class="topbar dash-hide-desktop">
+      <a href="/security/" class="btn ghost sm" style="width:40px;height:40px;padding:0;border-radius:12px;" aria-label="Back to security">
+        <Icon name="back" size={18} />
+      </a>
+      <div class="disp" style="font-weight:800;font-size:21px;">Approve as a friend</div>
+    </div>
+    <div class="pad" style="padding-top:8px;">
+      <div class="dash-head"><h1 class="dash-head-title disp">Approve as a friend</h1></div>
+      <p class="mut" style="font-size:13.5px;margin:0 0 4px;line-height:1.5;">A friend asked you to approve a change to their Nido.</p>
+      <div id="recovery-root"></div>
+    </div>
+  </div>
+  <Toast />
+  <PasskeySheet />
+</NidoLayout>
+
+<style is:global>
+  .pol-fieldset { border: 1px solid var(--line, rgba(0,0,0,0.1)); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
+  .pol-radio, .pol-check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; }
+  .pol-input-label { display: grid; gap: 5px; font-size: 12.5px; font-weight: 600; }
+</style>
+
+<script>
+  import { mountGuardian } from '../../../lib/recovery/guardianPage.js';
+
+  const root = document.getElementById('recovery-root')!;
+  await mountGuardian(root);
+</script>

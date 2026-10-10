@@ -65,7 +65,7 @@ describe("discoverFromEvents", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("walks chunks with the shared transfer filters (one walk feeds activity AND discovery)", async () => {
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockResolvedValue({ sequence: 3_000_000 } as never);
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockResolvedValue({ sequence: 3_000_000 } as never);
     const spy = vi
       .spyOn(rpc.Server.prototype, "getEvents")
       .mockResolvedValue({ events: [], latestLedger: 3_000_000 } as never);
@@ -77,7 +77,7 @@ describe("discoverFromEvents", () => {
   });
 
   it("resolves [] when the walk fails — discovery must never blank the card", async () => {
-    vi.spyOn(rpc.Server.prototype, "getLatestLedger").mockRejectedValue(new Error("rpc down"));
+    vi.spyOn(rpc.Server.prototype, "_getLatestLedger").mockRejectedValue(new Error("rpc down"));
     expect(await discoverFromEvents(SELF)).toEqual([]);
   });
 });

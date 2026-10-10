@@ -23,6 +23,7 @@
 import { Buffer } from 'buffer';
 import { Client as AccountClient } from '@nidohq/perch-account';
 import { Client as CompilerClient } from '@nidohq/perch-doc-compiler';
+import { Client as PoolClient } from '@nidohq/perch-zk-pool';
 import {
   Client as RecoveryClient,
   EvidenceDomain,
@@ -274,6 +275,12 @@ export class PerchRecovery {
     return (await this.controller.attempt({ account, attempt_id: attemptId })).result ?? undefined;
   }
 
+  /** Whether an attempt is live: not expired, invalidated, completed, or
+   *  cancelled. */
+  async attemptLive(account: string, attemptId: bigint): Promise<boolean> {
+    return (await this.controller.attempt_live({ account, attempt_id: attemptId })).result;
+  }
+
   async nextAttemptId(account: string): Promise<bigint> {
     return BigInt((await this.controller.next_attempt_id({ account })).result);
   }
@@ -301,6 +308,17 @@ export class PerchRecovery {
       valid_until: validUntil,
     });
     return statementFromChain(ok(tx.result));
+  }
+
+  /** Evidence recorded so far for a change statement digest. */
+  async changeEvidence(account: string, digest: Uint8Array): Promise<{ guardians: string[]; zk: boolean }> {
+    const r = (await this.controller.change_evidence({ account, digest: b(digest) })).result;
+    return { guardians: r.guardians, zk: r.zk };
+  }
+
+  /** Whether the account's controller config is enrolled at all. */
+  async enrolled(account: string): Promise<boolean> {
+    return (await this.controller.config({ account })).result != null;
   }
 
   async nullifierSpent(account: string, nullifier: Uint8Array): Promise<boolean> {
@@ -342,6 +360,41 @@ export class PerchRecovery {
    *  replaced (nidohq/nido#240). */
   async recoverySelection(account: string): Promise<RuleSelection> {
     return selectRecoveryRule(await this.snapshot(account));
+  }
+
+  // --- the ZK pool -------------------------------------------------------
+
+  private pool(): PoolClient {
+    return new PoolClient({
+      contractId: this.args.deployment.zkPool,
+      networkPassphrase: this.args.deployment.network,
+      rpcUrl: this.args.rpcUrl,
+    });
+  }
+
+  /** Where `account`'s credential `enrollmentId` sits in the pool. */
+  async leafPosition(
+    account: string,
+    enrollmentId: Uint8Array,
+  ): Promise<{ treeId: number; index: number } | undefined> {
+    const at = (await this.pool().enrollment({ account, enrollment_id: b(enrollmentId) })).result;
+    return at ? { treeId: at.tree_id, index: Number(at.index) } : undefined;
+  }
+
+  /** Every leaf of `treeId`, read from the pool's own storage (no indexer
+   *  needed; the proof fails on-chain if any leaf here were wrong). */
+  async treeLeaves(treeId: number, pageSize = 64): Promise<Uint8Array[]> {
+    const pool = this.pool();
+    const size = Number(ok((await pool.tree({ tree_id: treeId })).result).size);
+    const leaves: Uint8Array[] = [];
+    while (leaves.length < size) {
+      const page = ok(
+        (await pool.leaves({ tree_id: treeId, start: BigInt(leaves.length), count: pageSize })).result,
+      );
+      if (page.length === 0) break;
+      leaves.push(...page.map(u8));
+    }
+    return leaves;
   }
 
   // --- attempts ----------------------------------------------------------

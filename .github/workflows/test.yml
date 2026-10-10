@@ -139,7 +139,11 @@ jobs:
       # so the static webServer serves a real dist for the e2e tiers.
       - name: Build passkey-sdk
         run: npx tsc -p ./packages/passkey-sdk/tsconfig.json
+      # The fast tiers never reach a chain, so the build has no Perch
+      # deployment and the recovery pages say so (recovery-pages.spec.ts).
       - name: Build frontend
+        env:
+          PUBLIC_PERCH_DEPLOYMENT: none
         run: npx astro build --root ./packages/frontend
       - name: Fast UI e2e tier (shim — chromium/firefox/webkit)
         run: npx playwright test --grep @fast
@@ -192,7 +196,7 @@ jobs:
         continue-on-error: true
         run: |
           for d in . packages/passkey-sdk packages/frontend packages/stellar-wallets-kit-module \
-                   infra/nido-resolver infra/pool-indexer infra/recovery-relay; do
+                   infra/nido-resolver; do
             echo "== npm audit: $d =="
             (cd "$d" && npm audit --audit-level=high) || true
           done

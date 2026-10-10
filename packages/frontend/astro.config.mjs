@@ -7,12 +7,19 @@ export default defineConfig({
   site: "https://nido.fyi",
   vite: {
     worker: {
-      // `prover.worker.ts` is a `type: "module"` Worker (see
-      // `lib/zk/prover.ts`). Vite/Rollup's code-splitting build for module
-      // workers can't emit "iife"/"umd" (its default `worker.format`) —
-      // `astro build` hard-fails with "Invalid value \"iife\" for option
-      // \"worker.format\"" the moment any page imports the zk prover.
+      // bb.js (the ZK prover, loaded lazily by the recovery pages) spawns
+      // module workers. Vite/Rollup's code-splitting build for module
+      // workers can't emit "iife"/"umd" (its default `worker.format`).
       format: 'es',
+    },
+    optimizeDeps: {
+      // Vite's esbuild-based dep pre-bundling mangles bb.js's own
+      // `new URL(..., import.meta.url)` + fetch lookup of its WASM binary,
+      // so the prebundled copy 404s and the dev server serves back its HTML
+      // fallback instead ("expected magic word ..., found 3c 21 44 4f" --
+      // the first bytes of "<!DOCTYPE"). Mirrors Perch's own working
+      // browser setup (vendor/perch/packages/perch-zk/bench/browser/vite.config.js).
+      exclude: ['@aztec/bb.js', '@noir-lang/noirc_abi', '@noir-lang/acvm_js'],
     },
   },
 });

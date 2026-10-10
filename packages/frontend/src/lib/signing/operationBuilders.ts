@@ -25,6 +25,8 @@ import type { OperationDescriptor } from "./signRequest";
 import { buildSendOperation } from "../transfer/buildSend.js";
 import { fetchRegistryAddress } from "../policyChainFetch.js";
 import { RPC_URL } from "../network.js";
+import { recoveryEditProblem } from "../policy/docDraft.js";
+import { fetchAppliedDocument, fetchDocLimits } from "../policy/docPolicyFetch.js";
 
 const NETWORK_PASSPHRASE = Networks.TESTNET;
 
@@ -89,10 +91,24 @@ export async function buildOperation(
       // the ONLY policy write path (doc-only ruling; the per-rule
       // add_context_rule lowering for docs is gone).
       const doc = parsePolicyDocJson(d.docJson);
+      // A request never reconfigures recovery: that is the recovery page's,
+      // with whatever approval the account's profile needs.
+      const applied = await fetchAppliedDocument(account);
+      const recoveryProblem = recoveryEditProblem(
+        applied.json === undefined ? null : parsePolicyDocJson(applied.json),
+        doc,
+      );
+      if (recoveryProblem !== undefined) throw new Error(recoveryProblem);
+      // The apply lands only at the revision the request was composed from
+      // (or, for a request that doesn't say, the one just read).
       const tx = await buildApplyDocTx(doc, {
         account,
         rpcUrl: RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
+        expectedRevision: d.expectedRevision !== undefined ? BigInt(d.expectedRevision) : applied.revision,
+        // The account's own limits: an over-limit request is refused here,
+        // with the reason, before anything is simulated.
+        limits: await fetchDocLimits(account),
       });
       return tx.operations[0]!;
     }

@@ -113,11 +113,34 @@ function adminMeta(name: string): { kind: ActivityKind; title: string } | null {
     case "signer_removed": return { kind: "signer", title: "Removed a signer" };
     case "policy_added": return { kind: "policy", title: "Added a policy" };
     case "policy_removed": return { kind: "policy", title: "Removed a policy" };
+    // A Perch account's mutations are quiet; one DocApplied records each
+    // apply_doc (with counts, see docAppliedSubtitle).
+    case "doc_applied": return { kind: "rule", title: "Updated policies" };
+    case "credential_revoked": return { kind: "signer", title: "Revoked a replaced passkey" };
+    case "upgrade_scheduled": return { kind: "other", title: "Scheduled an account upgrade" };
+    case "upgrade_executed": return { kind: "other", title: "Upgraded the account" };
+    case "upgrade_dropped": return { kind: "other", title: "Dropped a scheduled upgrade" };
+    case "freeze_changed": return { kind: "other", title: "Recovery changed the account's freeze" };
     case "signer_registered": case "policy_registered":
     case "signer_deregistered": case "policy_deregistered":
       return { kind: "registry", title: "Updated account keys" };
     default: return null;
   }
+}
+
+/** "2 rules added, 1 signer removed" from a DocApplied event's counts, or
+ *  undefined when there are none to show. */
+function docAppliedSubtitle(data: unknown): string | undefined {
+  if (data === null || typeof data !== "object") return undefined;
+  const d = data as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const [noun, verbs] of [["rule", ["added", "removed", "edited"]], ["signer", ["added", "removed"]], ["policy", ["added", "removed"]]] as const) {
+    for (const verb of verbs) {
+      const n = Number(d[`${noun === "policy" ? "policies" : `${noun}s`}_${verb}`] ?? 0);
+      if (n > 0) parts.push(`${n} ${n === 1 ? noun : noun === "policy" ? "policies" : `${noun}s`} ${verb}`);
+    }
+  }
+  return parts.length ? parts.join(", ") : undefined;
 }
 
 // Higher number = higher priority when collapsing a tx's admin events into one row.
@@ -148,14 +171,18 @@ export function groupTxRows(decoded: DecodedTx, self: string, knownSacIds?: Set<
     }
   });
 
-  let best: { kind: ActivityKind; title: string } | null = null;
+  let best: { kind: ActivityKind; title: string; subtitle?: string } | null = null;
   for (const e of events) {
     const meta = adminMeta(eventName(e));
-    if (meta && (!best || PRIORITY[meta.kind] > PRIORITY[best.kind])) best = meta;
+    if (meta && (!best || PRIORITY[meta.kind] > PRIORITY[best.kind])) {
+      const subtitle = eventName(e) === "doc_applied" ? docAppliedSubtitle(e.data) : undefined;
+      best = { ...meta, ...(subtitle ? { subtitle } : {}) };
+    }
   }
   if (best) {
     rows.push({
       id: txHash, txHash, timestamp: ts, kind: best.kind, title: best.title,
+      ...(best.subtitle ? { subtitle: best.subtitle } : {}),
       explorerUrl: explorerUrl(txHash),
     });
   }

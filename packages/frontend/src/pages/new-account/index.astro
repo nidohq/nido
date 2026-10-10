@@ -78,11 +78,11 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       </button>
     </section>
 
-    <!-- ============= NEVER GET LOCKED OUT · recovery enrollment ============= -->
-    <!-- Shown after the passkey is created, before deploy. Three choices, all
-         funnelling into an in-memory `enrollSecret`/`enrollMethod` the deploy
-         step reads — never persisted (mnemonic + wallet signature are
-         derive-then-discard). See the enrollment handlers below. -->
+    <!-- ============= NEVER GET LOCKED OUT · recovery choice ============= -->
+    <!-- Shown after the passkey is created, before deploy. Recovery itself is
+         configured on /security/recovery/ right after the account exists: it
+         is part of the account's first policy document, so enrollment (and a
+         ZK credential's pool leaf) lands in one apply_doc. -->
     <section id="recovery-enroll-section" class="hidden">
       <div id="enroll-choices">
         <div style="display:grid; place-items:center; margin:10px 0 22px;">
@@ -92,78 +92,17 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
           You're almost in
         </h1>
         <p class="mut" style="font-size:14.5px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;">
-          Your wallet is ready. You can add a backup way to get back in now, or anytime later from Security — we'll remind you.
+          Your wallet is ready. You can choose who helps you back in if you lose this passkey now, or anytime later from Security.
         </p>
 
         <div style="display:flex; flex-direction:column; gap:12px; margin-top:26px;">
           <button id="enroll-continue" type="button" class="btn acc">
             <span>Continue to my wallet</span>
           </button>
-          <button id="enroll-reveal-options" type="button" class="link" style="align-self:center; margin-top:2px; font-size:13.5px; background:none; border:none; cursor:pointer;">
-            Set up a recovery backup now (optional)
+          <button id="enroll-now" type="button" class="link" style="align-self:center; margin-top:2px; font-size:13.5px; background:none; border:none; cursor:pointer;">
+            Set up recovery right after
           </button>
-
-          <!-- Advanced/optional: the actual method choices, revealed only when
-               the user opts in. Enrolling here happens at creation, so it stays
-               invisible on-chain (uniform genesis leaf); skipping it defers to
-               the visible home-page prompt. Kept behind the reveal so the
-               default path is a one-tap "continue". -->
-          <div id="enroll-options" class="hidden">
-            <button id="enroll-seed" type="button" class="card" style="display:flex; gap:13px; align-items:center; width:100%; padding:16px; text-align:left; cursor:pointer; font:inherit; color:inherit;">
-              <div style="width:42px; height:42px; border-radius:12px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
-                <Icon name="key" size={20} color="var(--ink-soft)" />
-              </div>
-              <div style="flex:1;">
-                <div style="font-weight:700; font-size:14.5px;">Seed phrase</div>
-                <div class="mut" style="font-size:12.5px; line-height:1.4;">A 12-word backup, shown once. Write it down and keep it safe.</div>
-              </div>
-              <Icon name="chevron" size={18} color="var(--mut)" />
-            </button>
-
-            <button id="enroll-wallet" type="button" class="card" style="display:flex; gap:13px; align-items:center; width:100%; padding:16px; text-align:left; cursor:pointer; font:inherit; color:inherit;">
-              <div style="width:42px; height:42px; border-radius:12px; background:var(--chip); display:grid; place-items:center; flex:0 0 auto;">
-                <Icon name="wallet" size={20} color="var(--ink-soft)" />
-              </div>
-              <div style="flex:1;">
-                <div style="font-weight:700; font-size:14.5px;">A wallet you own</div>
-                <div class="mut" style="font-size:12.5px; line-height:1.4;">Sign one message with another Stellar wallet — nothing to write down.</div>
-              </div>
-              <Icon name="chevron" size={18} color="var(--mut)" />
-            </button>
-
-            <div id="enroll-status" class="mut" style="display:none; font-size:13px; text-align:center; margin-top:2px;"></div>
-          </div>
         </div>
-      </div>
-
-      <!-- Seed reveal — the mnemonic exists only in this DOM subtree and in the
-           `currentMnemonic` variable, both cleared the moment "continue" derives
-           the secret. Never written to localStorage/cookies/logs. -->
-      <div id="seed-reveal" class="hidden">
-        <div style="display:grid; place-items:center; margin:10px 0 22px;">
-          <Nest size={104} />
-        </div>
-        <h1 class="disp" style="font-weight:800; font-size:26px; line-height:1.06; text-align:center;">
-          Your seed phrase
-        </h1>
-        <p class="mut" style="font-size:13.5px; line-height:1.5; margin-top:8px; text-align:center; max-width:330px; margin-inline:auto;">
-          Write these 12 words down and keep them somewhere safe and private. This is the only time they're shown — Nido never stores them.
-        </p>
-
-        <div id="seed-words" class="mono" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px 14px; margin-top:20px; padding:16px; border-radius:var(--r-md); background:var(--paper-2); border:1px solid var(--line); font-size:13.5px;"></div>
-
-        <button id="seed-copy" type="button" class="btn ghost sm" style="margin-top:12px;">Copy to clipboard</button>
-
-        <div class="alert warn" role="note" style="margin-top:16px;">
-          Anyone with these words can recover your account. Never share them or type them into a website.
-        </div>
-
-        <button id="seed-continue" class="btn acc" style="margin-top:22px;">
-          <span>I've written it down — continue</span>
-        </button>
-        <button id="seed-back" type="button" class="btn ghost" style="margin-top:10px;">
-          <span>Back</span>
-        </button>
       </div>
     </section>
 
@@ -223,21 +162,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       </div>
     </section>
 
-    <!-- ============= RECOVERY CARD · which backup, shown once ============= -->
-    <!-- Deliberately separate from #done-section: the C-address is surfaced
-         there, the backup-method summary is surfaced here — never together
-         (the seed words themselves were already shown once, in #seed-reveal,
-         and are never repeated here). -->
-    <section id="recovery-card-section" class="hidden">
-      <div style="display:grid; place-items:center; margin:10px 0 22px;">
-        <div style="width:72px; height:72px; border-radius:50%; background:var(--acc-soft); display:grid; place-items:center;">
-          <Icon name="shieldcheck" size={34} color="var(--acc-ink)" />
-        </div>
-      </div>
-      <h1 id="recovery-card-title" class="disp" style="font-weight:800; font-size:26px; line-height:1.06; text-align:center;"></h1>
-      <p id="recovery-card-body" class="mut" style="font-size:14px; line-height:1.55; margin-top:10px; text-align:center; max-width:330px; margin-inline:auto;"></p>
-    </section>
-
     <!-- ===================== RESERVING · explainer (page 1) ===================== -->
     <section id="preparing-section" class="hidden" style="min-height:440px;">
       <div style="display:grid; place-items:center; margin:32px 0 26px;">
@@ -291,13 +215,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   .setup-card .check-mark { width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; }
   .setup-card .check-text { font-size: 16px; font-weight: 600; color: var(--ink); line-height: 1.2; }
 
-  /* Recovery-enrollment choice cards + seed reveal (Task 3). */
-  #enroll-choices button.card:disabled,
-  #seed-continue:disabled { opacity: .55; cursor: not-allowed; }
-  #enroll-choices button.card:not(:disabled):active { transform: scale(.985); }
-  /* The optional method choices are flex only while revealed — an inline
-     display would beat the `.hidden` toggle (see the spinner-visibility bug). */
-  #enroll-options:not(.hidden) { display: flex; flex-direction: column; gap: 12px; }
 </style>
 
 <script>
@@ -315,30 +232,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     activateAccount,
     accountUrl,
     stripSubdomain,
-    deriveSecretM1,
-    commitmentForCreation,
-    checkAccountWiring,
-    buildWireAccountTx,
-    readRecoveryConfig,
-    buildRecoveryConfig,
-    buildEnroll,
-    RECOVERY_CONTROLLER_TESTNET_ID,
-    RECOVERY_VERIFIER_TESTNET_ID,
-    NO_BASELINE_DOC_SENTINEL,
-    PENDING_ACTIVITY_POLICY_DEFAULT,
-    DELAY_SECS_DEFAULT,
-    EXPIRY_SECS_DEFAULT,
-    MAX_CANCELS_DEFAULT,
-    type Fr,
   } from "@nidohq/passkey-sdk";
-  // Use the frontend's fetchRegistryAddress (NOT the SDK's) so PUBLIC_ZK_PREVIEW
-  // resolves `factory`/`zk-recovery` to the factory-v2 preview pair. The SDK's
-  // version has no preview override, which would (in preview mode) send
-  // `create_account_v2` to the production v1 factory that lacks it.
-  import { fetchRegistryAddress } from "../../lib/policyChainFetch.js";
-  import { generateMnemonic } from "@scure/bip39";
-  import { wordlist } from "@scure/bip39/wordlists/english.js";
-  import { StellarWalletsKit } from "@creit.tech/stellar-wallets-kit";
+  import { fetchFactoryAddress } from "../../lib/policyChainFetch.js";
   import { parseReturnIntent, buildClaimReturnUrl } from "../../lib/claimFlow";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
@@ -347,22 +242,10 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
   import { syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
   import { signAndSubmit } from "../../lib/primaryPasskeySigner";
-  import { markBackupSetUp } from "../../lib/recoveryBackupPrompt";
-  import { initWalletKit, connect as connectWallet } from "../../lib/walletConnect";
-  import { deriveM2SecretSafely } from "../../lib/walletRecoverySign";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
   const FRIENDBOT_URL = "https://friendbot.stellar.org";
   const TESTNET_TOPUP_STROOPS = 99_900_000_000n;
-
-  // ZK preview mode (PR-preview builds only, testnet): PUBLIC_ZK_PREVIEW
-  // makes `fetchRegistryAddress` (policyChainFetch.ts) resolve
-  // `factory`/`zk-recovery` to a hardcoded preview pair instead of the
-  // shared production registry entries — this page needs no branch of its
-  // own for that any more (`create_account`/`create_account_v2` are
-  // behaviorally identical since the factory fix for the ZK/guardian convergence fix;
-  // `deploy()` below always calls `create_account` regardless of mode). See
-  // DEPLOYED.md's "Preview (factory-v2)" section.
 
   // --- State ---
 
@@ -412,20 +295,11 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   // Lets a manual tap abort an in-flight auto-attempt of the passkey prompt.
   let autoPasskeyController: AbortController | null = null;
 
-  // --- Recovery-enrollment state ("Never get locked out") ---
+  // --- Recovery choice ("Never get locked out") ---
   //
-  // `enrollSecret` lives ONLY in memory, derived from a mnemonic or a wallet
-  // signature that is itself never persisted (see the seed/wallet handlers
-  // below) — it is discarded the instant the post-create enrollment calls
-  // finish (or fail). `enrollMethod` drives the recovery-card copy only.
-  type EnrollMethod = "seed" | "wallet" | "skip";
-  let enrollMethod: EnrollMethod | null = null;
-  let enrollSecret: Fr | null = null;
-  let enrollWalletShortAddr: string | null = null;
-  let enrollmentFailed = false;
-  // The generated mnemonic, held only between "reveal" and "continue" so it
-  // can be wiped from both the variable and the DOM the moment it's used.
-  let currentMnemonic: string | null = null;
+  // Recovery is configured right after the account exists, on
+  // /security/recovery/ (its first apply_doc carries the recovery member).
+  let setUpRecoveryAfter = false;
 
   // --- UI refs ---
 
@@ -440,35 +314,12 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   const $preparingContinue = document.getElementById("preparing-continue") as HTMLButtonElement;
   const $preparingHomeLink = document.getElementById("preparing-home-link")!;
   const $recoveryEnrollSection = document.getElementById("recovery-enroll-section")!;
-  const $enrollChoices = document.getElementById("enroll-choices")!;
-  const $enrollSeedBtn = document.getElementById("enroll-seed") as HTMLButtonElement;
-  const $enrollWalletBtn = document.getElementById("enroll-wallet") as HTMLButtonElement;
   const $enrollContinueBtn = document.getElementById("enroll-continue") as HTMLButtonElement;
-  const $enrollRevealBtn = document.getElementById("enroll-reveal-options") as HTMLButtonElement;
-  const $enrollOptions = document.getElementById("enroll-options")!;
-  const $enrollStatus = document.getElementById("enroll-status")!;
-  const $seedReveal = document.getElementById("seed-reveal")!;
-  const $seedWords = document.getElementById("seed-words")!;
-  const $seedContinueBtn = document.getElementById("seed-continue") as HTMLButtonElement;
-  const $seedBackBtn = document.getElementById("seed-back") as HTMLButtonElement;
-  const $seedCopy = document.getElementById("seed-copy") as HTMLButtonElement;
-  $seedCopy.addEventListener("click", async () => {
-    if (!currentMnemonic) return;
-    try {
-      await navigator.clipboard.writeText(currentMnemonic);
-      $seedCopy.textContent = "Copied ✓";
-      setTimeout(() => { $seedCopy.textContent = "Copy to clipboard"; }, 1600);
-    } catch {
-      $seedCopy.textContent = "Copy failed — select the words manually";
-    }
-  });
+  const $enrollNowBtn = document.getElementById("enroll-now") as HTMLButtonElement;
   const $deploySection = document.getElementById("deploy-section")!;
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
   const $deployNestStatic = document.getElementById("deploy-nest-static")!;
   const $doneSection = document.getElementById("done-section")!;
-  const $recoveryCardSection = document.getElementById("recovery-card-section")!;
-  const $recoveryCardTitle = document.getElementById("recovery-card-title")!;
-  const $recoveryCardBody = document.getElementById("recovery-card-body")!;
   const $step1 = document.getElementById("step-1")!;
   const $step2 = document.getElementById("step-2")!;
 
@@ -747,7 +598,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     })
       .addOperation(
         Operation.invokeContractFunction({
-          contract: await fetchRegistryAddress("factory"),
+          contract: await fetchFactoryAddress(),
           function: "get_c_address",
           args: [xdr.ScVal.scvBytes(Buffer.from(saltBytes()))],
         }),
@@ -804,32 +655,10 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     $recoveryEnrollSection.classList.remove("hidden");
   }
 
-  // --- "Never get locked out" · recovery enrollment ---
-  //
-  // Three choices, all resolving `enrollMethod` + (for seed/wallet)
-  // `enrollSecret` before handing off to the unchanged deploy step. The
-  // account-creation tx itself (`create_account`) never branches on the
-  // choice — see deploy()'s comment on why enrollment is a separate,
-  // post-create step on this (testnet, factory v1) network.
+  // --- "Never get locked out" · recovery choice ---
 
-  function showEnrollStatus(msg: string) {
-    $enrollStatus.textContent = msg;
-    $enrollStatus.style.display = "block";
-  }
-
-  function clearEnrollStatus() {
-    $enrollStatus.textContent = "";
-    $enrollStatus.style.display = "none";
-  }
-
-  function setEnrollButtonsDisabled(disabled: boolean) {
-    $enrollSeedBtn.disabled = disabled;
-    $enrollWalletBtn.disabled = disabled;
-    $enrollContinueBtn.disabled = disabled;
-  }
-
-  // Advance out of the enrollment section into "Setting up your Nido" — the
-  // one path every choice (seed / wallet / skip) funnels through, identically.
+  // Advance out of the recovery choice into "Setting up your Nido": both
+  // choices deploy identically; only the hand-off differs.
   function proceedToDeploy() {
     $recoveryEnrollSection.classList.add("hidden");
     $step1.classList.remove("on");
@@ -839,205 +668,17 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     void deploy();
   }
 
-  function renderSeedWords(mnemonic: string): void {
-    $seedWords.textContent = "";
-    mnemonic.split(" ").forEach((word, i) => {
-      const el = document.createElement("div");
-      el.textContent = `${i + 1}. ${word}`;
-      $seedWords.appendChild(el);
-    });
-  }
-
-  $enrollSeedBtn.addEventListener("click", () => {
-    clearError();
-    currentMnemonic = generateMnemonic(wordlist);
-    renderSeedWords(currentMnemonic);
-    $enrollChoices.classList.add("hidden");
-    $seedReveal.classList.remove("hidden");
-  });
-
-  $seedBackBtn.addEventListener("click", () => {
-    // Abandon this reveal entirely rather than leave a shown mnemonic sitting
-    // around unused.
-    currentMnemonic = null;
-    $seedWords.textContent = "";
-    $seedReveal.classList.add("hidden");
-    $enrollChoices.classList.remove("hidden");
-  });
-
-  $seedContinueBtn.addEventListener("click", async () => {
-    if (!currentMnemonic || !contractId) return;
-    clearError();
-    $seedContinueBtn.disabled = true;
-    let secret: Fr;
-    try {
-      secret = await deriveSecretM1(currentMnemonic, "", contractId, NETWORK_PASSPHRASE);
-    } catch (err: any) {
-      // Only clear the mnemonic/seed-words display on the SUCCESS path below
-      // — clearing it here (previously in a `finally`) stranded the user on
-      // a blank seed-reveal screen with no way to retry without regenerating
-      // a brand-new phrase (T4 review finding).
-      showError(`Couldn't prepare your seed-phrase backup: ${err.message}`);
-      $seedContinueBtn.disabled = false;
-      return;
-    }
-    // The mnemonic's only job was to derive the secret above — it never
-    // leaves this device and is not needed again until a real recovery.
-    currentMnemonic = null;
-    $seedWords.textContent = "";
-    enrollMethod = "seed";
-    enrollSecret = secret;
-    $seedReveal.classList.add("hidden");
-    proceedToDeploy();
-  });
-
-  $enrollWalletBtn.addEventListener("click", async () => {
-    clearError();
-    if (!contractId) return;
-    setEnrollButtonsDisabled(true);
-    try {
-      showEnrollStatus("Connecting your wallet…");
-      await initWalletKit({ networkPassphrase: NETWORK_PASSPHRASE });
-      const session = await connectWallet();
-      // Double-signs, independently SEP-53-verifies, and re-derives from both
-      // signatures before trusting this wallet for M2 — a wallet whose
-      // signMessage isn't repeatable would otherwise silently make this
-      // account's recovery secret unreproducible (see walletRecoverySign.ts).
-      enrollSecret = await deriveM2SecretSafely({
-        kit: StellarWalletsKit,
-        account: contractId,
-        walletAddress: session.walletAddress,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        onStatus: showEnrollStatus,
-      });
-      enrollMethod = "wallet";
-      enrollWalletShortAddr = shortAddr(session.walletAddress, 4, 4);
-      clearEnrollStatus();
-      proceedToDeploy();
-    } catch (err: any) {
-      setEnrollButtonsDisabled(false);
-      clearEnrollStatus();
-      showError(`Couldn't connect a wallet: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-
-  // Primary path: continue without setting up a backup now (a silent dummy
-  // commitment is still inserted at creation, so the account is
-  // indistinguishable from an enrolled one). The home page prompts to set up
-  // recovery later.
   $enrollContinueBtn.addEventListener("click", () => {
     clearError();
-    enrollMethod = "skip";
-    enrollSecret = null;
+    setUpRecoveryAfter = false;
     proceedToDeploy();
   });
 
-  // Optional: reveal the method choices for users who want to enroll now (at
-  // creation, so it stays invisible on-chain).
-  $enrollRevealBtn.addEventListener("click", () => {
-    $enrollOptions.classList.remove("hidden");
-    $enrollRevealBtn.classList.add("hidden");
+  $enrollNowBtn.addEventListener("click", () => {
+    clearError();
+    setUpRecoveryAfter = true;
+    proceedToDeploy();
   });
-
-  // Post-create enrollment (seed/wallet only): two account-authed calls
-  // against already-deployed contracts, each its own WebAuthn ceremony via
-  // `signAndSubmit` (same passkey the account was just locked to). Order
-  // between the two doesn't matter for correctness (see
-  // `contract.rs::enroll_zk_recovery`'s doc comment).
-  //
-  // The `insert_for` call is built directly here (mirroring
-  // `zkRecoveryActions.ts::buildMigrationEnrollTx`) rather than importing that
-  // module: it re-exports `initiateZkRecovery`, which pulls in the zk prover's
-  // Web Worker (`lib/zk/prover.ts`) — fine for the recovery-ceremony page
-  // (Task 4), but an unnecessary (and, as configured, build-breaking —
-  // rollup's worker output rejects code-split "iife" format) dependency for
-  // this page, which only ever needs the commitment, never a proof.
-  /**
-   * Wires + enrolls the just-created account into Stage 3's
-   * `RecoveryController` (`ZkOnly` mode), then registers the ZK secret's
-   * Merkle-leaf commitment in the shared `nido-zk-recovery` pool — same
-   * three-step flow as `security/index.astro::runZkEnrollment`, not the
-   * old direct `enroll_zk_recovery(pool)` call
-   * that used to wire straight to the M1 pool. The account here is brand
-   * new (just deployed this same request, always `recovery_controller:
-   * None` per the factory's own fix — `contracts/factory/src/contract.rs
-   * ::deploy_account_contract`), so `existing` is only checked
-   * defensively for a retry race, not because a prior enrollment is
-   * expected.
-   */
-  async function enrollRecoveryPostCreate(account: string, secret: Fr): Promise<void> {
-    const readArgs = {
-      account,
-      controllerId: RECOVERY_CONTROLLER_TESTNET_ID,
-      rpcUrl: RPC_URL,
-      networkPassphrase: NETWORK_PASSPHRASE,
-    };
-
-    const wiring = await checkAccountWiring(readArgs);
-    if (wiring.status === "wired-to-different-controller") {
-      throw new Error(
-        `This account is already wired to a different recovery controller ` +
-          `(${wiring.currentControllerId}).`,
-      );
-    }
-    if (wiring.status === "unwired") {
-      const wire = await buildWireAccountTx(readArgs);
-      await signAndSubmit({ account, operation: wire.operations[0] });
-    }
-
-    const existing = await readRecoveryConfig(readArgs);
-    if (!existing) {
-      const zkPoolId = await fetchRegistryAddress("zk-recovery");
-      const config = buildRecoveryConfig({
-        mode: "ZkOnly",
-        profile: "Loss",
-        guardians: [],
-        guardianThreshold: 0,
-        verifier: RECOVERY_VERIFIER_TESTNET_ID,
-        zkPool: zkPoolId,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        baselineDocHash: NO_BASELINE_DOC_SENTINEL,
-        delaySecs: DELAY_SECS_DEFAULT,
-        expirySecs: EXPIRY_SECS_DEFAULT,
-        maxCancels: MAX_CANCELS_DEFAULT,
-        pendingActivityPolicy: PENDING_ACTIVITY_POLICY_DEFAULT,
-      });
-      const built = buildEnroll({ controllerId: RECOVERY_CONTROLLER_TESTNET_ID, account, config });
-      await signAndSubmit({ account, operation: built.operations[0] });
-    }
-    // else: a retry raced with an earlier attempt's enroll landing — fine,
-    // fall through to insert_for.
-
-    const controllerId = await fetchRegistryAddress("zk-recovery");
-    const commitment = commitmentForCreation(secret);
-    const insertOp = new Contract(controllerId).call(
-      "insert_for",
-      Address.fromString(account).toScVal(),
-      xdr.ScVal.scvBytes(Buffer.from(commitment)),
-    );
-    await signAndSubmit({ account, operation: insertOp });
-  }
-
-  function renderRecoveryCard(): void {
-    if (enrollmentFailed) {
-      $recoveryCardTitle.textContent = "Backup didn't finish";
-      $recoveryCardBody.textContent =
-        "Your Nido is live, but we couldn't finish setting up your backup method. You can add one anytime from Security settings.";
-    } else if (enrollMethod === "seed") {
-      $recoveryCardTitle.textContent = "Backed up with a seed phrase";
-      $recoveryCardBody.textContent =
-        "Your 12-word phrase is your backup — keep it somewhere safe and private, separate from this account's address.";
-    } else if (enrollMethod === "wallet") {
-      $recoveryCardTitle.textContent = "Backed up with a wallet";
-      $recoveryCardBody.textContent = enrollWalletShortAddr
-        ? `You can get back in later using the wallet you connected (${enrollWalletShortAddr}). Keep access to that wallet safe.`
-        : "You can get back in later using the wallet you connected. Keep access to that wallet safe.";
-    } else {
-      $recoveryCardTitle.textContent = "No backup yet";
-      $recoveryCardBody.textContent =
-        "You haven't added a backup yet. Set one up anytime from your wallet or Security settings — we'll remind you — so you're never locked out.";
-    }
-  }
 
   $registerBtn.addEventListener("click", async () => {
     clearError();
@@ -1120,25 +761,16 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
       const sourceAccount = await waitForSourceAccount(server, simulationSource);
 
-      // Deploy only — always `create_account`, regardless of preview mode.
-      // `create_account_v2`'s atomic genesis-insert (fold enrollment into
-      // the creation tx via a commitment argument) was removed from the
-      // factory (the ZK/guardian convergence fix —
-      // `contracts/factory/src/contract.rs::deploy_account_contract`'s doc
-      // comment: every account now mints with `recovery_controller: None`,
-      // and `create_account_v2`'s commitment argument is ignored). The two
-      // entry points are now behaviorally identical, so there is no reason
-      // to prefer v2 even in preview mode. `ZK_PREVIEW_ENABLED` still
-      // matters for `fetchRegistryAddress`'s address resolution below
-      // (preview factory/pool pair vs production) — just not for which
-      // factory function this call uses.
+      // Deploy only: the factory mints a Perch account whose constructor
+      // rule is this passkey. Recovery (and every other rule) arrives with
+      // the account's first apply_doc.
       const simTxn = new TransactionBuilder(sourceAccount, {
         fee: "100",
         networkPassphrase: Networks.TESTNET,
       })
         .addOperation(
           Operation.invokeContractFunction({
-            contract: await fetchRegistryAddress("factory"),
+            contract: await fetchFactoryAddress(),
             function: "create_account",
             args: [
               xdr.ScVal.scvBytes(Buffer.from(saltBytes())),
@@ -1195,34 +827,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
         return;
       }
 
-      // Recovery enrollment (seed/wallet choices only) — deliberately a
-      // separate, account-authed step here, AFTER the account exists (the
-      // `create_account` call above always mints unwired now, so this runs
-      // the same way in every mode, preview included): `enrollRecoveryPostCreate`
-      // wires the account to Stage 3, enrolls ZkOnly, then registers the
-      // secret's commitment in the pool via `insert_for` — three account-authed
-      // calls, each its own WebAuthn ceremony. A failure here does NOT unwind
-      // the (already successful) account creation — it's surfaced softly on
-      // the recovery card instead. Skip performs no enrollment call at all.
-      if (enrollMethod && enrollMethod !== "skip" && enrollSecret !== null) {
-        try {
-          await enrollRecoveryPostCreate(contractId!, enrollSecret);
-        } catch (enrollErr) {
-          enrollmentFailed = true;
-          console.warn("[nido] recovery enrollment failed; account creation still succeeded", enrollErr);
-        }
-      }
-      // The secret's only remaining purpose was the enrollment call above.
-      enrollSecret = null;
-
-      // Record a local "backed up" flag so the home-page recovery banner stays
-      // hidden for an account that enrolled at creation. Advisory only (see
-      // recoveryBackupPrompt.ts); skip enrollment leaves it unset so the banner
-      // prompts later.
-      if (enrollMethod && enrollMethod !== "skip" && !enrollmentFailed) {
-        markBackupSetUp(contractId!);
-      }
-
       // Finalized — every card lands its checkmark, including "Your Nido is ready".
       setCheckProgress(6, -1);
       $deployNestSpinning.style.display = "none";
@@ -1231,7 +835,9 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // Wire up the done screen.
       const protocol = window.location.protocol;
       const host = window.location.host;
-      const accountUrl = `${protocol}//${host}/account/`;
+      const accountUrl = setUpRecoveryAfter
+        ? `${protocol}//${host}/security/recovery/`
+        : `${protocol}//${host}/account/`;
 
       // Brief beat so the final check lands before the reveal.
       await new Promise((r) => setTimeout(r, 700));
@@ -1239,16 +845,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       $doneSection.classList.remove("hidden");
       $step2.classList.remove("on");
       $step2.classList.add("done");
-
-      // After the "ready" beat, swap to the recovery-card screen (which
-      // backup method — if any — was enrolled) before the auto hand-off.
-      // Deliberately separate from #done-section: the C-address lives there,
-      // the backup-method summary lives here, never together.
-      setTimeout(() => {
-        $doneSection.classList.add("hidden");
-        renderRecoveryCard();
-        $recoveryCardSection.classList.remove("hidden");
-      }, 1500);
 
       // F-02: auto-advance into the wallet after a brief "ready" beat — arriving
       // in the funded wallet is the payoff, and the deploy copy already promised

@@ -36,10 +36,10 @@ The perch PolicyDoc is nido's policy source of truth at the doc layer:
 `packages/passkey-sdk/src/policyDoc/` builds docs, lowers them onto OZ context
 rules (stock policies where the shape fits, the perch interpreter otherwise),
 and decompiles chain rules back to a doc view — its module docs are the
-authoritative reference. Perch comes from npm (`@stellar-registry/perch`,
-`@stellar-registry/perch-interpreter`; a root `overrides` entry keeps the
-interpreter bindings on the workspace's single `@stellar/stellar-sdk` copy —
-the #72 dual-SDK hazard). Perch contract addresses are derived, not deployed
+authoritative reference. `@stellar-registry/perch` and `perch-zk` are npm
+workspaces from the `vendor/perch` submodule; `@stellar-registry/perch-interpreter`
+comes from npm (a root `overrides` entry keeps its bindings on the workspace's
+single `@stellar/stellar-sdk` copy — the #72 dual-SDK hazard). Perch contract addresses are derived, not deployed
 by nido — see DEPLOYED.md "Perch canonical deployment" and
 `src/policyDoc/deployment.ts`; frozen golden vectors live in
 `src/policyDoc/testdata/`. The frontend's doc surface lives under
@@ -74,8 +74,9 @@ state machine and `vendor/perch/docs/zk/` the ZK backend. Nido's coverage of it
 is `crates/integration-tests/tests/it/recovery_*.rs`, `onboarding.rs`, and
 `costs.rs`. ZK tests build their statement through the real controller and
 replay a committed proof of it; a changed statement fails with the instruction
-to run `just gen-zk-fixtures`. `circuits/zk_recovery` is only the legacy
-frontend prover's circuit.
+to run `just gen-zk-fixtures`. The wallet side is
+`packages/passkey-sdk/src/perch/` (SDK) and `packages/frontend/src/lib/recovery/`
+(pages), with `model.ts` holding the pure rules the unit tests pin.
 
 ## Testing Notes
 

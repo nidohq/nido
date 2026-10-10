@@ -10,6 +10,7 @@ export * from './statement.js';
 export * from './doc.js';
 export * from './recovery.js';
 export * from './account.js';
+export type { ZkEvidence, ZkCredential } from './zk.js';
 
 // perch-js's consumer interface (stellar-registry/perch#108): revision-
 // consistent reads, rule selection, the apply lifecycle, and its typed
@@ -19,6 +20,7 @@ export {
   applyDocument,
   assertRevision,
   buildAuthPayload,
+  checkLimits,
   InconsistentRead,
   oneTransactionBackend,
   OverLimits,
@@ -38,6 +40,7 @@ export {
   type ApplyDocTransport,
   type ApplyEvent,
   type ApplyResult,
+  type FlatDocLimits,
   type InstalledRule,
   type PreparedStep,
   type RuleRef,

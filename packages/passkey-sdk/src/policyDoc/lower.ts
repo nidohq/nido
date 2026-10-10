@@ -33,9 +33,12 @@ import type { LoweredCap, LoweredDoc, LoweredRule } from './types.js';
 
 /** Interpreter program-format version this lowering targets (perch-program). */
 export const PROGRAM_VERSION = 1;
-/** Structural limits mirrored from perch-program's `rpn::validate`. */
-const MAX_PROGRAM_LEN = 256;
-const MAX_STACK_DEPTH = 128;
+/** Structural limits of perch-program's `rpn::validate`. Neither perch-js
+ *  nor the chain report these (the compiler's `limits()` covers the document
+ *  caps only), so they are mirrored here, and `lower.test.ts` pins them to
+ *  perch-program's source. */
+export const MAX_PROGRAM_LEN = 256;
+export const MAX_STACK_DEPTH = 128;
 
 const I128_MAX = 2n ** 127n - 1n;
 

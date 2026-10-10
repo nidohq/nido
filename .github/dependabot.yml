@@ -24,8 +24,6 @@ updates:
       - /packages/frontend
       - /packages/stellar-wallets-kit-module
       - /infra/nido-resolver
-      - /infra/pool-indexer
-      - /infra/recovery-relay
       - /infra/relayer/plugins/channels
     schedule:
       interval: weekly

@@ -41,56 +41,63 @@ describe('address/hex guards', () => {
   });
 });
 
+// The chain's context-rule name limit, as the account's compiler reports it
+// (`limits().maxRuleNameBytes`); the validator takes it as an argument.
+const NAME_LIMIT = 20;
+
 describe('validateDraft', () => {
   it('accepts a well-formed delegated-signer rule', () => {
-    expect(validateDraft(base())).toEqual({ ok: true, errors: [] });
+    expect(validateDraft(base(), NAME_LIMIT)).toEqual({ ok: true, errors: [] });
   });
 
   it('requires a name', () => {
-    const r = validateDraft(base({ name: '   ' }));
+    const r = validateDraft(base({ name: '   ' }), NAME_LIMIT);
     expect(r.ok).toBe(false);
     expect(r.errors).toContain('Give the rule a name.');
   });
 
-  it('rejects an over-long name', () => {
-    const r = validateDraft(base({ name: 'x'.repeat(40) }));
+  it('rejects a name over the limit it is given', () => {
+    expect(validateDraft(base({ name: 'x'.repeat(20) }), NAME_LIMIT).ok).toBe(true);
+    const r = validateDraft(base({ name: 'x'.repeat(21) }), NAME_LIMIT);
     expect(r.ok).toBe(false);
-    expect(r.errors.some((e) => e.includes('at most'))).toBe(true);
+    expect(r.errors).toContain('Name must be at most 20 bytes.');
   });
 
   it('requires a valid contract for call-contract scope', () => {
-    const r = validateDraft(base({ scope: { kind: 'call-contract', contract: 'bad' } }));
+    const r = validateDraft(base({ scope: { kind: 'call-contract', contract: 'bad' } }), NAME_LIMIT);
     expect(r.errors.some((e) => e.includes('valid C-address'))).toBe(true);
   });
 
   it('allows default scope with no contract', () => {
-    expect(validateDraft(base({ scope: { kind: 'default' } })).ok).toBe(true);
+    expect(validateDraft(base({ scope: { kind: 'default' } }), NAME_LIMIT).ok).toBe(true);
   });
 
   it('requires at least one signer', () => {
-    const r = validateDraft(base({ signers: [] }));
+    const r = validateDraft(base({ signers: [] }), NAME_LIMIT);
     expect(r.errors).toContain('Add at least one signer.');
   });
 
   it('validates a passkey signer verifier + hex key', () => {
     const good = validateDraft(
       base({ signers: [{ kind: 'passkey', verifier: VERIFIER, publicKeyHex: '04aabb' }] }),
+      NAME_LIMIT,
     );
     expect(good.ok).toBe(true);
     const bad = validateDraft(
       base({ signers: [{ kind: 'passkey', verifier: 'nope', publicKeyHex: 'zz' }] }),
+      NAME_LIMIT,
     );
     expect(bad.ok).toBe(false);
     expect(bad.errors.length).toBe(2);
   });
 
   it('rejects a non-positive spending limit', () => {
-    const r = validateDraft(base({ spendingLimit: { stroops: '0', periodLedgers: 100 } }));
+    const r = validateDraft(base({ spendingLimit: { stroops: '0', periodLedgers: 100 } }), NAME_LIMIT);
     expect(r.errors).toContain('Spending limit must be a positive amount.');
   });
 
   it('rejects a non-positive expiry ledger', () => {
-    const r = validateDraft(base({ validUntilLedger: -5 }));
+    const r = validateDraft(base({ validUntilLedger: -5 }), NAME_LIMIT);
     expect(r.errors.some((e) => e.includes('Expiry ledger'))).toBe(true);
   });
 });

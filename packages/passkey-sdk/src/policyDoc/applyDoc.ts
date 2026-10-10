@@ -28,7 +28,7 @@
 import { Buffer } from 'buffer';
 import { Client as AccountClient } from '@nidohq/perch-account';
 import { canonicalJson, docHash } from '@stellar-registry/perch';
-import { docCapProblem } from './caps.js';
+import { docCapProblem, type FlatDocLimits } from './caps.js';
 import type { PolicyDoc } from '@stellar-registry/perch';
 import { extractXdrOperations } from '../assembledTx.js';
 import type { TxBuild } from '../policyBlocks/types.js';
@@ -44,6 +44,10 @@ export interface BuildApplyDocArgs {
   approvalValidUntil?: number;
   /** See the module docs. Omitted: no revision check. */
   expectedRevision?: bigint;
+  /** The account's document limits (its compiler's `limits()`, e.g.
+   *  `snapshot.limits`). Given, an over-limit document is refused here with
+   *  a readable reason before simulating; the chain refuses it anyway. */
+  limits?: FlatDocLimits;
 }
 
 export interface ApplyDocTx extends TxBuild {
@@ -70,8 +74,8 @@ export async function buildApplyDocTx(
       `policyDoc: doc is bound to network "${doc.network}" but the apply targets "${networkPassphrase}"`,
     );
   }
-  // Perch's compiler refuses an over-cap document anyway; say why first.
-  const tooLarge = docCapProblem(doc);
+  // Perch's compiler refuses an over-limit document anyway; say why first.
+  const tooLarge = args.limits === undefined ? undefined : docCapProblem(doc, args.limits);
   if (tooLarge !== undefined) throw new Error(tooLarge);
   const canonical = canonicalJson(doc);
   const client = new AccountClient({

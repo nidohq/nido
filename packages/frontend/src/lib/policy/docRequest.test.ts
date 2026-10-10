@@ -84,6 +84,7 @@ describe('buildSessionGrantOperation (doc-only regression)', () => {
     );
     const op = buildSessionGrantOperation({
       baseline,
+      baselineRevision: 0n,
       isFirstApply: true,
       draft: {
         name: 'session-key',
@@ -134,6 +135,7 @@ describe('buildSessionGrantOperation (doc-only regression)', () => {
     const NEW_KEY = '04' + 'c1'.repeat(64);
     const op = buildSessionGrantOperation({
       baseline: applied,
+      baselineRevision: 3n,
       isFirstApply: false,
       draft: draft(NEW_KEY),
       networkPassphrase: Networks.TESTNET,
@@ -141,6 +143,8 @@ describe('buildSessionGrantOperation (doc-only regression)', () => {
     });
     expect(op.type).toBe('apply-policy-doc');
     expect(op.prevDocJson).toBeDefined();
+    // The apply lands only at the revision the baseline was read at.
+    expect(op.expectedRevision).toBe('3');
     // Re-delegation semantics: the session-key rule is REPLACED, not stacked.
     const doc = parsePolicyDocJson(op.docJson);
     expect(doc.rules.filter((r) => r.name === 'session-key')).toHaveLength(1);

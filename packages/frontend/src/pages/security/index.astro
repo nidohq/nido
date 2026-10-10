@@ -1,6 +1,6 @@
 ---
-// Nido reskin of the Security suite hub. Logic (recovery + delegation lists,
-// mountRecoveryForm / mountDelegationForm, all IDs and localStorage walking)
+// Nido reskin of the Security suite hub. Logic (delegation list,
+// mountDelegationForm, all IDs and localStorage walking)
 // is preserved verbatim from the original BaseLayout version; only the shell,
 // markup and copy are reskinned to the Nido "Warm Nest" voice.
 import NidoLayout from '../../layouts/NidoLayout.astro';
@@ -25,59 +25,38 @@ import Nest from '../../components/Nest.astro';
         The people and devices that can help you get back in.
       </p>
 
-      <!-- ZK-recovery pending banner (M4 Task 4): driven by getZkPending(account).
-           Hidden when there's no pending recovery. Cancel re-derives the
-           recovery secret (never persisted) to build a fresh action=2 proof,
-           then runs cancelZkRecovery -- which itself requires this device's
-           still-live passkey. -->
-      <div id="zk-pending-banner" class="alert danger" role="alert" hidden style="margin-top:10px;">
+      <!-- Recovery in progress: driven by the controller's activity gate. -->
+      <div id="recovery-attempt-banner" class="alert danger" role="alert" hidden style="margin-top:10px;">
         <Icon name="clock" size={18} class="alert-ico" />
         <div style="flex:1;">
-          <div>A ZK recovery is pending on this account.</div>
-          <div id="zk-pending-text" style="font-weight:700;margin-top:2px;"></div>
-          <div id="zk-cancel-form" hidden style="margin-top:10px;font-weight:400;">
-            <p style="margin:0 0 8px;font-size:12.5px;">
-              Didn't start this? Enter the recovery phrase (or sign with the
-              wallet) this account is enrolled with to cancel it with your
-              passkey.
-            </p>
-            <textarea id="zk-cancel-mnemonic" class="input mono" rows="2"
-                      placeholder="word1 word2 word3 …" style="width:100%;font-weight:400;"></textarea>
-            <div class="actions" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-              <button id="zk-cancel-mnemonic-btn" class="btn ghost sm" type="button">Cancel with phrase</button>
-              <button id="zk-cancel-wallet-btn" class="btn ghost sm" type="button">Cancel with wallet</button>
-            </div>
-            <p id="zk-cancel-status" class="mut" style="font-size:12px;margin-top:8px;font-weight:400;"></p>
-          </div>
+          <div id="recovery-attempt-text">A recovery is under way on this Nido.</div>
+          <a href="/security/recovery/" style="font-weight:700;">See who can cancel it</a>
         </div>
-        <button id="zk-cancel-btn" class="btn ghost sm" type="button" style="flex:0 0 auto;">Cancel</button>
       </div>
 
       <div class="card-grid" id="security-grid">
         <!-- ============ Trusted friends (recovery) ============ -->
         <div class="grid-cell">
           <section id="recovery-section">
-            <span class="section-label" style="display:block;margin:24px 0 10px;">Trusted friends</span>
-            <div class="card" style="padding:18px;">
-              <p class="mut" style="font-size:13px;margin:0 0 14px;line-height:1.55;">
-                Lose your phone? Friends can let you back in. No friend can ever move your money.
-              </p>
-              <div id="recovery-list"></div>
-              <button id="add-recovery" class="btn soft sm" style="margin-top:14px;">
-                <Icon name="plus" size={17} /> Add a trusted friend
-              </button>
-              <div id="recovery-form" class="nido-form" hidden></div>
-            </div>
-          </section>
-
-          <!-- ZK-recovery migration card (M4 Task 4): lets an existing
-               account add ZK recovery (enroll_zk_recovery + insert_for) even
-               though it wasn't enrolled at creation. Rendered by the script
-               below once the account is known. -->
-          <section id="zk-migration-section" style="margin-top:24px;">
-            <span class="section-label" style="display:block;margin:0 0 10px;">Backup recovery</span>
-            <div id="zk-migration-card" class="card" style="padding:18px;">
-              <div class="skeleton" style="height:20px;width:70%;"></div>
+            <span class="section-label" style="display:block;margin:24px 0 10px;">Recovery</span>
+            <div class="card" style="overflow:hidden;padding:0;">
+              <a href="/security/recovery/" class="navrow" style="text-decoration:none;color:inherit;border-bottom:none;">
+                <div style="width:38px;height:38px;border-radius:11px;background:var(--acc-soft);display:grid;place-items:center;">
+                  <Icon name="shieldcheck" size={20} color="var(--acc)" />
+                </div>
+                <div style="flex:1;">
+                  <div style="font-weight:700;font-size:14.5px;">Recovery settings</div>
+                  <div id="recovery-summary" class="mut" style="font-size:12.5px;">Friends, a recovery kit, or both</div>
+                </div>
+                <Icon name="chevron" size={18} color="var(--mut)" />
+              </a>
+              <a href="/security/recover/" class="navrow" style="text-decoration:none;color:inherit;border-bottom:none;border-top:1px solid var(--line-soft);">
+                <div style="flex:1;padding-left:50px;">
+                  <div style="font-weight:700;font-size:14px;">Lost your passkey?</div>
+                  <div class="mut" style="font-size:12.5px;">Get back in from a new device</div>
+                </div>
+                <Icon name="chevron" size={18} color="var(--mut)" />
+              </a>
             </div>
           </section>
         </div>
@@ -178,37 +157,15 @@ import Nest from '../../components/Nest.astro';
     loadSessionKeyMaterial,
     loadCredential,
     buf2base64url,
-    deriveSecretM1,
-    checkAccountWiring,
-    buildWireAccountTx,
-    readRecoveryConfig,
-    buildRecoveryConfig,
-    buildEnroll,
-    buildReconfigure,
-    RECOVERY_CONTROLLER_TESTNET_ID,
-    RECOVERY_VERIFIER_TESTNET_ID,
-    NO_BASELINE_DOC_SENTINEL,
-    PENDING_ACTIVITY_POLICY_DEFAULT,
-    DELAY_SECS_DEFAULT,
-    EXPIRY_SECS_DEFAULT,
-    MAX_CANCELS_DEFAULT,
-    type Fr,
   } from '@nidohq/passkey-sdk';
-  import { generateMnemonic } from '@scure/bip39';
-  import { wordlist } from '@scure/bip39/wordlists/english.js';
-  import { StellarWalletsKit } from '@creit.tech/stellar-wallets-kit';
   import { RPC_URL, NETWORK_PASSPHRASE } from '../../lib/network.js';
-  import { fetchAllChainRules, fetchPolicyState, simulateView, fetchRegistryAddress } from '../../lib/policyChainFetch.js';
+  import { fetchAllChainRules, fetchPolicyState, fetchRegistryAddress } from '../../lib/policyChainFetch.js';
   import { forgetRevokedMaterial, ruleStillExists } from '../../lib/sessionKeyActions.js';
-  import { renderRecoveryCard } from '../../components/MultisigRecoveryCard.js';
   import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
-  import { mountRecoveryForm } from '../../lib/recoveryForm.js';
   import { toast } from '../../lib/toast.js';
-  import { deriveM2SecretSafely } from '../../lib/walletRecoverySign.js';
-  import { signAndSubmit } from '../../lib/primaryPasskeySigner.js';
-  import { markBackupSetUp } from '../../lib/recoveryBackupPrompt.js';
-  import { initWalletKit, connect as connectWallet } from '../../lib/walletConnect.js';
-  import { buildMigrationEnrollTx, getZkPending, cancelZkRecovery } from '../../lib/zkRecoveryActions.js';
+  import { perchDeployment } from '../../lib/recovery/deployment.js';
+  import { readRecoveryState } from '../../lib/recovery/chain.js';
+  import { MODE_TEXT, PROFILE_TEXT } from '../../lib/recovery/model.js';
 
   let account = contractIdFromHostname(window.location.hostname);
 
@@ -297,19 +254,15 @@ import Nest from '../../components/Nest.astro';
     if (sub) { sub.hidden = true; }
   }
 
-  const recoveryList = document.getElementById('recovery-list')!;
   const delegationList = document.getElementById('delegation-list')!;
 
   if (!account) {
-    recoveryList.innerHTML =
+    delegationList.innerHTML =
       '<p class="mut" style="font-size:13px;">Open this page from your account to manage who can help you.</p>';
-    delegationList.innerHTML = '';
   } else {
     // S-02: shared skeleton placeholder instead of a bare "Loading…" string.
-    const loadingSkeleton =
+    delegationList.innerHTML =
       '<div class="skeleton" style="height:46px; margin-bottom:10px;"></div><div class="skeleton" style="height:46px;"></div>';
-    recoveryList.innerHTML = loadingSkeleton;
-    delegationList.innerHTML = loadingSkeleton;
     try {
       const overlay = {
         friendNicknames: loadFriendNicknames(account),
@@ -325,45 +278,54 @@ import Nest from '../../components/Nest.astro';
 
       const delegationsEmpty =
         '<p class="mut" style="font-size:13px;">No apps have been let in yet.</p>';
-      recoveryList.innerHTML = '';
       delegationList.innerHTML = '';
       for (const block of blocks) {
-        if (block.kind === 'multisig-recovery') {
-          recoveryList.appendChild(renderRecoveryCard(block));
-        } else if (block.kind === 'scoped-session-key') {
-          delegationList.appendChild(
-            renderSessionKeyCard(block, account, () => {
-              if (!delegationList.children.length) {
-                delegationList.innerHTML = delegationsEmpty;
-              }
-            }),
-          );
-        }
-      }
-      if (!recoveryList.children.length) {
-        recoveryList.innerHTML =
-          '<p class="mut" style="font-size:13px;">No trusted friends yet.</p>';
+        delegationList.appendChild(
+          renderSessionKeyCard(block, account, () => {
+            if (!delegationList.children.length) {
+              delegationList.innerHTML = delegationsEmpty;
+            }
+          }),
+        );
       }
       if (!delegationList.children.length) {
         delegationList.innerHTML = delegationsEmpty;
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      recoveryList.innerHTML = `<p class="mut" style="font-size:13px;">Couldn't load: ${msg}</p>`;
-      delegationList.innerHTML = '';
+      delegationList.innerHTML = `<p class="mut" style="font-size:13px;">Couldn't load: ${msg}</p>`;
     }
 
-    // ZK recovery (M4 Task 4): pending banner + migration card. Both are
-    // best-effort against a possibly-unconfigured registry/controller — a
-    // failure here must never break the rest of the Security page.
-    void renderZkPendingBanner(account);
-    void renderZkMigrationCard(account).then(() => {
-      // Deep-link from the home-page recovery banner: bring the enrollment card
-      // into view once it has rendered.
-      if (new URLSearchParams(window.location.search).get('setup') === 'recovery') {
-        document.getElementById('zk-migration-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Recovery summary + in-progress banner. Best-effort: a failure here must
+    // never break the rest of the Security page.
+    void renderRecoverySummary(account);
+  }
+
+  /** The recovery card's one-line summary, and the banner while an attempt
+   *  is authorized. */
+  async function renderRecoverySummary(acc: string): Promise<void> {
+    const summaryEl = document.getElementById('recovery-summary')!;
+    if (!perchDeployment()) {
+      summaryEl.textContent = 'Not available on this network yet';
+      return;
+    }
+    try {
+      const state = await readRecoveryState(acc);
+      if (!state.summary) {
+        summaryEl.textContent = 'Off: set it up so you never get locked out';
+        return;
       }
-    });
+      summaryEl.textContent = `${PROFILE_TEXT[state.summary.profile].title}. ${MODE_TEXT[state.summary.mode]}.`;
+      if (state.gate?.authorized_attempt != null) {
+        const banner = document.getElementById('recovery-attempt-banner')!;
+        document.getElementById('recovery-attempt-text')!.textContent = state.gate.frozen
+          ? 'A recovery was approved. This Nido is frozen until it finishes or is cancelled.'
+          : 'A recovery was approved and is waiting out its delay.';
+        banner.hidden = false;
+      }
+    } catch {
+      summaryEl.textContent = "Couldn't read recovery right now";
+    }
   }
 
   /** Walk localStorage for any session-key material this account holds. */
@@ -381,422 +343,6 @@ import Nest from '../../components/Nest.astro';
     return out;
   }
 
-  document.getElementById('add-recovery')!.addEventListener('click', () => {
-    if (!account) { alert('No account selected.'); return; }
-    const formContainer = document.getElementById('recovery-form')!;
-    mountRecoveryForm(formContainer, account);
-  });
-
-  // ===========================================================================
-  // ZK recovery (M4 Task 4): pending banner + migration card.
-  // ===========================================================================
-
-  function formatDuration(totalSeconds: number): string {
-    const s = Math.max(0, totalSeconds);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = Math.floor(s % 60);
-    return [h, m, sec].map((n) => String(n).padStart(2, '0')).join(':');
-  }
-
-  /** `RecoveryAlreadyEnrolled` (smart-account error #6) surfaces from a failed
-   *  simulation as `Error(Contract, #6)` -- same convention as
-   *  `policyChainFetch.ts::isRuleNotFound`. */
-  function isRecoveryAlreadyEnrolledError(e: unknown): boolean {
-    const msg = e instanceof Error ? e.message : String(e);
-    return /Error\(Contract, #6\)|RecoveryAlreadyEnrolled/.test(msg);
-  }
-
-  /** Reads the account's OWN `recovery_rule_id()` view (not the pool
-   *  controller) -- `Some` once `enroll_zk_recovery` (or creation-time
-   *  enrollment) has installed the rule. Read failures are treated as "not
-   *  enrolled" so the enroll call itself is the authoritative check (it
-   *  panics `RecoveryAlreadyEnrolled` if that guess was wrong -- see
-   *  `runZkEnrollment` below). */
-  async function zkAlreadyEnrolled(account: string): Promise<boolean> {
-    try {
-      const server = new rpc.Server(RPC_URL);
-      const rv = await simulateView(server, new Contract(account), 'recovery_rule_id');
-      return scValToNative(rv) != null;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Retry-safe Stage 3 ZK enrollment (the ZK/guardian convergence fix — this used
-   * to wire the account directly to the M1 pool via `enroll_zk_recovery`,
-   * a DIFFERENT controller from the guardian-recovery flow's Stage 3
-   * `RecoveryController`, so ZK-first-then-guardian (or the reverse) could
-   * never land on one controller's `Combined` mode). Three steps, each
-   * retry-safe on its own:
-   *
-   *  1. Wiring: `checkAccountWiring` against the Stage 3 controller (same
-   *     precondition check `multisig-recovery.buildInstall` uses) — wires
-   *     a fresh account, refuses accurately for one wired elsewhere, is a
-   *     no-op if already wired.
-   *  2. Stage 3 config: `enroll` (`ZkOnly`) if the account has no config
-   *     yet, or `reconfigure` (-> `Combined`, preserving every other field
-   *     from the existing config exactly) if guardian-only was set up
-   *     FIRST — keyed off `RecoveryController::config(account)`, not just
-   *     `recovery_rule_id()` (which can't distinguish "has some rule" from
-   *     "has a Stage 3 ZkOnly/Combined config").
-   *  3. `insert_for` — the ZK secret's Merkle-leaf registration in the
-   *     SHARED `nido-zk-recovery` pool. UNCHANGED: this never moved: which
-   *     controller governs completion is a separate question from which
-   *     pool the secret's commitment lives in.
-   *
-   * A prior attempt may have completed step 1 or 2 but failed before step
-   * 3 (network blip, closed tab, etc) — each step's own precondition check
-   * (wiring status / config presence) makes a retry skip whatever already
-   * landed, same retry-safety property the original T3 review finding
-   * established.
-   */
-  async function runZkEnrollment(account: string, secret: Fr, status: HTMLElement): Promise<void> {
-    const readArgs = {
-      account,
-      controllerId: RECOVERY_CONTROLLER_TESTNET_ID,
-      rpcUrl: RPC_URL,
-      networkPassphrase: NETWORK_PASSPHRASE,
-    };
-
-    const wiring = await checkAccountWiring(readArgs);
-    if (wiring.status === 'wired-to-different-controller') {
-      throw new Error(
-        `This account is already wired to a different recovery controller ` +
-          `(${wiring.currentControllerId}). Reaching Stage 3 recovery requires ` +
-          `the account's own real 7-day migration ` +
-          `(initiate_recovery_rule_removal -> execute_recovery_rule_removal) first.`,
-      );
-    }
-    if (wiring.status === 'unwired') {
-      status.textContent = 'Wiring your account to recovery…';
-      const wire = await buildWireAccountTx(readArgs);
-      try {
-        await signAndSubmit({ account, operation: wire.operations[0] });
-      } catch (e) {
-        if (!isRecoveryAlreadyEnrolledError(e)) throw e;
-        // Raced with another wire attempt landing first — fine, continue.
-      }
-    }
-
-    status.textContent = 'Installing ZK recovery…';
-    const zkPoolId = await fetchRegistryAddress('zk-recovery');
-    const existing = await readRecoveryConfig(readArgs);
-    if (!existing) {
-      const config = buildRecoveryConfig({
-        mode: 'ZkOnly',
-        profile: 'Loss',
-        guardians: [],
-        guardianThreshold: 0,
-        verifier: RECOVERY_VERIFIER_TESTNET_ID,
-        zkPool: zkPoolId,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        baselineDocHash: NO_BASELINE_DOC_SENTINEL,
-        delaySecs: DELAY_SECS_DEFAULT,
-        expirySecs: EXPIRY_SECS_DEFAULT,
-        maxCancels: MAX_CANCELS_DEFAULT,
-        pendingActivityPolicy: PENDING_ACTIVITY_POLICY_DEFAULT,
-      });
-      const built = buildEnroll({ controllerId: RECOVERY_CONTROLLER_TESTNET_ID, account, config });
-      await signAndSubmit({ account, operation: built.operations[0] });
-    } else if (existing.mode.tag === 'GuardianOnly') {
-      // Guardian recovery was set up FIRST -- ADD zk machinery via
-      // reconfigure, preserving every other field from the existing config
-      // exactly (spread, don't rebuild -- reconfigure rejects any change
-      // to baseline/timing/policy/profile).
-      const built = buildReconfigure({
-        controllerId: RECOVERY_CONTROLLER_TESTNET_ID,
-        account,
-        config: {
-          ...existing,
-          mode: { tag: 'Combined', values: undefined },
-          verifier: RECOVERY_VERIFIER_TESTNET_ID,
-          zk_pool: zkPoolId,
-        },
-      });
-      await signAndSubmit({ account, operation: built.operations[0] });
-    }
-    // else: existing.mode is already 'ZkOnly' or 'Combined' -- idempotent,
-    // nothing to enroll/reconfigure; fall through to insert_for.
-
-    status.textContent = 'Adding your recovery secret to the pool…';
-    const built = await buildMigrationEnrollTx(account, secret);
-    await signAndSubmit({ account, operation: built.operations[0] });
-    // Record the local "backed up" flag so the home-page recovery banner stops
-    // prompting (advisory only — see recoveryBackupPrompt.ts).
-    markBackupSetUp(account);
-  }
-
-  /** The seed/wallet choice buttons + seed-reveal + status markup shared by
-   *  both the fresh-enroll and already-enrolled ("add another method")
-   *  states below — only the intro copy above it differs. */
-  function zkMigrationChoicesMarkup(introHtml: string): string {
-    return `
-      <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 12px;">
-        ${introHtml}
-      </p>
-      <div id="zk-migration-choices" style="display:flex;gap:10px;flex-wrap:wrap;">
-        <button id="zk-migration-seed" class="btn acc sm" type="button">Generate a seed phrase</button>
-        <button id="zk-migration-wallet" class="btn soft sm" type="button">Use a wallet</button>
-      </div>
-      <div id="zk-migration-seed-reveal" hidden style="margin-top:14px;">
-        <p class="mut" style="font-size:12.5px;margin:0 0 8px;">
-          Write these down and keep them private and safe — this is your only
-          backup for this method.
-        </p>
-        <div id="zk-migration-seed-words" class="mono" style="font-size:13px;line-height:1.7;display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 10px;"></div>
-        <button id="zk-migration-seed-copy" class="btn ghost sm" type="button" style="margin-top:12px;">Copy to clipboard</button>
-        <div class="actions" style="display:flex;gap:10px;margin-top:12px;">
-          <button id="zk-migration-seed-continue" class="btn acc sm" type="button">I've saved it — continue</button>
-          <button id="zk-migration-seed-back" class="btn ghost sm" type="button">Back</button>
-        </div>
-      </div>
-      <p id="zk-migration-status" class="mut" style="font-size:12.5px;margin-top:10px;"></p>
-    `;
-  }
-
-  const ZK_MIGRATION_FRESH_INTRO =
-    'Add ZK recovery to this account — a private way to get back in using a ' +
-    'seed phrase or a wallet, no friends required. This enrollment ' +
-    'transaction is <strong>publicly visible on-chain</strong> (your ' +
-    'recovery secret itself never is).';
-
-  // Honest about what "add another method" actually does (T4 review finding):
-  // it does NOT rotate or replace the existing recovery secret — both remain
-  // independently valid until explicitly revoked.
-  const ZK_MIGRATION_ADD_ANOTHER_INTRO =
-    'This adds a <strong>separate</strong> recovery secret. Your previous ' +
-    'secret stays valid until you revoke it — this does not rotate or ' +
-    'replace it. This enrollment transaction is ' +
-    '<strong>publicly visible on-chain</strong> (your recovery secret ' +
-    'itself never is).';
-
-  /** "Add ZK recovery to this account" — for existing accounts. Probes
-   *  whether the account is already enrolled (T4 review finding) so an
-   *  already-backed-up account sees an honest "already backed up" state
-   *  instead of the fresh-enrollment buttons as if nothing were installed
-   *  yet; adding a further method is still offered, with explicit
-   *  separate-secret copy rather than implying rotation/replacement. */
-  async function renderZkMigrationCard(account: string): Promise<void> {
-    const card = document.getElementById('zk-migration-card')!;
-
-    let alreadyEnrolled = false;
-    try {
-      alreadyEnrolled = await zkAlreadyEnrolled(account);
-    } catch {
-      // Best-effort, same as `zkAlreadyEnrolled` itself: treat a read
-      // failure as "not enrolled" and fall through to the fresh-enroll UI.
-      alreadyEnrolled = false;
-    }
-
-    if (!alreadyEnrolled) {
-      card.innerHTML = zkMigrationChoicesMarkup(ZK_MIGRATION_FRESH_INTRO);
-    } else {
-      card.innerHTML = `
-        <div id="zk-migration-already-enrolled">
-          <p class="mut" style="font-size:13px;line-height:1.55;margin:0 0 12px;">
-            <strong>Already backed up.</strong> This account has ZK recovery
-            enrolled — a private way to get back in with a seed phrase or a
-            wallet, no friends required.
-          </p>
-          <button id="zk-migration-add-another" class="btn ghost sm" type="button">Add another recovery secret</button>
-          <p style="margin:12px 0 0;font-size:13px;">
-            <a href="/security/recover/?zk=1" class="link">Lost your device? Recover this account &rarr;</a>
-          </p>
-        </div>
-        <div id="zk-migration-fresh" hidden>
-          ${zkMigrationChoicesMarkup(ZK_MIGRATION_ADD_ANOTHER_INTRO)}
-        </div>
-      `;
-      const alreadyBlock = card.querySelector('#zk-migration-already-enrolled') as HTMLElement;
-      const freshBlock = card.querySelector('#zk-migration-fresh') as HTMLElement;
-      const addAnotherBtn = card.querySelector('#zk-migration-add-another') as HTMLButtonElement;
-      addAnotherBtn.addEventListener('click', () => {
-        alreadyBlock.hidden = true;
-        freshBlock.hidden = false;
-      });
-    }
-
-    const seedBtn = card.querySelector('#zk-migration-seed') as HTMLButtonElement;
-    const walletBtn = card.querySelector('#zk-migration-wallet') as HTMLButtonElement;
-    const choices = card.querySelector('#zk-migration-choices') as HTMLElement;
-    const seedReveal = card.querySelector('#zk-migration-seed-reveal') as HTMLElement;
-    const seedWordsEl = card.querySelector('#zk-migration-seed-words') as HTMLElement;
-    const seedContinueBtn = card.querySelector('#zk-migration-seed-continue') as HTMLButtonElement;
-    const seedBackBtn = card.querySelector('#zk-migration-seed-back') as HTMLButtonElement;
-    const seedCopyBtn = card.querySelector('#zk-migration-seed-copy') as HTMLButtonElement;
-    const status = card.querySelector('#zk-migration-status') as HTMLElement;
-
-    let currentMnemonic: string | null = null;
-
-    seedBtn.addEventListener('click', () => {
-      currentMnemonic = generateMnemonic(wordlist);
-      seedWordsEl.innerHTML = '';
-      currentMnemonic.split(' ').forEach((w, i) => {
-        const d = document.createElement('div');
-        d.textContent = `${i + 1}. ${w}`;
-        seedWordsEl.appendChild(d);
-      });
-      seedCopyBtn.textContent = 'Copy to clipboard';
-      choices.hidden = true;
-      seedReveal.hidden = false;
-    });
-
-    seedCopyBtn.addEventListener('click', async () => {
-      if (!currentMnemonic) return;
-      try {
-        await navigator.clipboard.writeText(currentMnemonic);
-        seedCopyBtn.textContent = 'Copied ✓';
-        setTimeout(() => { seedCopyBtn.textContent = 'Copy to clipboard'; }, 1600);
-      } catch {
-        seedCopyBtn.textContent = 'Copy failed — select the words manually';
-      }
-    });
-
-    seedBackBtn.addEventListener('click', () => {
-      currentMnemonic = null;
-      seedWordsEl.innerHTML = '';
-      seedReveal.hidden = true;
-      choices.hidden = false;
-    });
-
-    seedContinueBtn.addEventListener('click', async () => {
-      if (!currentMnemonic) return;
-      seedContinueBtn.disabled = true;
-      status.textContent = 'Enrolling…';
-      try {
-        const secret = await deriveSecretM1(currentMnemonic, '', account, NETWORK_PASSPHRASE);
-        await runZkEnrollment(account, secret, status);
-        seedReveal.hidden = true;
-        status.textContent = "You're backed up with a seed phrase.";
-      } catch (e) {
-        status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
-        seedContinueBtn.disabled = false;
-      } finally {
-        // The mnemonic's only job was the derivation above.
-        currentMnemonic = null;
-        seedWordsEl.innerHTML = '';
-      }
-    });
-
-    walletBtn.addEventListener('click', async () => {
-      seedBtn.disabled = true;
-      walletBtn.disabled = true;
-      status.textContent = 'Connecting your wallet…';
-      try {
-        await initWalletKit({ networkPassphrase: NETWORK_PASSPHRASE });
-        const session = await connectWallet();
-        const secret = await deriveM2SecretSafely({
-          kit: StellarWalletsKit,
-          account,
-          walletAddress: session.walletAddress,
-          networkPassphrase: NETWORK_PASSPHRASE,
-          onStatus: (s) => { status.textContent = s; },
-        });
-        await runZkEnrollment(account, secret, status);
-        status.textContent = 'Backed up with your wallet.';
-      } catch (e) {
-        status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
-        seedBtn.disabled = false;
-        walletBtn.disabled = false;
-      }
-    });
-  }
-
-  /** Red pending-recovery banner, driven by `getZkPending`. Cancel re-derives
-   *  the SAME recovery secret (never persisted) to build the action=2 cancel
-   *  proof `cancelZkRecovery` needs; the fresh passkey auth it also requires
-   *  happens inside `cancelZkRecovery` itself (via `signAndSubmit`). */
-  async function renderZkPendingBanner(account: string): Promise<void> {
-    const banner = document.getElementById('zk-pending-banner') as HTMLElement;
-    let pending: Awaited<ReturnType<typeof getZkPending>> = null;
-    try {
-      pending = await getZkPending(account);
-    } catch {
-      return; // best-effort: never block the page on a read failure
-    }
-    if (!pending) {
-      banner.hidden = true;
-      return;
-    }
-    banner.hidden = false;
-    const textEl = document.getElementById('zk-pending-text')!;
-    const tick = () => {
-      const remaining = pending!.executableAfter - Math.floor(Date.now() / 1000);
-      textEl.textContent =
-        remaining > 0
-          ? `Executable in ${formatDuration(remaining)}.`
-          : "Ready to complete — finish it from this account's Get back in page.";
-    };
-    tick();
-    // Stored so a successful cancel (below) can stop it -- otherwise it
-    // keeps ticking against a `pending` record that no longer exists once
-    // the banner is hidden.
-    const tickTimer = window.setInterval(tick, 1000);
-
-    const cancelBtn = document.getElementById('zk-cancel-btn') as HTMLButtonElement;
-    const form = document.getElementById('zk-cancel-form') as HTMLElement;
-    const mnemonicInput = document.getElementById('zk-cancel-mnemonic') as HTMLTextAreaElement;
-    const mnemonicBtn = document.getElementById('zk-cancel-mnemonic-btn') as HTMLButtonElement;
-    const walletBtn = document.getElementById('zk-cancel-wallet-btn') as HTMLButtonElement;
-    const status = document.getElementById('zk-cancel-status')!;
-
-    cancelBtn.addEventListener('click', () => {
-      form.hidden = !form.hidden;
-    });
-
-    async function runCancel(secret: Fr) {
-      status.textContent = 'Cancelling — generating a proof and confirming with your passkey…';
-      await cancelZkRecovery({ account, secret });
-      status.textContent = 'Recovery cancelled.';
-      banner.hidden = true;
-      clearInterval(tickTimer);
-      toast({ msg: 'ZK recovery cancelled', icon: 'check' });
-    }
-
-    mnemonicBtn.addEventListener('click', async () => {
-      const words = mnemonicInput.value.trim().split(/\s+/).filter(Boolean);
-      if (words.length !== 12 && words.length !== 24) {
-        status.textContent = 'Enter the 12 or 24-word recovery phrase.';
-        return;
-      }
-      mnemonicBtn.disabled = true;
-      walletBtn.disabled = true;
-      status.textContent = 'Deriving your recovery secret…';
-      try {
-        const secret = await deriveSecretM1(words.join(' '), '', account, NETWORK_PASSPHRASE);
-        mnemonicInput.value = '';
-        await runCancel(secret);
-      } catch (e) {
-        status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
-        mnemonicBtn.disabled = false;
-        walletBtn.disabled = false;
-      }
-    });
-
-    walletBtn.addEventListener('click', async () => {
-      mnemonicBtn.disabled = true;
-      walletBtn.disabled = true;
-      status.textContent = 'Connecting your wallet…';
-      try {
-        await initWalletKit({ networkPassphrase: NETWORK_PASSPHRASE });
-        const session = await connectWallet();
-        const secret = await deriveM2SecretSafely({
-          kit: StellarWalletsKit,
-          account,
-          walletAddress: session.walletAddress,
-          networkPassphrase: NETWORK_PASSPHRASE,
-          onStatus: (s) => { status.textContent = s; },
-        });
-        await runCancel(secret);
-      } catch (e) {
-        status.textContent = 'Failed: ' + (e instanceof Error ? e.message : String(e));
-        mnemonicBtn.disabled = false;
-        walletBtn.disabled = false;
-      }
-    });
-  }
 </script>
 
 <style>

@@ -138,8 +138,7 @@ import Icon from '../../../components/Icon.astro';
 <script>
   import { contractIdFromHostname, canonicalJson, docHash, parsePolicyDocJson } from '@nidohq/passkey-sdk';
   import type { PolicyDoc } from '@nidohq/passkey-sdk';
-  import { rpc } from '@stellar/stellar-sdk';
-  import { RPC_URL, NETWORK_PASSPHRASE } from '../../../lib/network.js';
+  import { NETWORK_PASSPHRASE, latestLedgerSequence } from '../../../lib/network.js';
   import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
   import {
     DOC_DURATIONS,
@@ -150,12 +149,13 @@ import Icon from '../../../components/Icon.astro';
     adminBaseline,
     upsertSessionRule,
     validateSessionDocDraft,
+    type DocLimits,
     type SessionDocDraft,
   } from '../../../lib/policy/docDraft.js';
   import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
-  import { fetchAppliedDocJson, fetchDocSurface, toHex } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchAppliedDocument, fetchDocLimits, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
   import { bytesToHex } from '../../../lib/policy/policyView.js';
   import {
     PERIOD_LEDGERS,
@@ -240,8 +240,7 @@ import Icon from '../../../components/Icon.astro';
   let latestLedger: number | null = null;
   const latestLedgerReady: Promise<void> = (async () => {
     try {
-      const server = new rpc.Server(RPC_URL);
-      latestLedger = (await server.getLatestLedger()).sequence;
+      latestLedger = await latestLedgerSequence();
     } catch {
       latestLedger = null;
     }
@@ -261,6 +260,12 @@ import Icon from '../../../components/Icon.astro';
   // The merge baseline and the diff's "before" side — same discipline as
   // /security/delegate-doc/: refuse rather than build over unknown state.
   let baselineDoc: PolicyDoc | null = null;
+  /** The configuration revision the baseline was read at: the request's
+   *  `expectedRevision`. */
+  let baselineRevision = 0n;
+  /** The account's document limits (its compiler's `limits()`), loaded
+   *  with the baseline: the form validates against these. */
+  let docLimits: DocLimits | null = null;
   let isFirstApply = false;
   let baselineLoaded = false;
   let docBaselineBlocked = false;
@@ -274,19 +279,22 @@ import Icon from '../../../components/Icon.astro';
       ? (async () => {
           try {
             const surface = await fetchDocSurface(account);
+            if (surface.supported) docLimits = await fetchDocLimits(account);
             if (!surface.supported) {
               refuse(
                 "This account's contract predates policy documents — it cannot accept this request.",
               );
             } else if (surface.appliedDocHash !== null) {
-              const recovered = await fetchAppliedDocJson(account, toHex(surface.appliedDocHash));
-              if (recovered !== null) baselineDoc = parsePolicyDocJson(recovered.json);
+              const applied = await fetchAppliedDocument(account);
+              baselineRevision = applied.revision;
+              if (applied.json !== undefined) baselineDoc = parsePolicyDocJson(applied.json);
               else {
                 refuse(
                   'The account has an applied policy document that could not be read — cannot build a safe update.',
                 );
               }
             } else {
+              baselineRevision = (await fetchAppliedDocument(account)).revision;
               const info = await fetchDefaultRuleAuthInfo(account);
               const passkey = info.externalSigners[0];
               if (passkey === undefined) {
@@ -355,13 +363,13 @@ import Icon from '../../../components/Icon.astro';
       docDiffEl.textContent = status.textContent ?? 'Unavailable.';
       return;
     }
-    if (!baselineLoaded || baselineDoc === null || verifierAddress === null) {
+    if (!baselineLoaded || baselineDoc === null || docLimits === null || verifierAddress === null) {
       docDiffEl.textContent = 'Reading the applied document…';
       return;
     }
     const draft = draftFromControls();
     if (draft === null) return;
-    const check = validateSessionDocDraft(draft);
+    const check = validateSessionDocDraft(draft, docLimits);
     if (!check.ok) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = check.errors.join(' ');
@@ -441,10 +449,10 @@ import Icon from '../../../components/Icon.astro';
       }
       status.textContent = 'Reading the applied document…';
       await baselineReady;
-      if (docBaselineBlocked || baselineDoc === null) return; // refusal already on screen
+      if (docBaselineBlocked || baselineDoc === null || docLimits === null) return; // refusal already on screen
 
       const draft = draftFromControls()!;
-      const check = validateSessionDocDraft(draft);
+      const check = validateSessionDocDraft(draft, docLimits);
       if (!check.ok) {
         status.textContent = check.errors.join(' ');
         approveBtn.disabled = false;
@@ -457,6 +465,7 @@ import Icon from '../../../components/Icon.astro';
         account,
         operation: buildSessionGrantOperation({
           baseline: baselineDoc,
+          baselineRevision,
           isFirstApply,
           draft,
           networkPassphrase: NETWORK_PASSPHRASE,

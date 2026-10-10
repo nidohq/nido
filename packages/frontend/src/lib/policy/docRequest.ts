@@ -115,11 +115,13 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
  * pages (passkey and delegated-key requests) build their /sign/ handoff
  * through this helper, so the invariant is testable in one place.
  *
- * Precondition: `validateSessionDocDraft(draft).ok` and a loaded baseline
+ * Precondition: `validateSessionDocDraft(draft, limits).ok` and a loaded baseline
  * (the applied doc, or the owner-admin baseline on a first apply).
  */
 export function buildSessionGrantOperation(args: {
   baseline: PolicyDoc;
+  /** The configuration revision `baseline` was read at. */
+  baselineRevision: bigint;
   /** True when nothing is applied yet — no prevDocJson (all-new diff). */
   isFirstApply: boolean;
   draft: SessionDocDraft;
@@ -132,6 +134,7 @@ export function buildSessionGrantOperation(args: {
     type: 'apply-policy-doc',
     docJson: canonicalJson(doc),
     ...(args.isFirstApply ? {} : { prevDocJson: canonicalJson(args.baseline) }),
+    expectedRevision: args.baselineRevision.toString(),
     expiryLabel: args.expiryLabel,
   };
 }

@@ -1,5 +1,5 @@
 import { rpc, scValToNative, nativeToScVal, Address, xdr } from "@stellar/stellar-sdk";
-import { RPC_URL } from "../network.js";
+import { RPC_URL, latestLedgerSequence } from "../network.js";
 import { groupTxRows } from "./classify.js";
 import type { ActivityPage, DecodedEvent, DecodedTx } from "./types.js";
 
@@ -98,7 +98,7 @@ export function transferFilters(address: string): rpc.Api.EventFilter[] {
  */
 export async function walkEventChunks(filters: rpc.Api.EventFilter[], maxChunks = MAX_CHUNKS): Promise<RawEvent[]> {
   const server = new rpc.Server(RPC_URL);
-  const { sequence: latest } = await server.getLatestLedger();
+  const latest = await latestLedgerSequence(server);
 
   const raw: RawEvent[] = [];
   let endLedger = latest;

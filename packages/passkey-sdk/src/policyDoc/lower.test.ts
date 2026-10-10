@@ -296,3 +296,13 @@ describe('lowerDoc: threshold principals (perch 0.2.0)', () => {
     expect(() => lowerDoc(thresholdDoc(3), { account: ACCOUNT })).toThrow(/1\.\.2/);
   });
 });
+
+describe('program limits', () => {
+  it("match perch-program's, which no Perch view reports", async () => {
+    const { MAX_PROGRAM_LEN, MAX_STACK_DEPTH } = await import('./lower.js');
+    const src = readFileSync(resolve(here, '../../../../vendor/perch/crates/perch-program/src/lib.rs'), 'utf8');
+    const rust = (name: string) => Number(new RegExp(`pub const ${name}: u32 = ([0-9_]+);`).exec(src)![1]!.replace(/_/g, ''));
+    expect(MAX_PROGRAM_LEN).toBe(rust('MAX_PROGRAM_LEN'));
+    expect(MAX_STACK_DEPTH).toBe(rust('MAX_STACK_DEPTH'));
+  });
+});

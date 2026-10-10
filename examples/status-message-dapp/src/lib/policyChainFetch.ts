@@ -16,7 +16,6 @@ import {
 	Contract,
 	TransactionBuilder,
 	Account,
-	nativeToScVal,
 	scValToNative,
 	type xdr,
 } from "@stellar/stellar-sdk"
@@ -54,90 +53,58 @@ async function simulateView(
 	return result.retval
 }
 
-/** OZ's SmartAccountError::ContextRuleNotFound surfaces from a failed
- *  simulation as `Error(Contract, #3000)`. Rule ids are MONOTONIC and never
- *  reused, while `get_context_rules_count` only counts live rules — so any
- *  revoke that isn't the newest rule leaves an id gap that panics
- *  `get_context_rule`. Enumerators must treat this error as "skip". */
-function isRuleNotFound(err: unknown): boolean {
-	const msg = err instanceof Error ? err.message : String(err)
-	return /Error\(Contract, #3000\)|ContextRuleNotFound/.test(msg)
+/** One installed rule as the account's `configuration()` view reports it
+ *  (Perch's consumer interface, stellar-registry/perch#108), decoded raw. */
+interface InstalledRule {
+	id: number | bigint
+	recovery: boolean
+	name: string
+	signers: unknown[]
+}
+
+/** The account's installed rules, from one `configuration()` read: every
+ *  rule's id, name, and signers at one revision, so no id scan is needed
+ *  (OZ never reuses an id, and a document gives a replaced rule a new one). */
+async function installedRules(account: string): Promise<InstalledRule[]> {
+	const server = new rpc.Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
+	const rv = await simulateView(server, new Contract(account), "configuration")
+	return (scValToNative(rv) as { rules: InstalledRule[] }).rules
 }
 
 /**
  * Find the context-rule id on `account` whose External signer carries the given
  * public key (hex). Returns `null` if no such rule exists — e.g. the delegation
- * install tx never committed, or the rule was revoked.
+ * never committed, or the rule was removed.
  *
- * The wallet's `add_context_rule` assigns a non-zero rule id when it installs
- * the delegation; we can't hard-code `[0]` (the default rule for the primary
- * passkey), so we discover it by scanning every rule. Cheap and self-healing.
+ * The wallet's document gives the session key its own rule, whose id moves
+ * whenever a document replaces it, so it is looked up, never hard-coded.
  */
 export async function findRuleForPubkey(
 	account: string,
 	pubkeyHex: string,
 ): Promise<number | null> {
-	const server = new rpc.Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
-	const countRv = await simulateView(server, new Contract(account), "get_context_rules_count")
-	const count = scValToNative(countRv) as number
 	const lowerHex = pubkeyHex.toLowerCase()
-	// Gap-tolerant id scan — revoking any non-newest rule leaves an id gap
-	// (see isRuleNotFound). The bound only stops a pathological account from
-	// looping forever.
-	let found = 0
-	for (let id = 0; found < count && id < count + 100; id++) {
-		let ruleRv: xdr.ScVal
-		try {
-			ruleRv = await simulateView(
-				server,
-				new Contract(account),
-				"get_context_rule",
-				nativeToScVal(id, { type: "u32" }),
-			)
-		} catch (err) {
-			if (isRuleNotFound(err)) continue
-			throw err
-		}
-		found++
-		const native = scValToNative(ruleRv) as { id?: number; signers?: unknown[] }
-		for (const s of native.signers ?? []) {
+	for (const rule of await installedRules(account)) {
+		if (rule.recovery) continue
+		for (const s of rule.signers) {
 			// ["External", verifier, pubkey_bytes_as_array_or_buffer]
-			if (Array.isArray(s) && s[0] === "External") {
-				const candidateHex = bytesToHex(s[2])
-				if (candidateHex && candidateHex === lowerHex) {
-					return native.id ?? id
-				}
+			if (Array.isArray(s) && s[0] === "External" && bytesToHex(s[2]) === lowerHex) {
+				return Number(rule.id)
 			}
 		}
-	}
-	// A truncated scan must be LOUD: a silent null here makes the caller wipe
-	// the session material and re-delegate at an even higher id — once an
-	// account crosses the bound it could never scan back under it.
-	if (found < count) {
-		throw new Error(
-			`context-rule scan exhausted: found ${found} of ${count} live rules within ids 0..${count + 99}`,
-		)
 	}
 	return null
 }
 
 /**
- * Read the verifier address the account's default rule references. Reads
- * `get_context_rule(0).signers` raw (the typed bindings' ContextRule shape can
- * mismatch across soroban-sdk minors). Falls back to the registry if the
- * account has no External signer on rule 0.
+ * The verifier the account's admin passkey is registered against: the first
+ * External signer of its `admin` rule, from `configuration()`. Falls back to
+ * the registry if the account has no such signer.
  */
 export async function fetchVerifierAddress(account: string): Promise<string> {
 	try {
-		const server = new rpc.Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
-		const rv = await simulateView(
-			server,
-			new Contract(account),
-			"get_context_rule",
-			nativeToScVal(0, { type: "u32" }),
-		)
-		const native = scValToNative(rv) as { signers?: unknown[] }
-		for (const s of native.signers ?? []) {
+		const admin = (await installedRules(account)).find((r) => !r.recovery && r.name === "admin")
+		for (const s of admin?.signers ?? []) {
 			// ["External", verifier_address, pubkey_bytes]
 			if (Array.isArray(s) && s[0] === "External" && typeof s[1] === "string") {
 				return s[1]

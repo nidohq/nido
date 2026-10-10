@@ -8,8 +8,30 @@
 // the document via the SDK, and decides which apply route the transaction
 // takes; the component does the RPC + signing.
 
-import { buildPolicyDoc, parsePolicyDoc, scopedSessionKeyDoc, type PolicyDoc } from '@nidohq/passkey-sdk';
-import { isContractAddress, isStellarAddress, MAX_RULE_NAME_LEN } from './policyDraft.js';
+import {
+  buildPolicyDoc,
+  parsePolicyDoc,
+  perch,
+  scopedSessionKeyDoc,
+  type FlatDocLimits,
+  type PolicyDoc,
+} from '@nidohq/passkey-sdk';
+import { isContractAddress, isStellarAddress } from './policyDraft.js';
+
+/** The account's document limits: its compiler's `limits()` (perch-js
+ *  `FlatDocLimits`), read from the chain with the baseline
+ *  (`fetchDocLimits`), never a constant. */
+export type DocLimits = FlatDocLimits;
+
+/** A rule name's problem under `limits`, or undefined. `null` limits (still
+ *  loading) check nothing; the submit path checks again once they arrive. */
+function ruleNameProblem(name: string, limits: DocLimits | null): string | undefined {
+  if (limits === null) return undefined;
+  const bytes = new TextEncoder().encode(name).length;
+  return bytes > limits.maxRuleNameBytes
+    ? `Name must be at most ${limits.maxRuleNameBytes} bytes (this one is ${bytes}).`
+    : undefined;
+}
 
 /** Soroban symbol constraints for function names (SCSymbol: [A-Za-z0-9_],
  *  max 32 bytes). Checked client-side so a typo'd function list fails with a
@@ -52,14 +74,16 @@ export interface DocValidationResult {
   errors: string[];
 }
 
-export function validateSessionDocDraft(draft: SessionDocDraft): DocValidationResult {
+/** `limits` is the account's (`fetchDocLimits`), or `null` while they load:
+ *  the form's own checks still run, so input errors show at once, and a
+ *  submit validates again with the limits before applying. */
+export function validateSessionDocDraft(draft: SessionDocDraft, limits: DocLimits | null): DocValidationResult {
   const errors: string[] = [];
 
   const name = draft.name.trim();
+  const nameProblem = ruleNameProblem(name, limits);
   if (name.length === 0) errors.push('Give the rule a name.');
-  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_LEN) {
-    errors.push(`Name must be at most ${MAX_RULE_NAME_LEN} bytes.`);
-  }
+  else if (nameProblem !== undefined) errors.push(nameProblem);
 
   if (draft.signer.kind === 'delegated') {
     if (!isStellarAddress(draft.signer.address.trim())) {
@@ -110,7 +134,7 @@ export function validateSessionDocDraft(draft: SessionDocDraft): DocValidationRe
  *  route through the SDK's canned scopedSessionKeyDoc; passkey signers (the
  *  legacy delegate flow's dApp-origin session passkey) compose the same
  *  one-rule shape via buildPolicyDoc with an external signer declaration.
- *  Precondition: `validateSessionDocDraft(draft).ok`. */
+ *  Precondition: `validateSessionDocDraft(draft, limits).ok`. */
 export function draftToDoc(draft: SessionDocDraft, networkPassphrase: string): PolicyDoc {
   const functions = parseFunctionsInput(draft.functionsInput);
   if (draft.signer.kind === 'delegated') {
@@ -201,7 +225,7 @@ export function adminBaseline(admin: AdminPasskey, networkPassphrase: string): P
  *   collision with a DIFFERENT key allocates "session-2", "session-3", ….
  * - Signer declarations no longer referenced by any rule are pruned.
  *
- * Precondition: `validateSessionDocDraft(draft).ok`. Throws when the base
+ * Precondition: `validateSessionDocDraft(draft, limits).ok`. Throws when the base
  * doc is bound to a different network than the draft targets.
  */
 export function upsertSessionRule(
@@ -267,11 +291,17 @@ function mergeSignerDecl(
  * two different keys. Pure; every composed update flows through it (via
  * rebuildDoc), so the rename lands with the user's NEXT doc update and
  * shows up in the diff preview as the owner → admin signer change.
+ *
+ * It never touches a recovery member. Perch's controller hashes the whole
+ * member, `replaceable` included (perch-js `configHash`), so renaming
+ * `owner` there would be a reconfiguration: it ends any attempt in flight,
+ * and `Protected` refuses it without the enrolled condition's approval. A
+ * document whose recovery restores `owner` keeps the legacy id.
  */
 export function renameLegacyOwner(doc: PolicyDoc): PolicyDoc {
   const hasOwner = doc.signers.some((s) => s.id === 'owner');
   const hasAdmin = doc.signers.some((s) => s.id === 'admin');
-  if (!hasOwner || hasAdmin) return doc;
+  if (!hasOwner || hasAdmin || doc.recovery?.replaceable.includes('owner')) return doc;
   return {
     ...doc,
     signers: doc.signers.map((s) => (s.id === 'owner' ? { ...s, id: 'admin' } : s)),
@@ -289,6 +319,29 @@ export function renameLegacyOwner(doc: PolicyDoc): PolicyDoc {
   };
 }
 
+/**
+ * Why `next` can't be applied as a policy edit of `current` (the applied
+ * document, or null before the first apply), or undefined when it can.
+ * A different recovery `configHash` is a reconfiguration: it advances the
+ * recovery epoch, ending any attempt in flight, and under `Protected` it
+ * needs the enrolled condition's recorded approval. Only the recovery page
+ * (`lib/recovery/settingsPage.ts`) collects that, so every other policy
+ * write (admin keys, app grants, dApp requests) refuses such a document.
+ */
+export function recoveryEditProblem(current: PolicyDoc | null, next: PolicyDoc): string | undefined {
+  const changed =
+    current === null ? next.recovery !== undefined : perch.recoveryChange(current, next).kind !== 'none';
+  return changed
+    ? 'This update would change how your Nido recovers. Change recovery on the Recovery page (Security, then Recovery), which collects any approval it needs.'
+    : undefined;
+}
+
+/** Whether lost-key recovery can restore `rule`: one of its signers is a
+ *  credential the recovery member declares replaceable. */
+function recoveryRestores(rule: WireRule, replaceable: readonly string[]): boolean {
+  return rule.principals.type !== 'self-authenticating' && rule.principals.signers.some((id) => replaceable.includes(id));
+}
+
 /** Drop declarations no rule references, migrate legacy ids, then
  *  re-validate through the schema so a malformed merge fails closed here,
  *  not at the compiler. */
@@ -298,9 +351,12 @@ function rebuildDoc(
   rules: readonly WireRule[],
   networkPassphrase: string,
 ): PolicyDoc {
-  const referenced = new Set(
-    rules.flatMap((r) => (r.principals.type === 'self-authenticating' ? [] : r.principals.signers)),
-  );
+  // A recovery member's replaceable ids must stay declared, so they count as
+  // referenced even when no rule names them.
+  const referenced = new Set([
+    ...rules.flatMap((r) => (r.principals.type === 'self-authenticating' ? [] : r.principals.signers)),
+    ...(base.recovery?.replaceable ?? []),
+  ]);
   return parsePolicyDoc(
     renameLegacyOwner({
       ...base,
@@ -352,13 +408,14 @@ export interface AdminKeyDraft {
     | { kind: 'delegated'; address: string };
 }
 
-export function validateAdminKeyDraft(draft: AdminKeyDraft, base: PolicyDoc): DocValidationResult {
+export function validateAdminKeyDraft(draft: AdminKeyDraft, base: PolicyDoc, limits: DocLimits): DocValidationResult {
   const errors: string[] = [];
 
   const name = draft.name.trim();
+  const nameProblem = ruleNameProblem(name, limits);
   if (name.length === 0) errors.push('Give the admin rule a name.');
-  else if (new TextEncoder().encode(name).length > MAX_RULE_NAME_LEN) {
-    errors.push(`Name must be at most ${MAX_RULE_NAME_LEN} bytes.`);
+  else if (nameProblem !== undefined) {
+    errors.push(nameProblem);
   } else if (base.rules.some((r) => r.name === name)) {
     // Never silently REPLACE an existing rule from the admin form — a
     // colliding name must be an explicit error, not a surprise overwrite.
@@ -379,9 +436,17 @@ export function validateAdminKeyDraft(draft: AdminKeyDraft, base: PolicyDoc): Do
   }
 
   // Refuse enrolling a key that already holds admin authority.
+  // The account's limits: each admin key adds a rule, and a key not yet
+  // declared adds a signer.
+  if (base.rules.length >= limits.maxRules) {
+    errors.push(`This Nido already has ${limits.maxRules} rules, the most an account holds. Remove an admin key or an app grant first.`);
+  }
   if (errors.length === 0) {
     const decl = adminDraftToDecl(draft, 'probe');
     const existing = base.signers.find((s) => signerKeyOf(s) === signerKeyOf(decl));
+    if (existing === undefined && base.signers.length >= limits.maxSigners) {
+      errors.push(`This Nido already holds ${limits.maxSigners} keys (passkeys, devices, and app keys together), the most an account holds. Remove one first.`);
+    }
     if (
       existing !== undefined &&
       adminRules(base).some(
@@ -409,7 +474,7 @@ function adminDraftToDecl(draft: AdminKeyDraft, id: string): WireSigner {
  * Add an admin key: the signer declaration plus its own policy-free
  * self-admin rule (each admin key gets its OWN rule — `all` principals are
  * N-of-N, so sharing one rule would require both keys to co-sign).
- * Precondition: `validateAdminKeyDraft(draft, base).ok`.
+ * Precondition: `validateAdminKeyDraft(draft, base, limits).ok`.
  */
 export function addAdminKey(
   base: PolicyDoc,
@@ -444,6 +509,12 @@ export function addAdminKey(
  * `DocAdminLockout` anti-brick check would reject the document anyway, so
  * the refusal surfaces here with a human-readable reason instead of a
  * failed simulation.
+ *
+ * Also refuses to remove the last admin rule that lost-key recovery can
+ * restore. The recovery member's replaceable signers stay declared, so the
+ * document would still compile, but a recovery would then replace a key no
+ * rule uses and hand back no admin access. Changing which keys recovery
+ * restores is a reconfiguration, done on the recovery page.
  */
 export function removeAdminRule(
   base: PolicyDoc,
@@ -461,6 +532,15 @@ export function removeAdminRule(
   if (adminRules(base).length <= 1) {
     throw new Error(
       'policy doc: cannot remove the last admin key — the account would have no admin authority (the contract refuses such documents)',
+    );
+  }
+  const replaceable = base.recovery?.replaceable ?? [];
+  if (
+    recoveryRestores(target, replaceable) &&
+    !adminRules(base).some((r) => r.name !== ruleName && recoveryRestores(r, replaceable))
+  ) {
+    throw new Error(
+      `policy doc: cannot remove "${ruleName}" — it is the last admin key your recovery can restore. Change which keys recovery restores on the Recovery page first.`,
     );
   }
   return rebuildDoc(
