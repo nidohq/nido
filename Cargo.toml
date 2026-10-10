@@ -17,7 +17,7 @@ license = "MIT"
 
 [workspace.dependencies]
 base64 = "0.22"
-soroban-sdk = "27.0.2"
+soroban-sdk = "28.0.0"
 # admin-sep: SEP admin/upgrade contract traits (`Administratable` + `Upgradable`,
 # soroban-sdk-27 `#[contracttrait]` default methods). Used by the policy,
 # verifier, name-registry and factory contracts. Published by theahaco
