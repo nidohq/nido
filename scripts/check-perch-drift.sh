@@ -11,8 +11,10 @@
 #      (vendor/perch/deployments/$STELLAR_NETWORK.json, default testnet): the
 #      fetched stack in target/wasm32v1-none/contract/, the account's pin
 #      cache in the submodule, and the account wasm the factory embedded;
-#   4. npm doesn't resolve @stellar-registry/perch and perch-zk to the
-#      submodule's workspaces, or the SDK pins other versions than they carry.
+#   4. npm doesn't resolve a Perch package the root workspace list vendors
+#      (today only perch-zk, which Perch hasn't published) to the submodule,
+#      or the SDK pins another version than it carries. Published Perch
+#      packages (@stellar-registry/perch) come from npm by version.
 #
 # `just perch-infra` refuses any byte that doesn't match the manifest when it
 # fetches; this check catches what changes afterwards (a submodule bump without
@@ -94,8 +96,8 @@ else
     problem "no factory build has staged perch_account.wasm under target/stellar/ (just build-contracts)"
 fi
 
-# 4. npm resolves Perch's packages to the submodule, at the versions it carries
-#    (for each package the root workspace list includes).
+# 4. npm resolves each vendored Perch package to the submodule, at the version
+#    it carries (for each package the root workspace list includes).
 for pkg in perch:perch-js perch-zk:perch-zk; do
     name="@stellar-registry/${pkg%%:*}"
     dir="vendor/perch/packages/${pkg##*:}"
