@@ -1,0 +1,12 @@
+{
+  "description": "Protected ZkOnly: initiation, cancelled below",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0xa4b2b553f380c34ecea73440f1dc44122f85205f3b8d2b90b9fb5d40f12d66fa",
+  "enrollment_id": "0xf978cf044dc5eb7553060d4d41065f58bc4cd1d6e45893d1b9bd70477e5f0238",
+  "digest": "0xdcea3f509b3d040cb3947438bf470aa3971337e8dd1aa49a7654180e136fba83",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x024d3c37d793450d0c28c1196943c759615e5136856d8578694617f15b88773d",
+  "nullifier": "0x2962e9f5d8b60a86d6fe4b495594e4f74ee366648f8559a527c78058ff145526",
+  "statement_hash": "0x0445d553f0c412f2a6261d77f6c386408ec0038e1af73a80f690d830a277ff05"
+}

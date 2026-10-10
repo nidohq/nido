@@ -2,16 +2,13 @@
 resolver = "2"
 members = [
     "crates/integration-tests",
-    "crates/zk-bench",
     "contracts/*",
-    # Nested under contracts/vendor/, so not matched by the "contracts/*" glob.
-    "contracts/vendor/ultrahonk-soroban-verifier",
 ]
 # examples/* are self-contained stellar-scaffold projects with their own
 # workspace + toolchain; keep them out of this workspace's resolution.
-# contracts/vendor itself has no Cargo.toml (only its nested crate does), so it
-# must be excluded from the "contracts/*" glob or that glob fails to resolve.
-exclude = ["examples", "contracts/vendor"]
+# vendor/perch is the Perch submodule: its crates belong to Perch's own
+# workspace and are consumed below as path dependencies.
+exclude = ["examples", "vendor/perch"]
 
 [workspace.package]
 version = "0.1.0"
@@ -22,32 +19,44 @@ license = "MIT"
 base64 = "0.22"
 soroban-sdk = "27.0.2"
 # admin-sep: SEP admin/upgrade contract traits (`Administratable` + `Upgradable`,
-# soroban-sdk-27 `#[contracttrait]` default methods). Replaces the hand-inlined
-# admin/set_admin/upgrade boilerplate that was duplicated across the policy,
-# verifier, name-registry, zk-recovery-pool and factory contracts. Published by
-# theahaco (https://github.com/theahaco/admin-sep); Apache-2.0.
+# soroban-sdk-27 `#[contracttrait]` default methods). Used by the policy,
+# verifier, name-registry and factory contracts. Published by theahaco
+# (https://github.com/theahaco/admin-sep); Apache-2.0.
 admin-sep = "0.27.0"
-# OZ stellar-contracts pinned to ec749c3b — the merge of PR #816
-# ("chore: bump soroban-sdk to 27.0.2", merged 2026-07-27), i.e. the first main
-# commit on soroban-sdk 27. The `stellar-accounts` package is unchanged from our
-# prior 26 pin apart from the sdk-27 adaptation (spending-limit + storage). Move
-# to a tagged release once one lands on soroban-sdk 27 (latest tag v0.7.2 is 26.1).
-stellar-accounts = { git = "https://github.com/OpenZeppelin/stellar-contracts.git", rev = "ec749c3b75971f2c35ced1bea3e2a7e536e91cda", package = "stellar-accounts" }
-stellar-registry = "0.1.0"
-# Perch policy layer. The account's compiler
-# WIRE TYPES are no longer taken from perch source at all: the deployed
-# canonical compiler on testnet is an older build than any consumable source
-# rev (5-field CompiledRule, no cap lowering), so the account mirrors the
-# DEPLOYED artifact's spec directly (contracts/smart-account/src/doc.rs) and
-# the e2e runs the fetched on-chain bytes
-# (crates/integration-tests/fixtures/perch/). Only perch-ir (canonical JSON +
-# doc_hash, used by tests to mirror the SDK's canonicalization) remains a git
-# dep — pinned to rev f5676a6, the rev the SDK's perch pins mirror.
-perch-ir = { git = "https://github.com/stellar-registry/perch.git", rev = "f5676a6cfb7ae02e9ae487be18cf6247653124b0" }
-# soroban-sdk-tools 0.1.3 (crates.io) targets soroban-sdk 27, replacing the prior
-# BlaineHeffron git fork rev (which existed only to get a soroban-sdk 26 build). We
-# now depend on a published, versioned, immutable release rather than an untagged fork.
+# Perch's pinned OZ fork, the same rev vendor/perch/Cargo.toml pins:
+# theahaco/stellar-contracts-OZ PR #5 (head 3372676), stacked on PR #4 and the
+# CAP-0071 delegated-auth patch (PR #3, on upstream fbfde38). PR #4 adds the
+# `*_no_events` mutations (apply_doc emits one DocApplied instead) and PR #5
+# `reconcile_signers`. Nido's contracts and Perch's account, controller and
+# compiler must share ONE `stellar-accounts` crate: the factory hands the
+# account `Signer`s, and the tests build `AuthPayload`s for it. Upstream
+# adoption is tracked by Perch (docs/recovery/cap-0071.md there).
+stellar-accounts = { version = "0.7.1", git = "https://github.com/theahaco/stellar-contracts-OZ.git", rev = "33726766a1fd5e7e3d2977d79f64ee29e1ea3ca9", package = "stellar-accounts" }
+# soroban-sdk-tools 0.1.3 (crates.io) targets soroban-sdk 27.
 soroban-sdk-tools = "0.1.3"
+
+# The Perch stack (stellar-registry/perch epic #99), consumed from the
+# vendor/perch submodule, which pins Perch's main at bb746f9 (the merged #99
+# stack and its testnet deployment record, stellar-registry/perch#112) and its
+# testnet deployment manifest (deployments/testnet.json). The pin moves to
+# published crates once Perch publishes them.
+#
+# Path dependencies rather than git dependencies because
+# `perch-smart-account` reads a fetched, git-ignored pin cache at build time
+# (`crates/perch-smart-account/wasm/`); `just perch-infra` fills it from the
+# manifest. All Perch crates come from the one checkout so their types unify.
+perch-account = { path = "vendor/perch/crates/perch-account" }
+perch-smart-account = { path = "vendor/perch/crates/perch-smart-account" }
+perch-recovery = { path = "vendor/perch/crates/perch-recovery" }
+perch-recovery-interface = { path = "vendor/perch/crates/perch-recovery-interface" }
+perch-doc-compiler = { path = "vendor/perch/crates/perch-doc-compiler" }
+perch-interpreter = { path = "vendor/perch/crates/perch-interpreter" }
+perch-spending-limit = { path = "vendor/perch/crates/perch-spending-limit" }
+perch-zk-pool = { path = "vendor/perch/crates/perch-zk-pool" }
+perch-zk-adapter = { path = "vendor/perch/crates/perch-zk-adapter" }
+perch-zk-prover = { path = "vendor/perch/crates/perch-zk-prover" }
+perch-zk-primitives = { path = "vendor/perch/crates/perch-zk-primitives" }
+perch-ir = { path = "vendor/perch/crates/perch-ir" }
 
 [profile.release]
 overflow-checks = true

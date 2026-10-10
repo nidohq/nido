@@ -1,0 +1,12 @@
+{
+  "description": "lifecycle-protected-combined: lost-key initiation",
+  "circuit": "perch_zk_recovery",
+  "account_id": "0x28bebc084cf508cd6ab4c3909102c475c0b993824e9e150fdd06de910f88a4e5",
+  "enrollment_id": "0x049a8c6bcbcf422edb3c902abde3f1fb352f7eb0ffcf7a07d67b979ec5f5ceeb",
+  "digest": "0xc22dc8cd24ec08bd33fcba9ed99095ceb454b02bdd650feb37f0a5355f0c73e3",
+  "tree_id": 0,
+  "leaf_index": 0,
+  "root": "0x1b4eff6c33cca1473c5c5240c7118cf28317a67d1a0666bd945def5d5aa73a73",
+  "nullifier": "0x009a0df37474c441f6730fcc08d43e5e3f93530668701f13b957c3f65ef5c6cf",
+  "statement_hash": "0x1e595511a9a9373230d24e55b3d3f68f735d3950eb01bcb21e012d03480768f6"
+}

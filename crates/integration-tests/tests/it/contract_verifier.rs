@@ -1,126 +1,101 @@
-use nido_integration_tests::{build_contract_assertion, WEBAUTHN_VERIFIER_WASM};
+//! Perch's `WebAuthn` verifier contract (the deployed wasm every Nido passkey
+//! signer names) against Nido's synthetic assertions, through the contract's
+//! own `verify` entry point: the key bytes and the XDR `WebAuthnSigData`, as an
+//! account's `__check_auth` passes them.
+
+use nido_integration_tests::{
+    build_contract_assertion, ContractAssertion, PERCH_WEBAUTHN_VERIFIER_WASM,
+};
 use p256::ecdsa::SigningKey;
-use soroban_sdk::{testutils::Address as _, Address, Env};
-use stellar_accounts::verifiers::webauthn::{self, WebAuthnSigData};
+use soroban_sdk::{vec, xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal, Symbol};
+use stellar_accounts::verifiers::webauthn::WebAuthnSigData;
+
+/// Whether the verifier at `verifier` accepts `sig` over `payload` by `key`.
+/// A trap counts as a refusal, like a `false`.
+fn verifies(
+    env: &Env,
+    verifier: &Address,
+    payload: &[u8; 32],
+    key: &Bytes,
+    sig: &WebAuthnSigData,
+) -> bool {
+    let args = vec![
+        env,
+        Bytes::from_array(env, payload).into_val(env),
+        key.into_val(env),
+        sig.clone().to_xdr(env).into_val(env),
+    ];
+    matches!(
+        env.try_invoke_contract::<bool, soroban_sdk::Error>(
+            verifier,
+            &Symbol::new(env, "verify"),
+            args
+        ),
+        Ok(Ok(true))
+    )
+}
+
+fn sig_data(a: &ContractAssertion) -> WebAuthnSigData {
+    WebAuthnSigData {
+        signature: a.signature.clone(),
+        authenticator_data: a.authenticator_data.clone(),
+        client_data: a.client_data.clone(),
+    }
+}
+
+fn setup() -> (Env, Address, SigningKey) {
+    let env = Env::default();
+    let verifier = env.register(PERCH_WEBAUTHN_VERIFIER_WASM, ());
+    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    (env, verifier, signing_key)
+}
 
 #[test]
 fn verify_webauthn_assertion_on_chain() {
-    let env = Env::default();
-
-    // Register the verifier contract
-    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(&env),));
-
-    // Generate a passkey (P-256 keypair)
-    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
-
-    // Simulate a 32-byte signature payload (the transaction hash the auth
-    // framework would produce)
-    let payload_bytes: [u8; 32] = [
+    let (env, verifier, key) = setup();
+    // A 32-byte signature payload, as the auth framework would produce it.
+    let payload: [u8; 32] = [
         0x4b, 0xb7, 0xa8, 0xb9, 0x96, 0x09, 0xb0, 0xb8, 0xb1, 0xd5, 0x34, 0x69, 0x4b, 0xb1, 0xf3,
         0x1f, 0x12, 0x91, 0x38, 0xa2, 0xf2, 0xa1, 0x1f, 0x8e, 0x87, 0x02, 0xee, 0xdb, 0xb7, 0x92,
         0x92, 0x2e,
     ];
-
-    let assertion = build_contract_assertion(&signing_key, &env, &payload_bytes);
-
-    let sig_data = WebAuthnSigData {
-        signature: assertion.signature,
-        authenticator_data: assertion.authenticator_data,
-        client_data: assertion.client_data,
-    };
-
-    // Call the on-chain verify function directly (via env.as_contract to set
-    // the executing contract context)
-    let signature_payload = soroban_sdk::Bytes::from_array(&env, &payload_bytes);
-
-    env.as_contract(&verifier_addr, || {
-        let result = webauthn::verify(
-            &env,
-            &signature_payload,
-            &soroban_sdk::BytesN::<65>::from_array(
-                &env,
-                &<[u8; 65]>::try_from(assertion.key_data.to_buffer::<65>().as_slice()).unwrap(),
-            ),
-            &sig_data,
-        );
-        assert!(result);
-    });
+    let assertion = build_contract_assertion(&key, &env, &payload);
+    assert!(verifies(
+        &env,
+        &verifier,
+        &payload,
+        &assertion.key_data,
+        &sig_data(&assertion)
+    ));
 }
 
 #[test]
 fn reject_wrong_challenge_on_chain() {
-    let env = Env::default();
-
-    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(&env),));
-
-    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
-
-    // Build assertion for one payload but verify with a different one
-    let payload_bytes: [u8; 32] = [1u8; 32];
-    let assertion = build_contract_assertion(&signing_key, &env, &payload_bytes);
-
-    let sig_data = WebAuthnSigData {
-        signature: assertion.signature,
-        authenticator_data: assertion.authenticator_data,
-        client_data: assertion.client_data,
-    };
-
-    // Use a DIFFERENT payload for verification — challenge won't match
-    let wrong_payload = soroban_sdk::Bytes::from_array(&env, &[2u8; 32]);
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        env.as_contract(&verifier_addr, || {
-            webauthn::verify(
-                &env,
-                &wrong_payload,
-                &soroban_sdk::BytesN::<65>::from_array(
-                    &env,
-                    &<[u8; 65]>::try_from(assertion.key_data.to_buffer::<65>().as_slice()).unwrap(),
-                ),
-                &sig_data,
-            );
-        });
-    }));
-
-    assert!(result.is_err(), "should reject mismatched challenge");
+    let (env, verifier, key) = setup();
+    let assertion = build_contract_assertion(&key, &env, &[1u8; 32]);
+    assert!(
+        !verifies(
+            &env,
+            &verifier,
+            &[2u8; 32],
+            &assertion.key_data,
+            &sig_data(&assertion)
+        ),
+        "should reject mismatched challenge"
+    );
 }
 
 #[test]
 fn reject_wrong_key_on_chain() {
-    let env = Env::default();
-
-    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(&env),));
-
-    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
-    let wrong_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
-
-    let payload_bytes: [u8; 32] = [3u8; 32];
-    let assertion = build_contract_assertion(&signing_key, &env, &payload_bytes);
-
-    let sig_data = WebAuthnSigData {
-        signature: assertion.signature,
-        authenticator_data: assertion.authenticator_data,
-        client_data: assertion.client_data,
-    };
-
-    // Use the WRONG public key
-    let wrong_pubkey = wrong_key.verifying_key().to_sec1_bytes();
-    let wrong_key_data: [u8; 65] = wrong_pubkey.as_ref().try_into().unwrap();
-
-    let signature_payload = soroban_sdk::Bytes::from_array(&env, &payload_bytes);
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        env.as_contract(&verifier_addr, || {
-            webauthn::verify(
-                &env,
-                &signature_payload,
-                &soroban_sdk::BytesN::<65>::from_array(&env, &wrong_key_data),
-                &sig_data,
-            );
-        });
-    }));
-
-    assert!(result.is_err(), "should reject wrong public key");
+    let (env, verifier, key) = setup();
+    let wrong = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    let payload = [3u8; 32];
+    let assertion = build_contract_assertion(&key, &env, &payload);
+    let wrong_key = Bytes::from_slice(&env, &wrong.verifying_key().to_sec1_bytes());
+    assert!(
+        !verifies(&env, &verifier, &payload, &wrong_key, &sig_data(&assertion)),
+        "should reject wrong public key"
+    );
 }
 
 /// P-256 group order `n`, big-endian. `n - s` maps a canonical low-S
@@ -157,60 +132,36 @@ fn sub_be_32(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
 /// between the accepted and rejected inputs is `s -> n - s`.
 #[test]
 fn reject_high_s_malleated_signature_on_chain() {
-    let env = Env::default();
-    let verifier_addr = env.register(WEBAUTHN_VERIFIER_WASM, (Address::generate(&env),));
-
-    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
-    let payload_bytes: [u8; 32] = [7u8; 32];
-    let assertion = build_contract_assertion(&signing_key, &env, &payload_bytes);
+    let (env, verifier, key) = setup();
+    let payload = [7u8; 32];
+    let assertion = build_contract_assertion(&key, &env, &payload);
 
     // `build_contract_assertion` normalises to low-S, so split r||s and flip s
     // to its high-S counterpart n - s.
     let low = assertion.signature.to_array();
-    let mut r = [0u8; 32];
-    r.copy_from_slice(&low[..32]);
     let mut s = [0u8; 32];
     s.copy_from_slice(&low[32..]);
-    let high_s = sub_be_32(&P256_ORDER_BE, &s);
-    let mut malleated = [0u8; 64];
-    malleated[..32].copy_from_slice(&r);
-    malleated[32..].copy_from_slice(&high_s);
+    let mut malleated = low;
+    malleated[32..].copy_from_slice(&sub_be_32(&P256_ORDER_BE, &s));
 
-    let key = soroban_sdk::BytesN::<65>::from_array(
-        &env,
-        &<[u8; 65]>::try_from(assertion.key_data.to_buffer::<65>().as_slice()).unwrap(),
-    );
-    let signature_payload = soroban_sdk::Bytes::from_array(&env, &payload_bytes);
-
-    // Sanity: the ORIGINAL low-S signature verifies -- proving the witness is
-    // sound and the only defect introduced below is the S-value.
-    let sig_ok = WebAuthnSigData {
-        signature: soroban_sdk::BytesN::<64>::from_array(&env, &low),
-        authenticator_data: assertion.authenticator_data.clone(),
-        client_data: assertion.client_data.clone(),
-    };
-    env.as_contract(&verifier_addr, || {
-        assert!(
-            webauthn::verify(&env, &signature_payload, &key, &sig_ok),
-            "the canonical low-S signature must verify"
-        );
-    });
-
-    // The high-S malleated signature must be rejected -- whether the host
-    // returns false or traps, both are a rejection (funds safe).
-    let sig_high = WebAuthnSigData {
-        signature: soroban_sdk::BytesN::<64>::from_array(&env, &malleated),
-        authenticator_data: assertion.authenticator_data,
-        client_data: assertion.client_data,
-    };
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        env.as_contract(&verifier_addr, || {
-            webauthn::verify(&env, &signature_payload, &key, &sig_high)
-        })
-    }));
-    let rejected = matches!(result, Ok(false) | Err(_));
+    // The canonical low-S signature verifies, so the only defect below is
+    // the S-value.
     assert!(
-        rejected,
+        verifies(
+            &env,
+            &verifier,
+            &payload,
+            &assertion.key_data,
+            &sig_data(&assertion)
+        ),
+        "the canonical low-S signature must verify"
+    );
+    let high = WebAuthnSigData {
+        signature: BytesN::<64>::from_array(&env, &malleated),
+        ..sig_data(&assertion)
+    };
+    assert!(
+        !verifies(&env, &verifier, &payload, &assertion.key_data, &high),
         "high-S malleated signature must be rejected (ECDSA malleability protection)"
     );
 }

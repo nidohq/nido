@@ -9,18 +9,26 @@ publish = false
 doctest = false
 
 [dependencies]
-# Soroban
-# "hazmat-address" is needed by the M1 zk_fixture address-pinning test
-# (crates/integration-tests/tests/it/zk_fixture.rs): it exposes
-# `Address::to_payload`/`AddressPayload::to_address`, the only public way to
-# build/inspect an `Address`'s raw 32-byte contract-id, which is how the test
-# proves `env.register_at` actually pins a contract at the exact id the ZK
-# recovery proof's `auth_hash` binds.
+# Soroban. "hazmat-address" exposes `Address::to_payload`, the public way to
+# read an `Address`'s raw 32-byte contract id (the ZK statement binds it).
 soroban-sdk = { workspace = true, features = ["testutils", "hazmat-address"] }
 stellar-accounts = { workspace = true }
-# `ContractError::into_code()` for `apply_doc.rs`'s error-code assertions
-# against `nido-smart-account`'s scerr-composed `ApplyDocError`.
+# `ContractError::into_code()` for error-code assertions against scerr enums.
 soroban-sdk-tools = { workspace = true }
+
+# The Perch stack under test (vendor/perch). The deployables run from their
+# deployed wasm (`just perch-infra`); these crates provide the typed clients,
+# error enums, statement types, and the native ZK witness/proving helpers.
+perch-account = { workspace = true }
+perch-smart-account = { workspace = true }
+perch-recovery = { workspace = true }
+perch-recovery-interface = { workspace = true }
+perch-doc-compiler = { workspace = true }
+perch-interpreter = { workspace = true }
+perch-zk-pool = { workspace = true }
+perch-zk-prover = { workspace = true }
+perch-zk-primitives = { workspace = true }
+perch-ir = { workspace = true }
 
 # Crypto
 p256 = { version = "0.13", features = ["ecdsa"] }
@@ -28,46 +36,13 @@ sha2 = "0.10"
 
 # Encoding
 base64 = { workspace = true }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
-# ZK: cross-language Poseidon2 hash parity (host vs Noir)
-# tag v27.0.0 — Poseidon2 parity is byte-critical vs the circuit; v27.0.0 is a
-# version-only bump over the prior v26.0.0 pin (Cargo.toml only, no algorithm change).
-soroban-poseidon = { git = "https://github.com/stellar/rs-soroban-poseidon", tag = "v27.0.0" }
-serde_json = "1"
-# M1 Task 5's zk_recovery_lifecycle test exercises the real
-# `ZkRecovery::initiate_recovery` contract entry point end-to-end.
-nido-zk-recovery = { path = "../../contracts/zk-recovery" }
-# M2 Task 4's zk_recovery_guard end-to-end test decodes
-# `contract::NidoSmartAccountError` error codes from the account's guard --
-# a plain `rlib` dependency (this crate is not a `#[contract]`/cdylib, so no
-# wasm-export collision; the account under test is still deployed from
-# `SMART_ACCOUNT_WASM` bytes, not this Rust type).
-nido-smart-account = { path = "../../contracts/smart-account" }
 # The preauth-sweep-policy scoping tests import `PreauthSweepParams` (to build
-# the install map) and `SweepError` (to assert exact rejection codes). Imported
-# as an `rlib` dev-dep — same pattern as the two crates above; this crate is not
-# a `#[contract]`/cdylib so there is no wasm-export collision, and the policy
-# under test is still deployed from `PREAUTH_SWEEP_POLICY_WASM` bytes.
+# the install map) and `SweepError` (to assert exact rejection codes). This
+# crate is not a `#[contract]`/cdylib, so linking the rlib causes no wasm-export
+# collision; the policy under test is still deployed from its wasm bytes.
 nido-preauth-sweep-policy = { path = "../../contracts/preauth-sweep-policy" }
-# `apply_doc` e2e: the perch compiler + interpreter under test are the
-# FETCHED ON-CHAIN BYTES (fixtures/perch/*.wasm, sha256-pinned to the
-# account's derived-address pins), registered at the exact content addresses
-# the account derives — so the e2e exercises the DEPLOYED builds, not a
-# source rev that may be newer than what testnet runs (the wire-type-skew
-# trap this replaced). perch-ir gives the test the same canonicalize+hash
-# the compiler uses.
-perch-ir = { workspace = true }
-# The recovery-completion controller compared in
-# `docs/recovery/stage2-findings.md`, registered as a NATIVE contract (like
-# `nido-zk-recovery` above) — a plain `rlib` dev-dependency, same
-# no-wasm-export-collision reasoning as the other crates in this list.
-nido-recovery-doc-completion = { path = "../../contracts/recovery-doc-completion" }
-# The shared guardian+ZK recovery controller (`contracts/recovery-controller`),
-# registered as a NATIVE contract (like `nido-zk-recovery` above) -- same
-# no-wasm-export-collision reasoning as the other crates in this list.
-nido-recovery-controller = { path = "../../contracts/recovery-controller" }
-# The recovery controller's constructorless UltraHonk verifier, registered as
-# a NATIVE contract (no constructor args needed) -- same no-wasm-export-collision
-# reasoning as the other crates in this list.
-nido-recovery-verifier = { path = "../../contracts/recovery-verifier" }

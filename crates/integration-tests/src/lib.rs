@@ -8,15 +8,10 @@ use stellar_accounts::policies::simple_threshold::SimpleThresholdAccountParams;
 use stellar_accounts::policies::spending_limit::SpendingLimitAccountParams;
 use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
 
-pub mod zk_fixture;
-pub mod zk_recovery_doc_fixture;
+pub mod world;
+pub mod zk;
 
-pub const SMART_ACCOUNT_WASM: &[u8] =
-    include_bytes!("../../../target/wasm32v1-none/contract/nido_smart_account.wasm");
-
-pub const WEBAUTHN_VERIFIER_WASM: &[u8] =
-    include_bytes!("../../../target/wasm32v1-none/contract/nido_webauthn_verifier.wasm");
-
+/// Nido's own contracts, built by `just build-contracts`.
 pub const MULTISIG_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_multisig_policy.wasm");
 
@@ -26,91 +21,51 @@ pub const SPENDING_LIMIT_POLICY_WASM: &[u8] =
 pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_preauth_sweep_policy.wasm");
 
-/// M2 Task 5's factory contract wasm — embeds the same smart-account wasm
-/// bytes as [`SMART_ACCOUNT_WASM`] internally (see
-/// `contracts/factory/src/contract.rs`'s `smart_account` module doc
-/// comment), so uploading [`SMART_ACCOUNT_WASM`] via
-/// `env.deployer().upload_contract_wasm` before calling the factory's
-/// `create_account`/`create_account_v2` satisfies its `deploy_v2` wasm-hash
-/// lookup.
+/// The factory embeds the same Perch account wasm as [`PERCH_ACCOUNT_WASM`]
+/// (`contracts/factory/build.rs`), so uploading [`PERCH_ACCOUNT_WASM`] before
+/// `create_account` satisfies its `deploy_v2` hash lookup.
 pub const FACTORY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
 
-/// `apply_doc`: the CANONICAL perch doc-compiler + interpreter as
-/// deployed on testnet — fetched from chain (`stellar contract fetch`) and
-/// committed, so the e2e exercises the exact builds live accounts talk to.
-/// `apply_doc.rs`'s pin tests assert sha256 of these bytes equals the
-/// account's derived-address pins: a pin bump without refetching (or vice
-/// versa) fails fast. This replaces registering perch's NATIVE source-rev
-/// contracts, which masked a live wire-type skew (the deployed compiler
-/// returns 5-field rules; the source rev had grown a 6th).
+/// The Perch deployables under test: the exact wasm of Perch's testnet
+/// deployment, fetched by `just perch-infra` from the hashes in
+/// `vendor/perch/deployments/testnet.json` (each refused unless its sha256
+/// and content address match).
+pub const PERCH_ACCOUNT_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_account.wasm");
+pub const PERCH_RECOVERY_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_recovery.wasm");
+pub const PERCH_ZK_POOL_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_zk_pool.wasm");
+pub const PERCH_ZK_ADAPTER_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_zk_adapter.wasm");
 pub const PERCH_DOC_COMPILER_WASM: &[u8] =
-    include_bytes!("../fixtures/perch/perch-doc-compiler.wasm");
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_doc_compiler.wasm");
 pub const PERCH_INTERPRETER_WASM: &[u8] =
-    include_bytes!("../fixtures/perch/perch-interpreter.wasm");
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_interpreter.wasm");
+pub const PERCH_SPENDING_LIMIT_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_spending_limit.wasm");
+/// The constructorless, immutable `WebAuthn` verifier every passkey signer
+/// names; the factory pins it.
+pub const PERCH_WEBAUTHN_VERIFIER_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/contract/perch_webauthn_verifier.wasm");
 
-#[allow(dead_code)]
-#[soroban_sdk::contractclient(name = "SmartAccountClient")]
-trait SmartAccountInterface {
-    fn get_context_rule(env: soroban_sdk::Env, context_rule_id: u32) -> ContextRule;
-    fn get_context_rules(
-        env: soroban_sdk::Env,
-        context_rule_type: ContextRuleType,
-    ) -> soroban_sdk::Vec<ContextRule>;
-    fn get_context_rules_count(env: soroban_sdk::Env) -> u32;
-    // DOC-ONLY: the OZ mutation surface (add_signer/remove_signer/
-    // remove_context_rule/add_policy/remove_policy/update_context_rule_*)
-    // no longer exists on the account — stage rule shapes with the
-    // `*_direct` library helpers below instead. `add_context_rule` remains
-    // an entry point solely as the zk-recovery COMPLETION vehicle (gated to
-    // a live pending).
-    fn add_context_rule(
-        env: soroban_sdk::Env,
-        context_type: ContextRuleType,
-        name: soroban_sdk::String,
-        valid_until: Option<u32>,
-        signers: soroban_sdk::Vec<Signer>,
-        policies: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val>,
-    ) -> ContextRule;
-    // M2 Task 4: the in-account recovery guard's views/entry points
-    // (`contracts/smart-account/src/contract.rs`).
-    fn initiate_upgrade(env: soroban_sdk::Env, new_wasm_hash: soroban_sdk::BytesN<32>);
-    fn recovery_rule_id(env: soroban_sdk::Env) -> Option<u32>;
-    fn recovery_controller(env: soroban_sdk::Env) -> Option<soroban_sdk::Address>;
-    fn initiate_recovery_rule_removal(env: soroban_sdk::Env);
-    fn execute_recovery_rule_removal(env: soroban_sdk::Env);
-    // M2 Task 6: the migration path for a NEW-wasm account deployed with
-    // `recovery_controller: None` (`contract.rs::enroll_zk_recovery`).
-    fn enroll_zk_recovery(env: soroban_sdk::Env, recovery_controller: soroban_sdk::Address);
-    // perch apply_doc (hybrid) + its views
-    // (`contract.rs`/`doc.rs`). `apply_doc` is declared with the success
-    // type only — the deployed contract's `Result<BytesN<32>, _>` returns
-    // the Ok value on success and traps with the typed code otherwise,
-    // which `try_apply_doc` surfaces exactly like the guard errors above.
-    fn apply_doc(env: soroban_sdk::Env, doc_json: soroban_sdk::Bytes) -> soroban_sdk::BytesN<32>;
-    fn applied_doc_hash(env: soroban_sdk::Env) -> Option<soroban_sdk::BytesN<32>>;
-    fn get_applied_doc(env: soroban_sdk::Env) -> Option<soroban_sdk::Bytes>;
-    fn doc_rule_ids(env: soroban_sdk::Env) -> soroban_sdk::Vec<u32>;
-    // Variant B (recovery completion, `docs/recovery/stage2-findings.md`): the dedicated recovery
-    // completion entry point (`contracts/smart-account/src/contract.rs`),
-    // compared against Variant A (completing through `apply_doc` above with
-    // no smart-account changes) in `docs/recovery/stage2-findings.md`.
-    fn complete_recovery(
-        env: soroban_sdk::Env,
-        doc_json: soroban_sdk::Bytes,
-    ) -> soroban_sdk::BytesN<32>;
-}
+/// The Wasm the upgrade tests schedule: a committed copy of Nido's
+/// status-message contract (999 bytes). ZK upgrade approvals bind its hash,
+/// so it must not be a local build, whose hash varies with the toolchain.
+pub const UPGRADE_TARGET_WASM: &[u8] = include_bytes!("../fixtures/upgrade-target.wasm");
+
+/// The account's typed client (Perch's `PerchSmartAccount` surface).
+pub use perch_account::PerchAccountClient as SmartAccountClient;
 
 // ---------------------------------------------------------------------
-// DOC-ONLY test harness: the account no longer exports the OZ rule
-// mutators (`apply_doc` is the sole policy write path; `add_context_rule`
-// survives only inside the zk-recovery completion window). Tests that
-// exercise policy/auth MECHANICS — session-key scoping, threshold
-// policies, spending limits, sweep policies — still need to stage
-// arbitrary rule shapes, so they write rules directly through the OZ
-// library against the account's storage via `env.as_contract`. This is a
-// test-only backdoor: on a real network these shapes are reachable only by
-// applying a document.
+// Policy-mechanics backdoor: the account exports no OZ rule mutators
+// (`apply_doc` is the sole policy write path). Tests that exercise a POLICY
+// contract's mechanics — session-key scoping, threshold policies, spending
+// limits, sweep policies — stage arbitrary rule shapes directly through the
+// OZ library against the account's storage via `env.as_contract`. This is a
+// test-only backdoor: on a real network a rule exists only if an applied
+// document compiled to it. The account and recovery suites never use it.
 // ---------------------------------------------------------------------
 
 /// Install a context rule directly (library call, no entry point).
@@ -268,15 +223,14 @@ pub fn build_contract_assertion(
     }
 }
 
-/// Deploy the `WebAuthn` verifier and smart account contracts, initialising the
-/// account with a single passkey signer. Returns the client, account address,
-/// verifier address, and signing key.
+/// Deploy the `WebAuthn` verifier and a Perch account whose constructor rule
+/// ("admin", id 0, scoped to the account itself) is a single passkey signer.
+/// Returns the client, account address, verifier address, and signing key.
 ///
-/// Constructs the account with `recovery_controller: None` — the account gets
-/// ONLY the Default rule (unchanged behavior for the many callers of this
-/// helper that have nothing to do with zk-recovery). Tests that need the
-/// recovery rule installed at construction should use
-/// [`deploy_smart_account_with_recovery`] instead.
+/// This is the bare constructor state: no applied document, no recovery, and
+/// no Perch infra registered. Policy-mechanics tests stage further rules with
+/// the `*_direct` backdoors above (they land at id 1 and up); account and
+/// recovery tests use [`world::World`] instead.
 #[must_use]
 pub fn deploy_smart_account(
     env: &soroban_sdk::Env,
@@ -286,48 +240,14 @@ pub fn deploy_smart_account(
     soroban_sdk::Address,
     SigningKey,
 ) {
-    deploy_smart_account_with_recovery(env, None)
-}
-
-/// Like [`deploy_smart_account`], but passes `recovery_controller` through to
-/// the constructor's 3rd argument. `Some(controller)` installs the
-/// zero-signer `CallContract(self)` recovery rule with `controller` as its
-/// policy (triggering the controller's `Policy::install`); `None` behaves
-/// exactly like [`deploy_smart_account`].
-#[must_use]
-pub fn deploy_smart_account_with_recovery<'a>(
-    env: &'a soroban_sdk::Env,
-    recovery_controller: Option<&soroban_sdk::Address>,
-) -> (
-    SmartAccountClient<'a>,
-    soroban_sdk::Address,
-    soroban_sdk::Address,
-    SigningKey,
-) {
-    // Deploy the stateless WebAuthn verifier (admin governs upgrade only)
-    let verifier_addr = env.register(
-        WEBAUTHN_VERIFIER_WASM,
-        (soroban_sdk::Address::generate(env),),
-    );
-
-    // Generate a passkey (P-256 keypair)
+    let verifier_addr = env.register(PERCH_WEBAUTHN_VERIFIER_WASM, ());
     let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
     let pubkey_sec1 = signing_key.verifying_key().to_sec1_bytes();
-
-    // Construct the External signer: (verifier_address, public_key_bytes)
-    let key_data = soroban_sdk::Bytes::from_slice(env, &pubkey_sec1);
-    let signer = Signer::External(verifier_addr.clone(), key_data);
-
-    let signers = soroban_sdk::vec![env, signer];
-    let policies: soroban_sdk::Map<soroban_sdk::Address, soroban_sdk::Val> =
-        soroban_sdk::Map::new(env);
-
-    // Deploy the smart account with the passkey signer
-    let account_addr = env.register(
-        SMART_ACCOUNT_WASM,
-        (&signers, &policies, recovery_controller.cloned()),
+    let signer = Signer::External(
+        verifier_addr.clone(),
+        soroban_sdk::Bytes::from_slice(env, &pubkey_sec1),
     );
-
+    let account_addr = env.register(PERCH_ACCOUNT_WASM, (soroban_sdk::vec![env, signer],));
     let client = SmartAccountClient::new(env, &account_addr);
     (client, account_addr, verifier_addr, signing_key)
 }
