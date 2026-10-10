@@ -112,3 +112,66 @@ regenerated proof set:
    confirms reproducibility.
 3. Deploy a new `zk-verifier` with the new VK; register it; point the recovery pool at it.
 4. Record new circuit/VK hashes in `DEPLOYED.md` + `manifest.json`.
+
+## 6. Recovery-controller (M2) operations
+
+`contracts/recovery-controller` — the doc-embedded guardian-quorum/ZK controller, distinct
+from the M1 pool §§1-5 above describe.
+
+### Enrollment / reconfigure (routine)
+
+Both happen as a side effect of an ordinary `apply_doc` call — there is no separate
+"enroll" transaction in the doc-driven path. Before submitting a doc with a `recovery`
+section:
+
+1. **New enrollment:** confirm the account has no recovery rule pointing at a DIFFERENT
+   controller already (`RecoveryControllerMismatch` otherwise). For an account
+   constructed with a wired-but-unenrolled rule (factory genesis), the first `apply_doc`
+   with a `recovery` section enrolls it against the ALREADY-wired controller — the doc's
+   controller must match.
+2. **Reconfiguring an existing `Loss`-profile account:** no extra evidence needed beyond
+   the account's own auth.
+3. **Reconfiguring an existing `Protected`-profile account:** collect
+   `>= guardian_threshold` DISTINCT currently-enrolled guardians' nested authorizations
+   over the exact `(account, new_config)` pair in the SAME transaction (`guardian_evidence`
+   param to `apply_doc`) — coordinate this the same way a multisig-threshold change is
+   coordinated; the transaction fails closed (`ReconfigureEvidenceInsufficient`) if too
+   few guardians sign.
+4. **Reconfigure is strictly additive only** — `GuardianOnly -> Combined` or
+   `ZkOnly -> Combined`. There is no supported path to rotate the guardian set, change the
+   baseline, or downgrade a mode; any of those requires a fresh account.
+
+### Guardian incident response
+
+Mirrors §4's relayer playbook structure, for a suspected guardian key compromise or an
+observed collusion attempt:
+
+1. **Detect** — watch for `recovery_attempt_begun`/`recovery_authorized` events on a
+   guardian-quorum-enrolled account you did not expect to see recovery activity on.
+2. **Triage** — pull the attempt via `get_attempt(account)`; confirm whether it's a
+   legitimate owner-initiated `LostKey`/`Compromise` recovery or unexpected guardian
+   activity.
+3. **Contain** — if illegitimate and NOT yet `AuthorizedPending`, a non-colluding
+   guardian subset below threshold cannot stop it alone; the account owner's own
+   `submit_guardian_cancel`-eligible guardians (a quorum) must cancel, OR the owner can
+   race `initiate_recovery_rule_removal` (7-day delay) — but note this is itself BLOCKED
+   while the attempt is live-pending, so it only helps if acted on before promotion.
+   There is no admin/relayer-side kill switch — recovery cancellation is guardian/
+   ZK-evidence-gated by design (SECURITY_INVARIANTS RC10).
+4. **Recover** — once contained, the account's next legitimate `apply_doc` can
+   `reconfigure` (if additive) or the owner migrates to a fresh account if the guardian
+   set itself needs rotating (no in-place rotation path exists).
+5. **Post-mortem** — record here, same as §4.
+
+### Deploying recovery-controller / recovery-verifier
+
+Follows §1's general deploy flow, with two differences from the M1 pool:
+
+- `recovery-verifier` is constructorless with NO admin/upgrade entry point — a circuit
+  change always means a brand-new address, registered fresh, never an in-place VK swap
+  (stronger than `zk-verifier`'s "VK immutable, code upgradable" model).
+- Both `circuits/zk_recovery` (M1) and `circuits/zk_recovery_doc` (M2) now exist side by
+  side; §5's "ZK circuit / VK change" procedure applies independently to each — be
+  explicit about which circuit lineage a given VK regeneration targets.
+
+See MAINNET_READINESS.md §A5/§G before treating any such deploy as mainnet-ready.

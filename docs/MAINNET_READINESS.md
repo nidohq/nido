@@ -36,6 +36,15 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
   (Later: register this registry's id into the AhaLabs verified registry — additive, not a blocker.)
 - [ ] **A4 — Relayer keys in KMS/HSM (BLOCKER).** Sponsor + channel keys no longer live as
   on-disk keystores; migrated to a KMS/HSM signer; testnet keys rotated out.
+- [ ] **A5 — M2 recovery-controller + fresh smart-account deploy (BLOCKER,
+  nidohq/nido#225).** No live testnet deployment has any of the doc-embedded
+  guardian-quorum/ZK recovery code: the deployed `recovery-controller` (v2) and the
+  factory's embedded `smart-account` wasm both predate this entire migration. Issue
+  #225 covers standing up a throwaway test pair to validate the `apply_doc` recovery
+  path works end to end; a REAL v3 controller + `recovery-verifier` + fresh
+  `smart-account` deployment (and the `zk_recovery_doc` VK/fixtures that go with it)
+  must still be stood up for real before any account relies on M2 recovery. Separate
+  from, and additional to, A1 (which only covers the M1 pool's mainnet params).
 
 ## B. Architecture freeze (before audit)
 
@@ -124,6 +133,32 @@ audit-readiness plan. "Blocker" = launch cannot proceed without it.
 - [ ] Property/fuzz tests for Merkle/Poseidon/low-S.
 - [ ] Testnet e2e Playwright lane un-quarantined (or CI-gated).
 - [ ] Full recovery-lifecycle test running under mainnet params.
+- [ ] M2-specific negative tests: forged/replayed `reconfigure_digest` evidence,
+  guardian-quorum collusion scenarios, nullifier reuse across the `zk_recovery_doc`
+  circuit, recovery-rule survival across a second `apply_doc` (SECURITY_INVARIANTS
+  RC12 gap), controller storage TTL survival across the full active window
+  (SECURITY_INVARIANTS Storage/liveness gap).
+- [ ] Promote `crates/zk-bench/tests/recovery_verifier_budget.rs`'s measured ~179.3M
+  CPU number to an enforced gate (mirroring B1).
+
+## G. M2 guardian-quorum/ZK recovery — deferred, tracked gaps
+
+Each a real, scoped, deliberately-deferred limitation (not a silent gap) — see
+`contracts/recovery-controller/src/lib.rs`'s crate doc comment, "Known limits", for
+the canonical, most detailed version of each. Re-review before mainnet; none of these
+block the current audit pass, but several should be closed, or explicitly accepted,
+before A5's real deploy goes live.
+
+| # | Gap | Current state |
+|---|---|---|
+| nidohq/nido#217 | `enroll`/`reconfigure` can't distinguish a genuine `apply_doc` cross-call from an external caller separately holding valid account auth. | Open. Partial mitigation via `apply_doc`'s own `RecoveryControllerMismatch`/`RecoveryConfigWithoutWiring` checks on the doc-driven path only. |
+| nidohq/nido#218 | `delay_secs`/`expiry_secs` are computed from perch's ledger-count config via `AVG_LEDGER_CLOSE_SECS` (a constant 5s/ledger) — an approximation, not a real ledger-sequence-bound delay. | Open. Accepted approximation; actual wall-clock delay can drift from the configured ledger count if protocol ledger-close time changes. |
+| nidohq/nido#219 | Recovery completion can't yet correctly interact with a doc that ALSO tries to reconfigure recovery in the same apply, or with a doc that OMITS the `recovery` section while already enrolled. | Open, `#[ignore]`d regression test documents it: `recovery_perch_enrollment.rs::apply_doc_refuses_when_recovery_is_removed` (see PR #216 discussion). |
+| nidohq/nido#220 | Open product question: should an account be able to opt OUT of "Compromise" (vs. "LostKey") recovery entirely? | Unresolved — product decision, not an engineering gap. |
+| nidohq/nido#221 | The SDK's older simplified enrollment helpers are incompatible with the current controller ABI. | Open — SDK-side follow-up. |
+| nidohq/nido#222 | Nido does not depend on perch's own upstream `perch-recovery` crate (mirrors its design in nido's own code instead) — three blockers: a `stellar-accounts` dependency-fork conflict, perch's ZK circuit being unfinished/mock-only, and perch's `pending_activity` (Freeze/Continue) enforcement gate being unenforced upstream. | Deliberate, documented divergence — re-evaluate if/when any of the three upstream blockers resolve. |
+| nidohq/nido#224 | The account-creation onboarding flow's ZK-enrollment step still uses the OLD direct `enroll_zk_recovery` + `enroll()` two-step path, not yet migrated to `apply_doc`. | Open — onboarding-flow follow-up. |
+| nidohq/nido#225 | See A5 above. | **Blocker.** |
 
 ## Cutover sequence (release day)
 
