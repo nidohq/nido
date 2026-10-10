@@ -37,6 +37,9 @@ export interface LoweredCap {
 export interface LoweredRule {
   /** OZ context rule name (from the doc rule's `name`). */
   name: string;
+  /** Lowercase-hex `rule_hash` (perch-js `ruleHash`): the provenance an
+   *  interpreter program carries for this rule. */
+  ruleHash: string;
   /** Always a CallContract scope: a `self-admin` doc rule lowers to
    *  `CallContract(the account itself)`. */
   contract: string;
@@ -46,7 +49,8 @@ export interface LoweredRule {
    *  `not-after-ledger` minus one. */
   validUntil?: number;
   /** Present ⇒ attach the perch interpreter with
-   *  `InstallParams { program, doc_hash }`. Absent ⇒ the rule is
+   *  `InstallParams { program, doc_hash: ruleHash }` (the field keeps its name;
+   *  since stellar-registry/perch#102 it holds the rule hash). Absent ⇒ the rule is
    *  constraint-free and rides OZ's native all-signers-must-match. */
   program?: RpnProgram;
   /** Present ⇒ also attach the stock spending-limit policy. A capped rule
@@ -58,8 +62,9 @@ export interface LoweredRule {
 /** The full lowering of a document: an install plan of one OZ context rule
  *  per doc rule, in document order. */
 export interface LoweredDoc {
-  /** Lowercase-hex sha256 of the document's canonical JSON — the identity a
-   *  reviewer approves and every interpreter install param commits to. */
+  /** Lowercase-hex sha256 of the document's canonical JSON: the identity a
+   *  reviewer approves. Interpreter programs commit to their rule's
+   *  `ruleHash`, not to this. */
   docHash: string;
   /** The network passphrase the doc binds itself to, when it declares one.
    *  `buildDocInstallTxs` refuses to build for any other network. */
@@ -83,10 +88,11 @@ export type DecompiledRule =
       /** Signer declarations this rule references, resolved from the chain
        *  signers (ids are synthesized — see `decompileRules`). */
       signers: SignerDecl[];
-      /** The doc_hash the on-chain interpreter program commits to, when the
-       *  rule carries one. This is the hash of the ORIGINAL installed
-       *  document, not of the reconstructed view. */
-      committedDocHash?: string;
+      /** The `rule_hash` the on-chain interpreter program commits to, when
+       *  the rule carries one: the hash of the rule as ORIGINALLY installed
+       *  (its real signer ids), so it won't match `ruleHash(rule)` of this
+       *  reconstructed view, whose ids are synthesized. */
+      committedRuleHash?: string;
     }
   | {
       kind: 'raw';
@@ -114,7 +120,7 @@ export interface DecompileContext {
    *  interpreter's public `get_program(smart_account, context_rule_id)` view
    *  (see `@stellar-registry/perch-interpreter`). Rules that carry the interpreter but
    *  have no entry here fall back to raw. */
-  programs?: Record<number, { program: RpnProgram; docHash: Uint8Array | string }>;
+  programs?: Record<number, { program: RpnProgram; ruleHash: Uint8Array | string }>;
   /** Spending-limit params per rule id, fetched by the caller (the frontend
    *  already does this for its session-key cards). */
   spendingLimits?: Record<number, LoweredCap>;
@@ -127,12 +133,8 @@ export interface DecompileResult {
   /** A document assembled from the mapped rules (deduped signers, doc-order
    *  rules), or null when nothing mapped. This is a VIEW: its hash will not
    *  match the originally installed document (signer ids and rule ordering
-   *  are not stored on chain) — for that, see `committedDocHashes`. */
+   *  are not stored on chain). The account's `applied_doc` is the original. */
   doc: PolicyDoc | null;
   /** Lowercase-hex doc_hash of `doc`, or null. */
   docHash: string | null;
-  /** Distinct doc hashes committed by on-chain interpreter programs, in
-   *  first-seen order. A single entry means every interpreter rule on the
-   *  account came from the same document. */
-  committedDocHashes: string[];
 }

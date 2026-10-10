@@ -1,4 +1,5 @@
 mod account;
+mod config_hash_vectors;
 mod contract_verifier;
 mod costs;
 mod multisig_recovery;

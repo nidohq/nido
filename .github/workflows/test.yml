@@ -104,6 +104,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # vendor/perch: the npm workspace includes its packages.
+          submodules: true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -111,12 +114,20 @@ jobs:
         run: npm install
       - name: Unit tests (shim crypto vs SDK parsers)
         run: npx vitest run --config vitest.support.config.ts
+      # The SDK's Perch layer against Perch's statement vectors and Nido's
+      # real-proof fixtures (including one bb.js proof compared byte for byte
+      # with the committed CLI proof).
+      - name: SDK Perch parity (statement encodings, ZK proving)
+        run: npx vitest run --root packages/passkey-sdk src/perch
 
   e2e:
     name: E2E (fast UI + CDP)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # vendor/perch: the npm workspace includes its packages.
+          submodules: true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -153,6 +164,9 @@ jobs:
     # signal in the Checks tab.
     steps:
       - uses: actions/checkout@v4
+        with:
+          # vendor/perch: the npm workspace includes its packages.
+          submodules: true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
