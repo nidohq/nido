@@ -9,10 +9,11 @@ a prerequisite on top of everything here.
 - [ ] **A1. Perch published and verified.** Done on testnet: Perch's release
   manifest records every contract by hash, `just perch-infra` fetches exactly
   those bytes, the factory embeds the manifest's `perch-account`, and
-  `perch.TESTNET` is checked against the manifest. Left: Perch merges and
-  publishes the release (crates, npm packages, `perch-contracts` bindings),
-  Nido's pins move from the submodule to those, and a mainnet manifest
-  exists. A `PUBLIC_PERCH_DEPLOYMENT` override is not yet checked against
+  `perch.TESTNET` is checked against the manifest. Perch's stack is merged
+  (main, pinned at bb746f9) and `@stellar-registry/perch` 0.3.2 is published
+  and used. Left: Perch publishes its crates, perch-zk, and the
+  `perch-contracts` bindings, Nido's remaining pins move from the submodule to
+  those, and a mainnet manifest exists. A `PUBLIC_PERCH_DEPLOYMENT` override is not yet checked against
   Perch's hashes (THREAT_MODEL 9).
 - [x] **A2. Setup secret out of query strings.** The salt travels in the URL
   fragment and legacy query links are scrubbed on load (W5).
@@ -56,8 +57,9 @@ a prerequisite on top of everything here.
 - [~] **D4. The testnet suite passes against Perch's testnet release.** All
   six profile/mode combinations and the policy page's `apply_doc` pass
   through the wallet on testnet with real proofs and passkey signatures,
-  against the redeploy of Perch's merged main (95601de, 2026-10-09; one
-  clean run of seven specs, 21.0 minutes). They passed on each earlier
+  against the redeploy of Perch's merged main (pinned at bb746f9, with
+  perch-js from npm; 2026-10-10, one clean run of seven specs, 20.5
+  minutes; and 2026-10-09 at 95601de, 21.0 minutes). They passed on each earlier
   deployment too: 17f2c9c and 836fdc9 on 2026-10-07, and 836fdc9 again on
   2026-10-08 after the wallet moved onto perch-js's consumer interface (D8).
   The first run on 836fdc9 lost one completion to a wallet bug, since fixed:

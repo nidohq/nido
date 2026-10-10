@@ -10,8 +10,8 @@ Perch merged its #99 stack (main 7ae915d) and redeployed it on 2026-10-09
 (stellar-registry/perch#110), the controller enforcing spec §3.4 (a ZK
 factor change needs a new enrollment id), and every infra contract in one
 canonical registry (constructorless); document limits 8 signers × 11 rules
-× 8192 bytes. The deployment record is `fm/perch-epic99-deploy-p8` at
-95601de (stellar-registry/perch#112, not yet merged), which records it in
+× 8192 bytes. The deployment record is on Perch's main at bb746f9
+(stellar-registry/perch#112), which records it in
 [`vendor/perch/deployments/testnet.json`](vendor/perch/deployments/testnet.json):
 every contract by wasm hash and content address under its registry, with the
 commit and toolchain that built it. The SDK's `perch.TESTNET` is that
