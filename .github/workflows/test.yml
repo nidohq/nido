@@ -42,7 +42,7 @@ jobs:
       # dependency bump doesn't force re-installing these.
       - name: Cache Stellar CLI tools
         id: stellar-tools-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/stellar
