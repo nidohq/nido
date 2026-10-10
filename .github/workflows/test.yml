@@ -21,7 +21,7 @@ jobs:
       # against whatever `stable` happens to be on the runner that day.
       # `wasm32v1-none` is the target the contract wasms compile for.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.96.0
+        uses: dtolnay/rust-toolchain@1.120.0
         with:
           targets: wasm32v1-none
 
