@@ -1,85 +1,135 @@
-# Audit Scope
+# Audit scope
 
-Scope definition for the third-party security audit of Nido. Give this to the
-audit firm(s) with the frozen commit filled in.
+What to audit in Nido, at which revisions, and in what order. Hand this to the
+audit firm with the freeze commit filled in.
 
-> **Freeze commit:** _TBD — record `git rev-parse HEAD` of the audited tree here._
-> Reference point at time of writing: `981074ca50d2d7478f1d94c2b729509564e1506d`
-> (branch `main`).
+> **Freeze commit:** _TBD: record `git rev-parse HEAD` of the audited tree and
+> `git -C vendor/perch rev-parse HEAD` here._ At the time of writing, Perch is
+> pinned at `bb746f9` (Perch's `main`, with the deployment record of
+> stellar-registry/perch#112), whose testnet deployment was built from main's
+> `7ae915d`; `@stellar-registry/perch` is the published 0.3.2, and the
+> remaining pins move to Perch's published packages.
 
-The user has scoped the audit to **all four layers**: Soroban contracts, the ZK
-circuit + UltraHonk verifier, the off-chain infrastructure, and the TS SDK +
-frontend. The ZK layer requires a **specialist auditor** (circuit soundness +
-proof-system verification), separate from a general Soroban/Rust reviewer.
+## Reading order
 
-## In scope
+1. [ARCHITECTURE.md](../ARCHITECTURE.md): components, flows, diagrams.
+2. [THREAT_MODEL.md](./THREAT_MODEL.md): assets, adversaries, what is trusted.
+3. Perch's recovery specification,
+   [`vendor/perch/docs/recovery/spec.md`](../vendor/perch/docs/recovery/spec.md):
+   the single source of truth for recovery semantics.
+4. [SECURITY_INVARIANTS.md](./SECURITY_INVARIANTS.md): each property and the
+   test that pins it.
+5. [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md): third-party inputs and pins.
+6. [RUNBOOKS.md](./RUNBOOKS.md) and [MAINNET_READINESS.md](./MAINNET_READINESS.md):
+   how it is built, deployed, and operated, and what is still open.
 
-### 1. Soroban contracts (Rust, `#![no_std]`)
+## Nido's scope
 
-| Contract | Path | Notes |
-|---|---|---|
-| Factory | `contracts/factory/` | Deterministic account deployment, genesis Merkle insert, verifier lazy-deploy, registry resolution. Has admin/upgrade. |
-| Smart account | `contracts/smart-account/` | OZ `CustomAccountInterface` + recovery guard + `execute` entry point + `enroll_zk_recovery` migration. |
-| WebAuthn verifier | `contracts/webauthn-verifier/` | Stateless secp256r1/P-256 signature verification (OZ `Verifier`). |
-| ZK recovery pool/controller | `contracts/zk-recovery/` | Merkle pool + recovery state machine (initiate/cancel/revoke/complete), nullifiers, timelock, rate-limit, policy. |
-| ZK verifier | `contracts/zk-verifier/` | Thin wrapper binding a VK; delegates to the vendored UltraHonk verifier. |
-| Multisig policy | `contracts/multisig-policy/` | Threshold policy. |
-| Spending-limit policy | `contracts/spending-limit-policy/` | Rolling-window SAC transfer metering. |
-| Name registry | `contracts/name-registry/` | Human-readable account names. |
-| Status-message (demo) | `contracts/status-message/` | **Demo only.** See out-of-scope note — confirm whether it ships to mainnet. |
+### Contracts (Rust, `#![no_std]`)
 
-### 2. ZK circuit + proof verifier (specialist)
+| Contract | Path | Focus |
+| --- | --- | --- |
+| Factory | `contracts/factory/` | Deterministic deployment of `perch-account` with the passkey admin rule; embedded wasm hash and its cache across upgrades; admin and upgrade (`admin-sep`); verifier pin; registry fallback. |
+| Name registry | `contracts/name-registry/` | Name ownership and release. |
+| Status message | `contracts/status-message/` | Demo only. Confirm it is excluded from mainnet. |
 
-- `circuits/zk_recovery/` — the Noir `zk_recovery` circuit (source, `Prover.toml`,
-  build/reproducibility scripts, committed VK/proof fixtures + manifest).
-- `contracts/vendor/ultrahonk-soroban-verifier/` — **vendored** UltraHonk verifier
-  (see [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md) for provenance). Verbatim third-party
-  code; the audit should confirm soundness of proof verification and that the
-  vendored copy matches its declared upstream.
+`contracts/*-policy` (multisig, spending limit, pre-auth sweep) predate Perch
+and can't be attached by a Perch document. They are out of scope unless a
+product decision keeps them.
 
-### 3. Off-chain infrastructure
+### Integration with Perch
 
-- `infra/relayer/` — tx sponsor/submitter (Fly.io), channels plugin, key custody.
-- `infra/pool-indexer/`, `infra/nido-resolver/`, `infra/recovery-relay/` — Cloudflare
-  workers.
+The audit should check that Nido uses Perch as Perch's spec intends:
 
-### 4. SDK + frontend
+- The factory's constructor rule and the wallet's first document (admin rule
+  scoped to the account, recovery member, guardian rule scoped to the
+  controller) match what the spec assumes.
+- The wallet builds evidence and documents only from chain reads and
+  controller-built statements (`packages/passkey-sdk/src/perch/`), never from
+  link contents a guardian can't check.
+- The integration tests (`crates/integration-tests/`) are sound evidence: they
+  run under enforcing authorization with real proofs, and the fixtures can't
+  silently drift (`src/zk.rs`).
 
-- `packages/passkey-sdk/` — published to npm (`@nidohq/passkey-sdk`).
-- `packages/stellar-wallets-kit-module/`, `packages/frontend/`, `frontend/`.
+### TypeScript
 
-## Out of scope (dependencies relied upon, not authored by Nido)
+| Package | Path | Focus |
+| --- | --- | --- |
+| Passkey SDK | `packages/passkey-sdk/` | `src/perch/` (statement encodings, recovery builders, document helpers, proving), `src/policyDoc/`, WebAuthn parsing and auth-entry signing. |
+| Wallet | `packages/frontend/` | Recovery pages (`src/lib/recovery/`), onboarding and the setup secret (`src/pages/new-account/`, `src/lib/createNido.ts`), signing flows, the storage bridge, `public/_headers`. |
+| Wallets Kit module | `packages/stellar-wallets-kit-module/` | dApp signing handoff. |
 
-- **OpenZeppelin `stellar-contracts` / `stellar-accounts`** — pinned dependency at
-  an untagged main-branch rev (`ec749c3b`, the merge of OZ PR #816 / soroban-sdk 27;
-  see `Cargo.toml`). All core auth logic
-  delegates to `do_check_auth` here. The auditor should **verify the pinned rev is
-  the intended, uncompromised commit**, but the library itself is OZ's audited code,
-  not part of Nido's authored surface. See [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).
-- **`soroban-sdk` 27.0.2**, `soroban-sdk-tools`, `stellar-registry` — pinned deps.
-- **`admin-sep` 0.27.0** (`theahaco/admin-sep`) — pinned crates.io dep providing the
-  `Administratable`/`Upgradable` SEP traits (`admin`/`set_admin`/`upgrade`) shared by every
-  upgradeable contract. Not Nido-authored, but it is on the governance/upgrade auth path, so
-  the auditor should read it in full (it is ~50 LOC) — see [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).
-- **Stellar Registry contract (AhaLabs smart-deploy)** — an external on-chain contract, not
-  authored by Nido. On mainnet Nido runs its **own instance** (owner under the multisig,
-  deployed by `scripts/deploy-registry.sh` from the reference registry's exact wasm, hash
-  recorded in `DEPLOYED.md`). Trust in it is bounded: once the factory pins `verifier`/
-  `zk-recovery` (B2 pin bypass), the registry is off the account-creation critical path and a
-  repoint can neither reroute nor block new accounts (invariant F5). It remains authoritative
-  only for off-chain discovery and unpinned names.
-- **Stellar protocol / consensus / RPC** — trusted platform.
+### Infrastructure
 
-## Explicitly NOT for mainnet (must not be deployed / must be excluded)
+- `infra/relayer/`: fee sponsorship and submission, the channels plugin, key
+  custody.
+- `infra/nido-resolver/`: name resolution worker.
+- `frontend/worker-proxy-nido/`: subdomain proxy and security headers.
 
-The pre-v0.7 contracts listed in `DEPLOYED.md` ("Pre-v0.7 contracts (do not use)")
-are on-chain from earlier iterations, incompatible with the current WASM, and
-out of scope. They must not be deployed to mainnet.
+The recovery relay that held friend signatures for the retired recovery is
+removed from the tree (#233). Its deployed worker (`relay.nido.fyi`) and KV
+namespace remain until the Cloudflare account owner deletes them; no wallet
+code calls them.
 
-## What to hand the auditor alongside this file
+## Perch's scope
 
-- [THREAT_MODEL.md](./THREAT_MODEL.md) — assets, adversaries, trust assumptions.
-- [SECURITY_INVARIANTS.md](./SECURITY_INVARIANTS.md) — the properties that must hold, with test evidence.
-- [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md) — dependency + toolchain provenance.
-- `ARCHITECTURE.md`, `DEPLOYED.md` — system design + deployed addresses/params.
-- The design spec under `docs/` (`2026-07-02-zk-recovery-design.md`) for the ZK protocol.
+Perch is a separate project with its own audit package. Nido consumes it from
+the `vendor/perch` submodule; the audited revision is the one recorded above.
+Perch's own scope document,
+[`vendor/perch/docs/audit-scope.md`](../vendor/perch/docs/audit-scope.md),
+maps its stack to two audit units (the backend-independent core and the OZ
+materialization layer) and names the pull request that introduced each path.
+If one engagement covers both, Perch's scope is:
+
+- Contracts: `perch-account` and `perch-smart-account`, `perch-recovery`,
+  `perch-zk-pool`, `perch-zk-adapter`, `perch-doc-compiler`,
+  `perch-interpreter`, `perch-spending-limit`, and `perch-webauthn-verifier`,
+  which every Nido passkey names (`vendor/perch/crates/`).
+- The circuit, `vendor/perch/circuits/` (specialist review: soundness,
+  domain separation, nullifier binding).
+- The OZ `stellar-accounts` fork with the CAP-0071 delegated-auth patch
+  (`theahaco/stellar-contracts-OZ` at the rev in `Cargo.toml`). The patch is
+  not OZ-audited.
+- `perch-js` (published as `@stellar-registry/perch` 0.3.2, the same code as
+  `vendor/perch/packages/perch-js`) and `perch-zk` (`vendor/perch/packages/`).
+
+The UltraHonk verifier inside the adapter is NethermindEth's, audited by
+OpenZeppelin, plus Perch's delta for the zero-knowledge flavor
+(`UltraKeccakZKFlavor`: one new file, `vendor/ultrahonk-soroban-verifier/src/zk.rs`,
+and visibility-only changes to four audited files;
+[vendor/perch/docs/zk/README.md](../vendor/perch/docs/zk/README.md)). The
+delta is not audited. The audit should confirm the rest matches the audited
+release and review the delta, which Perch lists as a release criterion.
+
+## Questions we want answered
+
+1. **Factory admin.** The factory admin can change the account code and the
+   verifier new accounts get (THREAT_MODEL 8). Is a multisig plus a visible
+   upgrade delay enough, or should the factory pin its verifier at build time
+   as Perch's does?
+2. **The ZK verifier delta.** Proofs are zero-knowledge now, verified by
+   Perch's unaudited `UltraKeccakZKFlavor` delta on the audited verifier
+   (THREAT_MODEL 13). Is it sound?
+3. **Guardian checks.** Is what the guardian page verifies (W2, W3) enough for
+   a guardian who follows its instructions?
+4. **Setup secret.** Is the window between creating a salt and deploying
+   acceptable (THREAT_MODEL 5)?
+5. **Deployment.** `perch.TESTNET` is checked against Perch's manifest in a
+   test, and the manifest against the chain by Perch's `verify-deployment.sh`.
+   Is that enough, and should a `PUBLIC_PERCH_DEPLOYMENT` override be checked
+   the same way at build time (THREAT_MODEL 9)?
+6. **Archival.** Is stepwise restoration (RUNBOOKS §6) safe and complete?
+
+## Out of scope
+
+- `soroban-sdk`, `soroban-sdk-tools`, and the Stellar Registry contract:
+  pinned dependencies or external contracts (SUPPLY_CHAIN.md).
+- `admin-sep`: a dependency, but on the upgrade path of the factory, the
+  name registry, and two of the policies. It is about 50 lines;
+  read it in full.
+- The Stellar protocol, consensus, and RPC.
+- Everything retired by the move to Perch: Nido's former smart account,
+  WebAuthn verifier, recovery controllers, recovery verifier, ZK pool and
+  verifier, circuits, and pool indexer. Their testnet deployments are listed in DEPLOYED.md as
+  retired and must not be deployed to mainnet.
+- `docs/superpowers/`: historical design notes, not current behaviour.

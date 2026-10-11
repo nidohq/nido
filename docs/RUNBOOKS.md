@@ -1,114 +1,250 @@
-# Operational Runbooks
+# Runbooks
 
-Deploy, upgrade, key-rotation, and incident-response procedures for mainnet.
-References existing tooling; fill in the multisig/KMS specifics as B1/A4 land.
+Build, deploy, operate, and respond. Commands run from the repo root.
 
-## 1. Contract deployment (manual, post-audit)
+## 1. Build and test from source
 
-Contract deploys are **manual and gated on audit sign-off** — never automated in CI
-(only the frontend + workers deploy from CI). Standard flow:
+```bash
+git clone --recurse-submodules https://github.com/nidohq/nido.git && cd nido
+# or, in an existing clone:
+git submodule update --init
 
-1. **Approval:** an audit-approved commit + a signed-off change ticket. Record the git
-   commit being deployed.
-2. **Build reproducibly:** `just build-contracts` on the pinned toolchain (C2). Record the
-   `stellar-cli` version and each wasm sha256.
-3. **Deploy:** for the factory + smart-account use the deploy scripts
-   (`scripts/deploy-zk-recovery.mjs`, `scripts/deploy-policy-builder-v1.sh` pattern). The
-   scaffold-built ZK contracts must be deployed via the JS SDK (the `stellar` CLI fails with
-   `Missing Entry Context` on their multi-`Address` constructors — see `DEPLOYED.md`).
-4. **Verify address + hash:** confirm the deployed C-address and that the on-chain wasm hash
-   matches the embedded/expected hash before creating any account.
-5. **Preflight params:** run the config-assert script (A1/B2 tooling) — the live
-   `delay/floor/window/passphrase/verifier` must match the mainnet spec.
-6. **Register:** repoint the registry name (multisig-approved, §2).
-7. **Smoke test:** invoke a read (`next_index`, `current_root`) + a full onboarding +
-   recovery lifecycle against mainnet RPC.
-8. **Record:** update `DEPLOYED.md` with addresses, params, wasm/VK/circuit hashes, deployer,
-   and commit.
+just perch-infra       # Perch's deployed wasm and pin cache, by the hashes in
+                       # vendor/perch/deployments/testnet.json (Stellar CLI, jq)
+just build-contracts   # Nido's contracts; the factory embeds the fetched
+                       # Perch account wasm
+just test              # cargo test --workspace: integration tests replay the
+                       # committed proofs
+just check-vendor-drift  # vendor/perch at its pin, consumed wasm = the manifest's
+npm install            # workspaces; postinstall builds the packages
+```
 
-## 2. Registry repoint & upgrade governance (multisig)
+Regenerate the real proofs after anything that changes a statement (a test's
+setup, the controller, the circuit). The toolchain is checksum-pinned and
+installed under the submodule:
 
-The registry name → address mapping and the factory `set_recovery_pool`/`upgrade`/`set_admin`
-knobs are the highest-leverage controls — a repoint silently changes the contract users trust.
+```bash
+just gen-zk-fixtures
+# Zero-knowledge proving is randomized: proof bytes change, the metadata must not.
+git diff --exit-code -- 'crates/integration-tests/fixtures/zk/*/fixture.json'
+```
 
-- **Keys under multisig.** The registry-owner key, the factory admin, and each contract admin
-  (post-B1) are multisig, not a single key.
-- **Upgrade timelock.** `upgrade()` is timelocked so users can exit before it lands. Announce
-  upgrades publicly with the new wasm hash + diff before the timelock elapses.
-- **Change process:** GitHub issue + review → multisig proposal → timelock → execute → verify
-  the new address/hash → update `DEPLOYED.md`. Every registry/admin change is monitored and
-  alerts on unexpected address changes.
-- **Pinning (pin bypass):** once the factory's `verifier`/`zk-recovery` pins are set
-  (`set_registry_pins`), `resolve` returns the pinned address **directly and never consults the
-  registry** — so a registry repoint can neither redirect **nor block** new-account creation, and
-  the factory raises no error (there is **no** `RegistryMismatch`). Detection of a hostile repoint
-  therefore relies on the external registry address-change monitor (above), not a factory-level
-  revert. Pins change only via the admin multisig.
+To keep the toolchain outside the submodule, set
+`PERCH_ZK_TOOLCHAIN_DIR=<dir>` first.
 
-## 3. Key rotation
+Front end:
 
-- **Deploy identity (`ci-publisher`):** rotate annually and after any team change. Store in
-  the shared vault (1Password). Never in CI secrets for contract deploys.
-- **Relayer sponsor + channel keys (A4):** managed by KMS/HSM. Rotation = provision new KMS
-  key → update relayer signer config → re-fund → retire old key. Test rotation in staging.
-- **Multisig signers:** documented roster; rotate a signer via the multisig itself; keep a
-  quorum available at all times.
+```bash
+just test-e2e                                              # UI tier, no chain
+PUBLIC_RELAYER_URL=https://nido.fly.dev \
+PUBLIC_RELAYER_SIM_SOURCE=GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2 \
+  npx astro build --root ./packages/frontend
+npx playwright test --project=testnet-chromium perch-recovery account-policy-doc-apply
+```
 
-## 4. Relayer incident response
+The UI tier builds with `PUBLIC_PERCH_DEPLOYMENT=none`, so the recovery pages
+say recovery is not deployed and nothing reaches a chain. The testnet specs
+run against `perch.TESTNET` (Perch's release and Nido's factory) with real
+passkey signatures (the test authenticator), real in-page proofs, and the
+contracts' own authorization.
 
-The relayer (`infra/relayer`, Fly.io) sponsors/submits txs. It cannot forge account auth, so
-worst case is **censorship** or **sponsor-budget drain**, not theft.
+Onboarding is sponsored by the hosted relayer. When it is unavailable, build
+without it and let the specs create accounts from Node
+(`tests/support/directDeploy.ts`: a Friendbot-funded payer calls the
+factory's permissionless `create_account`, and the passkey is seeded into the
+account's origin); every recovery step still runs through the wallet:
 
-### Defenses in place
+```bash
+npx astro build --root ./packages/frontend
+NIDO_E2E_DIRECT_DEPLOY=1 npx playwright test --project=testnet-chromium perch-recovery account-policy-doc-apply
+```
 
-- **Per-client fairness (`Caddyfile`):** a per-IP token bucket (`rate_limit`, keyed on
-  `Fly-Client-IP`, 30 relays/min/IP) throttles any single source so it cannot burst-drain the
-  shared daily budget — the DoS the old single-`x-api-key` + one global `FEE_LIMIT` allowed.
-  Layered under the relayer's own global 20 req/s ceiling.
-- **Budget cap (`fly.toml` `FEE_LIMIT`):** the Channels plugin caps sponsor spend at 100 XLM
-  per `FEE_RESET_PERIOD_SECONDS` (24h). Still a single global bucket; per-IP limiting is what
-  makes it fair. True per-*client* fee accounting needs per-client keys (future work).
-- **Metrics (`METRICS_ENABLED=true`):** Prometheus on `:8081` (`/debug/metrics/scrape`),
-  scraped by Fly's managed Prometheus (`[metrics]` in `fly.toml`); dashboards + alert rules in
-  `grafana.fly.dev`. Kept off the public `:8080` listener.
+## 2. Deploying
 
-### Alerts (wire in Fly Grafana against the scraped metrics)
+Contract deploys are manual and follow audit sign-off; CI deploys only the
+front end and workers. Record the commit, the `stellar-cli` version, and every
+wasm hash.
+
+### 2.1 Perch's stack
+
+Perch's release workstream (stellar-registry/perch#99 WS4) deploys the
+compiler, interpreter, spending limit, WebAuthn verifier, controller, pool,
+and adapter, installs the account wasm, and writes the manifest
+(`vendor/perch/deployments/<network>.json`). Nido doesn't deploy them. Before
+using a manifest:
+
+1. Run Perch's `scripts/verify-deployment.sh` against it: by hash and address
+   only, it checks each contract at its content address, its code hash, the
+   registry's records, the account installed, and what consumers resolve.
+2. Run `just perch-infra` (refuses any byte that doesn't match) and the
+   integration tests against the fetched stack.
+3. Update `perch.TESTNET` (or the network's equivalent) and DEPLOYED.md;
+   `deployment.test.ts` fails until `TESTNET` matches the manifest.
+
+### 2.2 Nido's factory
+
+`ADMIN=<multisig> scripts/deploy-factory.sh <identity> [network]` (or
+`just deploy-factory`) does steps 1–5 and checks each:
+
+1. Install the manifest's `perch-account` wasm (the one `just perch-infra`
+   fetched, checked against `accountWasmHash`): the factory deploys by its
+   hash.
+2. Build Nido's contracts; the factory embeds that wasm.
+3. Deploy the factory with the paying identity as its admin.
+4. Pin Perch's WebAuthn verifier (`set_registry_pins`), read the pin back, and
+   read back the account hash the factory deploys. From then on the registry
+   is off the account-creation path (F5).
+5. Hand the factory to `ADMIN` (`set_admin` needs only the current admin, so
+   the multisig doesn't sign during the deploy) and read the admin back.
+   Without `ADMIN` the paying identity stays admin, which is fine only on
+   testnet. If any step after 3 fails, the script stops and names the
+   factory: don't register or use it, deploy a fresh one.
+6. **Not done by the script:** set the factory in `perch.TESTNET` (and
+   DEPLOYED.md), and decide whether to repoint the registry's `factory` name
+   (`scripts/deploy-registry.sh` deploys a registry instance and registers
+   names). The wallet uses the deployment's factory, so the registry name
+   matters only to builds without one and to off-chain discovery.
+7. **Smoke test:** create an account and check its `infra()` and admin rule,
+   then run §1's testnet specs.
+
+### 2.3 Front end
+
+A push to `main` deploys (`deploy.yml`). The build uses `perch.TESTNET` unless
+the `PUBLIC_PERCH_DEPLOYMENT` repository variable overrides it with a
+manifest JSON or `none`.
+
+**Order matters.** The deployment a wallet build names must exist before the
+build reaches `main`. Accounts minted by an older factory are not migrated:
+epic #99 uses fresh deployments only.
+
+## 3. Governance
+
+The keys that matter: the factory admin (the code and the verifier new
+accounts get), the name-registry and policy admins, the registry-owner key,
+and, for accounts minted by older factories, the admin of Nido's former
+WebAuthn verifier. Perch's contracts, including the verifier current accounts
+name, have no admin.
+
+- All of them sit behind a multisig, never a single key, before mainnet.
+- Factory upgrades are announced with the new wasm hash and diff, and wait
+  out a delay users can see.
+- Process: issue and review, multisig proposal, delay, execute, verify the new
+  hash, update DEPLOYED.md.
+- Nido can't upgrade a user's account. Only its owner can, through the
+  seven-day `schedule_upgrade` path (plus the recovery condition under
+  `Protected`).
+
+## 4. Key rotation
+
+- **Deploy identity (`ci-publisher-testnet` on testnet, and its mainnet
+  counterpart):** rotate yearly and after team changes.
+  Keep it in the shared vault, never in CI secrets.
+- **Relayer sponsor and channel keys:** move to KMS/HSM (MAINNET_READINESS A3).
+  Rotate by provisioning a new key, updating the relayer config, funding it,
+  and retiring the old one.
+- **Multisig signers:** keep a roster; rotate through the multisig itself.
+
+## 5. Relayer incidents
+
+The relayer (`infra/relayer`, Fly.io) sponsors and submits transactions. For
+an existing account it can't forge authorization, so there the worst case is
+censorship or a drained sponsor budget. For an account being set up it is
+worse: the relayer sees the setup salt before the account exists, and a
+compromised host can create that account with its own key first
+(THREAT_MODEL 10, #245).
+
+**Defences in place.** A per-IP token bucket in Caddy (30 relays per minute
+per `Fly-Client-IP`) under the relayer's global 20 req/s; the channels
+plugin's `FEE_LIMIT` (100 XLM per 24 h, one global bucket); Prometheus metrics
+on `:8081`, scraped by Fly.
 
 | Alert | Condition | Action |
-|---|---|---|
-| **Relayer down** | `/api/v1/health` failing 3+ consecutive checks (≈45s) | Outage procedure below |
-| **Budget ≥80%** | sponsor fee spend ≥ 80% of `FEE_LIMIT` within the reset window | Investigate spend pattern before raising |
-| **Error rate** | relayed-tx failure ratio > 5% over 5 min | Check RPC/network + channel health |
-| **Rate-limit spike** | sustained 429s from one IP | Confirm abuse vs. legit burst; tighten bucket if abuse |
-| **Channel unregistered** | a channel relayer missing/paused | Re-register / unpause via `config.json` |
+| --- | --- | --- |
+| Relayer down | `/api/v1/health` fails 3 checks in a row | Outage, below |
+| Budget at 80% | Sponsor spend ≥ 80% of `FEE_LIMIT` in the window | Investigate before raising |
+| Error rate | Relayed-transaction failures > 5% over 5 min | Check RPC and channels |
+| Rate-limit spike | Sustained 429s from one IP | Abuse or burst; tighten if abuse |
+| Channel unregistered | A channel relayer missing or paused | Re-register or unpause |
 
-> Confirm exact metric names against the live `/debug/metrics/scrape` output after the first
-> deploy with `METRICS_ENABLED=true` — the alert *conditions* above are the contract; the
-> PromQL is filled in once the series names are observed.
+Confirm metric names against `/debug/metrics/scrape` after the first deploy
+with metrics on.
 
-### Procedure
+**Procedure.** Detect (alert or report; `fly logs -a nido`), classify
+(outage, drain, abuse, key compromise), contain (lower `FEE_LIMIT` or pause a
+relayer for drains, redeploy via `deploy-relayer.yml` for outages, rotate keys
+for compromise), confirm recovery, write the post-mortem here.
 
-1. **Detect** — alert fires (or a user report). Check `grafana.fly.dev` + `fly logs -a nido`.
-2. **Triage** — classify: outage (health down), drain (budget alert), abuse (rate-limit spike),
-   or suspected key compromise.
-3. **Contain** —
-   - *Abuse/drain:* the per-IP bucket already throttles; if a distributed drain, lower
-     `FEE_LIMIT` (or pause a relayer via `paused: true` in `config.json` + redeploy) to freeze
-     spend while investigating. Do **not** raise `FEE_LIMIT` before understanding the pattern —
-     a single client exhausting it is exactly the DoS this guards against.
-   - *Outage:* redeploy via `deploy-relayer.yml` (GH action, Fly token from 1Password). Health:
-     `https://nido.fly.dev/api/v1/health`. If down >30 min, notify affected users.
-   - *Key compromise:* rotate immediately (§3), redeploy, re-fund, audit recent sponsored txs.
-     Keys in KMS (A4) cannot be exfiltrated from the host.
-4. **Recover** — confirm health green, budget/error alerts cleared, a test relay succeeds.
-5. **Post-mortem** — record timeline, root cause, and any threshold/bucket changes here.
+**Host compromise.** Treat every account set up through the relayer during
+the window as possibly claimed. Stop onboarding first (pause the relayer, or
+ship a wallet build without `PUBLIC_RELAYER_URL`, which refuses setup). Then
+check each account created in the window on chain: its admin key must be the
+passkey its user registered, with the deployment's verifier. Before its first
+document that key is in the constructor's rule (`get_context_rule(0)`); after,
+it is the admin signer in `applied_doc()`. Tell the owner of any account that
+fails the check to send nothing to it and to set up a new Nido.
 
-## 5. ZK circuit / VK change
+## 6. Recovery operations
 
-Changing the circuit (e.g. a new `log_n`) means a **new** `zk-verifier` (VK is immutable) and a
-regenerated proof set:
-1. Change circuit; bump `REQUIRED_NARGO_VERSION`/`REQUIRED_BB_VERSION` if the toolchain moves.
-2. `just gen-zk-fixtures` on the pinned toolchain; the `zk-circuit-repro` CI job (Actions tab)
-   confirms reproducibility.
-3. Deploy a new `zk-verifier` with the new VK; register it; point the recovery pool at it.
-4. Record new circuit/VK hashes in `DEPLOYED.md` + `manifest.json`.
+### Keeping recovery state alive
+
+Recovery state lives in persistent storage. Anyone can extend it to the
+network maximum, no authorization needed (T2):
+
+| Contract | Call |
+| --- | --- |
+| Controller | `renew(account)`, `renew_nullifier(account, nullifier)` |
+| Pool | `renew_tree(tree_id)`, `renew_root(tree_id, root)`, `renew_leaves(tree_id, start, count)`, `renew_enrollment(account, enrollment_id)` |
+| Account | `renew(fingerprints, enrollment_ids)` |
+
+Nothing calls these on a schedule yet (MAINNET_READINESS D3).
+
+### Recovering an account whose state was archived
+
+An archived entry is unavailable, never reset (T1). On a live network it comes
+back through a `RestoreFootprint` operation, or automatically when a
+transaction's footprint marks it for restoration, and restored entries count
+as writes. Restoring all of an account's recovery state inside the recovery
+transaction itself exceeds the 132,096-byte write limit (about 169,208 bytes
+measured). Restore first, one bounded group at a time, by simulating each of
+these calls and submitting the restoration its simulation asks for (RPC
+returns a `restorePreamble`), then recover:
+
+1. Controller `renew(account)`.
+2. Pool `renew_tree(tree_id)` and `renew_enrollment(account, enrollment_id)`.
+3. Account `renew([], [enrollment_id])`.
+4. Any adapter read (for example `circuit_id`) and a `compile_doc` of the
+   applied document, to bring back their code and instances.
+5. Then `begin_lost_key` as usual.
+
+This is the order `archived_recovery_state_is_restored_not_reset` follows (the
+test host restores on access). The wallet doesn't do it yet.
+
+### User support
+
+- **Lost passkey:** from a new device, open `/security/recover/` on the
+  account's address and follow it.
+- **A recovery the owner didn't start:** `Loss` owners cancel it on
+  `/security/recovery/`. `Protected` owners need their guardians or kit to
+  cancel; the account stays frozen until it is cancelled, completes, or
+  expires.
+- **"Already holds 8 keys" or "11 rules":** Perch caps a document at 8
+  declared signers, 11 rules, and 8192 bytes. After the founding passkey,
+  added devices and app-grant keys share 7 signer slots, and each takes a
+  rule. Remove a device or revoke an app grant to make room.
+- **Guardian approval:** the guardian opens the link on their own Nido. If
+  the page refuses the link, the guardian should not approve, and should
+  confirm with their friend by another channel.
+
+## 7. Moving to a new Perch release
+
+1. Update the submodule to the new revision and run §1, including
+   `just gen-zk-fixtures`: the proofs change if anything that feeds a
+   statement does (the circuit, the document canonicalisation, a test's
+   setup), and CI fails on any drift.
+2. A new controller, pool, or adapter is a new address (none of them can be
+   upgraded in place). Existing accounts move by reconfiguring recovery to the
+   new controller; under `Protected` that needs the current condition.
+3. A new account wasm reaches existing accounts only through each owner's
+   seven-day upgrade; new accounts get it from a new factory deployed as in
+   §2.2.
+4. Update `perch.TESTNET` and DEPLOYED.md (§2.1).

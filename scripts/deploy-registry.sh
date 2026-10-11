@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
 # Deploy a Nido-owned `stellar-registry` INSTANCE and register the core
-# contract names (factory / verifier / zk-recovery) into it (plan A3).
+# contract names (factory / verifier) into it (MAINNET_READINESS A4).
 #
 # WHY
 #   On mainnet there is no shared registry we control. The factory both reads
-#   `verifier`/`zk-recovery` FROM a registry (`Self::resolve`) and is published
+#   `verifier` FROM a registry (`Self::resolve`) and is published
 #   INTO one as `factory`. Rather than trust an external registry, we deploy our
 #   own instance whose owner key lives under the multisig. Once the factory
-#   PINS `verifier`/`zk-recovery` (plan B2, `set_registry_pins`), the registry is
+#   PINS `verifier` (MAINNET_READINESS A4, `set_registry_pins`), the registry is
 #   off the account-creation critical path entirely: a repoint can neither
 #   reroute nor block new accounts. The registry then matters only for
 #   off-chain discovery (`fetch_contract_id("factory")`) and unpinned names.
@@ -48,7 +48,6 @@
 #                    ctor args are supplied.
 #   FACTORY          Address to register under `factory`      (skipped if unset).
 #   VERIFIER         Address to register under `verifier`     (skipped if unset).
-#   ZK_RECOVERY      Address to register under `zk-recovery`  (skipped if unset).
 #   REGISTER_VERB    Registry fn used to bind a name→address (default
 #                    `update_contract_address`, args `--contract_name`/`--new_address`;
 #                    the verb DEPLOYED.md documents for repoints).
@@ -105,8 +104,8 @@ command -v stellar >/dev/null 2>&1 || die "stellar CLI not found on PATH"
 # on a real network. Fail CLOSED -- only the known testnet-family networks skip the
 # explicit-owner requirement; anything else (mainnet, public, OR a custom alias like
 # `pubnet`/`nido-mainnet`) demands an explicit owner, so keying on the literal string
-# "mainnet"/"public" can't be evaded by a differently-named network. (Sibling
-# deploy-zk-recovery.mjs keys its guard on the network passphrase for the same reason.)
+# "mainnet"/"public" can't be evaded by a differently-named network. (The retired
+# deploy-zk-recovery.mjs keyed its guard on the network passphrase for the same reason.)
 case "$NETWORK" in
     testnet | local | standalone | futurenet) : ;;
     *)
@@ -150,7 +149,6 @@ register() {
 
 register "factory"     "${FACTORY:-}"     FACTORY
 register "verifier"    "${VERIFIER:-}"    VERIFIER
-register "zk-recovery" "${ZK_RECOVERY:-}" ZK_RECOVERY
 
 note "Done"
 cat <<EOF
@@ -163,6 +161,6 @@ cat <<EOF
     2. Set the factory REGISTRY constant (contracts/factory/src/contract.rs) and
        the SDK/frontend fallbacks (packages/passkey-sdk/src/registry.ts,
        packages/frontend/src/lib/policyChainFetch.ts) to this registry id; rebuild.
-    3. Pin the factory (plan B2): factory.set_registry_pins(<verifier>, <zk-recovery>).
+    3. Pin the factory (MAINNET_READINESS A4): factory.set_registry_pins(<verifier>).
        After pinning, the registry is off the account-creation critical path.
 EOF
