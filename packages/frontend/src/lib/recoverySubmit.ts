@@ -21,7 +21,9 @@ import { signTransaction as walletSignTransaction } from './walletConnect.js';
  *  funded ephemeral G-address as fee-payer/source. Simulate → assemble →
  *  sign (submitter only) → send → poll. `authMode: 'enforce'` simulates with
  *  the operation's own, complete auth entries (a recovery completion, whose
- *  controller check only runs inside `__check_auth`). */
+ *  controller check only runs inside `__check_auth`). `retval` is the
+ *  applied transaction's return value, never the simulation's: another
+ *  transaction landing in between can change what the call returns. */
 export async function submitPermissionlessOp(
   operation: xdr.Operation,
   authMode?: 'enforce',
@@ -44,7 +46,6 @@ export async function submitPermissionlessOp(
     throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
   }
   const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
-  const retval = successSim.result?.retval;
 
   const assembled = rpc.assembleTransaction(simTx, successSim).build();
   assembled.sign(submitter);
@@ -52,8 +53,8 @@ export async function submitPermissionlessOp(
   if (sendResult.status === 'ERROR') {
     throw new Error(`Submit rejected: ${sendResult.errorResult?.toXDR('base64') ?? 'unknown'}`);
   }
-  const hash = await pollUntilDone(server, sendResult.hash);
-  return { hash, retval };
+  const applied = await pollUntilDone(server, sendResult.hash);
+  return { hash: sendResult.hash, retval: applied.returnValue };
 }
 
 /** Submit a GUARDIAN-authed operation: a plain classic transaction sourced
@@ -95,11 +96,14 @@ export async function submitGuardianOp(
   if (sendResult.status === 'ERROR') {
     throw new Error(`Submit rejected: ${sendResult.errorResult?.toXDR('base64') ?? 'unknown'}`);
   }
-  const hash = await pollUntilDone(server, sendResult.hash);
-  return { hash };
+  await pollUntilDone(server, sendResult.hash);
+  return { hash: sendResult.hash };
 }
 
-async function pollUntilDone(server: rpc.Server, hash: string): Promise<string> {
+async function pollUntilDone(
+  server: rpc.Server,
+  hash: string,
+): Promise<rpc.Api.GetSuccessfulTransactionResponse> {
   let getResult = await server.getTransaction(hash);
   for (let i = 0; getResult.status === 'NOT_FOUND' && i < 30; i++) {
     await new Promise((r) => setTimeout(r, 1500));
@@ -108,5 +112,5 @@ async function pollUntilDone(server: rpc.Server, hash: string): Promise<string> 
   if (getResult.status !== 'SUCCESS') {
     throw new Error(`Tx ${hash} ${getResult.status}`);
   }
-  return hash;
+  return getResult;
 }

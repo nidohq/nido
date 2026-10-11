@@ -16,6 +16,7 @@
 
 import type { PolicyDoc } from '@stellar-registry/perch';
 import { perch } from '@nidohq/passkey-sdk';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 export type RecoveryProfile = perch.RecoveryProfile;
 export type RecoveryMode = perch.RecoveryMode;
@@ -63,6 +64,79 @@ export function summarizeRecovery(doc: PolicyDoc | undefined): RecoverySummary |
     expiryLedgers: r['expiry-ledgers'],
     maxCancels: r['max-cancels'],
   };
+}
+
+/** One setting of a recovery member, now and as proposed. Values are the
+ *  member's own, as text; a list setting has one entry per item. */
+export interface RecoveryChangeRow {
+  /** The member path, such as `mode.guardians`. */
+  path: string;
+  label: string;
+  current: string[];
+  proposed: string[];
+  changed: boolean;
+}
+
+const SETTING_LABELS: Record<string, string> = {
+  profile: 'Protects against',
+  'mode.type': 'Who approves a recovery',
+  'mode.guardians': 'Friends (guardian addresses)',
+  'mode.quorum': 'Friends needed to approve',
+  'mode.adapter': 'Recovery kit proof checker (contract)',
+  'mode.circuit-id': 'Recovery kit proof circuit',
+  'mode.pool': 'Recovery kit membership pool (contract)',
+  'mode.enrollment-id': 'Recovery kit enrollment',
+  'mode.commitment': 'Recovery kit commitment',
+  controller: 'Recovery controller (contract)',
+  'baseline.doc-hash': 'Setup restored after a theft (document hash)',
+  replaceable: 'Passkeys a recovery may replace',
+  'delay-ledgers': 'Wait after approval (ledgers)',
+  'expiry-ledgers': 'Approval stays valid for (ledgers)',
+  'max-cancels': 'Cancellations allowed',
+};
+
+/** `member` flattened to its leaf settings: arrays are one setting. */
+function settings(member: unknown, path = '', out = new Map<string, string[]>()): Map<string, string[]> {
+  if (Array.isArray(member)) {
+    out.set(path, member.map((v) => (typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v))));
+  } else if (typeof member === 'object' && member !== null) {
+    for (const [k, v] of Object.entries(member)) settings(v, path ? `${path}.${k}` : k, out);
+  } else if (member !== undefined) {
+    out.set(path, [String(member)]);
+  }
+  return out;
+}
+
+/**
+ * Every setting of a proposed recovery member next to the current one's:
+ * the whole member, since a reconfiguration's `config_hash` binds all of it
+ * (perch `configHash`). Settings neither side has are absent; a setting
+ * only one side has shows as empty on the other. Known settings come first
+ * in a fixed order, then any others under their raw path, so nothing the
+ * hash binds is left out.
+ */
+export function recoveryChangeRows(current: unknown, proposed: unknown): RecoveryChangeRow[] {
+  const before = settings(current);
+  const after = settings(proposed);
+  const known = Object.keys(SETTING_LABELS);
+  const paths = [...new Set([...before.keys(), ...after.keys()])].sort((a, b) => {
+    const ia = known.indexOf(a);
+    const ib = known.indexOf(b);
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0 || ib >= 0) return ia >= 0 ? -1 : 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+  return paths.map((path) => {
+    const c = before.get(path) ?? [];
+    const p = after.get(path) ?? [];
+    return {
+      path,
+      label: SETTING_LABELS[path] ?? path,
+      current: c,
+      proposed: p,
+      changed: JSON.stringify(c) !== JSON.stringify(p),
+    };
+  });
 }
 
 /** About five seconds per ledger: for display only. Every on-chain bound is
@@ -183,15 +257,22 @@ export function replacementsToWire(set: perch.ReplacementSet): WireReplacements 
 }
 
 /** The verifiers in `w` other than `verifier`, the deployment's WebAuthn
- *  verifier. A guardian compares the new passkey's key ending, which proves
+ *  verifier. A guardian compares the new passkey's check code, which proves
  *  nothing when the credential names a verifier that accepts any signature. */
 export function foreignVerifiers(w: WireReplacements, verifier: string): string[] {
   return [...new Set(w.signers.map((s) => s.verifier).filter((v) => v !== verifier))];
 }
 
+/** A bare uncompressed P-256 point (`04 || x || y`), the only key the
+ *  recover page declares (`parseRegistration`). The verifier reads just the
+ *  first 65 bytes of a WebAuthn key, so any trailing bytes are not part of
+ *  the key that would sign. */
+const PLAIN_PASSKEY = /^04[0-9a-f]{128}$/;
+
 /** Why a guardian must not approve an attempt link, or `undefined` when the
- *  link carries the replacement set the attempt bound on chain (`boundHash`)
- *  and every new credential is checked by `verifier`. */
+ *  link carries the replacement set the attempt bound on chain (`boundHash`),
+ *  every new credential is checked by `verifier`, and every new key is a
+ *  plain passkey public key. */
 export function attemptLinkProblem(
   replacements: WireReplacements | undefined,
   boundHash: Uint8Array,
@@ -206,6 +287,95 @@ export function attemptLinkProblem(
   }
   if (foreignVerifiers(replacements, verifier).length) {
     return 'This link’s new passkey is checked by an unknown contract, not Nido’s passkey verifier.';
+  }
+  if (replacements.signers.some((s) => !PLAIN_PASSKEY.test(s.key))) {
+    return 'This link’s new passkey key is not in the form Nido creates.';
+  }
+  return undefined;
+}
+
+const CHECK_CODE_DOMAIN = new TextEncoder().encode('nido/passkey-check/v1');
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+/** 20 base-32 characters: 100 bits of the digest. */
+const CHECK_CODE_CHARS = 20;
+
+/**
+ * The check code a guardian and the recovering friend compare out of band:
+ * `SHA-256("nido/passkey-check/v1" || key)` over the whole declared key,
+ * first 100 bits in Crockford base 32, in groups of four. Every byte of the
+ * key changes it, and making a different key show the same code means
+ * finding a 100-bit hash match, which no one can do by trying keys.
+ */
+export function passkeyCheckCode(keyHex: string): string {
+  const key = Uint8Array.from(keyHex.match(/../g) ?? [], (x) => parseInt(x, 16));
+  const preimage = new Uint8Array(CHECK_CODE_DOMAIN.length + key.length);
+  preimage.set(CHECK_CODE_DOMAIN);
+  preimage.set(key, CHECK_CODE_DOMAIN.length);
+  const digest = sha256(preimage);
+  let out = '';
+  let acc = 0;
+  let bits = 0;
+  for (const byte of digest) {
+    acc = (acc << 8) | byte;
+    bits += 8;
+    while (bits >= 5 && out.length < CHECK_CODE_CHARS) {
+      bits -= 5;
+      out += CROCKFORD[(acc >> bits) & 31];
+    }
+    acc &= (1 << bits) - 1;
+    if (out.length === CHECK_CODE_CHARS) break;
+  }
+  return out.match(/.{4}/g)!.join('-');
+}
+
+/** What the recover page saved when it opened an attempt: the action and
+ *  the replacement set it declared. */
+export interface OwnRecovery {
+  action: 'lost-key' | 'compromise';
+  replacements: WireReplacements;
+}
+
+/** The fields of an on-chain attempt that say whose it is. */
+export type AttemptIdentity = Pick<perch.Attempt, 'action' | 'replacements_hash'>;
+
+const ACTION_CODE: Record<OwnRecovery['action'], number> = { 'lost-key': 1, compromise: 2 };
+
+/** Why `attempt` is not the recovery `own` opened, or `undefined` when it
+ *  declares exactly `own`'s replacement set for `own`'s action. Attempts are
+ *  permissionless and several can be open at once, so an attempt id alone
+ *  never says the attempt is ours. */
+export function ownAttemptProblem(attempt: AttemptIdentity, own: OwnRecovery): string | undefined {
+  const declared = perch.replacementSetHash(perch.sortReplacements(replacementsFromWire(own.replacements)));
+  if (hex(Uint8Array.from(attempt.replacements_hash)) !== hex(declared)) {
+    return 'That recovery attempt names a different new passkey than the one you created.';
+  }
+  if (Number(attempt.action) !== ACTION_CODE[own.action]) {
+    return 'That recovery attempt is a different kind of recovery than the one you started.';
+  }
+  return undefined;
+}
+
+/** The attempt reads `findOwnAttempt` needs (a `perch.PerchRecovery`). */
+export interface AttemptReader {
+  nextAttemptId(account: string): Promise<bigint>;
+  attempt(account: string, attemptId: bigint): Promise<perch.Attempt | undefined>;
+}
+
+/** How far back `findOwnAttempt` looks. */
+export const OWN_ATTEMPT_SCAN = 32;
+
+/** The newest of `account`'s recent attempts that is `own`'s, with its id,
+ *  or `undefined` when none is. */
+export async function findOwnAttempt(
+  reader: AttemptReader,
+  account: string,
+  own: OwnRecovery,
+): Promise<{ attemptId: bigint; attempt: perch.Attempt } | undefined> {
+  const next = await reader.nextAttemptId(account);
+  const oldest = next > BigInt(OWN_ATTEMPT_SCAN) ? next - BigInt(OWN_ATTEMPT_SCAN) : 0n;
+  for (let id = next - 1n; id >= oldest; id--) {
+    const attempt = await reader.attempt(account, id);
+    if (attempt && !ownAttemptProblem(attempt, own)) return { attemptId: id, attempt };
   }
   return undefined;
 }

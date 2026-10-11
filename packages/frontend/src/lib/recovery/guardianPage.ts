@@ -10,9 +10,12 @@
  * and signs with a connected Stellar wallet.
  *
  * What is shown is checked, not trusted: the replacement passkey against the
- * attempt's `replacements_hash`, a proposed recovery member against the
- * change's config hash. The chain checks the rest (the guardian must be
- * enrolled, the statement fresh, the attempt live).
+ * attempt's `replacements_hash` (shown as a check code derived from the whole
+ * key, for the guardian to compare with the friend), a proposed recovery
+ * member against the change's config hash (shown setting by setting next to
+ * the current one, since the hash binds all of it). The chain checks the
+ * rest (the guardian must be enrolled, the statement fresh, the attempt
+ * live).
  */
 
 import { contractIdFromHostname, isContractId, parsePolicyDocJson, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
@@ -27,8 +30,10 @@ import {
   changeSubject,
   decodeGuardianRequest,
   hex,
-  summarizeRecovery,
+  passkeyCheckCode,
+  recoveryChangeRows,
   type GuardianRequest,
+  type RecoveryChangeRow,
 } from './model.js';
 import { busy, card, el, errorText, short } from './ui.js';
 
@@ -152,7 +157,7 @@ async function describe(request: GuardianRequest, doc: PolicyDoc): Promise<{ htm
     const problem = attemptLinkProblem(request.replacements, sub.replacementsHash, requireDeployment().webauthnVerifier);
     if (problem) return refuse(problem);
     const who = request.replacements!.signers
-      .map((r) => `<p style="margin:0;">New passkey for <strong>${esc(r.signerId)}</strong> ends in <code class="mono">${esc(r.key.slice(-12))}</code>. Ask your friend to read you the same ending from their new device.</p>`)
+      .map((r) => `<p style="margin:0;">New passkey for <strong>${esc(r.signerId)}</strong> has check code <code class="mono">${esc(passkeyCheckCode(r.key))}</code>. Ask your friend to read you the check code their recovery page shows; approve only if every character matches.</p>`)
       .join('');
     const what = sub.action === 'compromise' ? 'restore their saved setup (they say their passkey was stolen)' : 'replace a lost passkey';
     return { html: `<p style="margin:0;">Your friend wants to ${what}.</p>${who}`, ok: true };
@@ -177,13 +182,43 @@ async function describe(request: GuardianRequest, doc: PolicyDoc): Promise<{ htm
   if (!computed || hex(computed) !== c.configHash) {
     return refuse('The proposed settings in this link do not match the request.');
   }
-  const s = summarizeRecovery(withProposed)!;
+  const rows = recoveryChangeRows(doc.recovery, withProposed.recovery);
+  const changed = rows.filter((r) => r.changed).length;
   return {
-    html: `<p style="margin:0;">Change recovery to: ${esc(s.profile)}, ${esc(s.mode)}${
-      s.guardians.length ? `, ${s.quorum} of ${s.guardians.length} friends` : ''
-    }.</p>`,
+    html:
+      `<p style="margin:0;">Your friend wants to change how their Nido recovers. ` +
+      `${changed === 1 ? 'One setting changes' : `${changed} settings change`} (highlighted). ` +
+      'Approve only if your friend told you about every change.</p>' +
+      changeTable(rows),
     ok: true,
   };
+}
+
+/** Every setting the reconfiguration binds, the changed ones highlighted
+ *  with their current and proposed values. Addresses and hashes are shown in
+ *  full: a shortened one could be imitated. */
+function changeTable(rows: RecoveryChangeRow[]): string {
+  // `mark` flags the values the other side lacks: removed ones under Now,
+  // added ones under Proposed.
+  const values = (vs: string[], other: string[], mark = '') =>
+    vs.length
+      ? vs
+          .map((v) => `<div class="mono" style="word-break:break-all;">${mark && !other.includes(v) ? `<strong>${mark} </strong>` : ''}${esc(v)}</div>`)
+          .join('')
+      : '<span class="mut">none</span>';
+  const body = rows
+    .map((r) => {
+      const style = r.changed ? 'background:var(--warn-soft);' : '';
+      const value = r.changed
+        ? `<div class="mut" style="font-size:12px;">Now</div>${values(r.current, r.proposed, '−')}` +
+          `<div class="mut" style="font-size:12px;margin-top:6px;">Proposed</div>${values(r.proposed, r.current, '+')}`
+        : values(r.proposed, r.current);
+      return `<tr data-setting="${esc(r.path)}"${r.changed ? ' data-changed' : ''} style="${style}">` +
+        `<th scope="row" style="text-align:left;vertical-align:top;padding:6px 8px;font-weight:${r.changed ? 600 : 400};">${esc(r.label)}${r.changed ? ' (changes)' : ''}</th>` +
+        `<td style="vertical-align:top;padding:6px 8px;font-size:12.5px;">${value}</td></tr>`;
+    })
+    .join('');
+  return `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">${body}</table></div>`;
 }
 
 /** Whether `account` has the guardian rule installed: a rule named
