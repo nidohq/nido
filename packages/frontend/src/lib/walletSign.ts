@@ -190,7 +190,7 @@ export async function signTransactionXdr(args: {
   const expirationOffset = signatureExpirationOffset();
   const signaturePayload = buildAuthHash(authEntry, networkPassphrase, lastLedger, expirationOffset);
   const contextRuleIds = [resolved.ruleId];
-  const challengeBytes = computeAuthDigest(signaturePayload, contextRuleIds);
+  const challengeBytes = computeAuthDigest(args.account, signaturePayload, contextRuleIds);
 
   const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
 
@@ -475,6 +475,6 @@ export async function signAuthEntryXdr(args: { account: string; authEntryXdr: st
   }
   const preimage = xdr.HashIdPreimage.fromXDR(args.authEntryXdr, 'base64');
   const signaturePayload = new Uint8Array(hash(preimage.toXDR()));
-  const digest = new Uint8Array(computeAuthDigest(signaturePayload, [resolved.ruleId]));
+  const digest = new Uint8Array(computeAuthDigest(args.account, signaturePayload, [resolved.ruleId]));
   return passkeyAssertEnvelope(args.account, digest);
 }

@@ -121,12 +121,12 @@ describe('parent auth-digest determinism (BLOCKER 2)', () => {
     // Originator side.
     const origEntry = xdr.SorobanAuthorizationEntry.fromXDR(sharedXdr);
     const origPayload = buildAuthHashAt(origEntry, TESTNET, canonicalExpiration);
-    const origDigest = computeAuthDigest(origPayload, [recoveryRuleId]);
+    const origDigest = computeAuthDigest(RECOVERING_ACCOUNT, origPayload, [recoveryRuleId]);
 
     // Friend side — recomputes from the same entry + same canonical expiration.
     const friendEntry = xdr.SorobanAuthorizationEntry.fromXDR(sharedXdr);
     const friendPayload = buildAuthHashAt(friendEntry, TESTNET, canonicalExpiration);
-    const friendDigest = computeAuthDigest(friendPayload, [recoveryRuleId]);
+    const friendDigest = computeAuthDigest(RECOVERING_ACCOUNT, friendPayload, [recoveryRuleId]);
 
     expect(Buffer.from(friendDigest).toString('hex')).toBe(
       Buffer.from(origDigest).toString('hex'),
@@ -138,8 +138,8 @@ describe('parent auth-digest determinism (BLOCKER 2)', () => {
     const entry = syntheticParentEntry('1', 100);
     const canonical = buildAuthHashAt(entry, TESTNET, 6_000_000);
     const drifted = buildAuthHashAt(entry, TESTNET, 6_000_001);
-    expect(Buffer.from(computeAuthDigest(canonical, [recoveryRuleId])).toString('hex')).not.toBe(
-      Buffer.from(computeAuthDigest(drifted, [recoveryRuleId])).toString('hex'),
+    expect(Buffer.from(computeAuthDigest(RECOVERING_ACCOUNT, canonical, [recoveryRuleId])).toString('hex')).not.toBe(
+      Buffer.from(computeAuthDigest(RECOVERING_ACCOUNT, drifted, [recoveryRuleId])).toString('hex'),
     );
   });
 

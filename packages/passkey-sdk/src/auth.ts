@@ -1,4 +1,4 @@
-import { hash, xdr, rpc, Operation } from "@stellar/stellar-sdk";
+import { hash, xdr, rpc, Operation, StrKey } from "@stellar/stellar-sdk";
 import { derToCompact } from "./signature.js";
 import { signingDigest } from "@stellar-registry/perch";
 import { buildAuthPayloadScVal } from "./multiSigner.js";
@@ -67,27 +67,56 @@ export function buildAuthHashAt(
   return hash(entry.toXDR());
 }
 
+/** Domain tag binding a Perch account's auth digest to the account's own
+ *  address — the `addr_oz_v1` scheme the account reports as its
+ *  `capabilities().auth_digest`. MUST match `perch_smart_account`'s
+ *  `AUTH_ADDR_DOMAIN` (and perch-js's copy); the Rust and perch-js suites pin
+ *  the on-chain result, and `authVectors.test.ts` pins this wrapper against
+ *  Perch's `auth-vectors.json`. */
+const AUTH_ADDR_DOMAIN = new TextEncoder().encode("perch/account/auth-addr-v1");
+
 /**
- * Compute the OZ v0.7+ auth digest the smart account's `do_check_auth` will
- * verify each signer's signature against (perch-js `signingDigest`):
+ * Compute the OZ v0.7+ auth digest the smart `account`'s `do_check_auth` will
+ * verify each signer's signature against. The account folds its own address
+ * into the host payload (the `addr_oz_v1` scheme) before OZ layers the context
+ * rule ids on top:
  *
- *     auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
+ *     bound       = sha256(AUTH_ADDR_DOMAIN || account_id || signature_payload)
+ *     auth_digest = sha256(bound || context_rule_ids.to_xdr())
  *
- * This binds the signed message to the specific context rule the caller is
- * invoking, preventing rule-substitution replay. The WebAuthn challenge MUST
- * be this digest, not the bare `signature_payload`.
+ * The address binding makes a signature unique to one account — a signature
+ * collected for an account sharing an External key and rule ids cannot be
+ * replayed on another — and the rule-id layer binds it to the rule the caller
+ * selected, preventing rule-substitution replay. The WebAuthn challenge MUST be
+ * this digest, not the bare `signature_payload`.
  *
- * `signature_payload` is the 32-byte result from `buildAuthHash`.
+ * `bound` is computed here and handed to perch-js's `signingDigest` for the
+ * rule-id layer. When `@stellar-registry/perch` publishes the account-bound
+ * `signingDigest(account, payload, ruleIds)` (> 0.3.2), replace the local
+ * binding with that one 3-arg call and drop `AUTH_ADDR_DOMAIN`.
+ *
+ * `account` is the smart account's C-address (whose `__check_auth` runs).
+ * `signaturePayload` is the 32-byte result from `buildAuthHash`.
  * `contextRuleIds` is the same array passed to `injectPasskeySignature`'s
  *   `contextRuleIds` parameter: one selected rule per authorization context.
  *   There is no default; select the rule (perch-js `selectRules`), since ids
  *   move when a document replaces a rule.
  */
 export function computeAuthDigest(
+  account: string,
   signaturePayload: Uint8Array,
   contextRuleIds: readonly number[],
 ): Buffer {
-  return Buffer.from(signingDigest(signaturePayload, contextRuleIds));
+  const accountId = StrKey.decodeContract(account);
+  if (accountId.length !== 32) {
+    throw new Error(`computeAuthDigest: account must be a contract address, got "${account}"`);
+  }
+  const preimage = new Uint8Array(AUTH_ADDR_DOMAIN.length + 32 + 32);
+  preimage.set(AUTH_ADDR_DOMAIN, 0);
+  preimage.set(accountId, AUTH_ADDR_DOMAIN.length);
+  preimage.set(signaturePayload, AUTH_ADDR_DOMAIN.length + 32);
+  const bound = hash(Buffer.from(preimage));
+  return Buffer.from(signingDigest(bound, contextRuleIds));
 }
 
 /**
@@ -164,7 +193,7 @@ export function injectPasskeySignature(
  * M-of-N simple-threshold rule with M > 1.
  *
  * Every `external` signer's `passkeySignature` must be an assertion over the
- * SAME auth digest (`computeAuthDigest(signature_payload, contextRuleIds)`),
+ * SAME auth digest (`computeAuthDigest(account, signature_payload, contextRuleIds)`),
  * since the contract verifies each map entry against that one digest.
  */
 export function injectSignedAuthPayload(

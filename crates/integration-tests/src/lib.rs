@@ -304,15 +304,20 @@ pub fn spending_limit_install_map(
     m
 }
 
-/// Compute the auth digest the smart account's `do_check_auth` will pass to
-/// the verifier, given the original signature payload and the chosen
-/// context-rule IDs. In OZ v0.7+:
+/// Compute the auth digest OZ's `do_check_auth` verifies each signer's
+/// signature against, given the signature payload OZ receives and the chosen
+/// context-rule IDs:
 ///
 ///     auth_digest = SHA-256(signature_payload || context_rule_ids.to_xdr())
 ///
 /// Binds the signed message to the rule the caller selected (preventing
-/// rule-substitution replay). Use the returned 32 bytes as the
-/// `signature_payload` arg to `build_contract_assertion`.
+/// rule-substitution replay). This is the raw OZ layer, so callers that invoke
+/// `do_check_auth` directly pass the host signature payload here. A Perch
+/// account's `__check_auth` first folds its own address into that payload
+/// before reaching this layer — tests that drive a real on-chain auth entry
+/// (see [`account_auth_digest`]) must account-bind the payload first. Use the
+/// returned 32 bytes as the `signature_payload` arg to
+/// `build_contract_assertion`.
 #[must_use]
 pub fn compute_auth_digest(
     env: &soroban_sdk::Env,
@@ -321,6 +326,36 @@ pub fn compute_auth_digest(
 ) -> [u8; 32] {
     use soroban_sdk::xdr::ToXdr;
     let mut preimage = soroban_sdk::Bytes::from_array(env, &signature_payload.to_array());
+    preimage.append(&context_rule_ids.clone().to_xdr(env));
+    env.crypto().sha256(&preimage).to_array()
+}
+
+/// The auth digest a Perch account reaches when its `__check_auth` verifies an
+/// `account` signer over the host `signature_payload` and `context_rule_ids`.
+/// The account folds its own address into the payload (Perch's
+/// `bind_signature_payload_for_account`) before OZ layers the rule ids on top:
+///
+///     bound       = SHA-256(AUTH_ADDR_DOMAIN || account_id || signature_payload)
+///     auth_digest = SHA-256(bound || context_rule_ids.to_xdr())
+///
+/// so a signature collected for one account cannot be replayed on another that
+/// shares an External key and the same rule ids. Tests that submit a real auth
+/// entry (the account's `__check_auth` runs) sign this; tests that call OZ's
+/// `do_check_auth` directly sign [`compute_auth_digest`] instead.
+#[must_use]
+pub fn account_auth_digest(
+    env: &soroban_sdk::Env,
+    account: &soroban_sdk::Address,
+    signature_payload: &soroban_sdk::crypto::Hash<32>,
+    context_rule_ids: &soroban_sdk::Vec<u32>,
+) -> [u8; 32] {
+    use soroban_sdk::xdr::ToXdr;
+    let bound = perch_smart_account::bind_signature_payload_for_account(
+        env,
+        account,
+        &signature_payload.to_bytes(),
+    );
+    let mut preimage = soroban_sdk::Bytes::from_array(env, &bound.to_array());
     preimage.append(&context_rule_ids.clone().to_xdr(env));
     env.crypto().sha256(&preimage).to_array()
 }
@@ -353,7 +388,9 @@ pub fn session_signer(
 
 /// Produce a real single-signer `AuthPayload` for rule `rule_id`: sign the auth
 /// digest (`sha256(payload || [rule_id].to_xdr())`, see [`compute_auth_digest`])
-/// with `key`, wrap it as `WebAuthnSigData`, and map it under `signer`.
+/// with `key`, wrap it as `WebAuthnSigData`, and map it under `signer`. For
+/// callers that drive OZ's `do_check_auth` directly, so the payload is not
+/// account-bound.
 ///
 /// Passing a `key` whose public key does NOT match `signer`'s registered pubkey
 /// (or whose digest was signed for a different rule) yields a *forged* payload

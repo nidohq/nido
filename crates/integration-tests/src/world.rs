@@ -675,7 +675,7 @@ impl World {
             &preimage.to_xdr(Limits::none()).unwrap(),
         ));
         let rule_ids = vec![&self.env, rule];
-        let digest = crate::compute_auth_digest(&self.env, &payload, &rule_ids);
+        let digest = crate::account_auth_digest(&self.env, account, &payload, &rule_ids);
         let mut signers: Map<Signer, Bytes> = Map::new(&self.env);
         for key in keys {
             let a = build_contract_assertion(&key.key, &self.env, &digest);

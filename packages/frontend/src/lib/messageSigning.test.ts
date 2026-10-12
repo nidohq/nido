@@ -1,27 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { deriveMessageChallenge, MESSAGE_SIGNING_DOMAIN } from './messageSigning';
-import { computeAuthDigest } from '@nidohq/passkey-sdk';
-import { ruleIdsXdr } from '@stellar-registry/perch';
+import { ruleIdsXdr, signingDigest } from '@stellar-registry/perch';
 
 /**
  * A Perch account verifies an on-chain authorization against
- *   auth_digest = sha256(signature_payload[32] ‖ context_rule_ids.to_xdr())
- * (perch-js `signingDigest`, surfaced as the SDK's `computeAuthDigest`).
+ *   auth_digest = sha256(bound ‖ context_rule_ids.to_xdr())
+ * where `bound` folds in the account address, but the OZ rule-id layer
+ * (perch-js `signingDigest`) is still a plain sha256 over a 32-byte payload ‖
+ * the rule-ids XDR — the preimage space the message ceremony must stay out of.
  *
  * The "sign an arbitrary message" ceremony must NOT be able to produce a
- * signature over that same digest, or a message approval could be replayed as
- * a transaction/policy authorization.
+ * signature over any such digest, or a message approval could be replayed as
+ * a transaction/policy authorization. (The SDK's `computeAuthDigest` binds the
+ * account address into `bound` on top of this, which only widens the gap.)
  */
 describe('message-signing domain separation', () => {
   it('a message whose bytes form an auth-digest preimage cannot yield that digest', () => {
-    // An attacker-chosen authorization: `signature_payload` is a 32-byte value
-    // (on chain it is a SHA-256; here we pick printable bytes so the preimage
-    // round-trips losslessly through UTF-8, which is all an exploit needs — the
-    // attacker grinds the real payload until its bytes are UTF-8-encodable).
+    // An attacker-chosen authorization: the 32-byte value the rule-id layer
+    // hashes (on chain the account's `bound`; here we pick printable bytes so
+    // the preimage round-trips losslessly through UTF-8, which is all an
+    // exploit needs — the attacker grinds until its bytes are UTF-8-encodable).
     const signaturePayload = new Uint8Array(32).fill(0x41); // "AAAA…"
     const ruleIds = [7];
 
-    const authDigest = new Uint8Array(computeAuthDigest(signaturePayload, ruleIds));
+    const authDigest = new Uint8Array(signingDigest(signaturePayload, ruleIds));
 
     // The exact preimage of that digest: signature_payload ‖ ruleIds XDR.
     const idsXdr = ruleIdsXdr(ruleIds);

@@ -24,19 +24,20 @@ import { Buffer } from 'buffer';
 export const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 
 /** Perch's content-addressed "stateless" registry on testnet — the deployer
- *  of every canonical perch contract instance. This is the NEW registry the
- *  perch release CI publishes to as of doc-compiler 0.2.1 (publish receipt
- *  on the `perch-doc-compiler-v0.2.1` GitHub release); the previous
- *  registry `CC6ELNH6…` holds only the pre-cap builds. */
+ *  of every canonical perch contract instance. This is the registry recorded
+ *  as `registry.id` in Perch's testnet deployment manifest
+ *  (`vendor/perch/deployments/testnet.json`); it content-addresses the
+ *  interpreter and doc compiler the deployed account cross-calls. */
 export const PERCH_STATELESS_REGISTRY_TESTNET =
-  'CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7';
+  'CAR2DSSOBJB76GGD6MAAKWUK36Y7I7O3NDWTN7HTIRV5I3XZ27U3ZBVZ';
 
-/** Pinned wasm hashes of the canonical perch contracts nido uses — the
- *  cap-capable 0.2.1 generation. Mirrors the smart account's in-contract
- *  pins (contracts/smart-account/src/doc.rs). */
+/** Pinned wasm hashes of the canonical perch contracts nido uses. These are
+ *  the `perch-interpreter` and `perch-doc-compiler` sha256s in Perch's testnet
+ *  deployment manifest (`vendor/perch/deployments/testnet.json`); the account's
+ *  own in-contract pins (`perch-account.pins` there) name the same hashes. */
 export const PERCH_WASM_HASHES = {
-  interpreter: 'f63cae53fff084183181a220121de3394442ac4a2704e78896c07af8196f3651',
-  docCompiler: '35f248f0bcbf3d888bc1e6178707e90dbae37989b0efc3f43c85ce8b491506f5',
+  interpreter: '2254f17dd722e5113caee901be96849c13e5a6853a6213d62473abe637ae33e1',
+  docCompiler: 'ccea12cd4b2f23d9bce07e3d9d3aaf93c43df79416b22a8c9a122d467b707853',
 } as const;
 
 /** Derive a content-addressed perch contract id from its deployer registry

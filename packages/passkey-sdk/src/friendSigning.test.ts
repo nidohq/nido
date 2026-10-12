@@ -11,7 +11,7 @@ import {
 } from './friendSigning.js';
 
 const VERIFIER = 'CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S';
-const ACCOUNT = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH';
+const ACCOUNT = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
 const REFRACTOR_TX_HASH = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const REFRACTOR_TX_HASH_2 = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
 
@@ -147,7 +147,7 @@ describe('friend signature encoding', () => {
     const pub = p256.getPublicKey(priv, false); // 65-byte uncompressed
     // Friend signs their OWN auth digest.
     const friendPayload = new Uint8Array(32).fill(0x42);
-    const friendDigest = computeAuthDigest(friendPayload, [0]);
+    const friendDigest = computeAuthDigest(ACCOUNT, friendPayload, [0]);
     const assertion = await buildSyntheticAssertion(priv, new Uint8Array(friendDigest));
 
     const blob = encodeFriendSignature({
@@ -188,7 +188,7 @@ describe('friend signature encoding', () => {
     const priv = p256.utils.randomSecretKey();
     const pub = p256.getPublicKey(priv, false);
     const mkEntry = async (fill: number, nonce: string) => {
-      const digest = computeAuthDigest(new Uint8Array(32).fill(fill), [0]);
+      const digest = computeAuthDigest(ACCOUNT, new Uint8Array(32).fill(fill), [0]);
       const a = await buildSyntheticAssertion(priv, new Uint8Array(digest));
       return {
         authenticatorData: a.authenticatorData,
@@ -242,7 +242,7 @@ describe('friend signature encoding', () => {
     const priv = p256.utils.randomSecretKey();
     const pub = p256.getPublicKey(priv, false);
     const friendPayload = new Uint8Array(32).fill(0x7e);
-    const friendDigest = new Uint8Array(computeAuthDigest(friendPayload, [0]));
+    const friendDigest = new Uint8Array(computeAuthDigest(ACCOUNT, friendPayload, [0]));
     const assertion = await buildSyntheticAssertion(priv, friendDigest);
 
     const cdHash = new Uint8Array(

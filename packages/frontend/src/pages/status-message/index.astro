@@ -602,10 +602,13 @@ import Icon from "../../components/Icon.astro";
 
         $setForm.textContent = "Touch your authenticator to sign...";
 
-        // OZ v0.7+ smart accounts verify against
-        //   auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
-        // — NOT the raw signature_payload. Sign that digest.
+        // OZ v0.7+ Perch accounts verify against
+        //   auth_digest = sha256(bound || context_rule_ids.to_xdr()), where
+        //   bound = sha256(AUTH_ADDR_DOMAIN || account_id || signature_payload)
+        // binds the account's own address — NOT the raw signature_payload.
+        // Sign that digest.
         const authDigest = computeAuthDigest(
+          contract,
           new Uint8Array(authHash),
           contextRuleIds,
         );

@@ -248,13 +248,15 @@ export async function signAndSubmit(args: {
   args.onProgress?.({ phase: "build" });
   const prepared = await prepareInvocation(args.operation);
 
-  //    auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
+  //    auth_digest = sha256(bound || context_rule_ids.to_xdr()), where
+  //    bound = sha256(AUTH_ADDR_DOMAIN || account_id || signature_payload)
+  //    binds the account's own address (the account's addr_oz_v1 scheme).
   //
   //    The same `contextRuleIds` array passed here MUST be the one passed
   //    to `injectPasskeySignature` so the AuthPayload's `context_rule_ids`
   //    and the digest the contract recomputes both refer to the same rule.
   const contextRuleIds = [resolved.ruleId];
-  const challengeBytes = computeAuthDigest(prepared.signaturePayload, contextRuleIds);
+  const challengeBytes = computeAuthDigest(args.account, prepared.signaturePayload, contextRuleIds);
   const authHashHex = buf2hex(challengeBytes);
 
   args.onProgress?.({ phase: "sign" });

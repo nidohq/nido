@@ -1193,7 +1193,7 @@ dependencies = [
 
 [[package]]
 name = "perch-account"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "perch-smart-account",
  "soroban-sdk",
@@ -1211,7 +1211,7 @@ dependencies = [
 
 [[package]]
 name = "perch-doc-compiler"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "hex",
  "perch-compile",
@@ -1251,7 +1251,7 @@ dependencies = [
 
 [[package]]
 name = "perch-recovery"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "perch-doc-compiler",
  "perch-recovery-interface",
