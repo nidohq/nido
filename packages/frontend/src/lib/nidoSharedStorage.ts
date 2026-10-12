@@ -180,7 +180,8 @@ export function mergeNidoSnapshot(
  * would be `pages.dev`, making every `*.pages.dev` site share one apex and read
  * each other's pending setup salts / inject accounts. (A full Public Suffix
  * List is overkill here; this covers the hosting platforms Nido is deployed
- * to or previewed on.) SECURITY: GHSA storage-bridge public-suffix leak.
+ * to or previewed on.) Getting this set wrong is a cross-site data leak, so
+ * treat it as security-critical.
  */
 const PUBLIC_SUFFIXES = new Set([
   "pages.dev",

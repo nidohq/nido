@@ -1,7 +1,7 @@
 /**
  * Setup-link account/salt consistency guard.
  *
- * SECURITY (GHSA setup-link substitution): a Nido account's address is derived
+ * SECURITY: a Nido account's address is derived
  * deterministically from the factory + the setup salt (`get_c_address(salt)`),
  * independent of the passkey. The /new-account/ page, however, funds, activates
  * and displays the account named by the page HOSTNAME (`contractIdFromHostname`).

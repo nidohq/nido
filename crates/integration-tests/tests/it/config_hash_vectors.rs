@@ -4,8 +4,8 @@
 //! Nothing currently checks that the SDK's
 //! `configHashOfCanonical(canonicalJson(recovery))` path produces the same
 //! `config_hash` the real, pinned `perch-doc-compiler` contract returns for
-//! the same document (Copilot's finding on nidohq/nido#232,
-//! `packages/passkey-sdk/src/perch/doc.ts:147`). This writes one fixture
+//! the same document (`packages/passkey-sdk/src/perch/doc.ts:147`). This
+//! writes one fixture
 //! covering all three modes, both profiles, and a baseline, each with the
 //! real compiler's own `config_hash`, so a TS test can assert parity
 //! against real values instead of nothing.

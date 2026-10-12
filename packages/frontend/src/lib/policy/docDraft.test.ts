@@ -388,7 +388,7 @@ describe('policy edits never reconfigure recovery', () => {
   });
 });
 
-describe('upsertSessionRule — label cannot replace a core rule (GHSA)', () => {
+describe('upsertSessionRule — label cannot replace a core rule', () => {
   const VERIFIER = 'CD4IF75DNQJKCT35PAJAQDPW3K337EK6SJZDMQEVLXAH65K7ZVZMLXYN';
   const OWNER_KEY = '04' + 'ab'.repeat(64);
   const SESSION_KEY = '04' + 'b0'.repeat(64);

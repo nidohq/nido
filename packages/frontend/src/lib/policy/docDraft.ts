@@ -267,7 +267,7 @@ export function upsertSessionRule(
     ...template.rules[0],
     principals: { type: 'all' as const, signers: [signerId] },
   };
-  // SECURITY (GHSA label can replace a rule): the rule name is a dApp-supplied
+  // SECURITY: the rule name is a dApp-supplied
   // `label`. A session grant must only ADD a rule or re-delegate an existing
   // session (a contract-scoped rule) — never overwrite a core self-admin rule
   // (the account's `admin`/anti-brick rule, or any other non-session rule) by

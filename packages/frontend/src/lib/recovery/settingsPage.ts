@@ -283,7 +283,7 @@ function configureCard(account: string, state: RecoveryState): HTMLElement {
           : TIMING[timingKey];
       // A baseline restore point must hold only durable rules. Strip expiring
       // (session) rules so a captured/renewed session can't later brick
-      // compromise recovery with PastValidUntil (GHSA). Both the on-chain
+      // compromise recovery with PastValidUntil. Both the on-chain
       // baseline hash and the published baseline doc use this stripped doc.
       const withoutRecovery = baselineWithoutExpiringRules(perch.withRecovery(base, undefined));
       const spec = perch.recoverySpec(deployment, {

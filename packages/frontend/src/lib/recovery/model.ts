@@ -150,7 +150,7 @@ export const PUBLIC_NETWORK_PASSPHRASE = 'Public Global Stellar Network ; Septem
  * Whether the "Quick (testing)" recovery-timing preset may be offered on the
  * given network.
  *
- * SECURITY (GHSA Quick-profile veto removal): the recovery delay is the owner's
+ * SECURITY: the recovery delay is the owner's
  * VETO window — the time to cancel a malicious recovery attempt before it
  * completes. The Quick preset's ~24-ledger (~2-minute) delay effectively
  * removes that window; it exists only for testnet walkthroughs. Offering it on

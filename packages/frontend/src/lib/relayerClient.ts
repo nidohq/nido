@@ -57,7 +57,7 @@ export const waitForConfirmation = (
  * Whether a RelayerError with code `code` leaves a payment's outcome UNCERTAIN,
  * so a fresh-payment retry must be blocked.
  *
- * SECURITY (GHSA relayer status not final chain evidence): the relayer is
+ * SECURITY: the relayer is
  * untrusted. `WAIT_TIMEOUT` (we stopped polling while the tx could still land)
  * has always been treated as uncertain. `ONCHAIN_FAILED` is the relayer merely
  * REPORTING "failed"/"expired" — that is not proof the transaction did not

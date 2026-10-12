@@ -3,7 +3,7 @@ import type { PolicyDoc } from '@nidohq/passkey-sdk';
 /**
  * Strip expiring rules from a recovery baseline document.
  *
- * SECURITY (GHSA compromise-recovery brick via expiring baseline rules): a
+ * SECURITY: a
  * Protected account's compromise recovery restores the account to a published
  * baseline "restore point". If that baseline captures a rule carrying a
  * `not-after-ledger` (every Nido dApp session rule does, unless "until revoked"
