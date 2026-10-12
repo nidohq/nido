@@ -23,6 +23,7 @@ export {
   injectAuthPayloadXdr,
   DEFAULT_EXPIRATION_OFFSET,
 } from "./auth.js";
+export type { AuthDigestScheme } from "./auth.js";
 
 export { identifyAssertionSigner } from "./assertionMatch.js";
 

@@ -55,6 +55,13 @@ pub const PERCH_WEBAUTHN_VERIFIER_WASM: &[u8] =
 /// so it must not be a local build, whose hash varies with the toolchain.
 pub const UPGRADE_TARGET_WASM: &[u8] = include_bytes!("../fixtures/upgrade-target.wasm");
 
+/// A Perch account wasm minted before the redeploy — the `oz_rule_ids`
+/// generation whose `__check_auth` verifies the external-signer digest without
+/// the account-address binding. A committed copy of the deployed pre-redeploy
+/// `perch-account` (sha256 `bbb30174…`), so the dialect test can deploy an old
+/// account beside a current one and check each signs its own digest.
+pub const OLD_PERCH_ACCOUNT_WASM: &[u8] = include_bytes!("../fixtures/old-perch-account.wasm");
+
 /// The account's typed client (Perch's `PerchSmartAccount` surface).
 pub use perch_account::PerchAccountClient as SmartAccountClient;
 

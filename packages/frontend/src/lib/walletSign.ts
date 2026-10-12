@@ -38,6 +38,7 @@ import {
   injectSignedAuthPayload,
   identifyAssertionSigner,
   parseAssertionResponse,
+  perch,
   buf2hex,
   hex2buf,
   type SignerSignature,
@@ -190,7 +191,10 @@ export async function signTransactionXdr(args: {
   const expirationOffset = signatureExpirationOffset();
   const signaturePayload = buildAuthHash(authEntry, networkPassphrase, lastLedger, expirationOffset);
   const contextRuleIds = [resolved.ruleId];
-  const challengeBytes = computeAuthDigest(args.account, signaturePayload, contextRuleIds);
+  // Sign in the account's own digest dialect (addr_oz_v1 for a redeployed
+  // account, oz_rule_ids for one minted before the redeploy).
+  const scheme = await perch.authDigestScheme({ account: args.account, rpcUrl: RPC_URL, networkPassphrase });
+  const challengeBytes = computeAuthDigest(args.account, signaturePayload, contextRuleIds, scheme);
 
   const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
 
@@ -475,6 +479,13 @@ export async function signAuthEntryXdr(args: { account: string; authEntryXdr: st
   }
   const preimage = xdr.HashIdPreimage.fromXDR(args.authEntryXdr, 'base64');
   const signaturePayload = new Uint8Array(hash(preimage.toXDR()));
-  const digest = new Uint8Array(computeAuthDigest(args.account, signaturePayload, [resolved.ruleId]));
+  const scheme = await perch.authDigestScheme({
+    account: args.account,
+    rpcUrl: RPC_URL,
+    networkPassphrase: Networks.TESTNET,
+  });
+  const digest = new Uint8Array(
+    computeAuthDigest(args.account, signaturePayload, [resolved.ruleId], scheme),
+  );
   return passkeyAssertEnvelope(args.account, digest);
 }

@@ -1,4 +1,5 @@
 mod account;
+mod auth_digest_dialects;
 mod config_hash_vectors;
 mod contract_verifier;
 mod costs;

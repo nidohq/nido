@@ -9,6 +9,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { signingDigest } from '@stellar-registry/perch';
 import { computeAuthDigest } from './auth.js';
 import { buildAuthPayloadScVal } from './multiSigner.js';
 
@@ -32,6 +33,24 @@ describe('Perch auth vectors', () => {
         v.digest,
       );
     }
+  });
+
+  it('signs each account in its own dialect: addr_oz_v1 binds the address, oz_rule_ids does not', () => {
+    const v = vectors.signing_digest[0];
+    const payload = hex(v.signature_payload);
+    // addr_oz_v1 (the default and the redeployed accounts) is the account-bound
+    // vector digest; passing the scheme explicitly agrees with the default.
+    expect(computeAuthDigest(v.account, payload, v.rule_ids, 'addr_oz_v1').toString('hex')).toBe(v.digest);
+    expect(computeAuthDigest(v.account, payload, v.rule_ids).toString('hex')).toBe(v.digest);
+    // oz_rule_ids (accounts minted before the redeploy) omits the address
+    // binding — it is the raw OZ rule-id layer over the bare payload, so it
+    // differs from the bound digest and does not depend on the account.
+    const unbound = computeAuthDigest(v.account, payload, v.rule_ids, 'oz_rule_ids');
+    expect(unbound).toEqual(Buffer.from(signingDigest(payload, v.rule_ids)));
+    expect(unbound.toString('hex')).not.toBe(v.digest);
+    const other = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+    expect(computeAuthDigest(other, payload, v.rule_ids, 'oz_rule_ids')).toEqual(unbound);
+    expect(computeAuthDigest(other, payload, v.rule_ids, 'addr_oz_v1').toString('hex')).not.toBe(v.digest);
   });
 
   it('buildAuthPayloadScVal encodes the delegated-signer payloads byte for byte', () => {

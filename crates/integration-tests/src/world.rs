@@ -662,6 +662,35 @@ impl World {
         rule: u32,
         root: SorobanAuthorizedInvocation,
     ) -> SorobanAuthorizationEntry {
+        self.passkey_entry_scheme(account, keys, rule, root, true)
+    }
+
+    /// Like [`Self::passkey_entry`], but signs the pre-redeploy `oz_rule_ids`
+    /// digest (no account-address binding) — what an account minted before the
+    /// redeploy verifies. For dialect tests against an old-wasm account.
+    #[must_use]
+    pub fn passkey_entry_unbound(
+        &self,
+        account: &Address,
+        keys: &[&Passkey],
+        rule: u32,
+        root: SorobanAuthorizedInvocation,
+    ) -> SorobanAuthorizationEntry {
+        self.passkey_entry_scheme(account, keys, rule, root, false)
+    }
+
+    /// Build a `WebAuthn`-signed auth entry for `account`. With `bound`, the
+    /// signed digest folds in the account's own address (`addr_oz_v1`, the
+    /// redeployed accounts); without it, the bare `oz_rule_ids` digest.
+    #[must_use]
+    fn passkey_entry_scheme(
+        &self,
+        account: &Address,
+        keys: &[&Passkey],
+        rule: u32,
+        root: SorobanAuthorizedInvocation,
+        bound: bool,
+    ) -> SorobanAuthorizationEntry {
         let nonce = self.next_nonce();
         let expiration = self.ledger() + 1_000;
         let preimage = HashIdPreimage::SorobanAuthorization(HashIdPreimageSorobanAuthorization {
@@ -675,7 +704,11 @@ impl World {
             &preimage.to_xdr(Limits::none()).unwrap(),
         ));
         let rule_ids = vec![&self.env, rule];
-        let digest = crate::account_auth_digest(&self.env, account, &payload, &rule_ids);
+        let digest = if bound {
+            crate::account_auth_digest(&self.env, account, &payload, &rule_ids)
+        } else {
+            crate::compute_auth_digest(&self.env, &payload, &rule_ids)
+        };
         let mut signers: Map<Signer, Bytes> = Map::new(&self.env);
         for key in keys {
             let a = build_contract_assertion(&key.key, &self.env, &digest);

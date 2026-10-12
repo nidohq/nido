@@ -208,6 +208,7 @@ import Icon from "../../components/Icon.astro";
     forgetSessionKeyMaterial,
     signWithSessionPasskey,
     fetchRegistryAddress,
+    perch,
   } from "@nidohq/passkey-sdk";
   import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
   import { startDelegation, readDelegationReturn, consumePendingDelegation, writePendingDelegation } from "../../lib/delegationHandover.js";
@@ -605,12 +606,19 @@ import Icon from "../../components/Icon.astro";
         // OZ v0.7+ Perch accounts verify against
         //   auth_digest = sha256(bound || context_rule_ids.to_xdr()), where
         //   bound = sha256(AUTH_ADDR_DOMAIN || account_id || signature_payload)
-        // binds the account's own address — NOT the raw signature_payload.
-        // Sign that digest.
+        // binds the account's own address (addr_oz_v1) — or, for an account
+        // minted before the redeploy, the unbound oz_rule_ids digest. Read the
+        // account's scheme and sign that, NOT the raw signature_payload.
+        const scheme = await perch.authDigestScheme({
+          account: contract,
+          rpcUrl: RPC_URL,
+          networkPassphrase: Networks.TESTNET,
+        });
         const authDigest = computeAuthDigest(
           contract,
           new Uint8Array(authHash),
           contextRuleIds,
+          scheme,
         );
         const parsed = await signWithSessionPasskey(
           material.credentialId,

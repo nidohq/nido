@@ -26,6 +26,7 @@ import {
 } from '@stellar-registry/perch';
 import { nativeToScVal, type xdr } from '@stellar/stellar-sdk';
 import { extractXdrOperations } from '../assembledTx.js';
+import type { AuthDigestScheme } from '../auth.js';
 import type { TxBuild } from '../policyBlocks/types.js';
 
 export type { FreezeGate, UpgradeRequest };
@@ -57,6 +58,31 @@ function client(args: AccountArgs): AccountClient {
     networkPassphrase: args.networkPassphrase,
     rpcUrl: args.rpcUrl,
   });
+}
+
+const authSchemeCache = new Map<string, Promise<AuthDigestScheme>>();
+
+/**
+ * The account's external-signer auth-digest scheme — `capabilities().auth_digest`
+ * read back and narrowed to {@link AuthDigestScheme}. Memoized per
+ * account+network for the session (the scheme is immutable until the account's
+ * wasm is upgraded, and the upgrade panel reloads the page afterward, so a
+ * fresh read follows). A signer passes the result to {@link computeAuthDigest}
+ * so an account minted before the redeploy keeps signing its `oz_rule_ids`
+ * digest while a redeployed account signs `addr_oz_v1`. An unrecognized value
+ * is treated as `addr_oz_v1` (the current scheme); a failed read is not cached.
+ */
+export async function authDigestScheme(args: AccountArgs): Promise<AuthDigestScheme> {
+  const key = `${args.networkPassphrase}\u0000${args.account}`;
+  let cached = authSchemeCache.get(key);
+  if (!cached) {
+    cached = client(args)
+      .capabilities()
+      .then((tx) => (tx.result.auth_digest === 'oz_rule_ids' ? 'oz_rule_ids' : 'addr_oz_v1'));
+    cached.catch(() => authSchemeCache.delete(key));
+    authSchemeCache.set(key, cached);
+  }
+  return cached;
 }
 
 function hex(b: Uint8Array): Buffer {

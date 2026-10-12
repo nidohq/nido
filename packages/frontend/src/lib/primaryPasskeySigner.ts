@@ -256,7 +256,15 @@ export async function signAndSubmit(args: {
   //    to `injectPasskeySignature` so the AuthPayload's `context_rule_ids`
   //    and the digest the contract recomputes both refer to the same rule.
   const contextRuleIds = [resolved.ruleId];
-  const challengeBytes = computeAuthDigest(args.account, prepared.signaturePayload, contextRuleIds);
+  // Sign in the account's own digest dialect: a redeployed account binds its
+  // address (`addr_oz_v1`); one minted before the redeploy does not
+  // (`oz_rule_ids`). Reading it keeps both signable.
+  const scheme = await perch.authDigestScheme({
+    account: args.account,
+    rpcUrl: RPC_URL,
+    networkPassphrase: Networks.TESTNET,
+  });
+  const challengeBytes = computeAuthDigest(args.account, prepared.signaturePayload, contextRuleIds, scheme);
   const authHashHex = buf2hex(challengeBytes);
 
   args.onProgress?.({ phase: "sign" });
@@ -344,23 +352,31 @@ export async function applyDocWithPasskey(args: {
     },
   };
 
+  // The account's digest dialect, read once for this apply.
+  const scheme = await perch.authDigestScheme({
+    account: args.account,
+    rpcUrl: RPC_URL,
+    networkPassphrase: Networks.TESTNET,
+  });
   const op = perch.applyDocument(
     args.doc,
     backend,
     {
       async sign(request) {
         args.onProgress?.({ phase: "sign" });
-        // perch-js computes `request.digest` for the account's authorization
-        // scheme; the published perch-js (<= 0.3.2) uses the pre-`addr_oz_v1`
-        // layer that omits the account address. Recompute the account-bound
-        // digest here from the same payload and selected rule ids so an
-        // `apply_doc` signature matches what the account's `__check_auth`
-        // verifies. (Collapses to `request.digest` once perch-js emits the
-        // account-bound digest; see `computeAuthDigest`.)
+        // perch-js computes `request.digest` from the published perch-js
+        // (<= 0.3.2), which only emits the `oz_rule_ids` layer. Recompute the
+        // digest in the account's actual scheme from the same payload and
+        // selected rule ids so an `apply_doc` (and the recovery enrollment,
+        // session-key install, and dApp delegation built on it) signs what the
+        // account's `__check_auth` verifies — `addr_oz_v1` for a redeployed
+        // account, `oz_rule_ids` for one minted before. (Collapses to
+        // `request.digest` once perch-js emits the account-bound digest.)
         const digest = computeAuthDigest(
           request.account,
           request.signaturePayload,
           request.selection.ruleIds,
+          scheme,
         );
         const parsed = await passkeyAssertion(digest, cred.credentialId);
         return [
