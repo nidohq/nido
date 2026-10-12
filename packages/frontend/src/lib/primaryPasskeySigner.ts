@@ -350,7 +350,19 @@ export async function applyDocWithPasskey(args: {
     {
       async sign(request) {
         args.onProgress?.({ phase: "sign" });
-        const parsed = await passkeyAssertion(request.digest, cred.credentialId);
+        // perch-js computes `request.digest` for the account's authorization
+        // scheme; the published perch-js (<= 0.3.2) uses the pre-`addr_oz_v1`
+        // layer that omits the account address. Recompute the account-bound
+        // digest here from the same payload and selected rule ids so an
+        // `apply_doc` signature matches what the account's `__check_auth`
+        // verifies. (Collapses to `request.digest` once perch-js emits the
+        // account-bound digest; see `computeAuthDigest`.)
+        const digest = computeAuthDigest(
+          request.account,
+          request.signaturePayload,
+          request.selection.ruleIds,
+        );
+        const parsed = await passkeyAssertion(digest, cred.credentialId);
         return [
           {
             signer: { kind: 'external', verifier: signer.verifier, key: hex2buf(cred.publicKey) },
