@@ -222,4 +222,40 @@ describe("validateDappReturn (entry-point origin/return guard)", () => {
   it("reports a missing dapp origin", () => {
     expect(validateDappReturn("", "https://x")).toEqual({ error: "missing-dapp" });
   });
+
+  // Regression (dApp connect/sign round-trip): a legitimate https dApp origin
+  // with a same-origin return must be accepted at the entry gate — this is the
+  // production path real dApps use.
+  it("accepts a legitimate https dApp origin + same-origin return (connect/sign round-trip)", () => {
+    expect(validateDappReturn("https://app.example", "https://app.example/cb")).toEqual({
+      origin: "https://app.example",
+    });
+    expect(validateDappReturn("https://app.example:8443", "https://app.example:8443/wallet/cb?s=1")).toEqual({
+      origin: "https://app.example:8443",
+    });
+  });
+
+  // Regression: a local dApp served over http on a `*.localhost` subdomain is a
+  // loopback dev origin (the e2e dApp is `http://dapp.localhost:<port>`) and
+  // must round-trip; bare-`localhost`-only matching wrongly refused it.
+  it("accepts an http *.localhost dApp origin + same-origin return (local dev)", () => {
+    expect(validateDappReturn("http://dapp.localhost:4399", "http://dapp.localhost:4399/cb")).toEqual({
+      origin: "http://dapp.localhost:4399",
+    });
+    expect(validateDappReturn("http://localhost:4399", "http://localhost:4399/cb")).toEqual({
+      origin: "http://localhost:4399",
+    });
+  });
+
+  // The loopback widening must not leak to real remote origins: http on a
+  // genuine remote host stays refused (only https is allowed off loopback).
+  it("still rejects http on a genuine remote host", () => {
+    expect(validateDappReturn("http://dapp.example", "http://dapp.example/cb")).toEqual({
+      error: "malformed-dapp",
+    });
+    // A look-alike that merely CONTAINS 'localhost' is not a loopback host.
+    expect(validateDappReturn("http://localhost.evil.example", undefined)).toEqual({
+      error: "malformed-dapp",
+    });
+  });
 });

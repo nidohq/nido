@@ -33,6 +33,15 @@ describe('resolveReturnRedirect (navigation sink guard)', () => {
     expect(resolveReturnRedirect('http://127.0.0.1:4321/cb', '?x=1')).toBe('http://127.0.0.1:4321/cb?x=1');
   });
 
+  // Regression: the dev dApp lives at a `*.localhost` subdomain
+  // (`http://dapp.localhost:<port>`), a loopback origin the sink must allow so
+  // the full-page-redirect fallback can round-trip the result to it.
+  it('allows an http *.localhost subdomain callback for dev', () => {
+    expect(resolveReturnRedirect('http://dapp.localhost:4399/cb', '?nido_address=C')).toBe(
+      'http://dapp.localhost:4399/cb?nido_address=C',
+    );
+  });
+
   it('refuses a malformed URL', () => {
     expect(resolveReturnRedirect('not a url', '?x=1')).toBeNull();
   });

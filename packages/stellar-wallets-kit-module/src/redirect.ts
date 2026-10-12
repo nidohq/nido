@@ -85,7 +85,16 @@ export function redirectTopLevel(url: string): void {
   window.location.href = url;
 }
 
-/** True iff `url` is a well-formed http(s) URL (http only for localhost dev).
+/** True iff `hostname` is a loopback dev host allowed over plain `http:`:
+ *  `localhost`, any `*.localhost` subdomain, or `127.0.0.1`. Mirrors the
+ *  frontend's `isLoopbackHttpHost` — the `.localhost` TLD resolves to the
+ *  loopback interface in every browser (RFC 6761), so http there is as safe as
+ *  bare `localhost`, and Nido's dev dApps live at `*.localhost:<port>`. */
+function isLoopbackHttpHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1';
+}
+
+/** True iff `url` is a well-formed http(s) URL (http only for loopback dev).
  *  Mirrors the frontend's `httpOrigin` scheme rule so a navigation sink can
  *  reject `javascript:`/`data:`/`blob:`/opaque-origin callbacks on its own,
  *  independent of whatever entry-point validation ran (defence in depth). */
@@ -93,7 +102,7 @@ function isHttpUrl(url: string): boolean {
   try {
     const u = new URL(url);
     if (u.protocol === 'https:') return true;
-    if (u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')) return true;
+    if (u.protocol === 'http:' && isLoopbackHttpHost(u.hostname)) return true;
     return false;
   } catch {
     return false;
