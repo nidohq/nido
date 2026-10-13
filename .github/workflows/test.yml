@@ -30,38 +30,24 @@ jobs:
         with:
           shared-key: contracts
 
-      # Fast, prebuilt-binary install (no compile-from-source).
-      - name: Install just
-        uses: taiki-e/install-action@just
-
-      # `stellar-cli` (binary `stellar`, which `just perch-infra` uses to
-      # fetch Perch's deployed wasm) and `stellar-scaffold-cli` (binary
-      # `stellar-scaffold`) aren't available as prebuilt actions, so build them
-      # from crates.io. Cached separately from the cargo registry/target cache
-      # above (keyed only on tool names, not Cargo.lock) so a workspace
-      # dependency bump doesn't force re-installing these.
-      - name: Cache Stellar CLI tools
-        id: stellar-tools-cache
-        uses: actions/cache@v4
+      # Every CLI installs from a prebuilt release binary -- no
+      # compile-from-source, no dedicated tool cache, no cache-miss cliff.
+      # `just` has first-class install-action support; `stellar-cli` (binary
+      # `stellar`, which `just perch-infra` uses to fetch Perch's deployed
+      # wasm) and `stellar-scaffold-cli` (binary `stellar-scaffold`) aren't in
+      # the install-action manifest, so it falls back to cargo-binstall, which
+      # fetches each project's official GitHub release tarball -- both ship
+      # `[package.metadata.binstall]`, so the resolved asset
+      # (e.g. stellar-cli-28.1.0-x86_64-unknown-linux-gnu.tar.gz) is a signed
+      # release artifact rather than a source build. Versions are pinned to
+      # what the previous unpinned `cargo install --locked` resolved to today,
+      # so this changes the install method, not the tool version. The prebuilt
+      # `stellar` binary needs no libdbus/libudev `-dev` headers (those only
+      # existed to compile the hardware-wallet source deps).
+      - name: Install just + Stellar CLIs (prebuilt release binaries)
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
-          path: |
-            ~/.cargo/bin/stellar
-            ~/.cargo/bin/stellar-scaffold
-          key: ${{ runner.os }}-stellar-cli-tools-v3
-
-      - name: Install Stellar CLI tools
-        if: steps.stellar-tools-cache.outputs.cache-hit != 'true'
-        run: |
-          # stellar-cli v27's hardware-wallet support pulls `libdbus-sys`
-          # (dbus-secret-service) and `hidapi` (Ledger), whose build.rs's panic
-          # unless the system dbus + udev dev headers + pkg-config are present.
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
-          # Idempotent: the cargo cache can restore some of these binaries
-          # even when this cache misses, and `cargo install` refuses to
-          # overwrite an existing one.
-          command -v stellar >/dev/null || cargo install --locked stellar-cli
-          command -v stellar-scaffold >/dev/null || cargo install --locked stellar-scaffold-cli
+          tool: just,stellar-cli@28.1.0,stellar-scaffold-cli@0.0.27
 
       # Perch's testnet deployment, by the hashes in its manifest
       # (vendor/perch/deployments/testnet.json): the account's build-time pin
@@ -178,7 +164,7 @@ jobs:
       # cargo-audit reads Cargo.lock against the RustSec advisory DB -- no
       # workspace build needed, so this is fast.
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-audit
 
