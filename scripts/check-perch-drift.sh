@@ -42,12 +42,14 @@ status="$(git submodule status vendor/perch)"
 case "${status:0:1}" in
     " ") ;;
     "-") echo "error: vendor/perch is not checked out (git submodule update --init)" >&2; exit 1 ;;
-    *) problem "vendor/perch is at $(git -C vendor/perch rev-parse --short HEAD), not the commit the superproject records ($(git ls-tree HEAD vendor/perch | awk '{print substr($3,1,7)}'))" ;;
+    *) problem "vendor/perch is at $(git -C vendor/perch rev-parse --short HEAD), not the commit the superproject records ($(git rev-parse --short :vendor/perch))" ;;
 esac
 if [ -n "$(git -C vendor/perch status --porcelain --untracked-files=no)" ]; then
     problem "vendor/perch has local edits to tracked files: $(git -C vendor/perch status --porcelain --untracked-files=no | awk '{print $2}' | tr '\n' ' ')"
 fi
-pinned="$(git ls-tree HEAD vendor/perch | awk '{print $3}')"
+# The pin as staged, which `git submodule status` also compares against: the
+# checked-out commit's, or a re-pin's about to be committed.
+pinned="$(git rev-parse :vendor/perch)"
 
 # 2. The pinned commit is on the declared branch.
 branch="$(git config -f .gitmodules submodule.vendor/perch.branch || true)"

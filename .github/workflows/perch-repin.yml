@@ -1,0 +1,273 @@
+name: Perch re-pin
+
+# Opens a PR re-pinning vendor/perch when Perch announces a deployment.
+#
+# Perch sends a `perch-deployed` repository_dispatch once a deployment
+# manifest lands on its main, with the client payload
+#   {"network": "testnet", "perch_sha": "<40-hex commit>",
+#    "manifest": "deployments/testnet.json"}
+# `regenerate` runs scripts/repin-perch.sh, which fetches the stack by the
+# manifest's hashes and content addresses (never by name), regenerates every
+# derived file, and runs the Rust suites. `open-pr` then pushes the result to
+# `perch-repin/<network>-<perch_sha>` and opens or refreshes its PR, so a
+# second dispatch for the same commit updates that PR instead of opening
+# another. A human merges it; Nido's factory is redeployed after the merge
+# (`just deploy-factory`), never by this workflow.
+#
+# The PR is opened with a perch-nido-sync GitHub App token rather than
+# GITHUB_TOKEN, because a PR GITHUB_TOKEN opens does not trigger Nido's CI.
+# Only `open-pr` sees the App's key, and it runs none of the code the re-pin
+# builds; `regenerate` builds Perch's code with read-only access and hands
+# over a patch.
+#
+# Run it by hand from the Actions tab with the same three inputs; leave
+# `open_pr` off to regenerate only and download the patch artifact.
+
+on:
+  repository_dispatch:
+    types: [perch-deployed]
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Perch network whose manifest to pin
+        type: choice
+        options: [testnet]
+        default: testnet
+      perch_sha:
+        description: Perch commit (full 40-hex) carrying the deployment manifest
+        type: string
+        required: true
+      manifest:
+        description: Manifest path inside Perch
+        type: string
+        default: deployments/testnet.json
+      open_pr:
+        description: Push the branch and open or refresh the PR (off - upload the patch only)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: perch-repin-${{ github.event.client_payload.perch_sha || inputs.perch_sha }}
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    name: Re-pin and regenerate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      network: ${{ steps.request.outputs.network }}
+      perch_sha: ${{ steps.request.outputs.perch_sha }}
+      branch: ${{ steps.request.outputs.branch }}
+      changed: ${{ steps.diff.outputs.changed }}
+      tests: ${{ steps.repin.outputs.tests }}
+    steps:
+      # The payload is untrusted input: only a known network, a full commit
+      # id, and that network's manifest path get through.
+      - name: Validate the request
+        id: request
+        env:
+          NETWORK: ${{ github.event.client_payload.network || inputs.network }}
+          PERCH_SHA: ${{ github.event.client_payload.perch_sha || inputs.perch_sha }}
+          MANIFEST: ${{ github.event.client_payload.manifest || inputs.manifest }}
+        run: |
+          [ "$NETWORK" = testnet ] || { echo "::error::Nido carries Perch pins for testnet only, not '$NETWORK'"; exit 1; }
+          [[ "$PERCH_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::perch_sha must be a full 40-hex commit"; exit 1; }
+          [ "$MANIFEST" = "deployments/$NETWORK.json" ] || { echo "::error::manifest must be deployments/$NETWORK.json, not '$MANIFEST'"; exit 1; }
+          {
+            echo "network=$NETWORK"
+            echo "perch_sha=$PERCH_SHA"
+            echo "branch=perch-repin/$NETWORK-$PERCH_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          submodules: true
+          persist-credentials: false
+
+      # The toolchain and wasm target the workspace-root rust-toolchain.toml
+      # pins, the same ones test.yml installs.
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+
+      # The same prebuilt CLIs, at the same versions, as test.yml, so the
+      # regenerated bindings and snapshots match what CI checks.
+      - name: Install just + Stellar CLIs (prebuilt release binaries)
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: just,stellar-cli@28.1.0,stellar-scaffold-cli@0.0.27
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+
+      # Exit 3 is a complete re-pin whose Rust suites fail: the PR still
+      # opens (as a draft) so the adaptation happens on it. Any other failure
+      # is a re-pin that must not reach a PR.
+      - name: Re-pin vendor/perch
+        id: repin
+        env:
+          NETWORK: ${{ steps.request.outputs.network }}
+          PERCH_SHA: ${{ steps.request.outputs.perch_sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/repin"
+          status=0
+          scripts/repin-perch.sh "$PERCH_SHA" --network "$NETWORK" --summary "$RUNNER_TEMP/repin/summary.md" || status=$?
+          case "$status" in
+            0) echo "tests=passed" >> "$GITHUB_OUTPUT" ;;
+            3) echo "tests=failed" >> "$GITHUB_OUTPUT"; echo "::warning::cargo test failed against the re-pinned stack" ;;
+            *) exit "$status" ;;
+          esac
+
+      - name: Collect the re-pin as a patch
+        id: diff
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nido is already pinned to this Perch commit; nothing to open."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --cached --binary > "$RUNNER_TEMP/repin/repin.patch"
+            git diff --cached --stat
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.diff.outputs.changed == 'true'
+        with:
+          name: perch-repin
+          path: ${{ runner.temp }}/repin/
+          retention-days: 14
+
+  open-pr:
+    name: Open or refresh the re-pin PR
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true' && (github.event_name == 'repository_dispatch' || inputs.open_pr)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      NETWORK: ${{ needs.regenerate.outputs.network }}
+      PERCH_SHA: ${{ needs.regenerate.outputs.perch_sha }}
+      BRANCH: ${{ needs.regenerate.outputs.branch }}
+      TESTS: ${{ needs.regenerate.outputs.tests }}
+      BASE_SHA: ${{ github.sha }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: perch-repin
+          path: ${{ runner.temp }}/repin
+
+      # Scoped to this repository and to what opening a PR needs.
+      - name: Mint a perch-nido-sync token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.PERCH_NIDO_SYNC_CLIENT_ID }}
+          private-key: ${{ secrets.PERCH_NIDO_SYNC_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Commit the re-pin as the App
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          bot="${APP_SLUG}[bot]"
+          id="$(gh api "users/$bot" --jq .id)"
+          git config user.name "$bot"
+          git config user.email "$id+$bot@users.noreply.github.com"
+          git apply --index "$RUNNER_TEMP/repin/repin.patch"
+          git commit --quiet --file - <<EOF
+          chore(perch): re-pin vendor/perch to ${PERCH_SHA:0:7} ($NETWORK)
+
+          Perch announced a $NETWORK deployment at $PERCH_SHA.
+          Regenerated by scripts/repin-perch.sh; cargo test --workspace $TESTS.
+          EOF
+
+      # A branch carrying anything but this App's commits has human work on
+      # it (adapting Nido to the new stack), which a refresh must not
+      # overwrite. Otherwise the branch is rebuilt on the current main, and
+      # left alone when that changes nothing.
+      - name: Push the re-pin branch
+        id: push
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          me="$(git config user.email)"
+          lease=""
+          if remote="$(gh api "repos/$REPO/git/ref/heads/$BRANCH" --jq .object.sha 2>/dev/null)"; then
+            others="$(gh api "repos/$REPO/compare/$BASE_SHA...$remote" |
+              jq --arg me "$me" '[.commits[].commit.author.email | select(. != $me)] | length')"
+            if [ "$others" != 0 ]; then
+              echo "::notice::$BRANCH has commits from someone other than the App; leaving it as it is."
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$(gh api "repos/$REPO/commits/$remote" --jq .commit.tree.sha)" = "$(git rev-parse 'HEAD^{tree}')" ]; then
+              echo "::notice::$BRANCH already holds this re-pin."
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            lease="--force-with-lease=refs/heads/$BRANCH:$remote"
+          fi
+          # The helper reads the token from the environment when git runs it,
+          # so it never appears in a command line.
+          # shellcheck disable=SC2016
+          git -c credential.helper= \
+              -c credential.helper='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' \
+              push ${lease:+"$lease"} "https://github.com/$REPO.git" "HEAD:refs/heads/$BRANCH"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open or refresh the PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PUSHED: ${{ steps.push.outputs.pushed }}
+        run: |
+          body="$RUNNER_TEMP/repin/body.md"
+          {
+            echo "Re-pins \`vendor/perch\` to Perch \`$PERCH_SHA\`, whose \`deployments/$NETWORK.json\` Perch announced (\`perch-deployed\` dispatch)."
+            echo
+            cat "$RUNNER_TEMP/repin/summary.md"
+            echo
+            echo "### What this regenerated"
+            echo
+            echo "\`scripts/repin-perch.sh\`: the stack fetched by the manifest's hashes and content addresses (\`just perch-infra\`), Nido's contracts rebuilt around it, the \`perch-*\` bindings, the SDK's Perch pins (\`perch.TESTNET\` except \`factory\`, the policyDoc registry and wasm-hash pins), \`package-lock.json\`, \`Cargo.lock\`, and the Soroban test snapshots; \`just check-vendor-drift\` passed."
+            echo
+            echo "### After merging"
+            echo
+            echo "This PR does not redeploy Nido's factory. \`perch.TESTNET.factory\` still names the deployed factory, which embeds the previous Perch account, so until the redeploy new accounts are minted with the previous account wasm. Then:"
+            echo
+            echo "1. \`just deploy-factory <identity> $NETWORK\` from the merged main."
+            echo "2. Record the new factory in \`perch.TESTNET.factory\` (\`packages/passkey-sdk/src/perch/deployment.ts\`) and \`DEPLOYED.md\`, in a follow-up PR."
+          } > "$body"
+          title="chore(perch): re-pin to Perch ${PERCH_SHA:0:7} ($NETWORK)"
+          url="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
+          # A draft while the Rust suites fail on the re-pin; ready once they pass.
+          if [ -z "$url" ]; then
+            draft=()
+            [ "$TESTS" = passed ] || draft=(--draft)
+            gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$title" --body-file "$body" "${draft[@]}"
+          elif [ "$PUSHED" = true ]; then
+            gh pr edit "$url" --title "$title" --body-file "$body"
+            is_draft="$(gh pr view "$url" --json isDraft --jq .isDraft)"
+            if [ "$TESTS" = passed ] && [ "$is_draft" = true ]; then
+              gh pr ready "$url"
+            elif [ "$TESTS" != passed ] && [ "$is_draft" = false ]; then
+              gh pr ready --undo "$url"
+            fi
+          else
+            echo "::notice::$url left unchanged."
+          fi
