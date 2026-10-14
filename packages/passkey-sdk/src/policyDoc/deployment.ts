@@ -15,7 +15,7 @@
  * The pins mirror perch's own CI-guarded `testnet_pins.rs`; the derived
  * addresses are asserted against the known deployment in this module's
  * tests. Addresses are network-specific — the same pins give different ids
- * on another network. See DEPLOYED.md ("Perch canonical deployment").
+ * on another network. See DEPLOYED.md ("Perch policy layer (0.2.1 era)").
  */
 
 import { Address, StrKey, hash, xdr } from '@stellar/stellar-sdk';

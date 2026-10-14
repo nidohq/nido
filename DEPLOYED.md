@@ -1,6 +1,64 @@
-# Deployed contracts (testnet)
+# Deployments (testnet)
 
-Current set of contracts the frontend talks to.
+What the wallet in this tree targets on testnet, with the provenance needed to
+check it. Deployments that current code or existing accounts still reach, but
+that the wallet does not target, are in the
+[compatibility appendix](#compatibility-appendix). Every other retired
+deployment is in this file's git history (`git log -p -- DEPLOYED.md`).
+
+## Perch's stack
+
+Perch deploys its stack; Nido deploys none of it. The record is Perch's
+manifest,
+[`deployments/testnet.json`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/deployments/testnet.json)
+(`vendor/perch/deployments/testnet.json`), at the Perch commit Nido pins: for
+every contract its version, wasm sha256, and content address under the
+manifest's registry, plus the Perch commit and toolchain that built them and
+the ledger they were deployed at. Perch's
+[`scripts/verify-deployment.sh`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/scripts/verify-deployment.sh)
+(`vendor/perch/scripts/verify-deployment.sh`) checks the manifest against the
+chain by hash and address.
+
+The wallet's deployment, `perch.TESTNET`
+(`packages/passkey-sdk/src/perch/deployment.ts`), is that manifest plus Nido's
+factory; `packages/passkey-sdk/src/perch/deployment.test.ts` checks it field by
+field, taking Nido's factory address from this record (SECURITY_INVARIANTS W6). Wasm hashes and versions are in the manifest.
+
+| Manifest field (`PerchDeployment`) | Contract | Address or value |
+| --- | --- | --- |
+| `network` | | `Test SDF Network ; September 2015` |
+| `factory` | `nido-factory` (Nido's, [below](#nidos-factory)) | `CBFDM3GWAYW4BFGRGDS45OKLU6BWPEKMOY6U6T3JD5E35FDDWITS4VOE` |
+| `webauthnVerifier` | `perch-webauthn-verifier` | `CBCCINHRMS3COAV5RHTCUASZLOEC52FCOBR3HMU4FKWJTAHWZTVFTHHY` |
+| `statelessRegistry` | Perch's registry instance | `CCUC5RDRGRFFC5VGG7HCB3OMNNSYDFAQOSA7SBGYUM2GDXAJBUWI5TFQ` |
+| `docCompiler` | `perch-doc-compiler` | `CDHZT7NLQDPMWCUDNUVCYC2EAMGRFWABQO5WDSRJGDQVIDHOWQB2FANB` |
+| `interpreter` | `perch-interpreter` | `CAI6RPWAJ7Z6MP3HLGMTD3W4P4DTD6BEKPFV7XF6VANC2H7XYAQHIXHP` |
+| `spendingLimit` | `perch-spending-limit` | `CCVXXCAKMROSWAH6QKZ2PUMMH3QUUEUERJQ3CI4XMAWVOMTKKJHYSMTF` |
+| `recoveryController` | `perch-recovery` | `CDIGZVWVXJT2PVDIAUKLX62LW7DNJBC6SZUSR6SLQ6MNICGCGZ6EEXPR` |
+| `zkPool` | `perch-zk-pool` | `CB46EOGM6FSSHO2TNKFWZF5AOIDROPNE6QW75XBKETX5IS757B25WK2Y` |
+| `zkAdapter` | `perch-zk-adapter` | `CBGN355IPW63XPNOSG4O3EZD46ASBXCM5W55PQHEZXJYAFZXN23BNAWC` |
+| `circuitId` | | `9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a` |
+| `treeDepth` | | `32` |
+| `accountWasmHash` | `perch-account` (installed, not deployed) | `bbb30174bbd85a2956a2f6146a156769621254011a6bdcac707cf787ce7bcd52` |
+
+The manifest also lists Perch's own factory (`perch-account-factory`), which
+Nido does not use: its addresses commit to the admin signers, but a Nido
+passkey's RP ID is the account's own subdomain, so the address has to exist
+before the passkey.
+
+## Nido's factory
+
+| Field | Value |
+| --- | --- |
+| Address | `CBFDM3GWAYW4BFGRGDS45OKLU6BWPEKMOY6U6T3JD5E35FDDWITS4VOE` |
+| Wasm sha256 | `4a16b51b268814d2b92a9801e48684adba112bc8a5225ae32ce7d88a4f95665f` |
+| Built from | Nido commit `42738a3f47082971bbdc6d5162cc80170f06bf5a`, `just build-contracts`, rustc 1.96.0, `stellar-cli` 27.0.0 (the `stellar-scaffold-cli` version is not recorded) |
+| Embeds | The manifest's `perch-account` (`accountWasmHash` above) |
+| Verifier pin | The manifest's `perch-webauthn-verifier` (`set_registry_pins`) |
+| Admin | `GBPLRG4TQSCCJEVO7IZZXTRXWMQBSUJWWX6SZTSVPGSXVEX3PVOTBHP5`, a single throwaway testnet key |
+| Deployed | 2026-10-09 by `scripts/deploy-factory.sh` (`stellar-cli` 27.0.0), which read back the pin and the account hash the factory deploys |
+| Registry name | None |
+
+## Nido contracts in use
 
 | Name | Address | Notes |
 |---|---|---|
@@ -37,255 +95,40 @@ manifest. Pinned against perch rev `845c49a` (perch-interpreter 0.1.3).
 | Perch doc-compiler 0.3.2 | `CCYSZHRHY7GKT2OYXF6JW332GA2BL6ZKPAWIV6RVC5JW2RNPHQPSW5ZI` | Stateless `compile_doc`; wasm `ccea12cd…`. The smart account cross-calls it from `apply_doc`; refuses a non-canonical external-signer key. Previous `CDWBJPDMBORIZERIFVMTGJFND6ZTAQJIVDNYST4SV33YBQP47BPKOHR6`. |
 | Perch interpreter 0.1.3 | `CA5JLPEVA3E5X7YEDVABMEM3TML33ZS3I6WL5NDBFIZZAXFYNZPBBWTO` | OZ `Policy` evaluating perch constraint programs. Wasm `2254f17d…`. Bindings: `@stellar-registry/perch-interpreter` (npm, upstream-published). Previous `CDR2OTZIZYTAHEHHH5MBOL6RKLWKIEN5KLPIVOG7FVBVTFET552NTWL2`. |
 
-## ZK Recovery (M1 — deployed to testnet 2026-09-10, testnet params)
+## Deploying
 
-Passkey-secretless recovery via a depth-24 Merkle pool + UltraHonk proof
-verification (`contracts/zk-recovery`, `contracts/zk-verifier`,
-`circuits/zk_recovery`). Design/implementation complete through M1 Task 8; **deployed to testnet
-2026-09-10** as part of the doc-only apply_doc rollout — the new
-factory's `create_account` genesis-inserts unconditionally, so the pool had
-to exist. Testnet-tuned params (delay 60s, window 7d, max-cancels 2,
-floor 0s — NOT the mainnet spec values):
+See [docs/RUNBOOKS.md](docs/RUNBOOKS.md) §2. Record every deployment here:
+address, wasm hash, deployer, commit, and `stellar-cli` version.
 
-| Name | Address | Notes |
-|---|---|---|
-| ZK recovery pool/controller | `CAUZ6WFUTTZCJQNNL5D3BNZSG7FYYGX46BDJE6G2XVVCGN76RKE5ESAR` | `contracts/zk-recovery`. Constructor: factory = the doc-only factory above, verifier = zk-verifier below, webauthn = the deployed WebAuthn verifier, admin `GAMPJROH…` (theahaco). NOT registry-registered — the factory reaches it via its admin `set_recovery_pool` override. Includes the doc-only `CompletionGrant` view. |
-| ZK proof verifier (UltraHonk) | `CDMNKDMPSBUUOHCP6QKFLRP76TLYFCYBM7SICE77BQGFJTRL7MXOSIRD` | `contracts/zk-verifier`, constructed with the committed depth-24 vk (`crates/integration-tests/fixtures/zk/vk`). Admin `GAMPJROH…`. |
+## Compatibility appendix
 
-The remainder of this section is the pre-deploy budget confirmation.
+Deployments the wallet does not target but that something current still
+reaches. The factory and verifier below run code that is not in this tree and
+must not be deployed to mainnet; whether the pre-Perch policies reach mainnet
+is MAINNET_READINESS D6. Accounts minted by an older factory are not
+migrated: they keep the account code and verifier they were minted with until
+their owners move to a new account.
 
-### Real, metered CPU cost (GO/NO-GO gates)
+| Name | Address | What still reaches it, and why it matters |
+| --- | --- | --- |
+| Factory (doc-only) | `CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG` | Embeds Nido's former smart account (wasm `fe3b1878…`). Still the registry's `factory` name and the SDK's `factory` fallback; the wallet uses it only when built without a Perch deployment (`fetchFactoryAddress`). Repointing the name is a separate, deliberate step (RUNBOOKS §2.2). |
+| WebAuthn verifier (Nido's former) | `CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY` | Admin-upgradeable; its source is not in this tree. Registered as `verifier` and the SDK's `verifier` fallback. Every account a pre-Perch Nido factory minted names it, so its admin key remains a trust anchor for those accounts (THREAT_MODEL 7). The wallet falls back to it only when it cannot read an account's admin rule and has no Perch deployment (`fetchVerifierAddress`). |
+| Multisig policy (pre-Perch) | `CCSDKJYOFCPTCCGQZPF73RJNHFC7TPO532Q36N3M2VBYZFWQOTDB7J7G` | `contracts/multisig-policy`. A Perch document can't attach it, so only accounts minted by pre-Perch factories can carry it. |
+| Spending-limit policy (pre-Perch) | `CCJMCPGADKMVKYOIZXMV7UWH62XYDAIT6GJRNJPQSZ2CHPOF4K2AU2QC` | `contracts/spending-limit-policy`. A Perch document can't attach it. The wallet resolves the registry's `spending-limit-policy` to show the cap of a rule that carries it (`fetchSpendingLimit`), and to decompile documents when built without a Perch deployment. |
 
-Both numbers below are real Wasm-metered costs (contracts registered from
-compiled `.wasm` artifacts, not native Rust test-contracts — see
-`crates/zk-bench/tests/budget.rs` and
-`crates/integration-tests/tests/it/initiate_cost.rs`), measured against the
-real depth-24 circuit's proof/vk/public-inputs fixtures, not a toy circuit.
+### Perch policy layer (0.2.1 era)
 
-| Measurement | CPU instructions | Gate | Headroom under gate | Test |
-|---|---|---|---|---|
-| `verify_proof` alone | 159,058,972 | ≤250,000,000 | ~90.9M | `just bench-zk` (`crates/zk-bench/tests/budget.rs`) |
-| Full `initiate_recovery` (insert + recompute auth_hash + verify_proof + nullifier reserve + pending write + event) | 167,831,840 | ≤350,000,000 | ~182.2M | `just bench-zk-initiate` (`crates/integration-tests/tests/it/initiate_cost.rs`) |
-
-The real per-transaction CPU limit on Stellar mainnet/testnet (protocol 27)
-is `tx_max_instructions = 400,000,000`. Full `initiate_recovery` measures
-**167,831,840** — only ~8.8M CPU above `verify_proof` alone, because
-everything outside the pairing-heavy UltraHonk verification (root-ring
-lookup, nonce/timelock checks, rate-limit prune, the `compute_auth_hash`
-Poseidon2 recompute, and the storage writes) is cheap by comparison. That
-leaves **~232.2M CPU (58%) of headroom** under the real 400M cap — the
-deferred M0 budget question ("does the whole initiate flow fit on-chain?")
-is answered **yes**, with substantial margin.
-
-`cancel_recovery` also calls `verify_proof` and is expected to cost roughly
-the same as `initiate_recovery` (same verifier cross-call, similar
-bookkeeping) — not separately gated yet.
-
-**Completion path (`ZkRecovery::enforce`, after the timelock elapses) does
-NOT call `verify_proof` at all** — it authorizes the pending key rotation
-via OZ's `Policy::enforce` against the already-stored `PendingRecovery`
-record (`contracts/zk-recovery/src/policy.rs`, M1 Task 7), so it carries
-none of the UltraHonk pairing cost and is cheap relative to both numbers
-above (not yet separately gated/measured under real metering — the
-completion spike (`zk_completion_spike.rs`) and
-`zk_recovery_completion.rs` prove correctness, not cost).
-
-### Toolchain pins (circuit/proof reproducibility)
-
-- Noir: `nargo 1.0.0-beta.18` (enforced by
-  `circuits/zk_recovery/scripts/gen_artifacts.sh`'s version guard — the
-  script refuses to run against any other version).
-- `bb` (Barretenberg): must match the `nargo`/ACIR version above (no
-  separate `bb --version` pin is currently enforced by the script beyond
-  requiring it to successfully consume that ACIR) — pin the exact `bb`
-  build used for the deployed VK/proof here once chosen, e.g. `bb x.y.z`.
-- `bb write_vk` / `bb prove` run with `--verifier_target evm-no-zk`
-  (`gen_artifacts.sh`) — the deploy toolchain must additionally confirm/set
-  `--oracle_hash keccak` (or nargo's equivalent transcript-hash config) to
-  match, since the on-chain verifier's Fiat-Shamir transcript must use the
-  same hash the circuit was compiled/proved against. **Not yet explicitly
-  pinned in `gen_artifacts.sh`** — TODO before the real deploy: confirm and
-  record the exact flag/config used.
-- Current staged fixture hashes (`crates/integration-tests/fixtures/zk/manifest.json`,
-  M0 circuit, not yet the deployed one): `vk` sha256
-  `ba39b4ac4350a655792aa55acdf2a4855e099f48809db8569c88f2ed18ad3922`, `proof`
-  sha256 `ac7cdbe247c06b3fadd8c6503c424558a724515787f2d5fdf393f613413bd1fa`,
-  `public_inputs` sha256
-  `6d5aa337af748dd36802e99b812b29ade948a010ac4a043afe706d56085b813b`.
-
-### Deploy addresses (TESTNET — deployed 2026-07-03, M4)
-
-Deployed with `ci-publisher-testnet` (`GAGOFCVJTDXEBSBQWGRWE55IH4OUVNGHM6Y75WUCK5KMDVBHAYSYRRL7`); both names registered in the unverified registry `CDBL7MNO…` (so `fetchRegistryAddress('zk-recovery'|'zk-verifier')` resolves at runtime — no frontend hardcode needed).
+Perch contracts from an earlier content-addressed stateless registry, each
+deployed with `salt = sha256(wasm)`, so each address derives offline from the
+registry id and the wasm hash. The SDK derives them (`perchTestnetAddresses()`
+in `packages/passkey-sdk/src/policyDoc/deployment.ts`, pinned in
+`deployment.test.ts`); the wallet uses the derived interpreter address only
+when built without a Perch deployment (`interpreterAddress()` in
+`packages/frontend/src/lib/policy/docPolicyFetch.ts`). Current accounts do not
+pin them.
 
 | Name | Address | Notes |
-|---|---|---|
-| `zk-verifier` | `CAD36MGYPRX6HBSWSQ33SOI2DBRSQ4WZW3TL56PZZNRPHO4PMCH5QFEP` | `contracts/zk-verifier` — UltraHonk verifier, constructed with the deployed VK bytes (sha256 `ba39b4ac…`, matches the M0 fixture VK). Registered `zk-verifier`. |
-| `zk-recovery` | `CB2PYUHYSWFTZAX3ARYZ4ZP4VJNLYJQMP7T7JE5RRZMOPLPAHSGBZS37` | `contracts/zk-recovery` — pool/controller. Constructor: `factory=CBQKB6GY…`, `verifier=CAD36MGY…`, `delay_secs=60`, `completion_window_secs=604800`, `max_cancels=2`, `timelock_floor_secs=0`, `network_passphrase="Test SDF Network ; September 2015"`, `webauthn_verifier=CACVGSAH…`. Wasm hash `862a3ff9…`. Registered `zk-recovery`. Verified live via JS: `next_index()=0`, `current_root()=0x0e1a6b7d…` (empty-tree root). |
-| Deployed circuit hash | `bfb14bb25e356411245c7a1ae1a997b3ee8e5c5cdb8e1627aad87b68015a1ec4` | sha256 of `circuits/zk_recovery/target/zk_recovery.json` (ACIR the deployed VK/proofs correspond to). |
-| Deployed VK hash | `ba39b4ac4350a655792aa55acdf2a4855e099f48809db8569c88f2ed18ad3922` | sha256 of the `vk` bytes the verifier was constructed with. |
-
-**TESTNET-ONLY params:** `delay_secs=60` and `timelock_floor_secs=0` are e2e-tuned so a recovery lifecycle completes in seconds. **Mainnet uses the spec defaults** (delay 14d, floor 7d, window 30d). Redeploy with production params before mainnet.
-
-**Deploy tooling note:** `stellar-cli 26.0.0` fails with `Missing Entry Context` when deploying/invoking these scaffold-built contracts (both the multi-`Address` constructor AND plain reads like `current_root`). Deploy + reads were done via the JS SDK — see `scripts/deploy-zk-recovery.mjs`. The frontend already uses the JS SDK, so this only affects ad-hoc CLI use.
-
-**Factory note:** the live factory `CBQKB6GY…` is v1 (`create_account(salt, key)`, no `create_account_v2`/genesis-insert). So on testnet, recovery enrollment happens via the account-authed migration path (`insert_for` + `enroll_zk_recovery`), which is *visible* on-chain — genesis-invisible enrollment needs a factory v2 deploy (follow-up, [#26]).
-
-### Preview (factory-v2) — PR-preview only
-
-A second, factory-v2 + pool-v2 pair is deployed on testnet SOLELY for PR-preview
-frontend builds, so a preview can exercise `create_account_v2`'s genesis-insert
-(on-chain-invisible enrollment) ahead of a real M2 production cutover:
-
-| Name | Address | Notes |
-|---|---|---|
-| `factory-v2-preview` | `CA2NQS3V6XCNA4FZDPQ4JLSQ65CRWMHHLYQEZ5YQ7MYQX2G5USZ4GWBL` | Supports `create_account_v2(salt, key, commitment)` with atomic genesis-insert; wired via `set_recovery_pool` to the preview pool below. |
-| `pool-v2-preview` | `CDXT3DCXYFNZNKBST7VZMN5RJWH24HQXO3WLENQEP7YMPAEZJTQNMEKS` | The recovery pool bound to `factory-v2-preview`. |
-
-Setting `PUBLIC_ZK_PREVIEW=1` at build time makes the frontend's
-`fetchRegistryAddress('factory'|'zk-recovery')` (`packages/frontend/src/lib/policyChainFetch.ts`)
-resolve directly to this pair — bypassing the registry — and makes
-`new-account/index.astro`'s `deploy()` call `create_account_v2` in a single tx
-for all three enrollment choices (uniform tx shape), instead of the
-production `create_account` + separate post-create enrollment. **Production
-is completely untouched**: with `PUBLIC_ZK_PREVIEW` unset (the normal build),
-both files behave exactly as before, resolving `factory`/`zk-recovery` via the
-registry and using the unchanged `create_account` + migration-enroll path
-against the production `CBQKB6GY…` factory.
-
-## ZK Recovery M2 (in-account guard + factory genesis-insert + migration — not yet deployed)
-
-M2 wires the M1 `nido-zk-recovery` controller into the smart-account and
-factory contracts: every account now installs the recovery rule + a genesis
-Merkle leaf at construction time (enrollment is invisible — the anonymity
-set is uniform whether or not an owner ever uses recovery), an in-account
-guard blocks signer/rule eviction while a recovery is pending, and existing
-`recovery_controller: None` accounts can opt in later via a visible
-migration call. **Not yet deployed to testnet** — same pre-deploy-budget
-posture as the M1 section above, plus placeholders below.
-
-### Guard cross-call cost (GO/NO-GO gate)
-
-The in-account guard (`contract.rs::guard_no_pending`) cross-calls the
-controller's `has_pending` view on every signer/rule-mutating op
-(`remove_signer`/`remove_context_rule`/`remove_policy`/
-`update_context_rule_valid_until`) before doing anything else — this is the
-"does calling into another contract to check a policy blow the budget"
-question the SDF's policy-cross-call target (≤10,000,000 CPU) is about.
-Measured with the same real-Wasm-metering methodology as the M1 numbers
-above (real compiled `.wasm` bytes registered at both the account and
-controller addresses, live budget raised to the real mainnet ceiling rather
-than reset unlimited, `env.cost_estimate().resources().instructions` read
-immediately after the one measured call) — see
-`crates/integration-tests/tests/it/guard_cost.rs`.
-
-| Measurement | CPU instructions | Gate | Test |
-|---|---|---|---|
-| `remove_signer`, guard fires (REAL live pending at a REAL Wasm-registered controller; cross-call + panic `RecoveryPendingBlocked`) | 1,173,794 | ≤10,000,000 | `just bench-zk-guard` (`crates/integration-tests/tests/it/guard_cost.rs::guard_fires_cost_with_real_pending`) |
-| `remove_signer`, no recovery configured (guard is a no-op — no cross-call at all) | 816,591 | — (baseline) | `just bench-zk-guard` (`crates/integration-tests/tests/it/guard_cost.rs::no_recovery_configured_baseline_cost`) |
-
-The guard's cross-call overhead in isolation (the delta between the two
-rows above, separating it from `remove_signer`'s own fixed cost) is
-**357,203 CPU** — both the guarded-fires number (1.17M) and the isolated
-cross-call delta (357K) sit almost two orders of magnitude under the 10M
-gate, with **~8.83M CPU of headroom**. The guard's cross-call is cheap
-because `has_pending` is a single small-storage-read view with no
-Poseidon2/pairing work, unlike `initiate_recovery`'s `verify_proof` (the
-159M-CPU-dominated cost in the M1 section above).
-
-### `create_account_v2` + genesis-insert shape
-
-`Factory::create_account_v2(salt: BytesN<32>, key: BytesN<65>, commitment: BytesN<32>) -> Address`
-deploys the account contract at the deterministic `get_c_address(salt)`
-address (unchanged from `create_account`) AND, atomically in the same
-transaction, cross-calls the resolved `zk-recovery` controller's
-`insert(account, commitment)` to bind `commitment` as the account's genesis
-Merkle leaf — if the insert fails for any reason the whole call (including
-the just-deployed account) reverts, so there is never an account without a
-leaf, nor a leaf without an account. The legacy `create_account(salt, key)`
-entry point is kept for existing callers and now routes through the exact
-same `deploy_and_insert` path, using a deterministic dummy commitment
-(`sha256("nido-zk-dummy" || salt) mod r`) instead of a real one — so every
-account this factory creates gets exactly one genesis leaf, real or dummy,
-indistinguishable on-chain (`contracts/factory/src/contract.rs`'s
-`create_account_and_create_account_v2_are_uniform_except_commitment` /
-`dummy_and_real_enrollment_are_indistinguishable_on_chain` tests assert
-this).
-
-Both entry points also install the recovery rule at construction
-(`NidoSmartAccount::__constructor`'s `recovery_controller: Some(..)` path):
-production factory deploys always resolve and pass the `zk-recovery`
-registry entry, so **every account this factory creates now installs the
-zero-signer `CallContract(self)` recovery rule + a genesis leaf, whether or
-not its owner ever uses recovery** — enrollment is invisible, keeping the
-anonymity set uniform across the whole pool.
-
-### `enroll_zk_recovery` migration path
-
-`NidoSmartAccount::enroll_zk_recovery(recovery_controller: Address)` lets an
-account that was deployed WITHOUT a recovery controller
-(`recovery_controller: None` at construction — e.g. non-factory or
-pre-M2 deploys) opt in afterwards, as a self-authorized, VISIBLE call
-(requires `e.current_contract_address().require_auth()`). Unlike the
-factory's invisible genesis path, this is a two-step flow the caller must
-complete separately: (1) `account.enroll_zk_recovery(controller)` installs
-the rule on the account (same `install_recovery_rule` helper the
-constructor's `Some(..)` path uses — identical rule shape), then (2)
-`pool.insert_for(account, commitment)` inserts the account's leaf into the
-controller's Merkle tree. Panics `RecoveryAlreadyEnrolled` if a rule is
-already installed (construction or a prior enroll call). This is a
-migration path for a NEW-wasm account that happened to skip recovery at
-construction — it does NOT retrofit a genuinely OLD-wasm account (deployed
-before `enroll_zk_recovery` existed in the bytecode); Soroban contract wasm
-is immutable once deployed. See
-`crates/integration-tests/tests/it/zk_recovery_migration.rs`.
-
-### Deploy addresses (testnet, doc-only deploy 2026-09-10)
-
-| Name | Address | Notes |
-|---|---|---|
-| Smart-account wasm hash (doc-only) | `fe3b187891c149b8d92ff25329fc886d27e5fd703b46a06603daf90bce308e59` | sha256 of the deployed `nido_smart_account.wasm` — doc-only build, wire types aligned to the DEPLOYED perch compiler (5-field `CompiledRule`; supersedes `f962dc8e…`, which trapped decoding the compiler's return). Live-verified: an add-admin document applied end to end on probe account `CD5X4AWM…7JQI` (doc hash `4fb7ae94…`, lossless `get_applied_doc` read, recovery rule preserved). |
-| Factory (doc-only) | `CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG` | See the main table above — same instance; resolves `verifier` from the registry, reaches the pool via `set_recovery_pool`. |
-
-## Pre-v0.7 contracts (do not use)
-
-These were deployed during earlier iterations and remain on chain but are
-incompatible with the current OZ v0.7 smart-account WASM. Accounts created
-via the old factory cannot be signed for by the current SDK and need to be
-re-created against the new factory.
-
-| Name | Address | Reason superseded |
-|---|---|---|
-| Factory (old funder-based) | `CDQDNOT4RWQKAIJIZYJE5HK7DMIVTYBJ4QXHIERNOZPPYMUNBT2JZ2SK` | Expected `create_account(funder, key, amount)` and `get_c_address(funder)`, requiring a friendbot-funded setup account. |
-| Factory (old) | `CDDMELYHOSD6M2T53F5DUYCXDS3VVOQ72E4KZMMZP37GQWII2WRKM2CC` | Hardcodes pre-v0.7 smart-account WASM hash. No admin/upgrade. |
-| Verifier (old) | `CD6IG543VWP4RRNAKJTX25GJEQ3QAR5WPMP44MCENF433IPDFQTIJRTG` | Built before `batch_canonicalize_key` was required by OZ `Verifier`. |
-| Multisig policy (old) | `CCJVJVNUXLD6MZDLSQMRWYAV4EKHE7IPOM5UJEPZAQUCL4Q5JMZFEUQA` | Built against soroban-sdk 25 + OZ v0.6 `ContextRule` (6 fields). Traps with `Error(Object, UnexpectedSize)` when v0.7 callers pass it the 8-field rule. |
-
-## Re-deploying
-
-None of the policy-builder-v1 contracts have `admin()/upgrade()`. To ship a
-new WASM you deploy a fresh contract and repoint the registry name:
-
-```bash
-# build
-just build-contracts
-
-# deploy fresh
-stellar contract deploy --wasm target/wasm32v1-none/contract/nido_<name>.wasm \
-  --source-account <alias> --network testnet
-# → prints new C-address
-
-# repoint registry (uses BARE name without 'unverified/' prefix)
-stellar contract invoke --id CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S \
-  --source-account <alias> --network testnet -- update_contract_address \
-  --contract_name <name> \
-  --new_address <new C-address>
-```
-
-The factory's `Self::resolve(env, name)` caches in instance storage, but the
-cache lives across simulations only when they succeed — a failed sim rolls
-the cache back, so the next live call re-reads the registry. Replacing the
-factory itself is the same pattern, plus updating `FACTORY_CONTRACT_ID` in
-the four frontend `.astro` pages.
-
-For the upgradable-factory rewrite that would make all of this unnecessary,
-see [#26](https://github.com/nidohq/nido/issues/26).
+| --- | --- | --- |
+| Perch stateless registry | `CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7` | Doc-compiler 0.2.1 generation. |
+| Perch doc compiler 0.2.1 | `CDWBJPDMBORIZERIFVMTGJFND6ZTAQJIVDNYST4SV33YBQP47BPKOHR6` | Wasm `35f248f0…`. |
+| Perch interpreter | `CDR2OTZIZYTAHEHHH5MBOL6RKLWKIEN5KLPIVOG7FVBVTFET552NTWL2` | Wasm `f63cae53…`. |

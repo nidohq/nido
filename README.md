@@ -18,9 +18,9 @@ on-chain.
 
 - **Passkey-secured C-addresses:** WebAuthn/P-256 signatures are verified by
   Soroban contracts, not by a custodial backend.
-- **Classic-to-smart-account onboarding:** The factory contract deterministically
-  deploys a smart account from a funded G-address and installs the user's
-  passkey as the first signer.
+- **Smart-account onboarding:** The factory contract deploys a Perch smart
+  account at an address fixed by a random setup key, with the user's passkey
+  as its admin.
 - **Nido wallet app:** An Astro frontend for account creation, account
   management, sending, transaction signing, recovery, and scoped delegation.
 - **Developer SDK:** TypeScript helpers for WebAuthn parsing, smart-account
@@ -38,20 +38,24 @@ on-chain.
 | [nido.fyi](https://nido.fyi) | Hosted testnet wallet |
 | [Architecture](./ARCHITECTURE.md) | Detailed system design, data flows, and security model |
 | [Deployments](./DEPLOYED.md) | Current testnet contract addresses |
+| [Audit scope](./docs/AUDIT_SCOPE.md) | Start of the audit package: scope, threat model, invariants, runbooks |
 
 ## How It Works
 
-1. **Create an account:** The wallet reserves a deterministic C-address for a
-   funding G-address.
-2. **Create a passkey:** The browser runs a WebAuthn ceremony and extracts the
-   user's P-256 public key.
-3. **Deploy atomically:** The factory deploys a Soroban smart account, installs
-   the passkey signer, and moves funds into the new account.
-4. **Sign with intent:** dApps request signatures through Nido, the Stellar
+1. **Create an account:** The wallet makes a random setup key that fixes the
+   account's C-address.
+2. **Create a passkey:** The browser runs a WebAuthn ceremony on the account's
+   own subdomain and extracts the user's P-256 public key.
+3. **Deploy:** The factory deploys a [Perch](https://github.com/stellar-registry/perch)
+   smart account whose admin is the passkey, and the testnet funding moves in.
+4. **Set up recovery:** Friends, a recovery kit (a zero-knowledge proof), or
+   both, declared in the account's policy document and installed with one
+   `apply_doc`.
+5. **Sign with intent:** dApps request signatures through Nido, the Stellar
    Wallets Kit module, or direct handoff URLs.
-5. **Verify on-chain:** The smart account calls the WebAuthn verifier contract
-   during `__check_auth`, then applies context rules and policy checks before
-   the transaction executes.
+6. **Verify on-chain:** The account checks the passkey through the WebAuthn
+   verifier contract during `__check_auth`, then applies its rules and
+   policies before the transaction executes.
 
 This keeps private key material out of the app, binds passkeys to account
 subdomains, and gives each account an extensible policy layer for recovery and
@@ -65,7 +69,8 @@ limited-scope signing.
 | Passkey SDK | `packages/passkey-sdk/` | WebAuthn, Soroban auth, deployment, storage, policy, recovery, and session-key helpers |
 | Wallets Kit module | `packages/stellar-wallets-kit-module/` | `@creit.tech/stellar-wallets-kit` module for dApp wallet selectors |
 | Contract bindings | `packages/contract-bindings/` | Generated TypeScript clients for the Soroban contracts |
-| Smart contracts | `contracts/` | Factory, smart account, WebAuthn verifier, name registry, status message, and policy contracts |
+| Smart contracts | `contracts/` | Factory, name registry, status message, and pre-Perch policy contracts |
+| Perch | `vendor/perch/` | Submodule: the account, WebAuthn verifier, recovery controller, ZK pool and adapter, doc compiler, and the testnet deployment manifest Nido builds on |
 | Integration tests | `crates/integration-tests/` | Cross-contract Rust tests with synthetic WebAuthn assertions |
 | End-to-end tests | `tests/` | Browser, support, and testnet test harnesses |
 | Example dApp | `examples/status-message-dapp/` | React/Vite dApp showing wallet selector integration |
@@ -74,17 +79,17 @@ limited-scope signing.
 
 | Contract | Purpose |
 | --- | --- |
-| Factory | Deploys smart accounts, resolves shared policy/verifier contracts, and computes deterministic C-addresses |
-| Smart Account | OpenZeppelin-based account contract with passkey auth, execution entry point, context rules, and policy enforcement |
-| WebAuthn Verifier | Stateless P-256/WebAuthn verifier shared by smart accounts |
+| Factory | Deploys Perch accounts with a passkey admin at deterministic C-addresses |
 | Name Registry | Human-readable account name registry |
-| Multisig Policy | Threshold-based recovery and delegated policy support |
-| Spending Limit Policy | Scoped spending-limit policy for smart-account calls |
+| Multisig, Spending Limit, Pre-auth Sweep policies | Pre-Perch OZ policies; a Perch document can't attach them |
 | Status Message | Small demo contract used by the example dApp |
+| Perch account (`vendor/perch`) | The user's account: one policy document, `apply_doc`, seven-day upgrades |
+| Perch WebAuthn verifier (`vendor/perch`) | P-256/WebAuthn verifier every passkey names; no admin |
+| Perch recovery, ZK pool, ZK adapter (`vendor/perch`) | Guardian, ZK, or combined recovery under the `Loss` or `Protected` profile |
 
-All account contracts build on
+Accounts build on
 [OpenZeppelin Stellar Contracts](https://docs.openzeppelin.com/stellar-contracts/accounts/smart-account)
-and Soroban's native authorization model.
+through Perch, and Soroban's native authorization model.
 
 ## Quick Start
 
@@ -94,13 +99,20 @@ and Soroban's native authorization model.
 - Rust and Cargo
 - [`just`](https://github.com/casey/just)
 - [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/cli/install-cli)
+  and `jq` (for `just perch-infra`)
 - `stellar-scaffold` for scaffold-based contract workflows
 
-Install dependencies from the repo root:
+Fetch the Perch submodule and its build inputs, then install dependencies from
+the repo root:
 
 ```bash
+git submodule update --init
+just perch-infra
 npm install
 ```
+
+[docs/RUNBOOKS.md](./docs/RUNBOOKS.md) §1 has the full build and test
+sequence, including regenerating the real proof fixtures.
 
 ### Common Commands
 
@@ -143,12 +155,31 @@ for local network, testnet, and GitHub Pages deployment details.
 - **No custody:** The wallet does not hold a server-side signing key.
 - **On-chain passkey verification:** WebAuthn assertions are checked by the
   verifier contract during Soroban authorization.
-- **Per-account origin binding:** Account subdomains scope WebAuthn RP IDs so a
-  passkey for one account cannot approve another account.
-- **Ephemeral G-address funding:** The onboarding G-key is used to fund and
-  deploy the smart account, then discarded.
-- **Policy enforcement:** Context rules, recovery policies, session keys, and
-  spending limits are enforced by the smart account and policy contracts.
+- **Per-account credential isolation (browser):** Account subdomains scope
+  WebAuthn RP IDs, so a browser offers an account's passkey only on that
+  account's origin. This is a WebAuthn-client property, not an on-chain one:
+  the verifier does not enforce account-specific RP IDs or origins. Soroban
+  authorization binds an assertion to the exact challenge and key, so a
+  credential enrolled on more than one account can authorize each.
+- **Ephemeral testnet funding:** On testnet, a throwaway G-address funded by
+  Friendbot moves its balance into the new account, then is discarded.
+- **Policy enforcement:** The account compiles its policy document into
+  context rules on chain; rules, caps, and recovery are enforced by the
+  account and Perch's policies.
+- **Recovery without a custodian:** Friends approve from their own accounts
+  and a recovery kit proves knowledge of a secret; a recovery waits out a
+  delay before it completes. Under the `Loss` profile the owner can cancel it
+  in that window; under `Protected`, cancelling takes the enrolled guardians
+  or kit.
+
+Known limits, each described in the [threat model](./docs/THREAT_MODEL.md)
+or the [deferral register](./docs/DEFERRED.md): until an account exists,
+whoever holds its setup key, including the relayer that submits the setup,
+can claim the address first; `Protected` without an enrolled baseline gives
+weaker protection against a stolen passkey; a `Protected` freeze blocks new
+authorizations by the account, not token allowances it granted earlier;
+replacing a capped rule resets its spending window; and the wallet does not
+restore archived recovery state on its own.
 
 For deeper implementation details, read [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -156,10 +187,21 @@ For deeper implementation details, read [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 - [Architecture](./ARCHITECTURE.md)
 - [Current deployments](./DEPLOYED.md)
-- [SCF application notes](./docs/APPLICATION.md)
-- [SCF requirements](./docs/REQUIREMENTS.md)
+- Audit package, starting from [the audit scope](./docs/AUDIT_SCOPE.md) and
+  its reading order: [threat model](./docs/THREAT_MODEL.md),
+  [security invariants](./docs/SECURITY_INVARIANTS.md),
+  [deferred work](./docs/DEFERRED.md), [supply chain](./docs/SUPPLY_CHAIN.md),
+  [runbooks](./docs/RUNBOOKS.md), [mainnet readiness](./docs/MAINNET_READINESS.md)
+- [Perch recovery specification](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/recovery/spec.md)
+  (`vendor/perch/docs/recovery/spec.md`)
 - [Status Message dApp guide](./examples/status-message-dapp/README.md)
 - [Wallets Kit module guide](./packages/stellar-wallets-kit-module/README.md)
+
+Project history, not a description of the current system: the
+[SCF funding application](./docs/APPLICATION.md) and the
+[SCF request it answered](./docs/REQUIREMENTS.md). The application describes
+Nido-owned account and verifier contracts that are not part of the current
+design; [ARCHITECTURE.md](./ARCHITECTURE.md) describes the system as it is.
 
 ## License
 

@@ -461,7 +461,7 @@ still moving. Before upgrading:
 - **Metrics:** `METRICS_ENABLED=true` runs the Prometheus server on `:8081`
   (`/debug/metrics/scrape`), scraped by Fly's managed Prometheus (`[metrics]` in `fly.toml`),
   private to the org (not on the public `:8080`). Dashboards + alerts in `grafana.fly.dev`;
-  alert definitions in `docs/RUNBOOKS.md` §4.
+  alert definitions in `docs/RUNBOOKS.md` §5.
 
 ## Known Limitations
 

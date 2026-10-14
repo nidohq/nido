@@ -69,7 +69,14 @@ export async function buildApplyDocTx(
   args: BuildApplyDocArgs,
 ): Promise<ApplyDocTx> {
   const networkPassphrase = args.networkPassphrase ?? TESTNET_PASSPHRASE;
-  if (doc.network !== undefined && doc.network !== networkPassphrase) {
+  // Perch's compiler refuses a document without a network binding
+  // (`WrongNetwork`), so it could never apply; refuse it here instead.
+  if (doc.network === undefined) {
+    throw new Error(
+      `policyDoc: doc has no network binding; set \`network\` to "${networkPassphrase}" before applying`,
+    );
+  }
+  if (doc.network !== networkPassphrase) {
     throw new Error(
       `policyDoc: doc is bound to network "${doc.network}" but the apply targets "${networkPassphrase}"`,
     );

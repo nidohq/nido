@@ -34,7 +34,6 @@ export {
   getContractSalt,
   computeAccountAddress,
   lookupExistingAccount,
-  deploySmartAccount,
 } from "./deploy.js";
 
 export {

@@ -39,28 +39,102 @@ export interface PendingAccount {
   secretKey?: string;
 }
 
+const PENDING_KEY = "nido:pending";
+/** Sidecar map (contractId -> creation epoch ms) recording when each pending
+ * setup was started. Kept in its own key, not inside each `PendingAccount`, so
+ * the wallet's cross-tab reconciler — which rewrites `nido:pending` from a
+ * normalized shape that has no timestamp field — cannot strip it. */
+const PENDING_TS_KEY = "nido:pending:ts";
+/** Setup window: a pending salt older than this is treated as abandoned and
+ * purged. Matches the setup-salt cookie's `Max-Age` (1800s). */
+const PENDING_TTL_MS = 30 * 60 * 1000;
+
+function readPending(): PendingAccount[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+    return Array.isArray(raw) ? (raw as PendingAccount[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function readPendingTimestamps(): Record<string, number> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PENDING_TS_KEY) || "{}");
+    return raw && typeof raw === "object" ? (raw as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Drop pending entries whose setup window has elapsed, so an abandoned setup's
+ * salt does not linger in storage indefinitely. A legacy entry with no recorded
+ * timestamp is stamped on first sight so it, too, eventually expires rather
+ * than persisting forever. Returns the surviving entries.
+ */
+export function purgeExpiredPendingAccounts(now: number = Date.now()): PendingAccount[] {
+  const pending = readPending();
+  const ts = readPendingTimestamps();
+  const kept: PendingAccount[] = [];
+  let changed = false;
+  for (const p of pending) {
+    let stamp = ts[p.contractId];
+    if (typeof stamp !== "number") {
+      stamp = now;
+      ts[p.contractId] = now;
+      changed = true;
+    }
+    if (now - stamp > PENDING_TTL_MS) {
+      delete ts[p.contractId];
+      changed = true;
+    } else {
+      kept.push(p);
+    }
+  }
+  // Drop timestamps for contractIds that are no longer pending.
+  for (const id of Object.keys(ts)) {
+    if (!kept.some((p) => p.contractId === id)) {
+      delete ts[id];
+      changed = true;
+    }
+  }
+  if (changed) {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(kept));
+    localStorage.setItem(PENDING_TS_KEY, JSON.stringify(ts));
+  }
+  return kept;
+}
+
 export function savePendingAccount(contractId: string, setupKey: string): void {
-  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("nido:pending") || "[]");
+  const pending = readPending();
   const existing = pending.find((p) => p.contractId === contractId);
   if (existing) {
     existing.setupKey = setupKey;
     delete existing.secretKey;
-    localStorage.setItem("nido:pending", JSON.stringify(pending));
   } else {
     pending.push({ contractId, setupKey });
-    localStorage.setItem("nido:pending", JSON.stringify(pending));
   }
+  localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  const ts = readPendingTimestamps();
+  ts[contractId] = Date.now();
+  localStorage.setItem(PENDING_TS_KEY, JSON.stringify(ts));
 }
 
 export function loadPendingAccounts(): PendingAccount[] {
-  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("nido:pending") || "[]");
+  const pending = purgeExpiredPendingAccounts();
   return pending.map((p) => ({ ...p, setupKey: p.setupKey ?? p.secretKey ?? "" }));
 }
 
 export function removePendingAccount(contractId: string): void {
-  const pending: PendingAccount[] = JSON.parse(localStorage.getItem("nido:pending") || "[]");
+  const pending = readPending();
   const filtered = pending.filter((p) => p.contractId !== contractId);
-  localStorage.setItem("nido:pending", JSON.stringify(filtered));
+  localStorage.setItem(PENDING_KEY, JSON.stringify(filtered));
+  const ts = readPendingTimestamps();
+  if (ts[contractId] !== undefined) {
+    delete ts[contractId];
+    localStorage.setItem(PENDING_TS_KEY, JSON.stringify(ts));
+  }
 }
 
 export function activateAccount(contractId: string): void {

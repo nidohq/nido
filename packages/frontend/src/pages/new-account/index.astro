@@ -389,8 +389,16 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     return `; Domain=.${base}`;
   }
 
+  // `Secure` keeps the setup salt — which decides who owns the derived address
+  // — off plain-HTTP requests. Gated on `isSecureContext` so it is set on HTTPS
+  // and on localhost (both secure contexts) but omitted on a plain-HTTP dev
+  // origin, where a `Secure` cookie would silently fail to write.
+  function setupCookieSecure(): string {
+    return window.isSecureContext ? "; Secure" : "";
+  }
+
   function saveSetupSaltCookie(account: string, salt: string): void {
-    document.cookie = `${setupCookieName(account)}=${salt}; Max-Age=1800; Path=/; SameSite=Lax${setupCookieDomain()}`;
+    document.cookie = `${setupCookieName(account)}=${salt}; Max-Age=1800; Path=/; SameSite=Lax${setupCookieSecure()}${setupCookieDomain()}`;
   }
 
   function readSetupSaltCookie(account: string): string | null {
@@ -403,7 +411,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   }
 
   function clearSetupSaltCookie(account: string): void {
-    document.cookie = `${setupCookieName(account)}=; Max-Age=0; Path=/; SameSite=Lax${setupCookieDomain()}`;
+    document.cookie = `${setupCookieName(account)}=; Max-Age=0; Path=/; SameSite=Lax${setupCookieSecure()}${setupCookieDomain()}`;
   }
 
   async function waitForSourceAccount(server: rpc.Server, publicKey: string): Promise<Account> {

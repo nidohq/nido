@@ -1,110 +1,124 @@
-# Supply Chain & Toolchain Provenance
+# Supply chain and toolchain provenance
 
-Dependency and toolchain inventory for the audit, plus the scanning/attestation
-gaps to close. Goal: an auditor can account for every third-party input and
-rebuild every deployed artifact.
+Every third-party input, how it is pinned, and what is still loose. The goal:
+an auditor can account for each input and rebuild each artifact. The exact
+identities of the audited revisions (Nido and Perch commits, the OZ fork rev,
+package integrities) are in the [audit manifest](./AUDIT_SCOPE.md#audit-manifest).
+Plans to move pins to published packages are in
+[DEFERRED.md](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients).
 
-## Rust dependencies (workspace `Cargo.toml`)
+## Perch (`vendor/perch` submodule)
 
-| Dependency | Pin | Kind | Risk |
-|---|---|---|---|
-| `soroban-sdk` | `27.0.2` (resolves 27.0.5) | crates.io tagged | Low. |
-| `stellar-accounts` (OZ `stellar-contracts`) | **git rev `ec749c3b75971f2c35ced1bea3e2a7e536e91cda`** (merge of OZ PR #816 — first main commit on soroban-sdk 27) | git, **untagged main branch** | **Elevated** — see below. Core auth (`do_check_auth`) delegates here. |
-| `soroban-sdk-tools` | crates.io **`0.1.3`** (targets soroban-sdk 27) | crates.io | Low — published, versioned release. Previously a `BlaineHeffron` git fork (sdk-26 only); now dropped. Provides `#[contractstorage]`, compiled into factory/name-registry. |
-| `soroban-poseidon` (`stellar/rs-soroban-poseidon`) | git **tag `v27.0.0`** | git tag | Low — Stellar org, tagged. Poseidon2 parity is circuit-critical (`host_poseidon2_matches_noir_vectors`); v27.0.0 is a version-only bump over v26.0.0. |
-| `admin-sep` (`theahaco/admin-sep`) | crates.io **`0.27.0`** | crates.io | **Medium — on the governance path.** Small crate (~50 LOC, 3 modules) providing the `Administratable`/`Upgradable` SEP traits (`admin`/`set_admin`/`upgrade`) that gate every upgradeable contract. Replaces per-contract inlined boilerplate. `admin()` reads infallibly (assumes the constructor set it); each contract sets `admin` in `__constructor`. Auditor should read it in full and confirm the `require_auth` gating on `set_admin`/`upgrade`. |
-| `stellar-registry` | `0.0.10` | crates.io | Medium — `0.0.x`. Macros only (re-exports `stellar-scaffold-macro`); **not** the registry contract. |
-| `base64` | `0.22` | crates.io | Low. |
+| Item | Pin | Notes |
+| --- | --- | --- |
+| Source | `https://github.com/stellar-registry/perch.git` at the commit the superproject's gitlink records | Git submodule (`.gitmodules`). The commit is the pin. `.gitmodules` declares branch `main` only so `scripts/check-perch-drift.sh` can refuse a commit that is not on it. |
+| Deployment manifest | Perch's [`deployments/testnet.json`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/deployments/testnet.json) (`vendor/perch/deployments/testnet.json`) at that commit | Every deployed contract's wasm hash, address, registry, and build pins, plus the Perch commit and toolchain (rustc, `stellar`, scaffold) that built them. |
+| Deployed wasm | `just perch-infra` runs Perch's [`scripts/fetch-infra-wasm.sh`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/scripts/fetch-infra-wasm.sh) (`vendor/perch/scripts/fetch-infra-wasm.sh`) `--stack` against the manifest | Fetches each contract from the chain by the manifest's address (the account by hash) and refuses it unless its sha256 matches and the address is the content address of that hash under the manifest's registry. Nothing is resolved by name. The tests run these bytes, and the factory embeds the fetched `perch-account`. |
+| Pin cache | Same script | Fills `crates/perch-smart-account/wasm/` in the submodule (registry id, compiler, interpreter, spending limit), which the account's native crate reads at build time, from the same checked bytes. |
+| Rust crates | Path dependencies on `vendor/perch/crates/*` (root `Cargo.toml`) | Clients, types, and the native prover for the tests. One checkout, so Perch's types unify with Nido's; Nido's `Cargo.lock` resolves their dependencies. Perch publishes no crates. |
+| TypeScript | `@stellar-registry/perch` 0.3.2 (exact) and `@stellar-registry/perch-interpreter` (`^0.1.0`, locked at 0.1.0) from npm; `@stellar-registry/perch-zk` 0.1.0 as an npm workspace from the submodule (root `package.json`) | The npm packages are built from Perch release tags, not from the pinned Perch commit: the pinned source's `packages/perch-js` is `0.3.1` with an unreleased section, while the wallet runs the published `0.3.2` tarball built from a later commit (see the manifest's perch-js note). No tag in the pinned tree corresponds to `0.3.2`, and no Nido check compares a published `dist` with a build of that source; that comparison is a post-audit release gate ([DEFERRED.md](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)). The SDK pins perch-zk at the version the submodule carries, and `just check-vendor-drift` fails if npm resolves it elsewhere. perch-zk has an optional peer dependency on `@stellar/stellar-sdk` 17, which npm installs as a nested second copy; Nido imports only perch-zk's proving entry, so that copy isn't bundled. |
+| Contract clients | `packages/contract-bindings/perch-*` | Generated by `stellar contract bindings typescript` from the deployed wasm (`just bindings-perch`). `private`. |
 
-`Cargo.lock` is committed, so transitive versions are reproducible. `cargo-audit`
-is **not yet run in CI** (see gaps).
+## Rust dependencies (root `Cargo.toml`)
 
-### On-chain Stellar Registry contract (external, not the crate above)
+| Dependency | Pin | Risk |
+| --- | --- | --- |
+| `soroban-sdk` | `27.0.2` (lock resolves `27.0.5`) | Low. |
+| `stellar-accounts` | git `theahaco/stellar-contracts-OZ`, rev `33726766a1fd5e7e3d2977d79f64ee29e1ea3ca9` | **Elevated.** A fork of OpenZeppelin `stellar-contracts`: the CAP-0071 delegated-auth patch (fork PR #3 on upstream `fbfde38`), the `*_no_events` mutations (PR #4), and `reconcile_signers` (PR #5), none merged into the fork's main or audited by OpenZeppelin. The same rev Perch pins, so Nido and Perch share one crate. Reviewed in the Perch OZ materialization stream ([AUDIT_SCOPE.md](./AUDIT_SCOPE.md#responsibility-matrix)); upstream adoption: [DEFERRED.md](./DEFERRED.md#oz-quiet-events-fork-pull-requests) and Perch's [`docs/recovery/cap-0071.md`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/recovery/cap-0071.md) (`vendor/perch/docs/recovery/cap-0071.md`). |
+| `admin-sep` | crates.io `0.27.0` | **Medium.** About 50 lines providing `admin`/`set_admin`/`upgrade` for the factory, name registry, and multisig and spending-limit policies (not status-message or pre-auth sweep). On the factory's upgrade path; assigned to explicit dependency review ([AUDIT_SCOPE.md](./AUDIT_SCOPE.md#responsibility-matrix)). |
+| `soroban-sdk-tools` | crates.io `0.1.3` | Low. Storage macros. |
+| `base64` | `0.22` | Low. |
 
-The registry the factory queries/publishes into is an **external on-chain contract** (AhaLabs
-smart-deploy), distinct from the `stellar-registry` *crate* (which is macros only). On mainnet
-Nido deploys its **own instance** of it via `scripts/deploy-registry.sh`, which
-`stellar contract fetch`es the reference registry's exact deployed wasm, records its sha256,
-and redeploys that byte-identical bytecode under a Nido owner (multisig). Provenance to record
-in `DEPLOYED.md` at cutover: the source registry id + network, the fetched **wasm sha256**, and
-the new instance id — so an auditor can confirm the instance runs identical code to the
-reference. Residual trust is bounded by the factory pin bypass (invariant F5): once pinned, the
-registry cannot reroute or block account creation.
+`Cargo.lock` is committed. `cargo audit` runs in CI as an advisory job.
 
-### OZ pinned to an untagged commit — action
+## Proving toolchain
 
-Pinning to a main-branch commit means the practice diverges from auditing a tagged release
-(git content-addressing prevents silent substitution of the resolved tree, and `Cargo.lock`
-records it, but a tag is preferable). The current pin `ec749c3b` is the merge of OZ PR #816
-(the soroban-sdk-27 bump); the `stellar-accounts` package there differs from the tagged
-`v0.7.x` line only by the sdk-27 adaptation.
-- **Preferred:** repin to a tagged `stellar-contracts` release once one lands on soroban-sdk 27.
-  The latest tag (`v0.7.2`) is still on soroban-sdk 26.1, so no sdk-27 tag exists yet — track
-  the OZ release that includes #816 and repin to it.
-- **Until then:** keep the rev pin, recorded here + in `AUDIT_SCOPE.md`, so the firm verifies
-  the pinned tree matches audited OZ behavior. `Cargo.lock` + content-addressed git already
-  prevent silent substitution of the resolved tree.
+| Tool | Pin | Enforced by |
+| --- | --- | --- |
+| `nargo` | `1.0.0-beta.9` | Perch's [`scripts/zk-toolchain.sh`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/scripts/zk-toolchain.sh) (`vendor/perch/scripts/zk-toolchain.sh`) downloads the GitHub release and checks a pinned SHA-256, then checks the binary's version. |
+| `bb` (native) | `0.87.0` | Same script and checks. |
+| `@aztec/bb.js` | `0.87.0` | perch-zk's `package.json`, resolved in Nido's root `package-lock.json`. Only `0.87.0` is supported and tested; a proof whose format or key does not match the adapter's embedded verification key fails verification. |
+| `@noir-lang/noir_js` | `1.0.0-beta.9` | Same. |
+| Reference string | Downloaded by bb.js from `crs.aztec.network` at proving time | Not pinned. A substituted file makes proofs fail; self-hosting it with a checked hash is open (MAINNET_READINESS E4). |
 
-## Vendored code
+The adapter embeds NethermindEth's UltraHonk verifier, audited by
+OpenZeppelin for the non-ZK flavor and vendored in Perch (its
+[`NOTICE`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/vendor/ultrahonk-soroban-verifier/NOTICE),
+`vendor/perch/vendor/ultrahonk-soroban-verifier/NOTICE`), plus Perch's
+unaudited delta for Barretenberg's zero-knowledge flavor
+(`UltraKeccakZKFlavor`), with the VK compiled in. `just gen-zk-fixtures`
+re-proves Nido's fixtures with this toolchain; zero-knowledge proving is
+randomized, so CI requires every fresh proof to verify and every
+`fixture.json` (statement digest, root, nullifier) to stay the same.
 
-**`contracts/vendor/ultrahonk-soroban-verifier/`** — verbatim copy of an unaudited
-third-party UltraHonk verifier.
-- Upstream: `https://github.com/yugocabrio/rs-soroban-ultrahonk`, rev
-  **`3b031847eb043856cc5bcad45bd5a6512370cd16`** (recorded in the vendor `Cargo.toml`),
-  retargeted onto the workspace `soroban-sdk = 27.0.2` (resolves 27.0.5) — matching the
-  workspace pin in the table above after the sdk 26→27 bump.
-- License: MIT (vendor crate); Apache-2.0 `LICENSE` file also present — **confirm the
-  effective license and record it** before mainnet.
-- Its own deps: `ark-ff`/`ark-bn254`/`ark-ec` 0.5, `hex`, `once_cell`, `lazy_static`.
-- Drift guard: `scripts/check-vendor-drift.sh` (run in CI via `just check-vendor-drift`)
-  compares a sha256 manifest of `src/` against the committed `CHECKSUMS.sha256`.
-
-### Drift-guard gaps — action (C3)
-
-- The manifest now covers `src/` **and the vendor `Cargo.toml`** (done, C3), so a
-  dependency/feature-flag change can't slip past; the guard also asserts the recorded
-  upstream commit (`3b031847…`) so a bump can't silently drop provenance. (`tests/` and
-  `circuits/` are still out of the manifest — they aren't compiled into the deployed wasm.)
-- The baseline is regenerable by design, so a hand-edit "passes" once its new hash is
-  committed. Keep vendor changes to reviewed, commit-referenced upstream bumps only, and
-  call them out in PR review. (This is integrity + provenance recording, not an
-  authenticity attestation of upstream.)
-
-## ZK circuit toolchain
-
-| Tool | Pin | Enforced |
-|---|---|---|
-| `nargo` (Noir) | `1.0.0-beta.18` (pre-release) | `gen_artifacts.sh` hard version guard. |
-| `bb` (Barretenberg) | `3.0.0-nightly.20260102` | **Now** hard-guarded in `gen_artifacts.sh` (`REQUIRED_BB_VERSION`) + recorded as `bbRequired` in `manifest.json` (C1). |
-| Fiat-Shamir oracle | keccak, via `--verifier_target evm-no-zk` | Implicit (bb rejects an explicit `--oracle_hash` alongside `--verifier_target`); documented in `gen_artifacts.sh`. UltraHonk = transparent setup, no toxic waste. |
-
-Deployed VK/proof/circuit hashes are recorded in `DEPLOYED.md` and the circuit
-`manifest.json`. **Mainnet VK must be regenerated** under these pins with mainnet params
-(blocker A1) and its hashes re-recorded.
-
-## Contract build toolchain
+## Build toolchain
 
 | Tool | Pin | Status |
-|---|---|---|
-| Rust | `1.96.0` | **Pinned (C2):** workspace-root `rust-toolchain.toml` (channel `1.96.0`, `wasm32v1-none`) + CI `dtolnay/rust-toolchain@1.96.0`, kept in lockstep. |
-| `stellar-cli` (+ bundled `wasm-opt`) | _unpinned (`cargo install --locked stellar-cli`)_ | **Gap — pin an exact version (C2)** and record which produced each deployed wasm. |
-| `[profile.contract]` | committed (`lto`, `codegen-units=1`, `panic=abort`, `overflow-checks`, `opt-level=z`) | Good for reproducibility. |
+| --- | --- | --- |
+| Rust | `1.96.0` (`rust-toolchain.toml`, CI `dtolnay/rust-toolchain@1.96.0`) | Pinned. Builds Nido's wasm; Perch's wasm isn't built here (the manifest records Perch's own toolchain). |
+| `stellar-cli` | `cargo install --locked stellar-cli`, unpinned | **Gap.** The CLI writes its version into each wasm's metadata, so the wasm hash depends on it. Pin it and record which version built each deployed wasm ([DEPLOYED.md](../DEPLOYED.md#nidos-factory) records the factory's). `just perch-infra` also uses it to fetch Perch's wasm, whose bytes are checked by hash. |
+| `stellar-scaffold-cli` | `cargo install --locked stellar-scaffold-cli`, unpinned | **Gap.** Builds Nido's own wasm (`just build-contracts`) and records itself in the wasm metadata. |
+| `[profile.contract]` | committed (`lto`, `codegen-units = 1`, `panic = "abort"`, `overflow-checks`, `opt-level = "z"`) | Good for reproducibility. |
 
-## npm packages
+A local build's wasm hash also depends on the machine (paths in panic
+messages, CLI metadata). Tests that bind a wasm hash into a proof therefore
+use a committed wasm (`crates/integration-tests/fixtures/upgrade-target.wasm`).
 
-Roots with committed lockfiles: `package.json` (repo root), `packages/passkey-sdk`,
-`packages/frontend`, `packages/stellar-wallets-kit-module`, and the `infra/*` workers.
-`@nidohq/passkey-sdk` is published to npm — API stability + provenance matter for
-downstream consumers.
+## npm
 
-## Gaps to close (tracked)
+Lockfiles: the root `package-lock.json` (workspaces: SDK, frontend, wallets-kit
+module, contract bindings, the example dApp, and Perch's perch-zk;
+`@stellar-registry/perch` and `@stellar-registry/perch-interpreter` resolve
+from npm), plus `packages/passkey-sdk/package-lock.json`, the `infra/*`
+workers' locks, and the relayer channels plugin's `pnpm-lock.yaml`. A root
+`overrides` entry keeps `@stellar-registry/perch-interpreter` on the
+workspace's single `@stellar/stellar-sdk`.
 
-- [x] `cargo-audit` job in CI (advisory DB) — non-blocking (`continue-on-error`); make gating pre-mainnet.
-- [x] `npm audit` across all package roots — non-blocking; make gating pre-mainnet.
-- [x] **Dependabot** config for cargo + npm + GitHub Actions (`.github/dependabot.yml`).
-- [x] Extend vendor drift check to the vendor `Cargo.toml` (+ upstream-commit provenance assertion).
-- [x] Pin Rust toolchain (C2) — `rust-toolchain.toml` @ `1.96.0`.
-- [ ] Pin `stellar-cli` to an exact version (C2) and record which produced each deployed wasm.
-- [ ] Repin OZ to a tagged release (or document the accepted risk).
-- [ ] Generate an **SBOM** at release; publish alongside the audit report.
-- [ ] License scan / confirm vendored-verifier effective license.
+The wallet's `@stellar/stellar-sdk` (15.1.0) decodes XDR from before
+protocol 27: neither it nor the `@stellar/stellar-base` it uses (15.0.0) has
+the `AddressV2` or `AddressWithDelegates` credentials. Decoding anyone else's
+transaction that uses them throws. `getLatestLedger()` decodes the tip's
+whole close meta, so the wallet reads the tip from the RPC's raw answer
+instead (`latestLedgerSequence`). The example dApp calls
+`getLatestLedger()` and is exposed to that failure.
+
+`@nidohq/passkey-sdk` is not publishable while it depends on the private
+`@nidohq/perch-*` clients and the workspace-only perch-zk
+([DEFERRED.md](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)).
+`npm-publish.yml` publishes it on any published GitHub release and does not
+check this, so no release may be published until it is publishable. The
+workflow also has a `workflow_dispatch` trigger, so a manual run publishes the
+SDK by the same path; neither trigger checks the private-dependency condition.
+The "no release may be published" rule is therefore procedural and incomplete —
+a manual dispatch would publish a broken package. Making it a real gate means a
+workflow step that fails while the SDK is unpublishable (an edit to
+`.github/workflows/npm-publish.yml`, which needs a `workflow`-scoped token).
+
+## Gaps
+
+- [ ] Pin `stellar-cli` and `stellar-scaffold-cli`, and record the versions
+      behind each deployed wasm.
+- [x] Fetch Perch's wasm by the manifest's hashes and content addresses
+      (`just perch-infra`), not by name.
+- [x] Fail CI when vendor/perch drifts: the submodule off its recorded
+      commit or declared branch, a consumed wasm, the pin cache, or the staged
+      `perch-account` the factory build embeds unlike the manifest, or npm
+      resolving perch-zk elsewhere (`just check-vendor-drift`,
+      `scripts/check-perch-drift.sh`). This validates the factory's build
+      *inputs* — the fetched and staged account bytes — not a built
+      `nido_factory.wasm` artifact: the embed is a compile-time
+      `include_bytes!`, so a stale factory artifact built from different inputs
+      is not caught here. `scripts/deploy-factory.sh` is the artifact/on-chain
+      check: at deploy time it invokes the factory's `refresh_account_wasm_hash`
+      and compares the account the deployed factory actually produces against
+      the manifest.
+- [ ] Check in CI that the published `@stellar-registry/perch` and
+      `@stellar-registry/perch-interpreter` builds equal builds of their
+      sources at the pinned Perch commit.
+- [ ] Self-host the proving reference string with a checked hash.
+- [ ] Move to a `@stellar/stellar-sdk` whose XDR knows protocol 27's
+      credentials (see npm above).
+- [ ] Make `cargo audit` and `npm audit` gating before mainnet.
+- [ ] Generate an SBOM at release.
+- [x] Dependabot for cargo, npm, and GitHub Actions (`.github/dependabot.yml`).
+- [x] Rust toolchain pinned.

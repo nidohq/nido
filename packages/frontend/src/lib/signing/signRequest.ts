@@ -31,8 +31,12 @@ export type OperationDescriptor =
       prevDocJson?: string;
       /** The configuration revision (decimal) `docJson` was composed from.
        *  The apply names it as `expected_revision`, so it lands only if the
-       *  account hasn't changed since. */
-      expectedRevision?: string;
+       *  account hasn't changed since. REQUIRED: a request that omits it is
+       *  refused, never silently rebound to the revision read
+       *  at signing time — that rebinding would let an older stashed document
+       *  overwrite intervening rule changes while still passing the on-chain
+       *  stale-revision check. */
+      expectedRevision: string;
       /** Human-readable expiry label (e.g. "24 hours"), as for add-context-rule. */
       expiryLabel?: string;
     }
@@ -86,7 +90,19 @@ export function loadSignRequest(id: string, store: Storage = sessionStorage): Si
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as SignRequest;
-    return parsed && parsed.v === 1 ? parsed : null;
+    if (!parsed || parsed.v !== 1) return null;
+    // An apply-policy-doc request must name the revision it was composed
+    // from. Refuse one that omits it rather than letting the builder rebind
+    // it to the revision read at signing time (which would defeat the
+    // stale-document protection).
+    const op = parsed.operation;
+    if (
+      op && op.type === "apply-policy-doc" &&
+      (typeof op.expectedRevision !== "string" || op.expectedRevision.length === 0)
+    ) {
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }

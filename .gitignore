@@ -34,7 +34,6 @@ packages/frontend/design-export/
 packages/frontend/*.design.html
 
 # Brainstorming visual-companion transient session files
-# (committed specs live under docs/superpowers/)
 .superpowers/
 
 # Claude Code local state (subagent worktrees, per-session feedback notes)

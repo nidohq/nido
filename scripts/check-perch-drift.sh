@@ -15,6 +15,8 @@
 #      (today only perch-zk, which Perch hasn't published) to the submodule,
 #      or the SDK pins another version than it carries. Published Perch
 #      packages (@stellar-registry/perch) come from npm by version.
+#   5. a commit-pinned Perch link in Nido's documentation names another commit
+#      than the pinned one (scripts/pin-perch-links.sh rewrites them).
 #
 # `just perch-infra` refuses any byte that doesn't match the manifest when it
 # fetches; this check catches what changes afterwards (a submodule bump without
@@ -42,12 +44,14 @@ status="$(git submodule status vendor/perch)"
 case "${status:0:1}" in
     " ") ;;
     "-") echo "error: vendor/perch is not checked out (git submodule update --init)" >&2; exit 1 ;;
-    *) problem "vendor/perch is at $(git -C vendor/perch rev-parse --short HEAD), not the commit the superproject records ($(git ls-tree HEAD vendor/perch | awk '{print substr($3,1,7)}'))" ;;
+    *) problem "vendor/perch is at $(git -C vendor/perch rev-parse --short HEAD), not the commit the superproject records ($(git rev-parse --short :vendor/perch))" ;;
 esac
 if [ -n "$(git -C vendor/perch status --porcelain --untracked-files=no)" ]; then
     problem "vendor/perch has local edits to tracked files: $(git -C vendor/perch status --porcelain --untracked-files=no | awk '{print $2}' | tr '\n' ' ')"
 fi
-pinned="$(git ls-tree HEAD vendor/perch | awk '{print $3}')"
+# The pin as staged, which `git submodule status` also compares against: the
+# checked-out commit's, or a re-pin's about to be committed.
+pinned="$(git rev-parse :vendor/perch)"
 
 # 2. The pinned commit is on the declared branch.
 branch="$(git config -f .gitmodules submodule.vendor/perch.branch || true)"
@@ -108,6 +112,13 @@ for pkg in perch:perch-js perch-zk:perch-zk; do
     sdk="$(jq -r --arg n "$name" '.dependencies[$n] // empty' packages/passkey-sdk/package.json)"
     [ -z "$sdk" ] || [ "$sdk" = "$carried" ] || problem "packages/passkey-sdk pins $name $sdk; vendor/perch carries $carried"
 done
+
+# 5. Every commit-pinned Perch link in Nido's documentation names the pinned
+#    commit, so a reader on GitHub sees the Perch source this tree builds and
+#    tests against (scripts/pin-perch-links.sh rewrites them after a bump).
+while IFS= read -r hit; do
+    problem "documentation links Perch at another commit (scripts/pin-perch-links.sh): $hit"
+done < <(git grep -n -E 'github\.com/stellar-registry/perch/(blob|tree)/([0-9a-f]{40}|PERCH_SHA)' -- '*.md' ':!vendor' ':!docs/reviews' | grep -v "/$pinned/" || true)
 
 if [ ${#problems[@]} -gt 0 ]; then
     echo "Perch drift (vendor/perch at ${pinned:0:7}, $manifest):" >&2

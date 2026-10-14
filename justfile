@@ -22,6 +22,15 @@ build:
 perch-infra:
     cd vendor/perch && bash scripts/fetch-infra-wasm.sh --stack ../../target/wasm32v1-none/contract
 
+# Re-pin vendor/perch to a Perch commit (full 40-hex) and regenerate what the
+# pin derives: the stack by manifest hash, Nido's contracts, the Perch
+# bindings, the SDK's Perch pins, the lockfiles, and the Soroban test
+# snapshots; then the drift check and the Rust suites. Nido's factory is not
+# redeployed. The perch-repin workflow runs this when Perch announces a
+# deployment. See scripts/repin-perch.sh.
+repin-perch commit:
+    scripts/repin-perch.sh {{commit}}
+
 # Check the vendored Perch stack hasn't drifted from what Nido builds against:
 # the submodule at its recorded commit (on its declared branch), the fetched
 # wasm, pin cache, and factory embed equal to the manifest's, and npm resolving
@@ -123,12 +132,12 @@ bindings name:
 # Regenerate ALL bindings (assumes wasms in target/) and apply post-gen
 # fixes once at the end.
 bindings-all:
-    @for name in factory multisig-policy; do \
-        wasm="target/wasm32v1-none/contract/nido_$$(echo $$name | tr - _).wasm"; \
-        echo "→ $$name ($$wasm)"; \
+    @for name in factory multisig-policy spending-limit-policy status-message; do \
+        wasm="target/wasm32v1-none/contract/nido_$(echo $name | tr - _).wasm"; \
+        echo "→ $name ($wasm)"; \
         stellar contract bindings typescript --overwrite \
-            --output-dir packages/contract-bindings/$$name \
-            --wasm "$$wasm"; \
+            --output-dir packages/contract-bindings/$name \
+            --wasm "$wasm"; \
     done
     ./scripts/fix-bindings.sh
 

@@ -1,3 +1,5 @@
+> **Historical record:** this is Nido's original SCF funding application, not a description of current behaviour; for the system as it is, see [ARCHITECTURE.md](../ARCHITECTURE.md).
+
 > Make a unique title that's different from your project name and reflects what you're asking funding for. Max 40 characters
 
 ## Project Title
@@ -70,7 +72,7 @@ An open-source JavaScript/TypeScript SDK that any Stellar wallet or dApp can int
 > - Sorobanhooks TA
 
 ## Technical Architecture
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full technical architecture, covering the contract interaction model, data flows for onboarding and dApp interaction, and security considerations. The smart contracts are implemented and available in the repository under `contracts/`.
+See [ARCHITECTURE.md](../ARCHITECTURE.md) for the full technical architecture, covering the contract interaction model, data flows for onboarding and dApp interaction, and security considerations. The smart contracts are implemented and available in the repository under `contracts/`.
 
 > Depending on the scope of your project, importance to the ecosystem, and team, you can request up to $XXX in XLM for ~4 months to cover costs directly related to development of the product itself with the final goal being to launch on mainnet or equivalent. Take a close look at the Budget Guidelines to determine your total budget request.
 >

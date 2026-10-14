@@ -9,7 +9,7 @@ primary_region = "iad"
   # Prometheus metrics on :8081 (/metrics + /debug/metrics/scrape). Scraped by
   # Fly's managed Prometheus over 6PN via [metrics] below; NOT added to
   # [http_service] so it stays private (only :8080 is public). Feeds the alerts
-  # in RUNBOOKS §4 (health, fee-limit ≥80%, tx error rate).
+  # in RUNBOOKS §5 (health, fee-limit ≥80%, tx error rate).
   METRICS_ENABLED = "true"
   REPOSITORY_STORAGE_TYPE = "redis"
   REDIS_KEY_PREFIX = "nido-relayer"
@@ -59,7 +59,7 @@ primary_region = "iad"
   memory = "512mb"
 
 # Fly's managed Prometheus scrapes the relayer's metrics server over the private
-# network. View/alert in grafana.fly.dev; alert rules are defined in RUNBOOKS §4.
+# network. View/alert in grafana.fly.dev; alert rules are defined in RUNBOOKS §5.
 # The Prometheus exposition endpoint is /debug/metrics/scrape (see OZ relayer
 # observability docs); METRICS_ENABLED=true above turns the server on.
 [metrics]

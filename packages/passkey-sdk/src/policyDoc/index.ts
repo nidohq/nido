@@ -52,6 +52,8 @@ export { buildPolicyDoc, scopedSessionKeyDoc } from './build.js';
 export type { NidoSigner, ScopedSessionKeyDocOptions } from './build.js';
 export { PROGRAM_VERSION, lowerDoc, signerDeclToChain, validateProgram } from './lower.js';
 export type { LowerOptions } from './lower.js';
+export { validateDoc } from './validate.js';
+export type { DocValidationError } from './validate.js';
 export { interpreterInstallParamsScVal, spendingLimitInstallParamsScVal } from './params.js';
 // Doc-only: apply_doc is the sole policy write path — the per-rule
 // buildDocInstallTxs route is gone with the account's rule mutators.

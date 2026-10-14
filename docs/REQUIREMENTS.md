@@ -1,3 +1,5 @@
+> **Historical record:** this is the SCF request that Nido's original funding application answered, not a description of Nido; for the system as it is, see [ARCHITECTURE.md](../ARCHITECTURE.md).
+
 #### 📋 Requirements
 
 * Your submission must address an [open RFP](#current-open-rfps) from the current quarter—read the RFP carefully and respond directly to its needs.

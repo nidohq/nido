@@ -56,6 +56,30 @@ describe("stash/load SignRequest", () => {
     clearSignRequest(id, store);
     expect(loadSignRequest(id, store)).toBeNull();
   });
+
+  it("round-trips an apply-policy-doc request that names its revision", () => {
+    const req: SignRequest = {
+      v: 1, kind: "session-grant", account: C1,
+      operation: { type: "apply-policy-doc", docJson: "{}", expectedRevision: "7" },
+      title: "Grant", submitMode: "relayer",
+      returnTarget: { type: "route", url: "https://cabc.nido.fyi/account/" },
+    };
+    const id = stashSignRequest(req, store);
+    expect(loadSignRequest(id, store)).toEqual(req);
+  });
+
+  // A stashed/older apply-policy-doc request without the revision it was
+  // composed from must not load — otherwise the builder would rebind it to the
+  // sign-time revision and defeat the stale-document check.
+  it("rejects an apply-policy-doc request missing expectedRevision", () => {
+    store.setItem("nido:signreq:z", JSON.stringify({
+      v: 1, kind: "session-grant", account: C1,
+      operation: { type: "apply-policy-doc", docJson: "{}" },
+      title: "Grant", submitMode: "relayer",
+      returnTarget: { type: "route", url: "https://cabc.nido.fyi/account/" },
+    }));
+    expect(loadSignRequest("z", store)).toBeNull();
+  });
 });
 
 describe("safeRouteUrl (F1 XSS / open-redirect guard)", () => {

@@ -3,7 +3,7 @@ import {
   saveFriendNickname, loadFriendNicknames,
   saveSessionKeyMaterial, loadSessionKeyMaterial, forgetSessionKeyMaterial,
   saveBlockLabel, loadBlockLabels,
-  savePendingAccount, loadPendingAccounts,
+  savePendingAccount, loadPendingAccounts, removePendingAccount, purgeExpiredPendingAccounts,
 } from './storage.js';
 
 const ACC = 'C' + 'A'.repeat(55); // Just an identifier here — never validated.
@@ -67,5 +67,33 @@ describe('policy storage', () => {
 
     savePendingAccount(ACC, "salt-1");
     expect(loadPendingAccounts()).toEqual([{ contractId: ACC, setupKey: "salt-1" }]);
+  });
+
+  it('purges a pending salt once the setup window has elapsed', () => {
+    savePendingAccount(ACC, 'salt-1');
+    // Still inside the 30-minute window: kept.
+    expect(purgeExpiredPendingAccounts(Date.now() + 29 * 60 * 1000).map((p) => p.contractId)).toEqual([ACC]);
+    // Past the window: purged, and the sidecar timestamp is cleared.
+    expect(purgeExpiredPendingAccounts(Date.now() + 31 * 60 * 1000)).toEqual([]);
+    expect(loadPendingAccounts()).toEqual([]);
+    expect(localStorage.getItem('nido:pending:ts')).toBe('{}');
+  });
+
+  it('eventually expires a legacy pending entry that has no timestamp', () => {
+    localStorage.setItem('nido:pending', JSON.stringify([{ contractId: ACC, setupKey: 'legacy' }]));
+    const t0 = 1_000_000;
+    // First sight stamps the undated legacy row and keeps it.
+    expect(purgeExpiredPendingAccounts(t0).map((p) => p.contractId)).toEqual([ACC]);
+    expect(JSON.parse(localStorage.getItem('nido:pending:ts')!)[ACC]).toBe(t0);
+    // 30 minutes after it was first stamped, it is purged.
+    expect(purgeExpiredPendingAccounts(t0 + 30 * 60 * 1000 + 1)).toEqual([]);
+  });
+
+  it('removePendingAccount clears the sidecar timestamp', () => {
+    savePendingAccount(ACC, 'salt-1');
+    expect(JSON.parse(localStorage.getItem('nido:pending:ts')!)[ACC]).toBeTypeOf('number');
+    removePendingAccount(ACC);
+    expect(loadPendingAccounts()).toEqual([]);
+    expect(JSON.parse(localStorage.getItem('nido:pending:ts')!)[ACC]).toBeUndefined();
   });
 });

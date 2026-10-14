@@ -113,8 +113,20 @@ describe("buildOperation", () => {
     // is constructed.
     it("refuses malformed doc JSON", async () => {
       await expect(
-        buildOperation({ type: "apply-policy-doc", docJson: "{\"nope\":true}" }, C1),
+        buildOperation(
+          { type: "apply-policy-doc", docJson: "{\"nope\":true}", expectedRevision: "5" },
+          C1,
+        ),
       ).rejects.toThrow();
+    });
+
+    // A request without `expectedRevision` is refused offline, never rebound
+    // to the revision read at signing time.
+    it("refuses a request missing expected_revision offline", async () => {
+      const missingRevision = { type: "apply-policy-doc", docJson: "{}" } as unknown as Parameters<
+        typeof buildOperation
+      >[0];
+      await expect(buildOperation(missingRevision, C1)).rejects.toThrow(/expected_revision/);
     });
   });
 
