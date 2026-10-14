@@ -1,9 +1,15 @@
 /**
- * The `/demo/start` event-token gate and the demo service's visit * registration call. See
+ * The `/demo/start` event-token gate and the demo service's visit registration call. See
  * `docs/superpowers/specs/2026-10-12-meridian-onboarding-flow-design.md`
- * ("Access control") for why the token exists: the QR is a static, * public-ish link,
+ * ("Access control") for why the event token exists: the QR is a static, public-ish link,
  * so a shared, revocable token is the thing that actually makes this "only through our QR code"
  * rather than "any URL anyone finds."
+ *
+ * The same token also authorizes the demo service's `POST /visits` call,
+ * rather than using a second, separate value — both would be equally
+ * client-visible (shipped in this public bundle) either way, so splitting
+ * them wouldn't raise the security bar. Neither is a real secret: it's a
+ * deterrent against casual/accidental access, not authentication.
  */
 
 /**
@@ -30,6 +36,7 @@ export interface DemoVisitRegistration {
 export async function registerDemoVisit(
   serviceUrl: string,
   address: string,
+  token: string,
 ): Promise<DemoVisitRegistration | null> {
   if (!serviceUrl) {
     console.warn("[nido demo] PUBLIC_DEMO_SERVICE_URL is not set — skipping visit registration.");
@@ -39,7 +46,7 @@ export async function registerDemoVisit(
   const resp = await fetch(`${serviceUrl.replace(/\/+$/, "")}/visits`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ address }),
+    body: JSON.stringify({ address, token }),
   });
   if (!resp.ok) {
     throw new Error(`Demo service rejected visit registration: ${resp.status}`);

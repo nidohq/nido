@@ -7,5 +7,11 @@
 /** Demo service base URL (registers visits, polls the chain, notifies the kiosk). */
 export const DEMO_SERVICE_URL: string = (import.meta.env.PUBLIC_DEMO_SERVICE_URL ?? "").replace(/\/+$/, "");
 
-/** Shared token carried on the QR's link (`?key=`). Empty = no gate. */
+/**
+ * Shared token carried on the QR's link (`?key=`), and reused as-is to
+ * authorize calls to the demo service's API — deliberately one token, not
+ * two: both are equally client-visible (shipped in this public bundle), so
+ * splitting them wouldn't raise the security bar, only the config surface.
+ * Empty = no gate.
+ */
 export const DEMO_EVENT_TOKEN: string = import.meta.env.PUBLIC_DEMO_EVENT_TOKEN ?? "";

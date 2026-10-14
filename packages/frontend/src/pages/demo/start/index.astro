@@ -60,7 +60,7 @@ import Nest from "../../../components/Nest.astro";
       $status.textContent = "Reserving your address…";
       const address = await predictAddress(saltHex);
       try {
-        await registerDemoVisit(DEMO_SERVICE_URL, address);
+        await registerDemoVisit(DEMO_SERVICE_URL, address, DEMO_EVENT_TOKEN);
       } catch (err) {
         console.warn("[nido demo] visit registration failed", err);
       }

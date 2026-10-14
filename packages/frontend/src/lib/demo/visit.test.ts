@@ -21,25 +21,25 @@ describe("registerDemoVisit", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
-    await expect(registerDemoVisit("", "CADDRESS")).resolves.toBeNull();
+    await expect(registerDemoVisit("", "CADDRESS", "secret")).resolves.toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("posts the address and returns the parsed visit", async () => {
+  it("posts the address and token, and returns the parsed visit", async () => {
     const fetchSpy = vi.fn(async () => ({
       ok: true,
       json: async () => ({ visit: "abc123" }),
     }));
     vi.stubGlobal("fetch", fetchSpy);
 
-    const result = await registerDemoVisit("https://demo.example/", "CADDRESS");
+    const result = await registerDemoVisit("https://demo.example/", "CADDRESS", "secret");
 
     expect(result).toEqual({ visit: "abc123" });
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://demo.example/visits",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ address: "CADDRESS" }),
+        body: JSON.stringify({ address: "CADDRESS", token: "secret" }),
       }),
     );
   });
@@ -47,6 +47,6 @@ describe("registerDemoVisit", () => {
   it("throws when the demo service rejects the registration", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500 })));
 
-    await expect(registerDemoVisit("https://demo.example", "CADDRESS")).rejects.toThrow(/500/);
+    await expect(registerDemoVisit("https://demo.example", "CADDRESS", "secret")).rejects.toThrow(/500/);
   });
 });

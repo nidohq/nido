@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerVisit } from "./handler.js";
 import { clearVisits, getVisit, visitCount } from "./store.js";
 
@@ -8,6 +8,10 @@ const VALID_ADDRESS = "C" + "A".repeat(55);
 // one test's registrations can't leak into (or be counted by) another.
 beforeEach(() => {
   clearVisits();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("registerVisit", () => {
@@ -69,5 +73,31 @@ describe("registerVisit", () => {
     expect(registerVisit("oops").status).toBe(400);
 
     expect(visitCount()).toBe(0);
+  });
+
+  it("accepts any (or no) token when DEMO_EVENT_TOKEN isn't configured", () => {
+    expect(registerVisit({ address: VALID_ADDRESS }).status).toBe(201);
+    expect(registerVisit({ address: VALID_ADDRESS, token: "anything" }).status).toBe(201);
+  });
+
+  it("rejects a missing or wrong token with 401 and stores nothing, when configured", () => {
+    vi.stubEnv("DEMO_EVENT_TOKEN", "secret");
+
+    const missing = registerVisit({ address: VALID_ADDRESS });
+    expect(missing.status).toBe(401);
+
+    const wrong = registerVisit({ address: VALID_ADDRESS, token: "nope" });
+    expect(wrong.status).toBe(401);
+
+    expect(visitCount()).toBe(0);
+  });
+
+  it("accepts a matching token when DEMO_EVENT_TOKEN is configured", () => {
+    vi.stubEnv("DEMO_EVENT_TOKEN", "secret");
+
+    const result = registerVisit({ address: VALID_ADDRESS, token: "secret" });
+
+    expect(result.status).toBe(201);
+    expect(visitCount()).toBe(1);
   });
 });
