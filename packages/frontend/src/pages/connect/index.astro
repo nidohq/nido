@@ -98,6 +98,7 @@ import Toast from '../../components/Toast.astro';
 <script>
   import { loadAccounts, loadAccountName, isContractId } from '@nidohq/passkey-sdk';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
+  import { validateDappReturn } from '../../lib/signing/signRequest';
   import { shortAddr } from '../../lib/address';
   import { avatarBackground } from '../../lib/avatarStyle';
 
@@ -133,32 +134,28 @@ import Toast from '../../components/Toast.astro';
 
   // Validate the dApp origin and that the return URL is same-origin with it.
   // This is the anti-redirect-abuse guard mirrored from the delegate flow:
-  // we only ever hand the address to the origin that asked for it.
-  function validatedReturn(): URL | null {
-    if (!dappOrigin) { showError('Missing dapp origin parameter.'); return null; }
-    let origin: string;
-    try { origin = new URL(dappOrigin).origin; } catch { showError('Malformed dapp origin.'); return null; }
-    if (returnUrl) {
-      let r: URL;
-      try { r = new URL(returnUrl); } catch { showError('Malformed return URL.'); return null; }
-      if (r.origin !== origin) {
-        showError(`Return URL origin (${r.origin}) does not match dapp origin (${origin}).`);
-        return null;
-      }
-      return r;
+  // we only ever hand the address to the origin that asked for it. Uses the
+  // hardened httpOrigin scheme check (validateDappReturn) so a
+  // `javascript:`/`data:`/opaque-origin dapp or return value is rejected
+  // instead of passing the bare `new URL().origin === "null"` comparison.
+  function validatedReturn(): string | null {
+    const res = validateDappReturn(dappOrigin, returnUrl);
+    if ('error' in res) {
+      if (res.error === 'missing-dapp') showError('Missing dapp origin parameter.');
+      else if (res.error === 'malformed-dapp') showError('Malformed dapp origin.');
+      else showError('Return URL origin does not match dapp origin.');
+      return null;
     }
-    // No explicit return URL: that's fine for the popup path (we postMessage
-    // to the opener). Synthesize the origin so postResultToOpener targets it.
-    return new URL(origin);
+    return res.origin;
   }
 
   const ret = validatedReturn();
   // Write only the validated origin to the DOM — never the raw ?dapp= value.
-  document.getElementById('dapp-origin')!.textContent = ret ? ret.origin : '(unknown)';
+  document.getElementById('dapp-origin')!.textContent = ret ?? '(unknown)';
 
   function finish(search: string) {
     if (!ret) return;
-    postResultToOpener(search, ret.origin, returnUrl || undefined);
+    postResultToOpener(search, ret, returnUrl || undefined);
   }
 
   document.getElementById('cancel')!.addEventListener('click', () => {

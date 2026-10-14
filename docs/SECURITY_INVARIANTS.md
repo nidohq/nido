@@ -1,278 +1,159 @@
 # Security invariants
 
-The properties that must hold, each with the test that pins it. An auditor
-uses this to check the system does what it claims; the team keeps it green.
-IDs are stable and referenced from [THREAT_MODEL.md](./THREAT_MODEL.md).
+The properties Nido relies on, each with the code that implements it and the
+evidence that it holds, one evidence row per claim. IDs are stable;
+[THREAT_MODEL.md](./THREAT_MODEL.md) and
+[STRIDE_THREAT_MODEL.md](./STRIDE_THREAT_MODEL.md) cite them.
 
-Recovery properties are Perch's. Where a recovery entry comes from a Perch
-spec decision or section, it names it
-([`vendor/perch/docs/recovery/spec.md`](../vendor/perch/docs/recovery/spec.md));
-Perch's own suites pin them against Perch's code
-([implementation.md](../vendor/perch/docs/recovery/implementation.md)). The
-evidence listed here is Nido's: the same properties, on Nido's factory,
-verifier, and passkeys.
+Recovery properties are Perch's. Where an entry comes from a decision (D1-D16)
+or section (§) of the
+[Perch recovery spec](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/recovery/spec.md)
+(`vendor/perch/docs/recovery/spec.md`), it names it. Perch's own suites pin
+these properties against Perch's code
+([Perch implementation map](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/recovery/implementation.md)
+(`vendor/perch/docs/recovery/implementation.md`)). The evidence here is
+Nido's: the same properties on Nido's factory, passkeys, and wallet.
 
-**How the evidence runs.** Integration tests live in
-`crates/integration-tests/tests/it/<file>.rs` and run with `just test`. In the
-Perch suites (`account.rs`, `onboarding.rs`, `recovery_*.rs`, `costs.rs`)
-every contract runs from wasm under enforcing authorization, and every Perch
-contract is the exact wasm of Perch's testnet deployment, fetched by the
-manifest's hashes (`just perch-infra`):
-`set_auths` with hand-built entries, because `mock_all_auths` never runs a
-custom account's `__check_auth`. Keys are P-256 passkeys signing exactly what
-a browser assertion signs. Guardians are Nido accounts approving through a
-rule their own document scopes to the controller. ZK proofs are real
-zero-knowledge UltraHonk proofs of Perch's release circuit (depth 32),
-verified by the adapter's embedded verifier, replayed from `fixtures/zk/` and
-re-proved in CI ("Reproduce the real-proof fixtures"). Nothing on their
-authorization or verification path is mocked.
+In the Implementation column, a `perch-*` crate name means that crate in the
+Perch checkout, `vendor/perch/crates/<crate>/`
+([browse at the pinned revision](https://github.com/stellar-registry/perch/tree/391477ff22edd64a2da326eb9a92a92813b8e65d/crates));
+other paths are this repository's. Rust tests in `crates/integration-tests`
+live in `tests/it/<file>.rs`; a bare test name in the Factory section is in
+`contracts/factory/src/contract.rs`.
 
-The other suites are narrower. The factory unit tests use `mock_all_auths`
-with a stub verifier and a mock registry; the pre-Perch policy tests use
-`mock_all_auths`.
+## Evidence kinds
 
-## Factory (`contracts/factory/src/contract.rs` unit tests)
+Each evidence row names one kind. The kind fixes the artifact, environment,
+and how the result is produced, unless the row says otherwise.
 
-- **F1. Deterministic address.** `create_account(salt, key)` deploys a
-  `perch-account` at `get_c_address(salt)`, whose only rule is `key` as admin
-  scoped to the account itself. `get_c_address_uses_random_salt`,
-  `create_account_deploys_a_perch_account_with_the_passkey_admin_rule`.
-- **F2. One account per salt.** A second `create_account` with the same salt
-  is refused, so replaying a salt can't reset or take over an account.
-  `create_account_twice_with_the_same_salt_is_rejected`.
-- **F3. The embedded account code is what deploys.** The factory deploys by
-  the hash of its embedded wasm, and an upgrade clears the cached hash so new
-  accounts get the new code. `account_wasm_hash_equals_uploaded_wasm_hash`,
-  `upgrade_clears_account_wasm_hash_cache`,
-  `refresh_account_wasm_hash_repairs_stale_cache`.
-- **F4. Admin actions need the admin.** `set_admin_requires_current_admin_auth`,
-  `upgrade_requires_admin_auth`, `set_registry_pins_requires_admin_auth`.
-- **F5. A pinned verifier never consults the registry.** Once pinned, a
-  repointed or broken registry can neither reroute nor block account creation.
-  `pinned_resolve_never_consults_registry`.
+| Kind | What runs | Artifact | Environment | Result |
+| --- | --- | --- | --- | --- |
+| **Mocked** | The factory's unit tests and the pre-Perch policy tests: `mock_all_auths`; the factory tests use a stub verifier and a mock registry | This tree; the factory deploys its embedded `perch-account` wasm | soroban-sdk test host | CI job "Contracts" (`cargo test --workspace`), every push and pull request |
+| **Enforcing** | Integration tests in `crates/integration-tests/tests/it/`. Every contract on the authorization and verification path runs from wasm — the production account, factory, recovery controller, ZK pool and adapter, and WebAuthn verifier. The one exception is `Target`, a native test-harness contract (`crates/integration-tests/src/world.rs`) that stands in for a capability's callee; it is not production code. Authorization is `set_auths` with hand-built entries, because `mock_all_auths` never runs a custom account's `__check_auth`. Keys are P-256 passkeys signing exactly what a browser assertion signs; guardians are Nido accounts approving through a rule their own document scopes to the controller. Nothing on the authorization or verification path is mocked; a row names any stub. | Perch's wasm, fetched by the hashes in Perch's [testnet manifest](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/deployments/testnet.json) (`vendor/perch/deployments/testnet.json`) by `just perch-infra`; Nido's factory built from this tree around that account wasm | soroban-sdk test host (`just test`) | CI job "Contracts" |
+| **Real-proof** | Enforcing, with real zero-knowledge UltraHonk proofs of Perch's release circuit (depth 32), verified by the adapter's embedded verifier | As Enforcing, plus the proofs in `crates/integration-tests/fixtures/zk/` (Z1) | As Enforcing | CI jobs "Contracts" and "Reproduce the real-proof fixtures" |
+| **Unit (CI)** | vitest suites in `tests/support/` and `packages/passkey-sdk/src/perch/` | This tree; vectors written by Perch's Rust or by Nido's integration suites | Node | CI jobs "Unit" and "SDK Perch parity" |
+| **Unit (local)** | Every other vitest suite: the wallet (`packages/frontend`) and the SDK outside `src/perch/` | This tree | Node, `npm test` in the package | No CI job runs them (MAINNET_READINESS G3) |
+| **Browser** | Playwright UI tier (`@fast`), no chain | Wallet built with `PUBLIC_PERCH_DEPLOYMENT=none` | Chromium, Firefox, WebKit | CI job "E2E" |
+| **Testnet** | Playwright testnet tier, through the wallet | `perch.TESTNET`: Perch's testnet deployment (built from Perch `7ae915d`, recorded in its manifest) plus Nido's factory ([DEPLOYED.md](../DEPLOYED.md)) | Stellar testnet, Chromium | Manual: `test-testnet.yml` is dispatch-only and not a required check. Recorded result in W8. |
+| **Review** | No automated test; the cited code is the evidence | This tree | | |
 
-## WebAuthn verifier (`contract_verifier.rs`)
+**Formal.** Nido has no formal evidence. Perch's Lean proofs cover its
+canonical encodings and interpreter within their stated coverage; recovery,
+account authorization, the circuit, the adapter, and the pool have no formal
+model
+([Perch formal coverage](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/recovery/formal-verification-impact.md)
+(`vendor/perch/docs/recovery/formal-verification-impact.md`)).
 
-Perch's `perch-webauthn-verifier`, the deployed wasm, called through its own
-`verify` entry point with Nido's assertions.
+## Factory
 
-- **V1. Only a valid assertion over the exact challenge, by the exact key,
-  verifies; high-S signatures are refused.** `verify_webauthn_assertion_on_chain`,
-  `reject_wrong_challenge_on_chain`, `reject_wrong_key_on_chain`,
-  `reject_high_s_malleated_signature_on_chain`.
-- **V2. The factory names that verifier.** Every account the factory mints
-  has one admin signer, checked by the pinned verifier. Pinned in the tests
-  by `world()` and on testnet by `scripts/deploy-factory.sh`, which reads the
-  pin back.
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| F1 | **Deterministic address.** `create_account(salt, key)` deploys a `perch-account` at `get_c_address(salt)` whose only rule is `key` as admin, scoped to the account itself, with no document and no controller. | `contracts/factory/src/contract.rs` `create_account`, `get_c_address` | `get_c_address_uses_random_salt`, `create_account_deploys_a_perch_account_with_the_passkey_admin_rule` | Mocked | Stub verifier. Every Enforcing test also mints its accounts through the factory wasm. |
+| F2 | **One account per salt.** A second `create_account` with the same salt is refused, so replaying a salt can't reset or take over an account. | The host's `deploy_v2` refuses an existing address | `create_account_twice_with_the_same_salt_is_rejected` | Mocked | Says nothing about who deploys first: the setup race is open (THREAT_MODEL L5); `whoever_submits_the_salt_first_owns_the_address` pins that a front-runner's key becomes the admin (gate MAINNET_READINESS A6). |
+| F3 | **The embedded account code is what deploys.** The factory deploys by the hash of its embedded wasm, and an upgrade clears the cached hash so new accounts get the new code. | `account_wasm_hash`, the `upgrade` override, `refresh_account_wasm_hash` | `account_wasm_hash_equals_uploaded_wasm_hash`, `upgrade_clears_account_wasm_hash_cache`, `refresh_account_wasm_hash_repairs_stale_cache` | Mocked | |
+| F4 | **Admin actions need the admin:** `set_admin`, `upgrade`, `set_registry_pins`, `refresh_account_wasm_hash`. | `admin-sep` `Administratable` and `Upgradable`; `Self::admin(e).require_auth()` | `set_admin_requires_current_admin_auth`, `upgrade_requires_admin_auth`, `set_registry_pins_requires_admin_auth`, `refresh_account_wasm_hash_repairs_stale_cache` | Mocked | Who holds the admin is governance (MAINNET_READINESS B1). |
+| F5 | **A pinned verifier never consults the registry.** Once pinned, a repointed or broken registry can neither reroute nor block account creation. | `set_registry_pins`, `resolve`, `pinned_for` | `pinned_resolve_never_consults_registry` | Mocked | |
 
-## Account and documents (`account.rs`)
+## WebAuthn verifier
 
-- **A1. `apply_doc` is the only rule write path, and a document replaces the
-  whole rule set.** `the_first_document_signed_by_the_passkey_is_installed_and_readable`,
-  `each_document_replaces_the_whole_rule_set`.
-- **A2. Only the admin rule changes the document.**
-  `a_passkey_outside_the_admin_rule_cannot_change_the_document`.
-- **A3. No bricking.** A document without a self-admin rule is refused.
-  `a_document_without_a_self_admin_rule_is_refused`.
-- **A4. Network binding.** A document for another network is refused.
-  `a_document_for_another_network_is_refused`.
-- **A5. Caps compile to Perch's spending limit beside the interpreter.**
-  `a_capped_rule_installs_the_spending_limit_beside_the_interpreter`.
-- **A6. Reserved hook names are never authorized or executed** (spec D12,
-  §15). `reserved_hook_names_are_never_authorized_or_executed`.
-- **A7. Ordinary activity runs through document rules, directly and through
-  `execute`.** `ordinary_activity_runs_through_document_rules_and_execute`.
-- **A8. A document prepared at an older revision never lands.** An
-  `apply_doc` naming the revision it was prepared at is refused with
-  `StaleRevision` once another apply has moved the account, and leaves the
-  revision; every successful apply advances it by one.
-  `a_document_prepared_at_an_older_revision_is_refused`. The wallet names
-  the revision each document was composed from: owner applies go through
-  perch-js's `applyDocument` (`applyDocWithPasskey` in
-  `packages/frontend/src/lib/primaryPasskeySigner.ts`), and a dApp request
-  carries it as `expectedRevision` (`docRequest.test.ts`).
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| V1 | **Only a valid assertion over the exact challenge, by the exact key, verifies; high-S signatures are refused.** | `perch-webauthn-verifier` `verify` | `contract_verifier.rs`: `verify_webauthn_assertion_on_chain`, `reject_wrong_challenge_on_chain`, `reject_wrong_key_on_chain`, `reject_high_s_malleated_signature_on_chain` | Enforcing | The deployed verifier wasm is called directly through `verify`, with Nido's assertions; no account is on the path. |
+| V2 | **The factory names that verifier.** Every account the factory mints has one admin signer, checked by the pinned verifier. | `create_account`, `set_registry_pins` | `world()` (`crates/integration-tests/src/world.rs`) pins Perch's verifier, and every Enforcing test mints through it | Enforcing | |
+| V2 | (as above, on testnet) | `scripts/deploy-factory.sh` reads the pin back after `set_registry_pins` | Deployment record in [DEPLOYED.md](../DEPLOYED.md) | Testnet | One deployment; mainnet repeats it (MAINNET_READINESS cutover step 4). |
 
-## Onboarding (`onboarding.rs`)
+## Account and documents
 
-- **O1. Recovery enrolls in the first `apply_doc`.**
-  `the_first_document_enrolls_recovery_in_one_apply_doc`.
-- **O2. A failed pool insertion reverts the whole `apply_doc`.** Against a
-  pool that refuses every insertion, the account is left exactly as it was.
-  `a_failed_pool_insertion_reverts_the_whole_apply_doc`.
-- **O3. Enrollment ids are fresh and never reused** (spec D10).
-  `zk_enrollments_are_fresh_and_never_reused`.
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| A1 | **`apply_doc` is the only rule write path, and a document replaces the whole rule set.** | `perch-smart-account` `apply` and `rules::reconcile`; `impl_perch_smart_account!` exports no OZ `SmartAccount` mutation entry point | `account.rs::the_first_document_signed_by_the_passkey_is_installed_and_readable`, `account.rs::each_document_replaces_the_whole_rule_set` | Enforcing | The tests show replacement; the absence of other write paths rests on the macro (Review). |
+| A2 | **The document changes only through one of two authorized paths.** (a) An `apply_doc` under owner authorization (any ordinary rule scoped to the account, in practice the admin rule), subject to the recovery gates: on an account with an adopted controller, `rcv_sync` classifies the apply before any rule changes and refuses what the profile does not allow (R4, R5). (b) The authorized recovery completion: an `apply_doc` of the controller-derived target, authorized by the zero-signer recovery rule, whose policy (the controller's `enforce`) checks the context, the window, and the target bytes (R3). §15, entry-point table, `apply_doc` row: "Owner authorization, or the recovery rule (completion only)". | `perch-smart-account` `apply` (`me.require_auth()`), `check_auth`, `is_completion`; the `apply_doc` doc comment ([lib.rs lines 342-344](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/crates/perch-smart-account/src/lib.rs#L342-L344) (`vendor/perch/crates/perch-smart-account/src/lib.rs`)); `perch-recovery` `enforce`, `rcv_sync` | (a) `account.rs::a_passkey_outside_the_admin_rule_cannot_change_the_document` | Enforcing | Shows only that a declared device key outside the admin rule cannot apply through the admin rule; it does not prove the universal claim. |
+| A2 | (b) as above | as above | `recovery_lifecycle.rs::{loss,protected}_{guardian_only,zk_only,combined}` (completion before the delay and of a non-derived document refused; the derived target applied), `recovery_rules.rs::compromise_restores_the_baseline_and_revokes_what_the_thief_added` | Enforcing; Real-proof in ZK and Combined modes | No Nido test selects the recovery rule outside an authorized window or for another call; Perch's suites do (`recovery.rs::completion_must_submit_exactly_the_target_inside_its_window`). |
+| A3 | **No bricking.** A document without a policy-free self-admin rule is refused (`AdminLockout`). | `perch-doc-compiler` `admin_survives`, called by `perch-smart-account` `apply` | `account.rs::a_document_without_a_self_admin_rule_is_refused` | Enforcing | |
+| A4 | **Network binding.** A document for another network is refused. | `perch-doc-compiler` `compile_doc` | `account.rs::a_document_for_another_network_is_refused` | Enforcing | |
+| A5 | **Caps compile to Perch's spending limit beside the interpreter.** | `perch-smart-account` `rules::document_rule` | `account.rs::a_capped_rule_installs_the_spending_limit_beside_the_interpreter` | Enforcing | Installation only. That replacing the rule or its cap resets the window (THREAT_MODEL L3) has no Nido test. |
+| A6 | **Reserved hook names are never authorized or executed** (D12, §15). | `perch-smart-account` `check_auth`, `execute`; `perch-recovery-interface` `is_reserved_invoker_only` | `account.rs::reserved_hook_names_are_never_authorized_or_executed` | Enforcing | |
+| A7 | **Ordinary activity runs through document rules, directly and through `execute`.** | OZ `do_check_auth`; `perch-smart-account` `execute` | `account.rs::ordinary_activity_runs_through_document_rules_and_execute` | Enforcing | |
+| A8 | **A document prepared at an older revision never lands.** An `apply_doc` naming the revision it was prepared at is refused with `StaleRevision` once another apply has moved the account, and leaves the revision; every successful apply advances it by one. | `perch-smart-account` `apply`, `advance_revision` | `account.rs::a_document_prepared_at_an_older_revision_is_refused` | Enforcing | Document writes only; ordinary transactions carry no revision (THREAT_MODEL L4). |
+| A8 | **The wallet names the revision each document was composed from.** Owner applies go through perch-js's `applyDocument` (`applyDocWithPasskey`); a dApp request carries it as `expectedRevision`. | `packages/frontend/src/lib/primaryPasskeySigner.ts`, `packages/frontend/src/lib/policy/` | `packages/frontend/src/lib/policy/docRequest.test.ts` ("carries prevDocJson on an update and replaces a same-named rule") | Unit (local) | The owner path has no unit test; the policy page's apply runs in the Testnet tier (W8). dApp requests build their `apply_doc` on the sign page, outside `applyDocument`. |
+
+## Onboarding
+
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| O1 | **Recovery enrolls in the first `apply_doc`.** | `perch-smart-account` `apply` (`rcv_sync`, then `rcv_insert`) | `onboarding.rs::the_first_document_enrolls_recovery_in_one_apply_doc` | Enforcing | |
+| O2 | **A failed pool insertion reverts the whole `apply_doc`**, leaving the account exactly as it was. | `apply` calls `rcv_insert` without `try_` | `onboarding.rs::a_failed_pool_insertion_reverts_the_whole_apply_doc` | Enforcing | The failing pool is a native stub contract. |
+| O3 | **Enrollment ids are fresh and never reused** (D10). | `perch-smart-account` `apply` (`EnrollmentReused`, `ZkFactorChangedInPlace`); `perch-recovery` `check_zk_wiring` | `onboarding.rs::zk_enrollments_are_fresh_and_never_reused` | Enforcing | |
 
 ## Recovery
 
-- **R1. An attempt without evidence blocks nothing; the first authorized
-  attempt wins** (D2, §6.3, §6.4). `recovery_rules.rs::evidence_free_attempts_block_nothing_and_the_first_authorized_wins`.
-- **R2. Evidence counts for exactly one statement.** A proof never counts for
-  another attempt, account, or action; guardian approvals and replacement
-  sets are validated (D13, §4).
-  `recovery_rules.rs::a_proof_never_counts_for_another_attempt_account_or_action`,
-  `recovery_rules.rs::replacements_and_approvals_are_validated`.
-- **R3. Only the derived target completes, only after the delay.** For all
-  six profile/mode combinations: a collecting attempt blocks nothing; only the
-  on-chain derived target completes and only after the timelock; completion
-  revokes the replaced passkey, spends the nullifier, and enrolls the rotated
-  credential (D6, D7, D9). `recovery_lifecycle.rs::{loss,protected}_{guardian_only,zk_only,combined}`.
-- **R4. The Protected freeze.** While an attempt is authorized, a `Protected`
-  account refuses direct authorization and `execute`; a `Loss` account keeps
-  both; both refuse policy writes in the window (D1, D3). Checked inside each
-  `recovery_lifecycle.rs` case.
-- **R5. Reconfiguration needs the right authority.** `Loss`: the owner.
-  `Protected`: the owner plus the enrolled condition over a `Reconfigure`
-  statement (both factors under `Combined`). Rotating a passkey is not a
-  reconfiguration (D4, D8). `recovery_reconfigure.rs`, all five tests.
-- **R6. Cancellation.** The `Loss` owner vetoes, uncapped; the `Protected`
-  owner cannot. Guardian or ZK cancellation lifts the freeze; evidence-based
-  cancellation is capped by `max-cancels` (D5).
-  `recovery_rules.rs::a_loss_owner_vetoes_and_a_protected_owner_cannot`,
-  `guardian_cancellation_lifts_the_freeze_and_is_capped`,
-  `a_zk_cancellation_proof_lifts_the_freeze`.
-- **R7. A stale lost-key source needs a fresh attempt** (§6.2, §7.2, T4).
-  If the applied document changed since the attempt opened, the approval
-  that would promote it succeeds and stores the attempt `Invalidated`
-  (refusing would roll the invalidation back), and it takes no more
-  evidence. `recovery_rules.rs::a_lost_key_attempt_whose_source_changed_needs_a_fresh_attempt`.
-- **R8. Compromise recovery restores the enrolled baseline and revokes what
-  the thief added** (D6, D7).
-  `recovery_rules.rs::compromise_restores_the_baseline_and_revokes_what_the_thief_added`.
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| R1 | **An attempt without evidence blocks nothing; the first authorized attempt wins** (D2, §6.3, §6.4). | `perch-recovery` `begin`, `promote` | `recovery_rules.rs::evidence_free_attempts_block_nothing_and_the_first_authorized_wins` | Enforcing | |
+| R2 | **Evidence counts for exactly one statement.** A proof never counts for another attempt, account, or action (D13, §4). | `perch-recovery` `statement`, `verify_zk`; `perch-zk-adapter` `verify` | `recovery_rules.rs::a_proof_never_counts_for_another_attempt_account_or_action` | Real-proof | |
+| R2 | Guardian approvals and replacement sets are validated. | `perch-recovery` `submit_guardian`, `begin` | `recovery_rules.rs::replacements_and_approvals_are_validated` | Enforcing | |
+| R3 | **Only the derived target completes, only after the delay.** For all six profile/mode combinations: a collecting attempt blocks nothing; only the on-chain derived target completes and only after the timelock; completion revokes the replaced passkey, spends the nullifier, and enrolls the rotated credential (D6, D7, D9). | `perch-doc-compiler` `derive_target`; `perch-recovery` `enforce` (`authorize_completion`), `rcv_sync` (`complete`); `perch-smart-account` `complete_recovery` | `recovery_lifecycle.rs::{loss,protected}_{guardian_only,zk_only,combined}` | Enforcing; Real-proof in ZK and Combined modes | Lost-key recovery; compromise is R8. The harness's completion names no `expected_revision`; the wallet's names one (W7). |
+| R4 | **The `Protected` freeze.** While an attempt is authorized, a `Protected` account refuses direct authorization and `execute`; a `Loss` account keeps both; both refuse policy writes in the window (D1, D3). | `perch-smart-account` `check_auth` (freeze mirror), `rcv_gate`; `perch-recovery` `promote` (sets the mirror), `rcv_sync` (refuses with `AttemptAuthorized`) | Checked inside each `recovery_lifecycle.rs` case | Enforcing; Real-proof in ZK and Combined modes | New authorizations only: allowances granted earlier stay usable (THREAT_MODEL L2). A frozen account's CAP-0071 delegated authorization is not exercised here; Perch's suites cover it (`recovery.rs::a_perch_account_guards_another_at_its_own_controller_until_it_is_frozen`). |
+| R5 | **Reconfiguration needs the right authority.** `Loss`: the owner. `Protected`: the owner plus the enrolled condition over a `Reconfigure` statement (both factors under `Combined`). Rotating a passkey is not a reconfiguration (D4, D8). | `perch-recovery` `rcv_sync`, `approve_change`, `submit_zk_change` | `recovery_reconfigure.rs`: `loss_reconfiguration_needs_only_the_owner`, `protected_reconfiguration_needs_a_guardian_quorum`, `protected_zk_reconfiguration_is_its_own_proven_action`, `protected_combined_reconfiguration_needs_both_factors`, `rotating_a_passkey_is_not_a_reconfiguration` | Enforcing; Real-proof for the ZK and Combined cases | |
+| R6 | **Cancellation.** The `Loss` owner vetoes, uncapped; the `Protected` owner cannot. Guardian or ZK cancellation lifts the freeze; evidence-based cancellation is capped by `max-cancels` (D5). | `perch-smart-account` `cancel_recovery`; `perch-recovery` `rcv_cancel`, `cancel` | `recovery_rules.rs::a_loss_owner_vetoes_and_a_protected_owner_cannot`, `recovery_rules.rs::guardian_cancellation_lifts_the_freeze_and_is_capped` | Enforcing | |
+| R6 | (ZK cancellation) | as above | `recovery_rules.rs::a_zk_cancellation_proof_lifts_the_freeze` | Real-proof | |
+| R7 | **A stale lost-key source needs a fresh attempt** (§6.2, §7.2, T4). If the applied document changed since the attempt opened, the approval that would promote it succeeds and stores the attempt `Invalidated` (refusing would roll the invalidation back), and it takes no more evidence. | `perch-recovery` `promote` | `recovery_rules.rs::a_lost_key_attempt_whose_source_changed_needs_a_fresh_attempt` | Enforcing | This is what lets a `Protected` thief without a baseline block lost-key recovery (THREAT_MODEL L1). |
+| R8 | **Compromise recovery restores the enrolled baseline and revokes what the thief added** (D6, D7). | `perch-recovery` `publish_baseline`, `begin_compromise`; `perch-doc-compiler` `derive_target`; `perch-smart-account` `complete_recovery` | `recovery_rules.rs::compromise_restores_the_baseline_and_revokes_what_the_thief_added` | Enforcing | `Protected`/`GuardianOnly` only. Needs an enrolled, published baseline, which is optional (THREAT_MODEL L1). |
 
-## Upgrades (`recovery_upgrades.rs`, `account.rs`)
+## Upgrades
 
-- **U1. Seven days, owner only.** An upgrade runs only after 120,960 ledgers,
-  installs exactly the scheduled wasm, and is owner-only, cancellable, and
-  replaceable (D11). `account.rs::an_upgrade_waits_seven_days_and_installs_the_scheduled_wasm`,
-  `account.rs::upgrades_are_owner_only_cancellable_and_replaceable`.
-- **U2. A Protected upgrade needs the condition over that exact wasm.**
-  `a_protected_upgrade_needs_the_guardian_quorum`,
-  `a_protected_zk_upgrade_needs_a_proof_over_the_upgrade_statement`.
-- **U3. Upgrades yield to recovery.** Blocked while an attempt is authorized,
-  dropped by a completion, and stale after a reconfiguration: executing a
-  stale request refuses with `StaleUpgrade`, and it can never run.
-  `upgrades_are_blocked_in_the_window_and_dropped_by_a_completion`,
-  `a_reconfiguration_makes_a_queued_upgrade_stale`.
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| U1 | **Seven days, owner only.** An upgrade runs only after 120,960 ledgers, installs exactly the scheduled wasm, and is owner-only, cancellable, and replaceable (D11). | `perch-smart-account` `schedule_upgrade`, `execute_upgrade`, `cancel_upgrade`; `perch-recovery-interface` `ACCOUNT_UPGRADE_DELAY_LEDGERS` | `account.rs::an_upgrade_waits_seven_days_and_installs_the_scheduled_wasm`, `account.rs::upgrades_are_owner_only_cancellable_and_replaceable` | Enforcing | |
+| U2 | **A `Protected` upgrade needs the condition over that exact wasm.** | `perch-recovery` `rcv_upgrade` | `recovery_upgrades.rs::a_protected_upgrade_needs_the_guardian_quorum` | Enforcing | |
+| U2 | (ZK condition) | as above | `recovery_upgrades.rs::a_protected_zk_upgrade_needs_a_proof_over_the_upgrade_statement` | Real-proof | |
+| U3 | **Upgrades yield to recovery.** Blocked while an attempt is authorized, dropped by a completion, and stale after a reconfiguration: executing a stale request refuses with `StaleUpgrade`, and it can never run. | `perch-smart-account` `execute_upgrade` (recovery generation), `drop_pending_upgrade` | `recovery_upgrades.rs::upgrades_are_blocked_in_the_window_and_dropped_by_a_completion`, `recovery_upgrades.rs::a_reconfiguration_makes_a_queued_upgrade_stale` | Enforcing | |
 
-## ZK (`recovery_rules.rs`, `crates/integration-tests/src/zk.rs`)
+## ZK
 
-- **Z1. Fixture drift fails loudly.** Each committed proof records the
-  statement digest, root, and nullifier it was proved for; a test whose
-  statement changed fails with "rerun `just gen-zk-fixtures`", not an opaque
-  `ProofRejected`. CI re-proves every fixture, each fresh proof verifies
-  through the deployed adapter, and CI fails if any `fixture.json` changes.
-  The proofs are zero-knowledge, so their bytes differ on every run.
-- **Z2. Old roots stay valid; a full tree rolls over** (D15, §14).
-  `a_proof_against_an_older_root_still_verifies`,
-  `a_full_tree_rolls_over_and_its_last_member_still_recovers`.
-- **Z3. Nullifiers.** Only a completion spends one, and nothing un-spends it
-  (D9). The `recovery_lifecycle.rs` ZK cases show a completion spends it;
-  `recovery_rules.rs::a_zk_cancellation_proof_lifts_the_freeze` and
-  `recovery_reconfigure.rs::protected_zk_reconfiguration_is_its_own_proven_action`
-  show a cancellation or reconfiguration proof leaves it unspent. Perch's
-  controller also refuses a ZK lost-key attempt that declares no rotated
-  enrollment; Nido's tests always declare one and don't exercise that
-  refusal.
-- **Z4. The wallet and the chain agree.** The SDK's statement encodings
-  (perch-js's) match Perch's independent vectors and every statement Nido's
-  Rust suites built through the controller, byte for byte. bb.js proves a
-  lifecycle statement in the page's way, and its own verifier accepts both
-  that proof and the native proof the adapter verified, for the same public
-  inputs.
-  `packages/passkey-sdk/src/perch/statement.test.ts`,
-  `packages/passkey-sdk/src/perch/zk.test.ts` (CI: "SDK Perch parity").
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| Z1 | **Fixture drift fails loudly.** Each committed proof records the statement digest, root, and nullifier it was proved for; a test whose statement changed fails with "rerun `just gen-zk-fixtures`", not an opaque `ProofRejected`. CI re-proves every fixture from source with Perch's checksum-pinned nargo/bb, each fresh proof verifies through the deployed adapter, and CI fails if any `fixture.json` changes. The proofs are zero-knowledge, so their bytes differ on every run. | `crates/integration-tests/src/zk.rs` | CI job "Reproduce the real-proof fixtures" (`just gen-zk-fixtures`, then `git diff --exit-code` on `fixture.json`) | Real-proof | |
+| Z2 | **Old roots stay valid; a full tree rolls over** (D15, §14). | `perch-zk-pool` | `recovery_rules.rs::a_proof_against_an_older_root_still_verifies`, `recovery_rules.rs::a_full_tree_rolls_over_and_its_last_member_still_recovers` | Real-proof | |
+| Z3 | **Nullifiers.** Only a completion spends one, and nothing un-spends it (D9). | `perch-recovery` (§11) | Spent: the `recovery_lifecycle.rs` ZK and Combined cases. Unspent after a cancellation or reconfiguration proof: `recovery_rules.rs::a_zk_cancellation_proof_lifts_the_freeze`, `recovery_reconfigure.rs::protected_zk_reconfiguration_is_its_own_proven_action` | Real-proof | Perch refuses a ZK-mode recovery whose replacement set declares no rotated enrollment at `perch-recovery` `begin` (`InvalidReplacements`); the compiler's `ZkEnrollmentMismatch` is defence in depth and is not surfaced on this path. Nido's tests always declare a rotation and don't exercise that refusal. |
+| Z4 | **The wallet and the chain agree.** The SDK's statement encodings (perch-js's) match Perch's independent vectors and every statement Nido's Rust suites built through the controller, byte for byte. bb.js proves a lifecycle statement as the page does, and its own verifier accepts both that proof and the native proof the adapter verified, for the same public inputs. | `packages/passkey-sdk/src/perch/statement.ts`, `zk.ts` | `packages/passkey-sdk/src/perch/statement.test.ts`, `packages/passkey-sdk/src/perch/zk.test.ts` | Unit (CI) | The bb.js proof is checked by bb.js, not by the adapter. Proving time on reference devices is unmeasured (MAINNET_READINESS D9). |
 
 ## Storage
 
-- **T1. Archived state is restored, not reset** (§3.6). After every recovery
-  entry expires, its epoch and enrollments come back intact and a recovery
-  completes with a proof against the archived root.
-  `recovery_rules.rs::archived_recovery_state_is_restored_not_reset`.
-- **T2. Renewal is permissionless.**
-  `recovery_rules.rs::recovery_state_renewal_needs_no_authorization`. Restoring
-  everything a recovery touches inside the recovery transaction exceeds the
-  132,096-byte write limit (169,208 bytes when measured while writing the
-  archival test; its doc comment records the limit), so restoration runs in
-  separate transactions first (RUNBOOKS §6).
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| T1 | **Archived state is restored, not reset** (§3.6). After every recovery entry expires, its epoch and enrollments come back intact and a recovery completes with a proof against the archived root. | Persistent storage in `perch-recovery`, `perch-zk-pool`, `perch-smart-account` | `recovery_rules.rs::archived_recovery_state_is_restored_not_reset` | Real-proof | The test host restores on access. On a network, restoration is a `RestoreFootprint` operation or a transaction marked for automatic restoration; no live archival drill has been run. The wallet does not implement the explicit `RestoreFootprint` path, but automatic restoration can still succeed when the simulation's transaction data carries it (THREAT_MODEL L6, MAINNET_READINESS D1). |
+| T2 | **Renewal is permissionless.** | The `renew` entry points (RUNBOOKS §6) | `recovery_rules.rs::recovery_state_renewal_needs_no_authorization` (no auth entries at all) | Enforcing | Nothing renews on a schedule (THREAT_MODEL L6). |
+| T2 | Restoring everything a recovery touches inside the recovery transaction exceeds the per-transaction write limit (132,096 bytes, `TX_MAX_WRITE_BYTES` in `crates/integration-tests/tests/it/costs.rs`), so restoration runs in separate transactions first (RUNBOOKS §6). | | A one-off measurement of about 169,208 bytes on the test host, taken while writing the archival test | Review | Not asserted by any committed test: the archival test restores stepwise and never tries the single transaction. |
 
-## Budgets (`costs.rs`)
+## Budgets
 
-- **B1. Every measured transaction stays under 75% of the instruction,
-  memory, write-byte, and write-entry limits.** The suite asserts it per row.
-  The highest row is the promoting `submit_zk` under `Combined`: 119.3M
-  instructions, 29.8% of the 400M limit (the zero-knowledge verifier costs
-  more than the non-ZK one did). Memory peaks at 13.7% of 40 MiB.
-  `protected_combined_transactions_fit_the_budget`,
-  `compromise_transactions_fit_the_budget`.
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| B1 | **Every measured transaction stays under 75% of the instruction, memory, write-byte, and write-entry limits.** The suite asserts it per row. Its output (`cargo test -p nido-integration-tests --test it costs -- --nocapture`) puts the highest row at the promoting `submit_zk` under `Combined`: 119.3M instructions, 29.8% of the 400M limit; memory peaks at 13.7% of 40 MiB. | | `costs.rs::protected_combined_transactions_fit_the_budget`, `costs.rs::compromise_transactions_fit_the_budget` | Real-proof | Fees, transaction size, and latency need a network. |
 
 ## Wallet
 
-- **W1. No deployment, no guessing.** Built with `PUBLIC_PERCH_DEPLOYMENT=none`, every
-  recovery page says recovery is not deployed and loads without script
-  errors. `tests/e2e/ui/recovery-pages.spec.ts`.
-- **W2. Guardian links are validated before display.** Malformed requests are
-  refused. A reconfiguration link must carry the proposed settings, and they
-  must hash to the `configHash` the request names; otherwise the page offers
-  no Approve button. `packages/frontend/src/lib/recovery/model.test.ts`
-  ("refuses malformed requests"), `guardianPage.ts` `describe()`.
-- **W3. A guardian can't be shown one replacement and sign another.** An
-  attempt link must carry the replacement set, it must hash to what the
-  attempt bound on chain, and every new credential must be checked by the
-  deployment's verifier; otherwise the page offers no Approve button.
-  `model.test.ts` ("refuses an attempt link without, or with another,
-  replacement set", "flags replacement credentials checked by another
-  verifier"). The page wiring (`guardianPage.ts` `describe()`) has no
-  automated test until the testnet tier runs.
-- **W4. Recovery kits are parsed strictly.** `model.test.ts` ("accepts a
-  well-formed kit and refuses anything else").
-- **W5. The setup secret stays out of query strings.**
-  `tests/e2e/ui/registration.spec.ts` ("a query-string setup secret is
-  scrubbed from the URL").
-- **W6. The wallet's deployment is Perch's manifest.** `perch.TESTNET` equals
-  Perch's `deployments/testnet.json` plus Nido's factory, field by field.
-  `packages/passkey-sdk/src/perch/deployment.test.ts`.
-- **W7. A completion carries its own recovery-rule auth entry.** The
-  completing `apply_doc(target, 0, Some(revision))` has address credentials
-  for the account, a fresh nonce, and perch-js's signer-free `AuthPayload`
-  for the recovery rule, selected (`selectRecoveryRule`) in the same snapshot
-  the target was derived from; `revision` is that snapshot's. The wallet
-  simulates it in enforcing mode (recording mode never runs the
-  controller's `enforce`). `packages/passkey-sdk/src/perch/recovery.test.ts`.
-- **W8. Every profile/mode combination recovers on testnet through the
-  wallet.** Guardians approve from their own Nidos, the kit proves in the
-  page, the delay passes, and the completion lands, against Perch's
-  deployed release and Nido's factory. `tests/e2e/testnet/perch-recovery.testnet.spec.ts`
-  (manual tier; last run 2026-10-10 against the redeploy of Perch's merged
-  main, pinned at bb746f9 with perch-js from npm, all six plus the policy
-  page, with the relayer-free harness, RUNBOOKS §1).
-- **W9. A document over Perch's limits is refused before it's built.** The
-  wallet checks the limits the account's own compiler reports (`limits()`,
-  read through perch-js; today 8 declared signers, 11 rules, 8192 canonical
-  bytes, and 20-byte rule names), never constants of its own. The policy
-  and delegate forms refuse a 21-byte rule name, a ninth key, or a twelfth
-  rule before submission. `buildApplyDocTx` and `applyDocument` say which
-  limit a document breaks. The SDK test pins the messages against Perch's
-  compiler source. Interpreter programs are bounded by perch-program's
-  limits (256 ops, stack depth 128), which no Perch view reports; the SDK
-  mirrors them and its test pins them to perch-program's source.
-  `packages/passkey-sdk/src/policyDoc/caps.test.ts`,
-  `packages/passkey-sdk/src/policyDoc/lower.test.ts`,
-  `packages/frontend/src/lib/policy/docDraft.test.ts`.
-
-- **W10. Rules are selected from the account's own record, never by an id
-  scan.** OZ never reuses a rule id and a document gives a replaced rule a
-  new one, so ids grow without bound (nidohq/nido#240). Signing, the
-  recovery completion, and the policy and security pages read the
-  installed rules from `configuration()` and select by name, scope, and key;
-  the integration harness does the same. The signing digest and the
-  `AuthPayload` are perch-js's, matched against Perch's Rust-written vectors.
-  `packages/frontend/src/lib/policyChainParse.test.ts`,
-  `packages/passkey-sdk/src/authVectors.test.ts`.
+| ID | Property | Implementation | Evidence | Kind | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| W1 | **No deployment, no guessing.** Built with `PUBLIC_PERCH_DEPLOYMENT=none`, every recovery page says recovery is not deployed and loads without script errors. | `packages/frontend/src/lib/recovery/` | `tests/e2e/ui/recovery-pages.spec.ts` | Browser | |
+| W2 | **Guardian links are validated before display.** Malformed requests are refused. | `packages/frontend/src/lib/recovery/model.ts` `decodeGuardianRequest` | `packages/frontend/src/lib/recovery/model.test.ts` ("refuses malformed requests") | Unit (local) | |
+| W2 | A reconfiguration link must carry the proposed settings, and they must hash to the `configHash` the request names; otherwise the page offers no Approve button. | `packages/frontend/src/lib/recovery/guardianPage.ts` `describe()` | The code | Review | No automated test. |
+| W3 | **A guardian can't be shown one replacement and sign another.** An attempt link must carry the replacement set, it must hash to what the attempt bound on chain, and every new credential must be checked by the deployment's verifier; otherwise the page offers no Approve button. | `model.ts` `attemptLinkProblem` | `model.test.ts` ("refuses an attempt link without, or with another, replacement set", "flags replacement credentials checked by another verifier") | Unit (local) | |
+| W3 | (page wiring) | `guardianPage.ts` `describe()` | The code; the Testnet tier approves through the page (W8) | Review | No automated test of a refused link through the page. |
+| W4 | **Recovery kits are parsed for their required fields.** `parseRecoveryKit` checks the required fields are present; it does not enforce an exact object schema. | `model.ts` `parseRecoveryKit` | `model.test.ts` ("accepts a well-formed kit and refuses anything else") | Unit (local) | It does not fully type-check every field or reject unknown fields, and it does not validate the kit's `network` against the selected deployment (a kit built for another network still parses; the wallet binds the network elsewhere). Validating an exact schema is an open code follow-up. |
+| W5 | **The setup secret stays out of query strings.** | `packages/frontend/src/pages/new-account/index.astro` | `tests/e2e/ui/registration.spec.ts` ("a query-string setup secret is scrubbed from the URL") | Browser | The fragment, the setup cookie, and `nido:pending` still hold it (THREAT_MODEL 5). |
+| W6 | **The wallet's deployment is Perch's manifest.** `perch.TESTNET` equals Perch's `deployments/testnet.json` plus Nido's factory, field by field. | `packages/passkey-sdk/src/perch/deployment.ts` | `packages/passkey-sdk/src/perch/deployment.test.ts` | Unit (CI) | The test reads Nido's factory address from the deployment record rather than deriving it independently, so the factory address is not verified by W6 (treat it as untested here). A `PUBLIC_PERCH_DEPLOYMENT` override is not checked (MAINNET_READINESS A1). |
+| W7 | **A completion carries its own recovery-rule auth entry.** The completing `apply_doc(target, 0, Some(revision))` has address credentials for the account, a fresh nonce, and perch-js's signer-free `AuthPayload` for the recovery rule, selected (`selectRecoveryRule`) in the same snapshot the target was derived from; `revision` is that snapshot's. The wallet simulates it in enforcing mode, because recording mode never runs the controller's `enforce`. | `packages/passkey-sdk/src/perch/recovery.ts` | `packages/passkey-sdk/src/perch/recovery.test.ts` | Unit (CI) | `recovery.test.ts` pins the serialization and the signer-free `AuthPayload` shape. That `selectRecoveryRule` reads the same snapshot the target was derived from, and that the wallet simulates in enforcing mode, are Review — that test does not observe the snapshot passed to selection or the simulation's auth mode. |
+| W8 | **Every profile/mode combination recovers on testnet through the wallet**, and the policy page applies a document. Guardians approve from their own Nidos, the kit proves in the page, the delay passes, and the completion lands. | The wallet's recovery and policy pages | `tests/e2e/testnet/perch-recovery.testnet.spec.ts` (six combinations), `tests/e2e/testnet/account-policy-doc-apply.testnet.spec.ts`. Result: all seven passed in one run on 2026-10-10 against `perch.TESTNET`: Perch's testnet deployment built from Perch `7ae915d`, and Nido's factory `CBFDM3GW…` (wasm `4a16b51b…`), both as recorded in DEPLOYED.md; the wallet used `@stellar-registry/perch` 0.3.2 from npm. Accounts were created directly from Node (`NIDO_E2E_DIRECT_DEPLOY=1`, RUNBOOKS §1). | Testnet | Onboarding through the hosted relayer is unproven (MAINNET_READINESS D4, D7). The Nido commit of the run is not recorded. Manual tier, not a CI gate (MAINNET_READINESS F2). |
+| W9 | **A document over Perch's limits is refused before it's built.** The wallet checks the limits the account's own compiler reports (`limits()`, read through perch-js: 8 declared signers, 11 rules, 8192 canonical bytes, 20-byte rule names), never constants of its own. The policy and delegate forms refuse a 21-byte rule name, a ninth key, or a twelfth rule before submission; `buildApplyDocTx` and `applyDocument` say which limit a document breaks. The SDK test pins the messages against Perch's compiler source. Interpreter programs are bounded by perch-program's limits (256 ops, stack depth 128), which no Perch view reports; the SDK mirrors them and its test pins them to perch-program's source. | `packages/passkey-sdk/src/policyDoc/`, `packages/frontend/src/lib/policy/docDraft.ts` | `packages/passkey-sdk/src/policyDoc/caps.test.ts`, `packages/passkey-sdk/src/policyDoc/lower.test.ts`, `packages/frontend/src/lib/policy/docDraft.test.ts` | Unit (local) | The account's compiler enforces the same limits on chain whatever the wallet does. |
+| W10 | **Rules are selected from the account's own record, never by an id scan.** OZ never reuses a rule id and a document gives a replaced rule a new one, so ids grow without bound. Signing, the recovery completion, and the policy and security pages read the installed rules from `configuration()` and select by name, scope, and key; the integration harness does the same (`world.rs` `rule_id`). The signing digest and the `AuthPayload` are perch-js's, matched against Perch's Rust-written vectors. | `packages/frontend/src/lib/policyChainFetch.ts` (`selectSignerRule`), perch-js | `packages/frontend/src/lib/policyChainParse.test.ts`, `packages/passkey-sdk/src/authVectors.test.ts` | Unit (local) | |
 
 ## Nido's pre-Perch policies
 
 `nido-multisig-policy`, `nido-spending-limit-policy`, and
 `nido-preauth-sweep-policy` keep their mechanics tests
 (`multisig_recovery.rs`, `spending_limit_policy.rs`, `preauth_sweep_policy.rs`,
-`scoped_session_key.rs`), run on the Perch account through the OZ library.
-A Perch document can't attach them, so no fresh account uses them.
+`scoped_session_key.rs`; Mocked), run on a smart account through the OZ
+library. A Perch document can't attach them, so no account the factory mints
+uses them, and they carry no invariant here (MAINNET_READINESS D6).

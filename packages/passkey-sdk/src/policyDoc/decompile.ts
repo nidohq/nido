@@ -44,7 +44,10 @@ export function decompileRules(chainRules: ChainRule[], ctx: DecompileContext): 
         mapped.contract === ctx.account
           ? { type: 'self-admin' }
           : { type: 'contract', address: mapped.contract },
-      principals: { type: 'all', signers: ids },
+      principals:
+        mapped.anySigner && ids.length > 1
+          ? { type: 'threshold', signers: ids, m: 1 }
+          : { type: 'all', signers: ids },
       ...(mapped.functions !== undefined ? { functions: mapped.functions } : {}),
       ...(mapped.args !== undefined ? { args: mapped.args } : {}),
       ...(chainRule.validUntil !== null ? { 'not-after-ledger': chainRule.validUntil + 1 } : {}),
@@ -87,6 +90,11 @@ interface MappedRule {
   args?: ArgConstraint[];
   cap?: Rule['cap'];
   committedRuleHash?: string;
+  /** OZ checks every signer only for a policy-free rule; once policies are
+   *  attached, enforcement is theirs. The spending-limit policy only requires
+   *  a non-empty authenticated signer set, so without the interpreter's
+   *  MinSigners(N) floor any one listed signer can authorize the rule. */
+  anySigner?: boolean;
 }
 
 function mapRule(chainRule: ChainRule, ctx: DecompileContext): MappedRule | string {
@@ -126,6 +134,7 @@ function mapRule(chainRule: ChainRule, ctx: DecompileContext): MappedRule | stri
       return `unrecognized policy contract ${policy}`;
     }
   }
+  mapped.anySigner = mapped.cap !== undefined && mapped.committedRuleHash === undefined;
   return mapped;
 }
 

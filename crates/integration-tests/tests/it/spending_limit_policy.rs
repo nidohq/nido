@@ -95,22 +95,56 @@ fn setup(
     (client, account_addr, sac, policy_addr, key, signer)
 }
 
-/// Assert a caught `do_check_auth` panic is specifically the policy's
-/// `SpendingLimitExceeded` error (and not e.g. a scope or signature failure).
-/// The host escalates contract errors via `panic!("{:?}", ...)` — the payload
-/// is a String carrying `Error(Contract, #3221)`.
-fn assert_limit_exceeded(result: std::thread::Result<()>, expectation: &str) {
+/// Assert a caught `do_check_auth` panic carries a specific contract error
+/// code (and not e.g. a scope or signature failure). The host escalates
+/// contract errors via `panic!("{:?}", ...)` — the payload is a String
+/// carrying `Error(Contract, #<code>)`.
+fn assert_contract_error(result: std::thread::Result<()>, code: u32, expectation: &str) {
     let payload = result.expect_err(expectation);
     let msg = payload
         .downcast_ref::<std::string::String>()
         .cloned()
         .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
         .unwrap_or_default();
-    let needle = std::format!("#{}", SpendingLimitError::SpendingLimitExceeded as u32);
+    let needle = std::format!("#{code}");
     assert!(
         msg.contains(&needle),
-        "expected SpendingLimitExceeded (Error(Contract, {needle})), got: {msg}"
+        "expected Error(Contract, {needle}), got: {msg}"
     );
+}
+
+/// Assert a caught `do_check_auth` panic is specifically the policy's
+/// `SpendingLimitExceeded` error (#3221).
+fn assert_limit_exceeded(result: std::thread::Result<()>, expectation: &str) {
+    assert_contract_error(
+        result,
+        SpendingLimitError::SpendingLimitExceeded as u32,
+        expectation,
+    );
+}
+
+/// The auth context the host produces for a non-transfer call on the asset
+/// contract — here `approve(from, spender, amount, expiration_ledger)`. The
+/// spending-limit policy meters only `transfer`; approve/burn/etc. are not a
+/// transfer with an i128 amount, so `enforce` refuses them.
+fn approve_context(
+    env: &Env,
+    sac: &Address,
+    from: &Address,
+    spender: &Address,
+    amount: i128,
+) -> Context {
+    Context::Contract(ContractContext {
+        contract: sac.clone(),
+        fn_name: symbol_short!("approve"),
+        args: vec![
+            env,
+            from.into_val(env),
+            spender.into_val(env),
+            amount.into_val(env),
+            7777u32.into_val(env), // expiration_ledger
+        ],
+    })
 }
 
 #[test]
@@ -282,4 +316,40 @@ fn raised_limit_mid_window_keeps_spent_total() {
         )
         .unwrap();
     });
+}
+
+/// A spending-limit rule meters only `transfer`: `enforce` refuses every other
+/// context (approve, burn, deploy, ...) with `NotAllowed` (#3223). So a session
+/// key bound by such a rule cannot authorize `approve` on the scoped asset
+/// contract — there is no unmetered "approve-then-pull" path around the cap.
+/// Pins this behavior explicitly: the absence of an unmetered
+/// approve-then-pull path around the cap is easy to overlook.
+#[test]
+fn non_transfer_context_is_refused() {
+    let env = Env::default();
+    let (_client, account_addr, sac, _policy, key, signer) = setup(&env, 5 * XLM, 17280);
+    let spender = Address::generate(&env);
+
+    let hash = env.crypto().sha256(&Bytes::from_array(&env, &[0x55; 32]));
+    let signatures = one_sig(&env, &signer, &key, &hash, SESSION_RULE_ID);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        env.as_contract(&account_addr, || {
+            do_check_auth(
+                &env,
+                &hash,
+                &signatures,
+                &vec![
+                    &env,
+                    approve_context(&env, &sac, &account_addr, &spender, XLM),
+                ],
+            )
+            .unwrap();
+        });
+    }));
+    assert_contract_error(
+        result,
+        SpendingLimitError::NotAllowed as u32,
+        "a capped spending-limit rule must refuse a non-transfer (approve) context",
+    );
 }

@@ -1,9 +1,9 @@
 /**
  * Doc-only: the two-tier policy read for accounts whose sole policy
- * write path is `apply_doc` (contracts/smart-account/src/doc.rs):
+ * write path is `apply_doc` (vendor/perch/crates/perch-smart-account):
  *
  *   a. `doc-verified` — a document read from the on-chain copy
- *      (`get_applied_doc`, lossless, no indexer needed) or recovered from
+ *      (`applied_doc`, lossless, no indexer needed) or recovered from
  *      the `DocApplied` event history, whose canonical hash matches the
  *      STORED `applied_doc_hash`. Under doc-only there is no drift tier BY
  *      CONSTRUCTION: the account has no rule mutators, so the live rules

@@ -155,7 +155,7 @@ import Icon from '../../../components/Icon.astro';
   import { bytesToHex } from '../../../lib/policy/policyView.js';
   import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../../../lib/spendingLimitParams.js';
   import { stroopsToXlm } from '../../../lib/money.js';
-  import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest';
+  import { stashSignRequest, httpOrigin, type SignRequest } from '../../../lib/signing/signRequest';
 
   const account = contractIdFromHostname(window.location.hostname);
   const status = document.getElementById('status')!;
@@ -335,7 +335,7 @@ import Icon from '../../../components/Icon.astro';
         : 'Reading the applied document…';
       return;
     }
-    const check = validateSessionDocDraft(draft, docLimits);
+    const check = validateSessionDocDraft(draft, docLimits, account ?? undefined);
     if (!check.ok) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = check.errors.join(' ');
@@ -376,12 +376,15 @@ import Icon from '../../../components/Icon.astro';
   // /security/delegate/.
   function backToDapp(qs: string): string | null {
     if (!req?.returnUrl) return null;
+    // SINK guard: refuse any non-http(s)/opaque-origin return URL so a
+    // `javascript:`/`data:` callback can never reach `window.location.href`.
+    const retOrigin = httpOrigin(req.returnUrl);
+    if (!retOrigin || retOrigin !== req.origin) {
+      status.textContent = `Refusing to redirect: return URL origin (${retOrigin ?? 'invalid'}) does not match request origin (${req.origin}).`;
+      return null;
+    }
     try {
       const url = new URL(req.returnUrl);
-      if (url.origin !== req.origin) {
-        status.textContent = `Refusing to redirect: return URL origin (${url.origin}) does not match request origin (${req.origin}).`;
-        return null;
-      }
       url.search = qs;
       return url.toString();
     } catch {
@@ -420,7 +423,7 @@ import Icon from '../../../components/Icon.astro';
       if (docBaselineBlocked || baselineDoc === null || docLimits === null) return; // refusal above already set status + disabled
 
       const draft = draftFromControls()!;
-      const check = validateSessionDocDraft(draft, docLimits);
+      const check = validateSessionDocDraft(draft, docLimits, account ?? undefined);
       if (!check.ok) {
         status.textContent = check.errors.join(' ');
         approveBtn.disabled = false;

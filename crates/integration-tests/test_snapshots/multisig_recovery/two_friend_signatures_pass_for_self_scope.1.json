@@ -54,7 +54,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "0439ead4b307548a7131065c10a76d083a4c0d2cbdb11ae1009b4a0d220266d1094c93d6c0aa0e8d1a6359de03afc906a13e9ac243a4881a9f58cb3ba690f95aab"
+                          "bytes": "04c135fc0a95f099009b8f462ac4d85db32ff6d8eacdf3abb315c70faca43a9eae584580ec44ffa29c530d8dfb77032bdde121a4a68deabaabf1229995a4c899ad"
                         }
                       ]
                     }
@@ -328,7 +328,7 @@
                                   "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                                 },
                                 {
-                                  "bytes": "0439ead4b307548a7131065c10a76d083a4c0d2cbdb11ae1009b4a0d220266d1094c93d6c0aa0e8d1a6359de03afc906a13e9ac243a4881a9f58cb3ba690f95aab"
+                                  "bytes": "04c135fc0a95f099009b8f462ac4d85db32ff6d8eacdf3abb315c70faca43a9eae584580ec44ffa29c530d8dfb77032bdde121a4a68deabaabf1229995a4c899ad"
                                 }
                               ]
                             }
@@ -627,7 +627,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "0439ead4b307548a7131065c10a76d083a4c0d2cbdb11ae1009b4a0d220266d1094c93d6c0aa0e8d1a6359de03afc906a13e9ac243a4881a9f58cb3ba690f95aab"
+                          "bytes": "04c135fc0a95f099009b8f462ac4d85db32ff6d8eacdf3abb315c70faca43a9eae584580ec44ffa29c530d8dfb77032bdde121a4a68deabaabf1229995a4c899ad"
                         }
                       ]
                     }
@@ -842,13 +842,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "7d5ff81f9e6e3c2d464c3213c9b452f98949706de970414ecb45096585565b4c"
+                    "bytes": "4aa01b65be6bc694e396942bd8ddb31e03c06568fc4d6ba769074d267e34fc40"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 1
+                "u32": 0
               }
             }
           },
@@ -869,13 +869,13 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "db8870cc52dadbf62c92cbc88aa4550e6a50c0494fee1f73a995063610109f8e"
+                    "bytes": "7d5ff81f9e6e3c2d464c3213c9b452f98949706de970414ecb45096585565b4c"
                   }
                 ]
               },
               "durability": "persistent",
               "val": {
-                "u32": 0
+                "u32": 1
               }
             }
           },

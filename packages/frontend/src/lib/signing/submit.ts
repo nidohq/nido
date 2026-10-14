@@ -9,6 +9,7 @@ import { rpc, TransactionBuilder, Networks, Keypair, xdr } from "@stellar/stella
 import type { Transaction } from "@stellar/stellar-sdk";
 import {
   type RelayerStatus,
+  RelayerError,
   extractFuncAndAuth,
   submitSorobanTransaction,
   waitForConfirmation,
@@ -16,6 +17,27 @@ import {
 import { RELAYER_URL } from "../network";
 
 export { type RelayerStatus };
+
+/**
+ * Normalize a failure raised AFTER the signed authorization was sent into a
+ * RelayerError whose code marks the payment's outcome uncertain (so the retry
+ * guard blocks a fresh-payment retry). WAIT_TIMEOUT / ONCHAIN_FAILED already
+ * carry that meaning (and their attached last-poll details), so they pass
+ * through unchanged; everything else — a bare connection-loss error, a non-JSON
+ * body, acceptance without a transaction handle, or a relayer-reported failure
+ * carrying any server-supplied code — collapses to SUBMIT_UNKNOWN. The
+ * server-supplied code is deliberately discarded here: once we have sent the
+ * authorization, only trusted on-chain reconciliation (handled by the caller)
+ * may re-open a retry, never the relayer's own word.
+ */
+function uncertainSubmitError(err: unknown): RelayerError {
+  if (err instanceof RelayerError && (err.code === "WAIT_TIMEOUT" || err.code === "ONCHAIN_FAILED")) {
+    return err;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  const details = err instanceof RelayerError ? err.details : undefined;
+  return new RelayerError(message, "SUBMIT_UNKNOWN", details);
+}
 
 export async function relayerSubmitAndConfirm(
   signedTx: Transaction,
@@ -35,15 +57,30 @@ export async function relayerSubmitAndConfirm(
       `Expected a single auth entry, got ${auth.length} — only the first is passkey-signed.`,
     );
   }
-  const submitted = await submitSorobanTransaction({ func, auth }, baseUrl);
-  if (!submitted.transactionId) {
-    throw new Error("Relayer accepted the transaction but returned no transaction id");
+  // From here the signed authorization leaves the browser. The relayer may hold
+  // a usable copy the instant we start the POST, so EVERY failure past this
+  // point is an uncertain outcome, not a safe no-event — including a missing
+  // transaction handle (acceptance we cannot track) or a confirmation without a
+  // hash (a tx that already landed). Funnel them all through
+  // uncertainSubmitError so a fresh-payment retry stays blocked.
+  try {
+    const submitted = await submitSorobanTransaction({ func, auth }, baseUrl);
+    if (!submitted.transactionId) {
+      throw new RelayerError(
+        "Relayer accepted the transaction but returned no transaction id",
+        "SUBMIT_UNKNOWN",
+      );
+    }
+    const confirmed = await waitForConfirmation(submitted.transactionId, baseUrl, {
+      onPoll: opts?.onPoll,
+    });
+    if (!confirmed.hash) {
+      throw new RelayerError("Relayer confirmed without a transaction hash", "SUBMIT_UNKNOWN");
+    }
+    return { hash: confirmed.hash };
+  } catch (err) {
+    throw uncertainSubmitError(err);
   }
-  const confirmed = await waitForConfirmation(submitted.transactionId, baseUrl, {
-    onPoll: opts?.onPoll,
-  });
-  if (!confirmed.hash) throw new Error("Relayer confirmed without a transaction hash");
-  return { hash: confirmed.hash };
 }
 
 export async function classicSubmitAndPoll(

@@ -44,7 +44,7 @@ npx playwright test --project=testnet-chromium perch-recovery account-policy-doc
 
 The UI tier builds with `PUBLIC_PERCH_DEPLOYMENT=none`, so the recovery pages
 say recovery is not deployed and nothing reaches a chain. The testnet specs
-run against `perch.TESTNET` (Perch's release and Nido's factory) with real
+run against `perch.TESTNET` (Perch's deployment and Nido's factory) with real
 passkey signatures (the test authenticator), real in-page proofs, and the
 contracts' own authorization.
 
@@ -63,19 +63,21 @@ NIDO_E2E_DIRECT_DEPLOY=1 npx playwright test --project=testnet-chromium perch-re
 
 Contract deploys are manual and follow audit sign-off; CI deploys only the
 front end and workers. Record the commit, the `stellar-cli` version, and every
-wasm hash.
+wasm hash in [DEPLOYED.md](../DEPLOYED.md).
 
 ### 2.1 Perch's stack
 
-Perch's release workstream (stellar-registry/perch#99 WS4) deploys the
-compiler, interpreter, spending limit, WebAuthn verifier, controller, pool,
-and adapter, installs the account wasm, and writes the manifest
-(`vendor/perch/deployments/<network>.json`). Nido doesn't deploy them. Before
-using a manifest:
+Perch deploys its compiler, interpreter, spending limit, WebAuthn verifier,
+controller, pool, and adapter, installs the account wasm, and writes the
+manifest (`deployments/<network>.json` in Perch). Nido doesn't deploy them.
+Before using a manifest:
 
-1. Run Perch's `scripts/verify-deployment.sh` against it: by hash and address
-   only, it checks each contract at its content address, its code hash, the
-   registry's records, the account installed, and what consumers resolve.
+1. Run Perch's
+   [`scripts/verify-deployment.sh`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/scripts/verify-deployment.sh)
+   (`vendor/perch/scripts/verify-deployment.sh`) against it: by hash and
+   address only, it checks each contract at its content address, its code
+   hash, the registry's records, the account installed, and what consumers
+   resolve.
 2. Run `just perch-infra` (refuses any byte that doesn't match) and the
    integration tests against the fetched stack.
 3. Update `perch.TESTNET` (or the network's equivalent) and DEPLOYED.md;
@@ -84,55 +86,70 @@ using a manifest:
 ### 2.2 Nido's factory
 
 `ADMIN=<multisig> scripts/deploy-factory.sh <identity> [network]` (or
-`just deploy-factory`) does steps 1–5 and checks each:
+`just deploy-factory`) does steps 1–6 and checks each:
 
-1. Install the manifest's `perch-account` wasm (the one `just perch-infra`
-   fetched, checked against `accountWasmHash`): the factory deploys by its
-   hash.
-2. Build Nido's contracts; the factory embeds that wasm.
+1. Check that the staged account wasm (from `just perch-infra`) is the
+   manifest's `perch-account` (`accountWasmHash`) and install it: the factory
+   deploys by its hash.
+2. Build Nido's contracts (skipped with `SKIP_BUILD`); the factory embeds
+   that wasm.
 3. Deploy the factory with the paying identity as its admin.
-4. Pin Perch's WebAuthn verifier (`set_registry_pins`), read the pin back, and
-   read back the account hash the factory deploys. From then on the registry
-   is off the account-creation path (F5).
-5. Hand the factory to `ADMIN` (`set_admin` needs only the current admin, so
+4. Pin Perch's WebAuthn verifier (`set_registry_pins`) and read the pin back.
+   From then on the registry is off the account-creation path (F5).
+5. Read back the account hash the factory deploys
+   (`refresh_account_wasm_hash`) and check it against the manifest.
+6. Hand the factory to `ADMIN` (`set_admin` needs only the current admin, so
    the multisig doesn't sign during the deploy) and read the admin back.
    Without `ADMIN` the paying identity stays admin, which is fine only on
-   testnet. If any step after 3 fails, the script stops and names the
-   factory: don't register or use it, deploy a fresh one.
-6. **Not done by the script:** set the factory in `perch.TESTNET` (and
-   DEPLOYED.md), and decide whether to repoint the registry's `factory` name
-   (`scripts/deploy-registry.sh` deploys a registry instance and registers
-   names). The wallet uses the deployment's factory, so the registry name
-   matters only to builds without one and to off-chain discovery.
-7. **Smoke test:** create an account and check its `infra()` and admin rule,
+   testnet.
+
+If any step after 3 fails, the script stops and names the factory and the
+step: don't register or use that factory; deploy a fresh one.
+
+Not done by the script:
+
+7. Set the factory in `perch.TESTNET` (and DEPLOYED.md), and decide whether
+   to repoint the registry's `factory` name (`scripts/deploy-registry.sh`
+   deploys a registry instance and registers names). The wallet uses the
+   deployment's factory, so the registry name matters only to builds without
+   one and to off-chain discovery.
+8. **Smoke test:** create an account and check its `infra()` and admin rule,
    then run §1's testnet specs.
 
 ### 2.3 Front end
 
 A push to `main` deploys (`deploy.yml`). The build uses `perch.TESTNET` unless
 the `PUBLIC_PERCH_DEPLOYMENT` repository variable overrides it with a
-manifest JSON or `none`.
+manifest JSON or `none`. An override is not checked against Perch's manifest
+(THREAT_MODEL 9).
 
 **Order matters.** The deployment a wallet build names must exist before the
-build reaches `main`. Accounts minted by an older factory are not migrated:
-epic #99 uses fresh deployments only.
+build reaches `main`. Accounts minted by an older factory are not migrated;
+they keep the code and verifier they were minted with
+([DEPLOYED.md](../DEPLOYED.md#compatibility-appendix)).
 
 ## 3. Governance
 
 The keys that matter: the factory admin (the code and the verifier new
 accounts get), the name-registry and policy admins, the registry-owner key,
-and, for accounts minted by older factories, the admin of Nido's former
+and, for accounts minted by pre-Perch factories, the admin of Nido's former
 WebAuthn verifier. Perch's contracts, including the verifier current accounts
 name, have no admin.
 
-- All of them sit behind a multisig, never a single key, before mainnet.
+The factory's `upgrade` takes effect as soon as the admin authorizes it; the
+contract has no delay of its own. On testnet the factory admin is a single
+throwaway key (DEPLOYED.md). Before mainnet (MAINNET_READINESS B1, B2):
+
+- Every one of these keys sits behind a multisig, never a single key.
 - Factory upgrades are announced with the new wasm hash and diff, and wait
-  out a delay users can see.
+  out a delay users can see; the contract enforces none, so the multisig's
+  process must.
 - Process: issue and review, multisig proposal, delay, execute, verify the new
   hash, update DEPLOYED.md.
-- Nido can't upgrade a user's account. Only its owner can, through the
-  seven-day `schedule_upgrade` path (plus the recovery condition under
-  `Protected`).
+
+Nido can't upgrade a user's account. Only its owner can, through the
+seven-day `schedule_upgrade` path (plus the recovery condition under
+`Protected`).
 
 ## 4. Key rotation
 
@@ -151,12 +168,15 @@ an existing account it can't forge authorization, so there the worst case is
 censorship or a drained sponsor budget. For an account being set up it is
 worse: the relayer sees the setup salt before the account exists, and a
 compromised host can create that account with its own key first
-(THREAT_MODEL 10, #245).
+(THREAT_MODEL 10).
 
 **Defences in place.** A per-IP token bucket in Caddy (30 relays per minute
 per `Fly-Client-IP`) under the relayer's global 20 req/s; the channels
 plugin's `FEE_LIMIT` (100 XLM per 24 h, one global bucket); Prometheus metrics
 on `:8081`, scraped by Fly.
+
+Alert definitions (configure them in Fly's Grafana; confirm the metric names
+against `/debug/metrics/scrape` before relying on them):
 
 | Alert | Condition | Action |
 | --- | --- | --- |
@@ -166,22 +186,42 @@ on `:8081`, scraped by Fly.
 | Rate-limit spike | Sustained 429s from one IP | Abuse or burst; tighten if abuse |
 | Channel unregistered | A channel relayer missing or paused | Re-register or unpause |
 
-Confirm metric names against `/debug/metrics/scrape` after the first deploy
-with metrics on.
+A passing health check does not show that onboarding works: the relayer can
+pass it while refusing account setups ("Too many transactions queued",
+MAINNET_READINESS D7). After any relayer change, create one account through
+it.
 
 **Procedure.** Detect (alert or report; `fly logs -a nido`), classify
 (outage, drain, abuse, key compromise), contain (lower `FEE_LIMIT` or pause a
 relayer for drains, redeploy via `deploy-relayer.yml` for outages, rotate keys
-for compromise), confirm recovery, write the post-mortem here.
+for compromise), confirm recovery, and write a post-mortem outside this
+runbook.
 
 **Host compromise.** Treat every account set up through the relayer during
 the window as possibly claimed. Stop onboarding first (pause the relayer, or
 ship a wallet build without `PUBLIC_RELAYER_URL`, which refuses setup). Then
-check each account created in the window on chain: its admin key must be the
-passkey its user registered, with the deployment's verifier. Before its first
-document that key is in the constructor's rule (`get_context_rule(0)`); after,
-it is the admin signer in `applied_doc()`. Tell the owner of any account that
-fails the check to send nothing to it and to set up a new Nido.
+check each account created in the window on chain.
+
+The admin key matching the passkey its user registered (with the deployment's
+verifier) is **necessary but not sufficient** to clear an account. A
+front-runner who created the address with its own key can authorize a document
+that names the user's key as admin while keeping an attacker-controlled
+ordinary rule or recovery configuration: `apply_doc` authenticates with the
+account's *current* configuration and never requires the newly-named admin's
+signature (the setup race, THREAT_MODEL 5, 10). Such an account passes an
+admin-key-only check while still carrying retained attacker authority. Before
+its first document the admin key is in the constructor's rule
+(`get_context_rule(0)`); after, it is the admin signer in `applied_doc()` — but
+read the **complete** rule set and controller state, not only the admin entry.
+
+To clear an account, verify its full provenance against the user's intended
+state: the creation transaction, the authorized-document history, the actual
+account code (wasm hash), every current rule and signer, the recovery
+configuration, and any pending upgrades. If that provenance cannot be
+established, classify the address as affected rather than clearing it on the
+admin-key check alone. Tell the owner of any account that fails the check — or
+whose provenance cannot be established — to send nothing to it and to set up a
+new Nido.
 
 ## 6. Recovery operations
 
@@ -196,28 +236,69 @@ network maximum, no authorization needed (T2):
 | Pool | `renew_tree(tree_id)`, `renew_root(tree_id, root)`, `renew_leaves(tree_id, start, count)`, `renew_enrollment(account, enrollment_id)` |
 | Account | `renew(fingerprints, enrollment_ids)` |
 
-Nothing calls these on a schedule yet (MAINNET_READINESS D3).
+Nothing calls these on a schedule, and the wallet never calls them
+(MAINNET_READINESS D3).
+
+These calls renew the controller, pool, and account recovery records. They do
+**not** extend the account's OZ context-rule, signer, and policy entries or the
+installed-rule records (spec §3.6): OZ bumps such an entry's TTL only when it
+reads it (to 30 days when fewer than 29 remain), so an idle account's rule
+entries can still archive. Restoring those is part of the restoration procedure
+below, not these `renew` calls — so permissionless renewal alone does not keep
+an account recoverable (SECURITY_INVARIANTS T2, THREAT_MODEL 11/L6).
 
 ### Recovering an account whose state was archived
 
-An archived entry is unavailable, never reset (T1). On a live network it comes
-back through a `RestoreFootprint` operation, or automatically when a
-transaction's footprint marks it for restoration, and restored entries count
-as writes. Restoring all of an account's recovery state inside the recovery
-transaction itself exceeds the 132,096-byte write limit (about 169,208 bytes
-measured). Restore first, one bounded group at a time, by simulating each of
-these calls and submitting the restoration its simulation asks for (RPC
-returns a `restorePreamble`), then recover:
+An archived entry is unavailable until restored, never reset (T1). A
+transaction restores it in one of two ways: explicitly, with a
+`RestoreFootprint` operation, or automatically, when the transaction's Soroban
+data marks the archived entry for restoration. Either way, restored entries
+count as writes. Restoring all of an account's recovery state inside the
+recovery transaction itself exceeds the 132,096-byte per-transaction write
+limit (`TX_MAX_WRITE_BYTES` in `crates/integration-tests/tests/it/costs.rs`;
+about 169,208 bytes in a one-off measurement with the archival test, which no
+test asserts). So restore first, one bounded group per transaction, then
+recover.
+
+Simulate each call below and act on the response:
+
+- **Automatic restoration:** the simulation succeeds and its `transactionData`
+  marks archived entries for restoration. Submit the call with that
+  `transactionData` and its `minResourceFee`; it restores the entries and
+  runs.
+- **Explicit restore:** the simulation returns a `restorePreamble`. Submit a
+  `RestoreFootprint` operation with the preamble's `transactionData` and
+  `minResourceFee`, then simulate the call again and act on the new response.
+- **Error:** stop and read the error; submit nothing.
 
 1. Controller `renew(account)`.
-2. Pool `renew_tree(tree_id)` and `renew_enrollment(account, enrollment_id)`.
+2. Pool `renew_tree(tree_id)`, then `renew_enrollment(account, enrollment_id)`.
 3. Account `renew([], [enrollment_id])`.
 4. Any adapter read (for example `circuit_id`) and a `compile_doc` of the
-   applied document, to bring back their code and instances.
-5. Then `begin_lost_key` as usual.
+   applied document, submitted as transactions, to bring back their code and
+   instances.
+5. Then `begin_lost_key` as usual. Treat every later transaction of the
+   recovery (guardian approvals, ZK evidence, the completion) the same way.
 
-This is the order `archived_recovery_state_is_restored_not_reset` follows (the
-test host restores on access). The wallet doesn't do it yet.
+This is the order `archived_recovery_state_is_restored_not_reset` follows.
+The test host restores entries on access, so the test exercises neither RPC
+response; no run of this procedure on a live network is recorded.
+
+**The wallet does not implement this procedure.** Its submit paths
+(`packages/frontend/src/lib/recoverySubmit.ts`, `primaryPasskeySigner.ts`,
+`signing/submit.ts`) check only for a simulation error and then assemble the
+call with whatever `transactionData` the simulation returned. A call whose
+simulation marks entries for automatic restoration is submitted with those
+markings, so it restores them if it fits the write limit. The wallet never
+checks for a `restorePreamble` and never submits a `RestoreFootprint`
+operation: when a simulation asks for an explicit restore, the call goes out
+without it. With the hosted relayer, the channels plugin re-simulates and
+builds the footprint itself; how it handles restoration is the upstream
+plugin's and is not tested here. The new-account page refuses a restore
+response ("restore needed"), and the SDK's deploy helper throws it to its
+caller. Until the wallet handles both responses (MAINNET_READINESS D1), an
+operator runs the steps above, with the Stellar CLI or any client, before the
+user starts a recovery.
 
 ### User support
 
@@ -225,12 +306,12 @@ test host restores on access). The wallet doesn't do it yet.
   account's address and follow it.
 - **A recovery the owner didn't start:** `Loss` owners cancel it on
   `/security/recovery/`. `Protected` owners need their guardians or kit to
-  cancel; the account stays frozen until it is cancelled, completes, or
-  expires.
-- **"Already holds 8 keys" or "11 rules":** Perch caps a document at 8
-  declared signers, 11 rules, and 8192 bytes. After the founding passkey,
-  added devices and app-grant keys share 7 signer slots, and each takes a
-  rule. Remove a device or revoke an app grant to make room.
+  cancel; once the attempt is authorized, the account stays frozen until it
+  is cancelled, completes, or expires.
+- **"Already holds 8 keys" or "already has 11 rules":** Perch caps a document
+  at 8 declared signers, 11 rules, and 8192 bytes. After the founding
+  passkey, added devices and app-grant keys share 7 signer slots, and each
+  takes a rule. Remove a device or revoke an app grant to make room.
 - **Guardian approval:** the guardian opens the link on their own Nido. If
   the page refuses the link, the guardian should not approve, and should
   confirm with their friend by another channel.
@@ -247,4 +328,5 @@ test host restores on access). The wallet doesn't do it yet.
 3. A new account wasm reaches existing accounts only through each owner's
    seven-day upgrade; new accounts get it from a new factory deployed as in
    §2.2.
-4. Update `perch.TESTNET` and DEPLOYED.md (§2.1).
+4. Update `perch.TESTNET` and DEPLOYED.md (§2.1), and the audit manifest if
+   the change lands before sign-off ([AUDIT_SCOPE.md](./AUDIT_SCOPE.md#audit-manifest)).

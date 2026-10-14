@@ -11,8 +11,7 @@ Three tiers:
   authenticator; `*.cdp.spec.ts`.
 
 The shim (`tests/support/auth/`) overrides `navigator.credentials` with a
-deterministic P-256 vault keyed by credentialId. See
-`docs/superpowers/specs/2026-06-02-cross-browser-passkey-test-harness-design.md`.
+deterministic P-256 vault keyed by credentialId.
 
 dapp/SEP-7, multi-actor recovery, and TestingBot are added in later phases.
 

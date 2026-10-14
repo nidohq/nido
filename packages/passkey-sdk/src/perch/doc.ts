@@ -51,8 +51,10 @@ export interface RecoveryChoice {
   quorum?: number;
   /** The credential to enroll, for zk-only and combined. */
   zk?: ZkEnrollmentSpec;
-  /** Signer ids a recovery may replace. Defaults to `['owner']`. */
-  replaceable?: string[];
+  /** Signer ids a recovery may replace: the document's admin signers. No
+   *  default, since the founder's id differs between documents (`admin`
+   *  now, `owner` in early ones) and an undeclared id fails to compile. */
+  replaceable: string[];
   /** Hash of the enrolled baseline (compromise recovery); omit to enroll
    *  lost-key recovery only. Perch states that `Protected` without a
    *  baseline is not theft-resistant (spec §2, nidohq/nido#220). */
@@ -70,8 +72,16 @@ export function recoverySpec(deployment: PerchDeployment, choice: RecoveryChoice
   if (needsGuardians && !(choice.guardians?.length && choice.quorum)) {
     throw new Error(`${choice.mode} recovery needs guardians and a quorum`);
   }
+  if (needsGuardians && choice.quorum! > choice.guardians!.length) {
+    throw new Error(
+      `${choice.mode} recovery quorum ${choice.quorum} exceeds its ${choice.guardians!.length} guardians`,
+    );
+  }
   if (needsZk && choice.zk === undefined) {
     throw new Error(`${choice.mode} recovery needs a ZK enrollment`);
+  }
+  if (!choice.replaceable?.length) {
+    throw new Error('recovery needs at least one replaceable signer');
   }
   const zk = () => ({
     adapter: deployment.zkAdapter,
@@ -93,7 +103,7 @@ export function recoverySpec(deployment: PerchDeployment, choice: RecoveryChoice
     ...(choice.baselineDocHash !== undefined
       ? { baseline: { docHash: choice.baselineDocHash } }
       : {}),
-    replaceable: choice.replaceable ?? ['owner'],
+    replaceable: choice.replaceable,
     delayLedgers: choice.delayLedgers ?? RECOVERY_DEFAULTS.delayLedgers,
     expiryLedgers: choice.expiryLedgers ?? RECOVERY_DEFAULTS.expiryLedgers,
     maxCancels: choice.maxCancels ?? RECOVERY_DEFAULTS.maxCancels,
@@ -133,9 +143,16 @@ export function recoveryToWire(spec: RecoverySpec): Record<string, unknown> {
   };
 }
 
-/** `doc` with its recovery member set to `spec` (or removed), validated. */
+/** `doc` with its recovery member set to `spec` (or removed), validated.
+ *  Throws when `spec` may replace a signer `doc` does not declare, which the
+ *  compiler would refuse. */
 export function withRecovery(doc: PolicyDoc, spec: RecoverySpec | undefined): PolicyDoc {
   const { recovery: _previous, ...rest } = doc;
+  const declared = new Set(doc.signers.map((s) => s.id));
+  const undeclared = spec?.replaceable.filter((id) => !declared.has(id)) ?? [];
+  if (undeclared.length > 0) {
+    throw new Error(`recovery may replace undeclared signer(s): ${undeclared.join(', ')}`);
+  }
   return parsePolicyDoc(spec === undefined ? rest : { ...rest, recovery: recoveryToWire(spec) });
 }
 

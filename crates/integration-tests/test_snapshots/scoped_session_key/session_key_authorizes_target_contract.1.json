@@ -54,7 +54,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "046978798a3af0995f7a4719514a733891932b38574b7bcfb56c8a6f89379a5797aff60e2613bb70379dde92fac70b0f2d2a5278778eb77bb831d1515ade77cbbd"
+                          "bytes": "044ae25dc0b4c6e33983192febdecf33470e52d30f4d9e33dbbc5e8a14f57c74ae0a3f6060ce0a540c0984e16635f290e89656d53af44d2cb84edfddad5c89285c"
                         }
                       ]
                     }
@@ -220,7 +220,7 @@
                                   "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                                 },
                                 {
-                                  "bytes": "046978798a3af0995f7a4719514a733891932b38574b7bcfb56c8a6f89379a5797aff60e2613bb70379dde92fac70b0f2d2a5278778eb77bb831d1515ade77cbbd"
+                                  "bytes": "044ae25dc0b4c6e33983192febdecf33470e52d30f4d9e33dbbc5e8a14f57c74ae0a3f6060ce0a540c0984e16635f290e89656d53af44d2cb84edfddad5c89285c"
                                 }
                               ]
                             }
@@ -438,7 +438,7 @@
                           "address": "CBKMUZNFQIAL775XBB2W2GP5CNHBM5YGH6C3XB7AY6SUVO2IBU3VYK2V"
                         },
                         {
-                          "bytes": "046978798a3af0995f7a4719514a733891932b38574b7bcfb56c8a6f89379a5797aff60e2613bb70379dde92fac70b0f2d2a5278778eb77bb831d1515ade77cbbd"
+                          "bytes": "044ae25dc0b4c6e33983192febdecf33470e52d30f4d9e33dbbc5e8a14f57c74ae0a3f6060ce0a540c0984e16635f290e89656d53af44d2cb84edfddad5c89285c"
                         }
                       ]
                     }
@@ -518,7 +518,7 @@
                     "symbol": "SignerLookup"
                   },
                   {
-                    "bytes": "7c5198e0eaae6e9c6e9aa03207fc5617745452b614f5292d3d836e7c58f21f65"
+                    "bytes": "1fd3d7cbe9a9b5bf210bbf46f947243a3120af36640d56f46f1f0b96b447e284"
                   }
                 ]
               },

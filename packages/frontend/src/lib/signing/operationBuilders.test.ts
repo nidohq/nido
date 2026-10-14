@@ -23,6 +23,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { buildOperation } from "./operationBuilders";
 import { describeOperation } from "../transfer/txSummary";
+import { fetchRegistryAddress } from "../policyChainFetch";
 import { xdr } from "@stellar/stellar-sdk";
 
 const C1 = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
@@ -41,7 +42,11 @@ describe("buildOperation", () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
         const op = await buildOperation({ type: "register", name: "alice" }, C1);
-        const summary = describeOperation(op);
+        // The register decode is only trusted for the configured name registry,
+        // which is the very contract buildOperation targets — pass it so the op
+        // reads as the name registration it is.
+        const nameRegistry = await fetchRegistryAddress("name-registry");
+        const summary = describeOperation(op, C1, nameRegistry);
         expect(summary).toMatchObject({ kind: "name-register", account: C1, name: "alice" });
       } finally {
         warnSpy.mockRestore();
@@ -56,7 +61,7 @@ describe("buildOperation", () => {
         { type: "transfer", token: TOKEN, to: TO, amountRaw },
         C1,
       );
-      const summary = describeOperation(op);
+      const summary = describeOperation(op, C1);
       expect(summary).toMatchObject({
         kind: "transfer",
         token: TOKEN,
@@ -71,7 +76,7 @@ describe("buildOperation", () => {
         { type: "transfer", token: TOKEN, to: TO, amountRaw: "99999999999" },
         C1,
       );
-      const summary = describeOperation(op);
+      const summary = describeOperation(op, C1);
       expect(summary).toMatchObject({ kind: "transfer", amount: 99999999999n });
     });
   });
@@ -108,8 +113,20 @@ describe("buildOperation", () => {
     // is constructed.
     it("refuses malformed doc JSON", async () => {
       await expect(
-        buildOperation({ type: "apply-policy-doc", docJson: "{\"nope\":true}" }, C1),
+        buildOperation(
+          { type: "apply-policy-doc", docJson: "{\"nope\":true}", expectedRevision: "5" },
+          C1,
+        ),
       ).rejects.toThrow();
+    });
+
+    // A request without `expectedRevision` is refused offline, never rebound
+    // to the revision read at signing time.
+    it("refuses a request missing expected_revision offline", async () => {
+      const missingRevision = { type: "apply-policy-doc", docJson: "{}" } as unknown as Parameters<
+        typeof buildOperation
+      >[0];
+      await expect(buildOperation(missingRevision, C1)).rejects.toThrow(/expected_revision/);
     });
   });
 

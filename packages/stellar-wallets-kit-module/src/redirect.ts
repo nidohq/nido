@@ -85,6 +85,46 @@ export function redirectTopLevel(url: string): void {
   window.location.href = url;
 }
 
+/** True iff `hostname` is a loopback dev host allowed over plain `http:`:
+ *  `localhost`, any `*.localhost` subdomain, or `127.0.0.1`. Mirrors the
+ *  frontend's `isLoopbackHttpHost` — the `.localhost` TLD resolves to the
+ *  loopback interface in every browser (RFC 6761), so http there is as safe as
+ *  bare `localhost`, and Nido's dev dApps live at `*.localhost:<port>`. */
+function isLoopbackHttpHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1';
+}
+
+/** True iff `url` is a well-formed http(s) URL (http only for loopback dev).
+ *  Mirrors the frontend's `httpOrigin` scheme rule so a navigation sink can
+ *  reject `javascript:`/`data:`/`blob:`/opaque-origin callbacks on its own,
+ *  independent of whatever entry-point validation ran (defence in depth). */
+function isHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'https:') return true;
+    if (u.protocol === 'http:' && isLoopbackHttpHost(u.hostname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the full-page return target: `returnUrl` with the result query
+ * string merged in. Returns `null` — refusing the navigation — unless
+ * `returnUrl` is a well-formed http(s) URL. This is the SINK guard for the
+ * open-redirect / wallet-origin-XSS vector: assigning a `javascript:` (or
+ * `data:`) callback to `window.location.href` would execute script in the
+ * wallet account's own origin. Pure (no `window` access) so it is unit-tested.
+ */
+export function resolveReturnRedirect(returnUrl: string, search: string): string | null {
+  if (!isHttpUrl(returnUrl)) return null;
+  const u = new URL(returnUrl);
+  const incoming = new URLSearchParams(search);
+  for (const [k, v] of incoming) u.searchParams.set(k, v);
+  return u.toString();
+}
+
 /**
  * Called by the wallet's `/connect/` and `/sign/` pages to hand a result back
  * to the dApp's popup opener. Posts `{ source: 'nido-wallet', search }` to the
@@ -106,12 +146,12 @@ export function postResultToOpener(
     return;
   }
   // No opener: full-page-redirect fallback. Append the result params to the
-  // return URL (which must be same-origin as dappOrigin — caller validates).
+  // return URL. The scheme is re-validated at this sink (resolveReturnRedirect)
+  // so a `javascript:`/`data:` callback can never reach `location.href`, even
+  // if an entry point failed to reject it.
   if (returnUrl) {
-    const u = new URL(returnUrl);
-    const incoming = new URLSearchParams(search);
-    for (const [k, v] of incoming) u.searchParams.set(k, v);
-    window.location.href = u.toString();
+    const target = resolveReturnRedirect(returnUrl, search);
+    if (target) window.location.href = target;
   }
 }
 

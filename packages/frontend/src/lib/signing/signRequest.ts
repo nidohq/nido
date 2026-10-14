@@ -31,8 +31,12 @@ export type OperationDescriptor =
       prevDocJson?: string;
       /** The configuration revision (decimal) `docJson` was composed from.
        *  The apply names it as `expected_revision`, so it lands only if the
-       *  account hasn't changed since. */
-      expectedRevision?: string;
+       *  account hasn't changed since. REQUIRED: a request that omits it is
+       *  refused, never silently rebound to the revision read
+       *  at signing time — that rebinding would let an older stashed document
+       *  overwrite intervening rule changes while still passing the on-chain
+       *  stale-revision check. */
+      expectedRevision: string;
       /** Human-readable expiry label (e.g. "24 hours"), as for add-context-rule. */
       expiryLabel?: string;
     }
@@ -86,7 +90,19 @@ export function loadSignRequest(id: string, store: Storage = sessionStorage): Si
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as SignRequest;
-    return parsed && parsed.v === 1 ? parsed : null;
+    if (!parsed || parsed.v !== 1) return null;
+    // An apply-policy-doc request must name the revision it was composed
+    // from. Refuse one that omits it rather than letting the builder rebind
+    // it to the revision read at signing time (which would defeat the
+    // stale-document protection).
+    const op = parsed.operation;
+    if (
+      op && op.type === "apply-policy-doc" &&
+      (typeof op.expectedRevision !== "string" || op.expectedRevision.length === 0)
+    ) {
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -107,6 +123,23 @@ export function clearSignRequest(id: string, store: Storage = sessionStorage): v
 function hostnameOf(host: string): string {
   const i = host.lastIndexOf(":");
   return i === -1 ? host : host.slice(0, i);
+}
+
+/** True iff `hostname` is a loopback dev host that may be served over plain
+ *  `http:` (everything else must be `https:`).
+ *
+ *  Loopback means `localhost`, any `*.localhost` subdomain, or `127.0.0.1`.
+ *  The `.localhost` TLD is reserved by RFC 6761 and browsers resolve every
+ *  `*.localhost` name to the loopback interface and treat it as a secure
+ *  context, so a remote attacker cannot point one at their server on a
+ *  victim's machine — http there is exactly as safe as bare `localhost`.
+ *  Nido's whole dev topology is `.localhost` subdomains (the wallet at
+ *  `<contractid>.localhost:<port>`, a dApp at `dapp.localhost:<port>`), so the
+ *  bare-`localhost` check alone wrongly refused legitimate local dApp origins.
+ *  Callers still require an `http:`/`https:` protocol, so `javascript:`/`data:`/
+ *  `blob:`/opaque schemes and real remote-http origins stay rejected. */
+export function isLoopbackHttpHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "127.0.0.1";
 }
 
 /** Validate a route-return URL and normalise it (F1 — XSS / open-redirect guard).
@@ -141,10 +174,10 @@ export function safeRouteUrl(url: string | null | undefined, base: string): stri
     const u = new URL(url, base);
     const baseUrl = new URL(base);
 
-    // localhost may be served over http during dev; everything else must be https.
+    // Loopback hosts may be served over http during dev; everything else must be https.
     if (u.protocol === "https:") {
       // ok
-    } else if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
+    } else if (u.protocol === "http:" && isLoopbackHttpHost(u.hostname)) {
       // ok (dev)
     } else {
       return null;
@@ -167,8 +200,10 @@ export function safeRouteUrl(url: string | null | undefined, base: string): stri
 }
 
 /** Normalise an absolute URL to its ORIGIN iff it is a usable dApp origin:
- *  https anywhere, or http only for localhost/127.0.0.1 (dev). Returns null for
- *  malformed, relative, or disallowed-scheme (`javascript:`/`data:`/…) inputs.
+ *  https anywhere, or http only for loopback dev hosts (localhost, any
+ *  `*.localhost` subdomain, 127.0.0.1 — see {@link isLoopbackHttpHost}).
+ *  Returns null for malformed, relative, or disallowed-scheme
+ *  (`javascript:`/`data:`/…) inputs.
  *
  *  Unlike `safeRouteUrl`, this deliberately does NOT restrict to the same
  *  parent domain — a dApp is legitimately a FOREIGN origin. It only enforces a
@@ -180,13 +215,41 @@ export function httpOrigin(url: string | null | undefined): string | null {
   try {
     const u = new URL(url);
     if (u.protocol === "https:") return u.origin;
-    if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
+    if (u.protocol === "http:" && isLoopbackHttpHost(u.hostname)) {
       return u.origin;
     }
     return null;
   } catch {
     return null;
   }
+}
+
+/** Why a dApp origin / return pair was rejected, for the page's error copy. */
+export type DappReturnError = 'missing-dapp' | 'malformed-dapp' | 'bad-return';
+
+/**
+ * Validate a `dapp` origin and optional same-origin `return` URL for the
+ * connect/sign/delegate ceremonies, using the hardened {@link httpOrigin}
+ * scheme check at the ENTRY point (the matching sink guard lives in the kit
+ * module's `resolveReturnRedirect`).
+ *
+ * Rejects `javascript:`/`data:`/`blob:`/opaque-origin values — a bare
+ * `new URL(dapp).origin` returns the string `"null"` for those, which is
+ * truthy and compares equal to a second opaque origin, so the historical
+ * inline validators let a `javascript:` callback through. Returns the
+ * normalised origin on success.
+ */
+export function validateDappReturn(
+  dappOrigin: string | null | undefined,
+  returnUrl: string | null | undefined,
+): { origin: string } | { error: DappReturnError } {
+  if (!dappOrigin) return { error: 'missing-dapp' };
+  const origin = httpOrigin(dappOrigin);
+  if (!origin) return { error: 'malformed-dapp' };
+  if (returnUrl) {
+    if (httpOrigin(returnUrl) !== origin) return { error: 'bad-return' };
+  }
+  return { origin };
 }
 
 export function signRequestFromParams(params: URLSearchParams, account: string | null): SignRequest | null {

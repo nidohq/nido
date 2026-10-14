@@ -1,5 +1,4 @@
 // Pure decisions for the name-claim flow. No DOM, no network — unit-tested.
-// See docs/superpowers/specs/2026-06-18-name-centric-inline-claim-design.md
 import { accountUrl, isContractId } from "@nidohq/passkey-sdk";
 
 /** A valid Nido name: a lowercase letter, then 0–14 more lowercase letters/digits (1–15 chars total). */

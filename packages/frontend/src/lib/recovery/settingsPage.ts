@@ -25,6 +25,7 @@ import {
   type RecoveryState,
 } from './chain.js';
 import { perchDeployment, requireDeployment } from './deployment.js';
+import { baselineWithoutExpiringRules } from './baseline.js';
 import {
   adminSignerIds,
   changeNeeds,
@@ -32,10 +33,12 @@ import {
   ledgersToText,
   MODE_TEXT,
   PROFILE_TEXT,
+  quickRecoveryTimingAllowed,
   type RecoveryKit,
   type RecoveryMode,
   type RecoveryProfile,
 } from './model.js';
+import { NETWORK_PASSPHRASE } from '../network.js';
 import { busy, card, collectCondition, el, errorText, guardianLinks, kitInput, short } from './ui.js';
 import { kitFile, newRecoveryKit, proveWithKit } from './zk.js';
 
@@ -192,7 +195,9 @@ function configureCard(account: string, state: RecoveryState): HTMLElement {
      <label class="pol-input-label">Timing
        <select name="timing" class="input">
          <option value="standard">${esc(TIMING.standard.label)}</option>
-         <option value="quick"${s && s.delayLedgers < 1_000 ? ' selected' : ''}>${esc(TIMING.quick.label)}</option>
+         ${quickRecoveryTimingAllowed(NETWORK_PASSPHRASE)
+           ? `<option value="quick"${s && s.delayLedgers < 1_000 ? ' selected' : ''}>${esc(TIMING.quick.label)}</option>`
+           : ''}
        </select>
      </label>`,
   );
@@ -268,8 +273,19 @@ function configureCard(account: string, state: RecoveryState): HTMLElement {
         mode === 'guardian-only'
           ? undefined
           : newKit?.enrollment ?? currentZk(state.doc!);
-      const timing = TIMING[field('timing').value as keyof typeof TIMING];
-      const withoutRecovery = perch.withRecovery(base, undefined);
+      // The Quick preset is a testnet walkthrough aid; never honour it on
+      // mainnet even if the <option> was re-added by hand (it removes the
+      // owner's recovery veto window).
+      const timingKey = field('timing').value as keyof typeof TIMING;
+      const timing =
+        timingKey === 'quick' && !quickRecoveryTimingAllowed(NETWORK_PASSPHRASE)
+          ? TIMING.standard
+          : TIMING[timingKey];
+      // A baseline restore point must hold only durable rules. Strip expiring
+      // (session) rules so a captured/renewed session can't later brick
+      // compromise recovery with PastValidUntil. Both the on-chain
+      // baseline hash and the published baseline doc use this stripped doc.
+      const withoutRecovery = baselineWithoutExpiringRules(perch.withRecovery(base, undefined));
       const spec = perch.recoverySpec(deployment, {
         profile,
         mode,

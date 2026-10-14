@@ -20,8 +20,9 @@
  *   `valid_until` is inclusive — lower to `X - 1`.
  *
  * perch's TS package ships schema + hashing but no semantic `validate()`
- * (tracked upstream on perch#8), so this module performs the semantic checks
- * lowering depends on and fails closed on anything it cannot express.
+ * (tracked upstream on perch#8), so `lowerDoc` first runs `validateDoc`, a
+ * port of perch-ir's `validate()`: it refuses exactly the documents the
+ * on-chain compiler refuses, then fails closed on anything v1 cannot express.
  */
 
 import { docHash, ruleHash } from '@stellar-registry/perch';
@@ -30,6 +31,7 @@ import { hexToBytes } from '@noble/hashes/utils.js';
 import type { Op, RpnProgram } from '@stellar-registry/perch-interpreter';
 import type { ChainSigner } from '../policyBlocks/types.js';
 import type { LoweredCap, LoweredDoc, LoweredRule } from './types.js';
+import { validateDoc } from './validate.js';
 
 /** Interpreter program-format version this lowering targets (perch-program). */
 export const PROGRAM_VERSION = 1;
@@ -39,8 +41,6 @@ export const PROGRAM_VERSION = 1;
  *  perch-program's source. */
 export const MAX_PROGRAM_LEN = 256;
 export const MAX_STACK_DEPTH = 128;
-
-const I128_MAX = 2n ** 127n - 1n;
 
 export interface LowerOptions {
   /** The smart account the plan installs onto — a `self-admin` doc rule
@@ -61,21 +61,11 @@ class LowerErr extends Error {
  * `buildDocInstallTxs`.
  */
 export function lowerDoc(doc: PolicyDoc, opts: LowerOptions): LoweredDoc {
-  const seenSigners = new Set<string>();
-  for (const s of doc.signers) {
-    if (seenSigners.has(s.id)) {
-      throw new Error(`policyDoc: duplicate signer id "${s.id}"`);
-    }
-    seenSigners.add(s.id);
+  const errors = validateDoc(doc);
+  if (errors.length > 0) {
+    throw new Error(`policyDoc: invalid document: ${errors.map((e) => e.message).join('; ')}`);
   }
-  const seenRules = new Set<string>();
-  const rules = doc.rules.map((rule) => {
-    if (seenRules.has(rule.name)) {
-      throw new Error(`policyDoc: duplicate rule name "${rule.name}"`);
-    }
-    seenRules.add(rule.name);
-    return lowerRule(doc, rule, opts.account);
-  });
+  const rules = doc.rules.map((rule) => lowerRule(doc, rule, opts.account));
   return {
     docHash: docHash(doc),
     ...(doc.network !== undefined ? { network: doc.network } : {}),
@@ -95,19 +85,12 @@ function lowerRule(doc: PolicyDoc, rule: Rule, account: string): LoweredRule {
     );
   }
   const signerIds = rule.principals.signers;
-  if (signerIds.length === 0) {
-    throw new LowerErr(rule.name, 'principals list must be non-empty');
-  }
   const signers = signerIds.map((id) => resolveSigner(doc, rule.name, id));
   // The interpreter's signer floor: N-of-N for `all`, the quorum M for
   // `threshold` (perch-compile's min_signers).
   let minSigners = signerIds.length;
   if (rule.principals.type === 'threshold') {
-    const m = rule.principals.m;
-    if (!Number.isInteger(m) || m < 1 || m > signerIds.length) {
-      throw new LowerErr(rule.name, `threshold m=${m} must be an integer in 1..${signerIds.length}`);
-    }
-    minSigners = m;
+    minSigners = rule.principals.m;
   }
 
   const cap = lowerCap(rule);
@@ -123,9 +106,6 @@ function lowerRule(doc: PolicyDoc, rule: Rule, account: string): LoweredRule {
     cap === undefined;
 
   const notAfter = rule['not-after-ledger'];
-  if (notAfter !== undefined && notAfter < 1) {
-    throw new LowerErr(rule.name, `not-after-ledger must be >= 1, got ${notAfter}`);
-  }
 
   return {
     name: rule.name,
@@ -163,26 +143,9 @@ export function signerDeclToChain(decl: SignerDecl): ChainSigner {
 function lowerCap(rule: Rule): LoweredCap | undefined {
   const cap = rule.cap;
   if (cap === undefined) return undefined;
-  // Mirror perch-ir's five fail-closed cap checks.
-  if (rule.scope.type !== 'contract') {
-    throw new LowerErr(rule.name, 'a cap needs a contract scope (no token to meter on self-admin)');
-  }
-  if (!/^[0-9]+$/.test(cap.limit)) {
-    throw new LowerErr(rule.name, `cap.limit "${cap.limit}" is not a positive decimal integer`);
-  }
+  // validateDoc has already enforced perch-ir's cap checks (contract scope,
+  // positive i128 limit, non-zero period, token equal to the scope).
   const limitStroops = BigInt(cap.limit);
-  if (limitStroops <= 0n || limitStroops > I128_MAX) {
-    throw new LowerErr(rule.name, `cap.limit ${cap.limit} out of range (positive i128 required)`);
-  }
-  if (cap['period-ledgers'] === 0) {
-    throw new LowerErr(rule.name, 'cap.period-ledgers must be non-zero');
-  }
-  if (cap.token !== undefined && cap.token !== rule.scope.address) {
-    throw new LowerErr(
-      rule.name,
-      `cap.token ${cap.token} differs from the rule's contract scope ${rule.scope.address} — it would silently meter a different contract`,
-    );
-  }
   return { limitStroops, periodLedgers: cap['period-ledgers'] };
 }
 

@@ -88,10 +88,24 @@ export interface ScopedSessionKeyDocOptions {
   name?: string;
   /** Signer id in the doc (defaults to "session"). */
   signerId?: string;
+  /**
+   * The smart account this doc will be applied to. When set, a `targetContract`
+   * equal to it is refused: a session scoped to the account's OWN contract is
+   * not a scoped app session but full account authority (execute as the
+   * account, apply_doc, upgrade). Self-authority must be spelled explicitly
+   * (an admin rule), never minted through this session-key template.
+   */
+  account?: string;
 }
 
 /** Build the v1 scoped-session-key document. */
 export function scopedSessionKeyDoc(opts: ScopedSessionKeyDocOptions): PolicyDoc {
+  if (opts.account !== undefined && opts.targetContract === opts.account) {
+    throw new Error(
+      'scopedSessionKeyDoc: refusing a session scoped to the account itself — ' +
+        'that confers full account authority, not a scoped app session.',
+    );
+  }
   const signerId = opts.signerId ?? 'session';
   return buildPolicyDoc({
     ...(opts.network !== undefined ? { network: opts.network } : {}),

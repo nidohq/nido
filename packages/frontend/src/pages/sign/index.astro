@@ -228,7 +228,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { probeSep41Token } from '../../lib/assets/balances.js';
   import { NATIVE_SAC_ID, RPC_URL, NETWORK_PASSPHRASE } from '../../lib/network.js';
   import { fetchRegistryAddress } from '../../lib/policyChainFetch.js';
-  import { loadSignRequest, signRequestFromParams, clearSignRequest, safeRouteUrl, type SignRequest } from '../../lib/signing/signRequest';
+  import { loadSignRequest, signRequestFromParams, clearSignRequest, safeRouteUrl, validateDappReturn, type SignRequest } from '../../lib/signing/signRequest';
   import { renderTechDetails } from '../../lib/transfer/techDetails.js';
   import {
     PERIOD_LEDGERS,
@@ -238,6 +238,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   } from '../../lib/spendingLimitParams';
   import { stroopsToXlm } from '../../lib/money.js';
   import { runSign } from '../../lib/signing/runSign';
+  import { relayerOutcomeBlocksRetry } from '../../lib/relayerClient';
   import { mountSteps } from '../../lib/progressSteps';
   import { EXPLORER_BASE } from '../../lib/network.js';
 
@@ -647,7 +648,16 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       const { Buffer: B } = await import('buffer');
       if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
       const builtOp = await buildOperation(op, acct);
-      const summary: OpSummary = describeOperation(builtOp);
+      // This is an own-action op the wallet just built, but decode it with the
+      // same provenance gates the dApp path uses so an own-action `register`
+      // still renders as a name registration (its contract is the registry).
+      let nameRegistry: string | undefined;
+      try {
+        nameRegistry = await fetchRegistryAddress('name-registry');
+      } catch {
+        nameRegistry = undefined;
+      }
+      const summary: OpSummary = describeOperation(builtOp, acct, nameRegistry);
       return renderTechDetails({
         summary: { fee: '', ops: [summary] },
         txXdr: builtOp.toXDR('base64'),
@@ -665,7 +675,20 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       const { Buffer: B } = await import('buffer');
       if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
 
-      const summary = describeTransaction(txXdr, passphrase);
+      // Bind the semantic decodes to known provenance so a foreign contract
+      // can't borrow a verified-looking preview (masquerade guard): the account
+      // this ceremony is for gates the execute-transfer-wrapper and
+      // context-rule decodes, and the configured name registry gates the
+      // register decode. Resolving the registry is best-effort — if it fails, a
+      // register call simply reads as a generic contract call rather than a
+      // name registration, which is the safe degradation.
+      let nameRegistry: string | undefined;
+      try {
+        nameRegistry = await fetchRegistryAddress('name-registry');
+      } catch {
+        nameRegistry = undefined;
+      }
+      const summary = describeTransaction(txXdr, passphrase, acct, nameRegistry);
       if (summary.ops.length === 0) return;
 
       // decimals/symbol for non-native tokens, filled in by an async probe.
@@ -743,25 +766,26 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   // there is nothing to validate against — silently return null so the approve
   // button stays intact until Task 11 wires the own-action submit path.
   function validatedOrigin(): string | null {
-    if (!dappOrigin) {
-      // Suppress the "missing dapp origin" error for own-action sign requests
-      // that route back to an internal page rather than a dApp.
-      if (!req || req.returnTarget.type !== 'route') {
-        showError('Missing dapp origin parameter.');
+    // Uses the hardened httpOrigin scheme check (validateDappReturn) so a
+    // `javascript:`/`data:`/opaque-origin dapp or return value is rejected here
+    // — the legacy/message/authEntry path reaches this without going through
+    // signRequestFromParams, so this is the only entry gate for it.
+    const res = validateDappReturn(dappOrigin, returnUrl);
+    if ('error' in res) {
+      if (res.error === 'missing-dapp') {
+        // Suppress the "missing dapp origin" error for own-action sign requests
+        // that route back to an internal page rather than a dApp.
+        if (!req || req.returnTarget.type !== 'route') {
+          showError('Missing dapp origin parameter.');
+        }
+      } else if (res.error === 'malformed-dapp') {
+        showError('Malformed dapp origin.');
+      } else {
+        showError('Return URL origin does not match dapp origin.');
       }
       return null;
     }
-    let origin: string;
-    try { origin = new URL(dappOrigin).origin; } catch { showError('Malformed dapp origin.'); return null; }
-    if (returnUrl) {
-      try {
-        if (new URL(returnUrl).origin !== origin) {
-          showError('Return URL origin does not match dapp origin.');
-          return null;
-        }
-      } catch { showError('Malformed return URL.'); return null; }
-    }
-    return origin;
+    return res.origin;
   }
 
   const origin = validatedOrigin();
@@ -1010,17 +1034,25 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       } catch (err) {
         const e = err as { name?: string; message?: string; code?: string; details?: { hash?: string | null } };
         const msg = e?.message ?? String(err);
-        if (e?.name === 'RelayerError' && e?.code === 'WAIT_TIMEOUT') {
-          // The tx may still land — do NOT re-enable approve (double-send risk).
-          // Keep the progress view so the ticker stays visible; surface the error
-          // and explorer link in the error box (already above the ticker in DOM order
-          // after the review chrome is hidden). Do NOT restore review/footer — that
-          // would re-enable a path that could double-submit.
+        // A relayer-reported terminal failure is NOT trusted chain evidence, so
+        // for a payment it leaves the outcome uncertain and must not re-enable a
+        // fresh-payment retry (a lying/faulty relayer could induce a duplicate
+        // payment). Name claims reconcile their own outcome on-chain below
+        // (classifyClaim), so those are allowed through.
+        const uncertain =
+          e?.name === 'RelayerError' && relayerOutcomeBlocksRetry(e?.code, Boolean(claimName));
+        if (uncertain) {
+          // The tx may still have landed — do NOT re-enable approve (double-send
+          // risk). Keep the progress view so the ticker stays visible; surface
+          // the error and explorer link in the error box. Do NOT restore
+          // review/footer — that would re-enable a path that could double-submit.
           const hash = e.details?.hash;
           const explorerLink = hash && /^[0-9a-f]{64}$/i.test(hash)
             ? ` <a href="${EXPLORER_BASE}/tx/${hash}" target="_blank" rel="noopener">Check status on Stellar Expert →</a>`
             : '';
-          $err.innerHTML = `Still waiting for the network — this transaction may yet go through. Check the result before trying again.${explorerLink}`;
+          $err.innerHTML = e?.code === 'WAIT_TIMEOUT'
+            ? `Still waiting for the network — this transaction may yet go through. Check the result before trying again.${explorerLink}`
+            : `We couldn't confirm what happened to this transaction on-chain. Check whether it went through before trying again — retrying could pay twice.${explorerLink}`;
           $err.style.display = 'block';
           $status.textContent = '';
           // approve stays disabled intentionally; footer/review stay hidden.

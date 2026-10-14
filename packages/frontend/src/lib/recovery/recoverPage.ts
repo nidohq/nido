@@ -9,8 +9,9 @@
  * 2. Open a lost-key attempt (permissionless) declaring the replacement:
  *    the new passkey takes the lost one's signer slot.
  * 3. Evidence: friends approve from their own Nidos (links carry the
- *    replacement so they can check it with you), and/or prove with the old
- *    recovery kit here.
+ *    replacement; each friend's page shows the new passkey's check code to
+ *    compare with the one shown here), and/or prove with the old recovery
+ *    kit here.
  * 4. Once authorized, wait out the delay (counted in ledgers), then complete:
  *    anyone may submit the account's compiler-derived target through the
  *    zero-signer recovery rule.
@@ -18,6 +19,10 @@
  * `compromise` (my passkey was stolen) is the same with the enrolled
  * baseline as the source; it needs the baseline published, which the
  * settings page does at enrollment.
+ *
+ * Opening an attempt is permissionless and several attempts can be open at
+ * once, so the page only proves, links, or adopts a passkey for an attempt
+ * that declares exactly the replacement set it opened (`ownAttemptProblem`).
  */
 
 import { buf2hex, parseRegistration, perch, saveCredential } from '@nidohq/passkey-sdk';
@@ -28,8 +33,11 @@ import { latestLedger, readRecoveryState, recoveryClient, submitOpen } from './c
 import { perchDeployment, requireDeployment } from './deployment.js';
 import {
   condition,
+  findOwnAttempt,
   ledgersToText,
   MODE_TEXT,
+  ownAttemptProblem,
+  passkeyCheckCode,
   replacementsFromWire,
   replacementsToWire,
   SECONDS_PER_LEDGER,
@@ -171,14 +179,19 @@ function startCard(
       const op = action === 'lost-key'
         ? await client.beginLostKey(account, replacements)
         : await client.beginCompromise(account, replacements);
+      // The id the applied `begin_*` returned; without it, the newest
+      // attempt declaring this replacement set. `progressCard` checks the
+      // attempt is ours either way.
+      const own = { action, replacements: replacementsToWire(replacements) } as const;
       const { retval } = await submitOpen(op.operations[0]!);
-      const attemptId = retval ? String(scValToNative(retval)) : undefined;
+      const attemptId = retval
+        ? String(scValToNative(retval))
+        : (await findOwnAttempt(client, account, own))?.attemptId.toString();
       savePending(account, {
-        action,
+        ...own,
         attemptId,
         credentialId: b64u(reg.credentialId),
         publicKey: buf2hex(reg.publicKey),
-        replacements: replacementsToWire(replacements),
       });
       done();
     }),
@@ -200,17 +213,24 @@ async function progressCard(
   s: NonNullable<Awaited<ReturnType<typeof readRecoveryState>>['summary']>,
 ): Promise<HTMLElement> {
   const client = recoveryClient();
-  const attemptId = BigInt(pending.attemptId ?? (await client.nextAttemptId(account)) - 1n);
   const c = card('Your recovery', '');
   const body = c.querySelector('.card') as HTMLElement;
   const status = el('div', { class: 'mut', style: 'font-size:12.5px;' });
-  const attempt = await client.attempt(account, attemptId);
-  const live = await client.activityGate(account);
-  if (!attempt) {
-    body.append(el('p', { style: 'margin:0;' }, 'This recovery attempt no longer exists.'));
+  const own = await resolveOwnAttempt(account, pending);
+  if (own.refused) {
+    body.append(
+      el('div', { class: 'alert danger', role: 'alert' },
+        `Recovery attempt ${esc(own.refused.attemptId.toString())} is not yours: ${esc(own.refused.why)} ` +
+        'This page will not prove it, send links for it, or keep a passkey from it.'),
+    );
+  }
+  if (!own.found) {
+    body.append(el('p', { style: 'margin:0;' }, own.refused ? 'Your own recovery attempt was not found.' : 'This recovery attempt no longer exists.'));
     body.append(resetButton(account));
     return c;
   }
+  const { attemptId, attempt } = own.found;
+  const live = await client.activityGate(account);
 
   const state = attempt.state.tag;
   if (state === 'Completed') {
@@ -234,7 +254,13 @@ async function progressCard(
         (need.zk ? (attempt.zk_nullifier ? 'Recovery kit proof recorded.' : 'Prove it with your current recovery kit.') : '')),
     );
     if (need.guardians) {
-      body.append(el('div', { style: 'font-size:13px;' }, 'Send each friend their link. They will see your new passkey’s key to compare with you:'));
+      const codes = pending.replacements.signers
+        .map((r) => `<code class="mono" style="font-size:15px;">${esc(passkeyCheckCode(r.key))}</code>`)
+        .join(' ');
+      body.append(
+        el('div', { style: 'font-size:13px;' },
+          `Send each friend their link. Their page shows your new passkey’s check code; read them this one so they can compare every character: ${codes}`),
+      );
       body.append(
         guardianLinks(s.guardians, {
           kind: 'attempt',
@@ -295,6 +321,32 @@ async function progressCard(
     }),
   );
   return c;
+}
+
+/** The attempt `pending` opened: the saved id when that attempt declares
+ *  `pending`'s replacement set, else the newest attempt that does (saved for
+ *  next time). `refused` names a saved attempt that is someone else's. */
+async function resolveOwnAttempt(
+  account: string,
+  pending: Pending,
+): Promise<{
+  found?: { attemptId: bigint; attempt: perch.Attempt };
+  refused?: { attemptId: bigint; why: string };
+}> {
+  const client = recoveryClient();
+  let refused: { attemptId: bigint; why: string } | undefined;
+  if (pending.attemptId !== undefined) {
+    const attemptId = BigInt(pending.attemptId);
+    const attempt = await client.attempt(account, attemptId);
+    if (attempt) {
+      const why = ownAttemptProblem(attempt, pending);
+      if (!why) return { found: { attemptId, attempt } };
+      refused = { attemptId, why };
+    }
+  }
+  const found = await findOwnAttempt(client, account, pending);
+  if (found) savePending(account, { ...pending, attemptId: found.attemptId.toString() });
+  return { found, refused };
 }
 
 function resetButton(account: string): HTMLButtonElement {

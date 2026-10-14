@@ -13,3 +13,4 @@ mod recovery_rules;
 mod recovery_upgrades;
 mod scoped_session_key;
 mod spending_limit_policy;
+mod validate_differential;

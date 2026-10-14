@@ -15,6 +15,8 @@
 #      (today only perch-zk, which Perch hasn't published) to the submodule,
 #      or the SDK pins another version than it carries. Published Perch
 #      packages (@stellar-registry/perch) come from npm by version.
+#   5. a commit-pinned Perch link in Nido's documentation names another commit
+#      than the pinned one (scripts/pin-perch-links.sh rewrites them).
 #
 # `just perch-infra` refuses any byte that doesn't match the manifest when it
 # fetches; this check catches what changes afterwards (a submodule bump without
@@ -108,6 +110,13 @@ for pkg in perch:perch-js perch-zk:perch-zk; do
     sdk="$(jq -r --arg n "$name" '.dependencies[$n] // empty' packages/passkey-sdk/package.json)"
     [ -z "$sdk" ] || [ "$sdk" = "$carried" ] || problem "packages/passkey-sdk pins $name $sdk; vendor/perch carries $carried"
 done
+
+# 5. Every commit-pinned Perch link in Nido's documentation names the pinned
+#    commit, so a reader on GitHub sees the Perch source this tree builds and
+#    tests against (scripts/pin-perch-links.sh rewrites them after a bump).
+while IFS= read -r hit; do
+    problem "documentation links Perch at another commit (scripts/pin-perch-links.sh): $hit"
+done < <(git grep -n -E 'github\.com/stellar-registry/perch/(blob|tree)/([0-9a-f]{40}|PERCH_SHA)' -- '*.md' ':!vendor' ':!docs/reviews' | grep -v "/$pinned/" || true)
 
 if [ ${#problems[@]} -gt 0 ]; then
     echo "Perch drift (vendor/perch at ${pinned:0:7}, $manifest):" >&2

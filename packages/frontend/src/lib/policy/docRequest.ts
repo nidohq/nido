@@ -12,7 +12,7 @@ import { canonicalJson, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress } from './policyDraft.js';
 import { parseFunctionsInput, upsertSessionRule, type SessionDocDraft } from './docDraft.js';
 import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
-import type { OperationDescriptor } from '../signing/signRequest.js';
+import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
 
 export const DOC_DURATIONS: Record<string, number | null> = {
   '24h': 17280,
@@ -57,6 +57,11 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
   const returnUrl = params.get('return') ?? '';
 
   if (!origin) return { ok: false, error: 'Missing origin parameter.' };
+  // Reject javascript:/data:/opaque-origin values here (a bare `new URL().origin`
+  // returns "null" for them, which later compares equal to an `origin=null`
+  // param in the page's backToDapp sink).
+  const normalizedOrigin = httpOrigin(origin);
+  if (!normalizedOrigin) return { ok: false, error: 'Malformed origin parameter.' };
   if (!target || !isContractAddress(target)) {
     return { ok: false, error: 'Invalid target contract address.' };
   }
@@ -64,10 +69,11 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
     return { ok: false, error: 'Invalid session signer (expected a C… or G… address).' };
   }
   if (!returnUrl) return { ok: false, error: 'Missing return URL.' };
-  try {
-    new URL(returnUrl);
-  } catch {
-    return { ok: false, error: 'Malformed return URL.' };
+  // Return URL must be a same-origin http(s) URL of the (normalized) request
+  // origin — never a javascript:/data: callback.
+  const check = validateDappReturn(normalizedOrigin, returnUrl);
+  if ('error' in check) {
+    return { ok: false, error: 'Return URL origin does not match request origin.' };
   }
 
   const functions = parseFunctionsInput(params.get('functions') ?? '');
@@ -93,7 +99,7 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
   return {
     ok: true,
     req: {
-      origin,
+      origin: normalizedOrigin,
       target,
       signer,
       functions,

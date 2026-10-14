@@ -155,8 +155,12 @@ for local network, testnet, and GitHub Pages deployment details.
 - **No custody:** The wallet does not hold a server-side signing key.
 - **On-chain passkey verification:** WebAuthn assertions are checked by the
   verifier contract during Soroban authorization.
-- **Per-account origin binding:** Account subdomains scope WebAuthn RP IDs so a
-  passkey for one account cannot approve another account.
+- **Per-account credential isolation (browser):** Account subdomains scope
+  WebAuthn RP IDs, so a browser offers an account's passkey only on that
+  account's origin. This is a WebAuthn-client property, not an on-chain one:
+  the verifier does not enforce account-specific RP IDs or origins. Soroban
+  authorization binds an assertion to the exact challenge and key, so a
+  credential enrolled on more than one account can authorize each.
 - **Ephemeral testnet funding:** On testnet, a throwaway G-address funded by
   Friendbot moves its balance into the new account, then is discarded.
 - **Policy enforcement:** The account compiles its policy document into
@@ -164,7 +168,18 @@ for local network, testnet, and GitHub Pages deployment details.
   account and Perch's policies.
 - **Recovery without a custodian:** Friends approve from their own accounts
   and a recovery kit proves knowledge of a secret; a recovery waits out a
-  delay the owner can use to cancel it.
+  delay before it completes. Under the `Loss` profile the owner can cancel it
+  in that window; under `Protected`, cancelling takes the enrolled guardians
+  or kit.
+
+Known limits, each described in the [threat model](./docs/THREAT_MODEL.md)
+or the [deferral register](./docs/DEFERRED.md): until an account exists,
+whoever holds its setup key, including the relayer that submits the setup,
+can claim the address first; `Protected` without an enrolled baseline gives
+weaker protection against a stolen passkey; a `Protected` freeze blocks new
+authorizations by the account, not token allowances it granted earlier;
+replacing a capped rule resets its spending window; and the wallet does not
+restore archived recovery state on its own.
 
 For deeper implementation details, read [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -172,14 +187,21 @@ For deeper implementation details, read [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 - [Architecture](./ARCHITECTURE.md)
 - [Current deployments](./DEPLOYED.md)
-- Audit package: [scope](./docs/AUDIT_SCOPE.md), [threat model](./docs/THREAT_MODEL.md),
-  [security invariants](./docs/SECURITY_INVARIANTS.md), [supply chain](./docs/SUPPLY_CHAIN.md),
+- Audit package, starting from [the audit scope](./docs/AUDIT_SCOPE.md) and
+  its reading order: [threat model](./docs/THREAT_MODEL.md),
+  [security invariants](./docs/SECURITY_INVARIANTS.md),
+  [deferred work](./docs/DEFERRED.md), [supply chain](./docs/SUPPLY_CHAIN.md),
   [runbooks](./docs/RUNBOOKS.md), [mainnet readiness](./docs/MAINNET_READINESS.md)
-- [Perch recovery specification](./vendor/perch/docs/recovery/spec.md)
-- [SCF application notes](./docs/APPLICATION.md)
-- [SCF requirements](./docs/REQUIREMENTS.md)
+- [Perch recovery specification](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/recovery/spec.md)
+  (`vendor/perch/docs/recovery/spec.md`)
 - [Status Message dApp guide](./examples/status-message-dapp/README.md)
 - [Wallets Kit module guide](./packages/stellar-wallets-kit-module/README.md)
+
+Project history, not a description of the current system: the
+[SCF funding application](./docs/APPLICATION.md) and the
+[SCF request it answered](./docs/REQUIREMENTS.md). The application describes
+Nido-owned account and verifier contracts that are not part of the current
+design; [ARCHITECTURE.md](./ARCHITECTURE.md) describes the system as it is.
 
 ## License
 

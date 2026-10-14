@@ -90,6 +90,16 @@ export async function buildOperation(
       // object) and applied through the account's `apply_doc` surface —
       // the ONLY policy write path (doc-only ruling; the per-rule
       // add_context_rule lowering for docs is gone).
+      // The request MUST name the revision it was composed from. Refuse
+      // offline (before any parse or network read) a request that omits it,
+      // rather than rebinding it to the revision read at signing time — that
+      // rebinding would let an older stashed document overwrite intervening
+      // rule changes while still passing the stale-revision check.
+      if (typeof d.expectedRevision !== "string" || d.expectedRevision.length === 0) {
+        throw new Error(
+          "apply-policy-doc request is missing expected_revision; rebuild it from the current configuration",
+        );
+      }
       const doc = parsePolicyDocJson(d.docJson);
       // A request never reconfigures recovery: that is the recovery page's,
       // with whatever approval the account's profile needs.
@@ -99,13 +109,12 @@ export async function buildOperation(
         doc,
       );
       if (recoveryProblem !== undefined) throw new Error(recoveryProblem);
-      // The apply lands only at the revision the request was composed from
-      // (or, for a request that doesn't say, the one just read).
+      // The apply lands only at the revision the request was composed from.
       const tx = await buildApplyDocTx(doc, {
         account,
         rpcUrl: RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
-        expectedRevision: d.expectedRevision !== undefined ? BigInt(d.expectedRevision) : applied.revision,
+        expectedRevision: BigInt(d.expectedRevision),
         // The account's own limits: an over-limit request is refused here,
         // with the reason, before anything is simulated.
         limits: await fetchDocLimits(account),

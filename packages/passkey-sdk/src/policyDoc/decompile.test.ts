@@ -227,3 +227,73 @@ describe('decompileRules: raw fallbacks', () => {
     expect(result.docHash).toBeNull();
   });
 });
+
+describe('decompileRules: spending-limit-only principals', () => {
+  const passkey = new Uint8Array(65).fill(7);
+  const twoSigners: ChainRule['signers'] = [
+    { kind: 'delegated', address: SESSION_G },
+    { kind: 'external', verifier: INTERPRETER, publicKey: passkey },
+  ];
+  const capCtx: DecompileContext = {
+    ...CTX,
+    spendingLimits: { 4: { limitStroops: 10_000_000n, periodLedgers: 17_280 } },
+  };
+  const rule = (policies: string[]): ChainRule => ({
+    ruleId: 4,
+    contextType: { kind: 'call-contract', contract: TARGET },
+    name: 'capped',
+    signers: twoSigners,
+    policies,
+    validUntil: null,
+  });
+
+  it('shows a multi-signer rule guarded only by the spending limit as 1-of-N', () => {
+    // The spending-limit policy only requires some authenticated signer, so
+    // any one of the listed signers can authorize the rule on-chain.
+    const result = decompileRules([rule([SPENDING_LIMIT])], capCtx);
+    const entry = result.rules[0];
+    expect(entry.kind).toBe('doc');
+    if (entry.kind !== 'doc') return;
+    expect(entry.rule.principals).toEqual({
+      type: 'threshold',
+      signers: ['delegated-1', 'key-1'],
+      m: 1,
+    });
+    expect(result.doc).not.toBeNull();
+  });
+
+  it('keeps all-signer principals when the interpreter enforces MinSigners(N)', () => {
+    const ctx: DecompileContext = {
+      ...capCtx,
+      programs: {
+        4: {
+          program: {
+            version: 1,
+            ops: [
+              { tag: 'MinSigners', values: [2] },
+              { tag: 'All', values: [1] },
+            ],
+          },
+          ruleHash: 'ab'.repeat(32),
+        },
+      },
+    };
+    for (const policies of [
+      [SPENDING_LIMIT, INTERPRETER],
+      [INTERPRETER, SPENDING_LIMIT],
+    ]) {
+      const entry = decompileRules([rule(policies)], ctx).rules[0];
+      expect(entry.kind).toBe('doc');
+      if (entry.kind !== 'doc') return;
+      expect(entry.rule.principals).toEqual({ type: 'all', signers: ['delegated-1', 'key-1'] });
+    }
+  });
+
+  it('keeps all-signer principals for a policy-free multi-signer rule', () => {
+    const entry = decompileRules([rule([])], CTX).rules[0];
+    expect(entry.kind === 'doc' && entry.rule.principals).toEqual({
+      type: 'all',
+      signers: ['delegated-1', 'key-1'],
+    });
+  });
+});

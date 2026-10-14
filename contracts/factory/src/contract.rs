@@ -359,6 +359,36 @@ mod test {
         assert!(client.try_create_account(&salt, &key).is_err());
     }
 
+    /// The open setup race (THREAT_MODEL 10, L5; nidohq/nido#245): the address
+    /// derives from the salt alone and `create_account` is permissionless, so
+    /// whoever submits a salt first owns its address, with their own key as
+    /// the admin, and the owner's later call fails as a reused salt. This pins
+    /// today's behaviour; launch gate MAINNET_READINESS A6 requires the wallet
+    /// to detect it (or the factory to prevent it) before mainnet.
+    #[test]
+    fn whoever_submits_the_salt_first_owns_the_address() {
+        let env = Env::default();
+        let (factory, verifier) = setup(&env);
+        let client = ContractClient::new(&env, &factory);
+        let salt = BytesN::from_array(&env, &[11; 32]);
+        let owner_key = BytesN::from_array(&env, &[5; 65]);
+        let front_runner_key = BytesN::from_array(&env, &[6; 65]);
+
+        let address = client.create_account(&salt, &front_runner_key);
+        assert_eq!(address, client.get_c_address(&salt));
+        assert!(client.try_create_account(&salt, &owner_key).is_err());
+
+        let admin = AccountClient::new(&env, &address).get_context_rule(&0);
+        assert_eq!(
+            admin.signers,
+            soroban_sdk::vec![
+                &env,
+                Signer::External(verifier, front_runner_key.to_bytes())
+            ],
+            "the admin is the front-runner's key, not the owner's"
+        );
+    }
+
     /// The hash the factory deploys must equal the hash the host assigns when
     /// the same bytes are installed, or `deploy_v2` cannot resolve it.
     #[test]

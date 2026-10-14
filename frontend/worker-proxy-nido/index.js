@@ -80,7 +80,7 @@ export default {
     // (soroban-testnet/horizon-testnet/friendbot). At mainnet, swap to
     // soroban.stellar.org + horizon.stellar.org and REMOVE friendbot, in lockstep
     // with the frontend network config AND packages/frontend/public/_headers.
-    // TODO(audit E): after a clean report stream in prod, promote to
+    // TODO(CSP enforce): after a clean report stream in prod, promote to
     // `Content-Security-Policy` (drop `-Report-Only`). See docs/MAINNET_READINESS.md.
     response.headers.set(
       "Content-Security-Policy-Report-Only",

@@ -52,3 +52,33 @@ export const waitForConfirmation = (
     onPoll?: (info: { status: RelayerStatus | null; attempt: number; maxAttempts: number }) => void;
   },
 ) => sdkWait(id, baseUrl, opts);
+
+/**
+ * Whether a RelayerError with code `code` leaves a payment's outcome UNCERTAIN,
+ * so a fresh-payment retry must be blocked.
+ *
+ * SECURITY: the relayer is untrusted, so none of these codes is proof the
+ * transaction did not land.
+ * - `WAIT_TIMEOUT` — we stopped polling while the tx could still land.
+ * - `ONCHAIN_FAILED` — the relayer merely REPORTING "failed"/"expired".
+ * - `SUBMIT_UNKNOWN` — the signed authorization was already sent and then the
+ *   submission failed in a way we cannot classify (connection loss, non-JSON,
+ *   acceptance without a transaction handle, or a relayer-reported failure
+ *   carrying any code). The relayer may already hold a usable authorization.
+ * Authorizing a fresh payment on any of these would double-spend if the relayer
+ * lied or erred, so all are uncertain — EXCEPT where the caller has its own
+ * trusted on-chain reconciliation for the outcome (`hasTrustedReconcile` — e.g.
+ * a name claim re-checked against the registry), which can safely distinguish a
+ * real failure from a false one. The decision never trusts a server-supplied
+ * code to mark an outcome safe: the only "safe" classification is the absence
+ * of a submission attempt (an error raised before anything was sent keeps its
+ * original non-blocking code).
+ */
+export function relayerOutcomeBlocksRetry(
+  code: string | undefined,
+  hasTrustedReconcile = false,
+): boolean {
+  if (code === "WAIT_TIMEOUT") return true;
+  if (code === "ONCHAIN_FAILED" || code === "SUBMIT_UNKNOWN") return !hasTrustedReconcile;
+  return false;
+}

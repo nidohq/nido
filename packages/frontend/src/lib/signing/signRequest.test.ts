@@ -5,6 +5,7 @@ import {
   clearSignRequest,
   safeRouteUrl,
   signRequestFromParams,
+  validateDappReturn,
   type SignRequest,
 } from "./signRequest";
 
@@ -54,6 +55,30 @@ describe("stash/load SignRequest", () => {
     expect(loadSignRequest(id, store)).not.toBeNull();
     clearSignRequest(id, store);
     expect(loadSignRequest(id, store)).toBeNull();
+  });
+
+  it("round-trips an apply-policy-doc request that names its revision", () => {
+    const req: SignRequest = {
+      v: 1, kind: "session-grant", account: C1,
+      operation: { type: "apply-policy-doc", docJson: "{}", expectedRevision: "7" },
+      title: "Grant", submitMode: "relayer",
+      returnTarget: { type: "route", url: "https://cabc.nido.fyi/account/" },
+    };
+    const id = stashSignRequest(req, store);
+    expect(loadSignRequest(id, store)).toEqual(req);
+  });
+
+  // A stashed/older apply-policy-doc request without the revision it was
+  // composed from must not load — otherwise the builder would rebind it to the
+  // sign-time revision and defeat the stale-document check.
+  it("rejects an apply-policy-doc request missing expectedRevision", () => {
+    store.setItem("nido:signreq:z", JSON.stringify({
+      v: 1, kind: "session-grant", account: C1,
+      operation: { type: "apply-policy-doc", docJson: "{}" },
+      title: "Grant", submitMode: "relayer",
+      returnTarget: { type: "route", url: "https://cabc.nido.fyi/account/" },
+    }));
+    expect(loadSignRequest("z", store)).toBeNull();
   });
 });
 
@@ -187,5 +212,74 @@ describe("signRequestFromParams (legacy dApp entry)", () => {
     });
     const req = signRequestFromParams(p, C1);
     expect((req?.returnTarget as { origin: string }).origin).toBe("https://app.example");
+  });
+});
+
+describe("validateDappReturn (entry-point origin/return guard)", () => {
+  it("accepts an https dapp origin with a same-origin https return", () => {
+    const r = validateDappReturn("https://dapp.example", "https://dapp.example/cb?x=1");
+    expect(r).toEqual({ origin: "https://dapp.example" });
+  });
+
+  it("rejects a javascript: dapp origin", () => {
+    expect(validateDappReturn("javascript:alert(1)", undefined)).toEqual({ error: "malformed-dapp" });
+  });
+
+  it("rejects a javascript: return URL even when the dapp origin is valid", () => {
+    expect(validateDappReturn("https://dapp.example", "javascript:alert(document.cookie)")).toEqual({
+      error: "bad-return",
+    });
+  });
+
+  it("rejects the opaque-origin trick where both dapp and return are opaque", () => {
+    // Both `new URL(...).origin` would be the string "null" and compare equal;
+    // httpOrigin rejects them instead.
+    expect(validateDappReturn("data:text/html,x", "data:text/html,y")).toEqual({ error: "malformed-dapp" });
+  });
+
+  it("rejects a cross-origin return URL", () => {
+    expect(validateDappReturn("https://dapp.example", "https://evil.example/cb")).toEqual({
+      error: "bad-return",
+    });
+  });
+
+  it("reports a missing dapp origin", () => {
+    expect(validateDappReturn("", "https://x")).toEqual({ error: "missing-dapp" });
+  });
+
+  // Regression (dApp connect/sign round-trip): a legitimate https dApp origin
+  // with a same-origin return must be accepted at the entry gate — this is the
+  // production path real dApps use.
+  it("accepts a legitimate https dApp origin + same-origin return (connect/sign round-trip)", () => {
+    expect(validateDappReturn("https://app.example", "https://app.example/cb")).toEqual({
+      origin: "https://app.example",
+    });
+    expect(validateDappReturn("https://app.example:8443", "https://app.example:8443/wallet/cb?s=1")).toEqual({
+      origin: "https://app.example:8443",
+    });
+  });
+
+  // Regression: a local dApp served over http on a `*.localhost` subdomain is a
+  // loopback dev origin (the e2e dApp is `http://dapp.localhost:<port>`) and
+  // must round-trip; bare-`localhost`-only matching wrongly refused it.
+  it("accepts an http *.localhost dApp origin + same-origin return (local dev)", () => {
+    expect(validateDappReturn("http://dapp.localhost:4399", "http://dapp.localhost:4399/cb")).toEqual({
+      origin: "http://dapp.localhost:4399",
+    });
+    expect(validateDappReturn("http://localhost:4399", "http://localhost:4399/cb")).toEqual({
+      origin: "http://localhost:4399",
+    });
+  });
+
+  // The loopback widening must not leak to real remote origins: http on a
+  // genuine remote host stays refused (only https is allowed off loopback).
+  it("still rejects http on a genuine remote host", () => {
+    expect(validateDappReturn("http://dapp.example", "http://dapp.example/cb")).toEqual({
+      error: "malformed-dapp",
+    });
+    // A look-alike that merely CONTAINS 'localhost' is not a loopback host.
+    expect(validateDappReturn("http://localhost.evil.example", undefined)).toEqual({
+      error: "malformed-dapp",
+    });
   });
 });

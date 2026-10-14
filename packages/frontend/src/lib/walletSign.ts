@@ -49,6 +49,7 @@ import {
   type DefaultRuleAuthInfo,
 } from './policyChainFetch.js';
 import { signatureExpirationOffset } from './relayerClient';
+import { deriveMessageChallenge } from './messageSigning.js';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 
@@ -443,12 +444,13 @@ function base64urlJson(o: unknown): string {
 
 /**
  * Sign an arbitrary message string with the primary passkey. The message is
- * hashed (SHA-256) to a 32-byte challenge per common SEP-43 practice; returns
- * the base64url-JSON WebAuthn assertion envelope (see `passkeyAssertEnvelope`).
+ * hashed to a 32-byte challenge under a fixed, versioned message-signing domain
+ * (see `deriveMessageChallenge`) so the resulting assertion can NEVER be
+ * replayed as an on-chain transaction/auth authorization; returns the
+ * base64url-JSON WebAuthn assertion envelope (see `passkeyAssertEnvelope`).
  */
 export async function signMessageRaw(args: { account: string; message: string }): Promise<string> {
-  const { hash } = await import('@stellar/stellar-sdk');
-  const digest = new Uint8Array(hash(Buffer.from(args.message, 'utf-8')));
+  const digest = deriveMessageChallenge(args.message);
   return passkeyAssertEnvelope(args.account, digest);
 }
 

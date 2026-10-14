@@ -77,8 +77,34 @@ export interface DocValidationResult {
 /** `limits` is the account's (`fetchDocLimits`), or `null` while they load:
  *  the form's own checks still run, so input errors show at once, and a
  *  submit validates again with the limits before applying. */
-export function validateSessionDocDraft(draft: SessionDocDraft, limits: DocLimits | null): DocValidationResult {
+/**
+ * Validate a session-grant draft. `account` is the smart account this grant is
+ * being applied to; when supplied, a draft whose target contract IS that
+ * account is refused.
+ *
+ * SECURITY (self-targeted session grant): a session rule scoped to the
+ * account's own contract gives the dApp's key authority over the account
+ * itself — `execute` as the account (drain funds), `apply_doc` to swap in the
+ * app's key, remove recovery, or `upgrade`. A malicious dApp can send the user
+ * to /security/delegate(-doc)/?target=<their own account>&signer=<app key> so
+ * one approval of what reads as a scoped app session confers full account
+ * authority. Such self-authority must never be spelled as an ordinary dApp
+ * session grant; refuse it here (the shared gate both delegate pages call).
+ */
+export function validateSessionDocDraft(
+  draft: SessionDocDraft,
+  limits: DocLimits | null,
+  account?: string,
+): DocValidationResult {
   const errors: string[] = [];
+
+  if (account !== undefined && draft.targetContract.trim() === account.trim()) {
+    errors.push(
+      'This request targets your own account, which would grant the app full ' +
+        'control of it (spend, change its keys, remove recovery). Nido does not ' +
+        'issue app sessions over your own account.',
+    );
+  }
 
   const name = draft.name.trim();
   const nameProblem = ruleNameProblem(name, limits);
@@ -241,7 +267,20 @@ export function upsertSessionRule(
     ...template.rules[0],
     principals: { type: 'all' as const, signers: [signerId] },
   };
-  const rules = current.rules.some((r) => r.name === rule.name)
+  // SECURITY: the rule name is a dApp-supplied
+  // `label`. A session grant must only ADD a rule or re-delegate an existing
+  // session (a contract-scoped rule) — never overwrite a core self-admin rule
+  // (the account's `admin`/anti-brick rule, or any other non-session rule) by
+  // reusing its name. The new session rule is always contract-scoped; refuse
+  // when an existing rule with the same name is NOT.
+  const existing = current.rules.find((r) => r.name === rule.name);
+  if (existing && existing.scope.type !== 'contract') {
+    throw new Error(
+      `A core account rule named "${rule.name}" already exists; a session grant ` +
+        `cannot replace it. Choose a different label.`,
+    );
+  }
+  const rules = existing
     ? current.rules.map((r) => (r.name === rule.name ? rule : r))
     : [...current.rules, rule];
 

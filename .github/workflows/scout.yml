@@ -9,6 +9,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  merge_group:
 
 # Least-privilege GITHUB_TOKEN: the jobs only check out code and upload
 # artifacts, neither of which needs write access to anything.

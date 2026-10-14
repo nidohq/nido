@@ -234,6 +234,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     stripSubdomain,
   } from "@nidohq/passkey-sdk";
   import { fetchFactoryAddress } from "../../lib/policyChainFetch.js";
+  import { setupAddressMismatch } from "../../lib/newAccount/deployGuard";
   import { parseReturnIntent, buildClaimReturnUrl } from "../../lib/claimFlow";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
@@ -388,8 +389,16 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     return `; Domain=.${base}`;
   }
 
+  // `Secure` keeps the setup salt — which decides who owns the derived address
+  // — off plain-HTTP requests. Gated on `isSecureContext` so it is set on HTTPS
+  // and on localhost (both secure contexts) but omitted on a plain-HTTP dev
+  // origin, where a `Secure` cookie would silently fail to write.
+  function setupCookieSecure(): string {
+    return window.isSecureContext ? "; Secure" : "";
+  }
+
   function saveSetupSaltCookie(account: string, salt: string): void {
-    document.cookie = `${setupCookieName(account)}=${salt}; Max-Age=1800; Path=/; SameSite=Lax${setupCookieDomain()}`;
+    document.cookie = `${setupCookieName(account)}=${salt}; Max-Age=1800; Path=/; SameSite=Lax${setupCookieSecure()}${setupCookieDomain()}`;
   }
 
   function readSetupSaltCookie(account: string): string | null {
@@ -402,7 +411,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   }
 
   function clearSetupSaltCookie(account: string): void {
-    document.cookie = `${setupCookieName(account)}=; Max-Age=0; Path=/; SameSite=Lax${setupCookieDomain()}`;
+    document.cookie = `${setupCookieName(account)}=; Max-Age=0; Path=/; SameSite=Lax${setupCookieSecure()}${setupCookieDomain()}`;
   }
 
   async function waitForSourceAccount(server: rpc.Server, publicKey: string): Promise<Account> {
@@ -585,6 +594,52 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     return hex2buf(saltHex);
   }
 
+  // GHSA setup-link substitution guard. The factory deploys at
+  // get_c_address(salt) — derived from the salt alone — but this page funds,
+  // activates and displays the HOSTNAME account (`contractId`). Confirm the two
+  // agree before any passkey is created or any funding happens, so a link that
+  // pairs one account's hostname with a different account's salt is refused
+  // rather than deploying one account while we fund another. Memoized so the
+  // register step and the deploy step share one on-chain derivation. Returns a
+  // user-facing error string, or null when setup may proceed.
+  let setupConsistencyCheck: Promise<string | null> | null = null;
+  function checkSetupConsistency(): Promise<string | null> {
+    if (!setupConsistencyCheck) {
+      setupConsistencyCheck = (async (): Promise<string | null> => {
+        if (!contractId) return setupAddressMismatch(null, contractId);
+        // Without a relayer sim source we can't derive; deploy() surfaces the
+        // "relayer not configured" error on its own, so don't block here.
+        if (!RELAYER_URL || !RELAYER_SIM_SOURCE) return null;
+        let derived: string | null = null;
+        try {
+          const server = new rpc.Server(RPC_URL);
+          const sourceAccount = await waitForSourceAccount(server, RELAYER_SIM_SOURCE);
+          const simTxn = new TransactionBuilder(sourceAccount, {
+            fee: "100",
+            networkPassphrase: Networks.TESTNET,
+          })
+            .addOperation(
+              Operation.invokeContractFunction({
+                contract: await fetchFactoryAddress(),
+                function: "get_c_address",
+                args: [xdr.ScVal.scvBytes(Buffer.from(saltBytes()))],
+              }),
+            )
+            .setTimeout(0)
+            .build();
+          const sim = await server.simulateTransaction(simTxn);
+          if (!rpc.Api.isSimulationError(sim) && !rpc.Api.isSimulationRestore(sim) && sim.result) {
+            derived = Address.fromScVal(sim.result.retval).toString();
+          }
+        } catch {
+          derived = null;
+        }
+        return setupAddressMismatch(derived, contractId);
+      })();
+    }
+    return setupConsistencyCheck;
+  }
+
   async function reserveNidoAddress(): Promise<string> {
     if (!RELAYER_URL || !RELAYER_SIM_SOURCE) {
       throw new Error("Relayer is not configured for account setup.");
@@ -695,6 +750,13 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       return;
     }
 
+    // Refuse a hostname/salt-mismatched setup link BEFORE creating a passkey.
+    const mismatch = await checkSetupConsistency();
+    if (mismatch) {
+      showError(mismatch);
+      return;
+    }
+
     try {
       $registerBtn.disabled = true;
       // Drive the REAL ceremony through the sheet — no fake timer. The OS
@@ -722,6 +784,9 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   // OS dialog is the prompt on browsers that allow it.
   async function attemptAutoPasskey() {
     if (!contractId || !checkPasskeySupport().ok) return;
+    // Silently skip the auto-prompt on a mismatched setup link; the manual tap
+    // surfaces the error. (Guard before any passkey is created.)
+    if (await checkSetupConsistency()) return;
     // Run in the background: do NOT disable the button. The user can tap to take
     // over at any time (the click handler aborts this attempt first), so a hung
     // or pending attempt can never strand the button in a disabled state.
@@ -743,6 +808,14 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     clearError();
     if (!passkeyPublicKey || !saltHex) {
       showError("Register a passkey first and ensure setup data is present.");
+      return;
+    }
+
+    // Re-assert hostname/salt consistency before we submit, activate or fund —
+    // never deploy one account (salt-derived) while funding another (hostname).
+    const mismatch = await checkSetupConsistency();
+    if (mismatch) {
+      showError(mismatch);
       return;
     }
 

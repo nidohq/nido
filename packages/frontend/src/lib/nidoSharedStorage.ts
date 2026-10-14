@@ -173,7 +173,28 @@ export function mergeNidoSnapshot(
   return true;
 }
 
-export function apexHostForHost(host: string): string {
+/**
+ * Multi-label public suffixes (eTLDs) under which every host is a SEPARATE
+ * site. The storage bridge shares data within one apex, so the computed apex
+ * must never be one of these — otherwise `apexHostForHost("evil.pages.dev")`
+ * would be `pages.dev`, making every `*.pages.dev` site share one apex and read
+ * each other's pending setup salts / inject accounts. (A full Public Suffix
+ * List is overkill here; this covers the hosting platforms Nido is deployed
+ * to or previewed on.) Getting this set wrong is a cross-site data leak, so
+ * treat it as security-critical.
+ */
+const PUBLIC_SUFFIXES = new Set([
+  "pages.dev",
+  "workers.dev",
+  "github.io",
+  "gitlab.io",
+  "vercel.app",
+  "netlify.app",
+  "web.app",
+  "firebaseapp.com",
+]);
+
+function computeApexHost(host: string): string {
   const parts = host.split(".");
   if (parts.length <= 1) return host;
 
@@ -186,6 +207,13 @@ export function apexHostForHost(host: string): string {
   if (legacyRoot) return `${legacyRoot[1]}.${rest}`;
   if (rest.startsWith("localhost")) return rest;
   return parts.length > 2 ? rest : host;
+}
+
+export function apexHostForHost(host: string): string {
+  const apex = computeApexHost(host);
+  // Never collapse to a bare public suffix: treat such a host as its OWN apex
+  // so, e.g., `nido-xyz.pages.dev` and `evil.pages.dev` are different apexes.
+  return PUBLIC_SUFFIXES.has(apex.split(":")[0]) ? host : apex;
 }
 
 export function sameNidoApexOrigin(origin: string, host: string): boolean {

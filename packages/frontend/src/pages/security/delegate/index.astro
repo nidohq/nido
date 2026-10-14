@@ -140,6 +140,7 @@ import Icon from '../../../components/Icon.astro';
   import type { PolicyDoc } from '@nidohq/passkey-sdk';
   import { NETWORK_PASSPHRASE, latestLedgerSequence } from '../../../lib/network.js';
   import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
+  import { httpOrigin, validateDappReturn } from '../../../lib/signing/signRequest.js';
   import {
     DOC_DURATIONS,
     DOC_DURATION_LABEL,
@@ -225,7 +226,14 @@ import Icon from '../../../components/Icon.astro';
       return 'Invalid session public key (expected 65-byte SEC1 uncompressed P-256, hex-encoded with 0x04 prefix).';
     }
     if (!returnUrl) return 'Missing return URL.';
-    try { new URL(returnUrl); } catch { return 'Malformed return URL.'; }
+    // Hardened scheme check: reject javascript:/data:/opaque-origin values and
+    // require the return URL be same-origin http(s) with the request origin
+    // (bare `new URL().origin` returns "null" for all opaque schemes and would
+    // compare equal to an `origin=null` param).
+    const res = validateDappReturn(dappOrigin, returnUrl);
+    if ('error' in res) {
+      return res.error === 'malformed-dapp' ? 'Malformed origin parameter.' : 'Return URL origin does not match request origin.';
+    }
     return null;
   }
 
@@ -369,7 +377,7 @@ import Icon from '../../../components/Icon.astro';
     }
     const draft = draftFromControls();
     if (draft === null) return;
-    const check = validateSessionDocDraft(draft, docLimits);
+    const check = validateSessionDocDraft(draft, docLimits, account ?? undefined);
     if (!check.ok) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = check.errors.join(' ');
@@ -403,12 +411,15 @@ import Icon from '../../../components/Icon.astro';
   // from the pre-doc version.
   function backToDapp(qs: string): string | null {
     if (!returnUrl) return null;
+    // SINK guard: refuse any non-http(s)/opaque-origin return URL so a
+    // `javascript:`/`data:` callback can never reach `window.location.href`.
+    const retOrigin = httpOrigin(returnUrl);
+    if (!retOrigin || retOrigin !== httpOrigin(dappOrigin)) {
+      status.textContent = `Refusing to redirect: return URL origin (${retOrigin ?? 'invalid'}) does not match request origin (${dappOrigin}).`;
+      return null;
+    }
     try {
       const url = new URL(returnUrl);
-      if (url.origin !== dappOrigin) {
-        status.textContent = `Refusing to redirect: return URL origin (${url.origin}) does not match request origin (${dappOrigin}).`;
-        return null;
-      }
       url.search = qs;
       return url.toString();
     } catch {
@@ -452,7 +463,7 @@ import Icon from '../../../components/Icon.astro';
       if (docBaselineBlocked || baselineDoc === null || docLimits === null) return; // refusal already on screen
 
       const draft = draftFromControls()!;
-      const check = validateSessionDocDraft(draft, docLimits);
+      const check = validateSessionDocDraft(draft, docLimits, account ?? undefined);
       if (!check.ok) {
         status.textContent = check.errors.join(' ');
         approveBtn.disabled = false;

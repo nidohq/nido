@@ -63,12 +63,31 @@ describe("apexHostForHost", () => {
     expect(apexHostForHost("pr-24.mysoroban.xyz")).toBe("24.mysoroban.xyz");
     expect(apexHostForHost("alice--pr-24.mysoroban.xyz")).toBe("24.mysoroban.xyz");
   });
+
+  it("never collapses a host to a bare public suffix (pages.dev)", () => {
+    // Each site directly under a public suffix is its OWN apex, so distinct
+    // *.pages.dev deployments cannot share one apex.
+    expect(apexHostForHost("nido-xyz.pages.dev")).toBe("nido-xyz.pages.dev");
+    expect(apexHostForHost("evil.pages.dev")).toBe("evil.pages.dev");
+    // A real account subdomain of the Nido Pages project still maps to the
+    // project root (so the legitimate same-project bridge keeps working).
+    expect(apexHostForHost("alice.nido-xyz.pages.dev")).toBe("nido-xyz.pages.dev");
+  });
 });
 
 describe("sameNidoApexOrigin", () => {
   it("allows origins under the same apex", () => {
     expect(sameNidoApexOrigin("https://nido.fyi", "alice.nido.fyi")).toBe(true);
     expect(sameNidoApexOrigin("http://localhost:4399", "alice.localhost:4399")).toBe(true);
+  });
+
+  it("refuses a cross-site *.pages.dev origin (public-suffix leak guard)", () => {
+    // The storage bridge on the Nido Pages project must not answer a request
+    // from an unrelated *.pages.dev site, even though both share pages.dev.
+    expect(sameNidoApexOrigin("https://evil.pages.dev", "alice.nido-xyz.pages.dev")).toBe(false);
+    expect(sameNidoApexOrigin("https://evil.pages.dev", "nido-xyz.pages.dev")).toBe(false);
+    // The Nido project's own subdomain IS allowed (legit bridge).
+    expect(sameNidoApexOrigin("https://nido-xyz.pages.dev", "alice.nido-xyz.pages.dev")).toBe(true);
   });
 
   it("rejects other sites", () => {

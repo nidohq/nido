@@ -56,6 +56,22 @@ describe('validateSessionDocDraft', () => {
     expect(validateSessionDocDraft(draft(), LIMITS)).toEqual({ ok: true, errors: [] });
   });
 
+  it('refuses a session grant targeting the account itself (self-target)', () => {
+    // target === account would confer full account authority (execute/apply_doc/
+    // upgrade) on the app key via one "scoped session" approval.
+    const r = validateSessionDocDraft(draft({ targetContract: TARGET }), LIMITS, TARGET);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toContain('your own account');
+  });
+
+  it('still accepts a grant targeting a different contract when an account is given', () => {
+    const OTHER = 'CDVVRZAVXTUQLS5LCGUP3H26RGOIUFKNE2UEJ6CAWYMBWY5LNORF6POX';
+    expect(validateSessionDocDraft(draft({ targetContract: TARGET }), LIMITS, OTHER)).toEqual({
+      ok: true,
+      errors: [],
+    });
+  });
+
   it("refuses a 21-byte rule name before submission (Perch's 20-byte limit)", () => {
     expect(validateSessionDocDraft(draft({ name: 'x'.repeat(20) }), LIMITS).ok).toBe(true);
     const r = validateSessionDocDraft(draft({ name: 'x'.repeat(21) }), LIMITS);
@@ -369,5 +385,40 @@ describe('policy edits never reconfigure recovery', () => {
     expect(removeAdminRule(bothRestorable, 'admin', Networks.TESTNET).rules.map((r) => r.name)).toEqual([
       'admin-2',
     ]);
+  });
+});
+
+describe('upsertSessionRule — label cannot replace a core rule', () => {
+  const VERIFIER = 'CD4IF75DNQJKCT35PAJAQDPW3K337EK6SJZDMQEVLXAH65K7ZVZMLXYN';
+  const OWNER_KEY = '04' + 'ab'.repeat(64);
+  const SESSION_KEY = '04' + 'b0'.repeat(64);
+  const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
+
+  const sessionDraft = (name: string) => ({
+    name,
+    signer: { kind: 'passkey' as const, verifier: VERIFIER, publicKeyHex: SESSION_KEY },
+    targetContract: TARGET,
+    functionsInput: '',
+    notAfterLedger: null,
+    cap: null,
+  });
+
+  it('refuses a dApp label that collides with the self-admin rule name', () => {
+    const baseline = adminBaseline({ verifier: VERIFIER, publicKeyHex: OWNER_KEY }, Networks.TESTNET);
+    expect(baseline.rules.find((r) => r.name === 'admin')?.scope.type).toBe('self-admin');
+    expect(() => upsertSessionRule(baseline, sessionDraft('admin'), Networks.TESTNET)).toThrow(
+      /core account rule named "admin"/,
+    );
+    // The admin rule is untouched.
+    expect(baseline.rules.map((r) => r.name)).toEqual(['admin']);
+  });
+
+  it('still re-delegates (replaces) an existing contract-scoped session rule', () => {
+    const baseline = adminBaseline({ verifier: VERIFIER, publicKeyHex: OWNER_KEY }, Networks.TESTNET);
+    const once = upsertSessionRule(baseline, sessionDraft('status-session'), Networks.TESTNET).doc;
+    const NEW_KEY = '04' + 'c1'.repeat(64);
+    const draft2 = { ...sessionDraft('status-session'), signer: { kind: 'passkey' as const, verifier: VERIFIER, publicKeyHex: NEW_KEY } };
+    const twice = upsertSessionRule(once, draft2, Networks.TESTNET).doc;
+    expect(twice.rules.filter((r) => r.name === 'status-session')).toHaveLength(1);
   });
 });

@@ -26,6 +26,16 @@ describe('buildApplyDocTx: pre-network refusals', () => {
     ).rejects.toThrow(/bound to network/);
   });
 
+  it('refuses to build for a doc with no network binding', async () => {
+    const doc = buildPolicyDoc({
+      signers: [OWNER],
+      permissions: [{ name: 'pay', on: { contract: TARGET }, by: ['owner'] }],
+    });
+    await expect(
+      buildApplyDocTx(doc, { account: ACCOUNT, rpcUrl: 'http://localhost:1' }),
+    ).rejects.toThrow(/no network binding/);
+  });
+
   // Caps are supported since perch's cap-capable compiler 0.2.1 — a capped
   // doc rides the same single apply_doc transaction (the contract attaches
   // the pinned stock spending-limit policy in-contract; proven in the Rust

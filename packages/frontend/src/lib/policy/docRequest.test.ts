@@ -67,6 +67,25 @@ describe('parseDocDelegateParams', () => {
     if (r.ok) return;
     expect(r.error).toContain(msg);
   });
+
+  it('rejects a javascript: / data: origin (opaque-origin callback guard)', () => {
+    const js = parseDocDelegateParams(params({ origin: 'javascript:alert(1)', return: 'javascript:alert(1)' }));
+    expect(js.ok).toBe(false);
+    if (!js.ok) expect(js.error).toContain('Malformed origin');
+    const data = parseDocDelegateParams(params({ origin: 'data:text/html,x', return: 'data:text/html,x' }));
+    expect(data.ok).toBe(false);
+  });
+
+  it('rejects a javascript: return URL even with a valid origin', () => {
+    const r = parseDocDelegateParams(params({ return: 'javascript:alert(document.cookie)' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('Return URL origin');
+  });
+
+  it('rejects a cross-origin return URL', () => {
+    const r = parseDocDelegateParams(params({ return: 'https://evil.example/cb' }));
+    expect(r.ok).toBe(false);
+  });
 });
 
 describe('buildSessionGrantOperation (doc-only regression)', () => {

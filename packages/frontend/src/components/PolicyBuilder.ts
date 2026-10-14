@@ -32,6 +32,7 @@ import {
 } from '@nidohq/passkey-sdk';
 import { Networks } from '@stellar/stellar-sdk';
 import { esc } from '../lib/html.js';
+import { adminsOutsideRecovery } from '../lib/recovery/model.js';
 import { toast } from '../lib/toast.js';
 import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../lib/policyChainFetch.js';
 import { fetchAppliedDocument, fetchDocLimits, fetchDocSurface } from '../lib/policy/docPolicyFetch.js';
@@ -541,6 +542,16 @@ export function mountPolicyBuilder(container: HTMLElement, opts: BuilderOptions)
     hashEl.textContent = hash;
     docEl.innerHTML = renderDocPreviewHtml(summarizeDoc(merged, hash), canonicalJson(merged));
     diffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(isFirstApply ? null : baselineDoc, merged));
+    // An admin key the enrolled recovery cannot replace would survive a
+    // recovery (a stolen one keeps authority; a lost one can't be restored).
+    // Warn, non-blocking, so the owner knows to update recovery to cover it.
+    const uncovered = adminsOutsideRecovery(merged);
+    if (uncovered.length > 0) {
+      diffEl.innerHTML +=
+        `<p class="mut" style="font-size:12px;line-height:1.5;margin:10px 0 0;">` +
+        `Your current recovery setup can’t replace ${uncovered.map((id) => `<code class="pol-mono">${esc(id)}</code>`).join(', ')}. ` +
+        `If such a key is lost or stolen, recovery won’t restore or revoke it until you update recovery to include it.</p>`;
+    }
   }
 
   function showAdminErrors(errors: string[]): void {

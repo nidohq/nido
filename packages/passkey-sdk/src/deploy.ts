@@ -3,11 +3,7 @@ import {
   xdr,
   hash,
   Address,
-  Account,
-  TransactionBuilder,
-  Operation,
   rpc,
-  Keypair,
 } from "@stellar/stellar-sdk";
 import type { NetworkConfig } from "./types.js";
 
@@ -78,80 +74,13 @@ export async function lookupExistingAccount(
   }
 }
 
-/**
- * Deploy a new smart account via the factory contract.
- *
- * @param config - Network configuration
- * @param bundlerKeypair - Keypair that pays for the transaction
- * @param salt - The contract salt (SHA-256 of credential ID)
- * @param publicKey - 65-byte uncompressed P-256 public key
- * @returns The deployed contract address
- */
-export async function deploySmartAccount(
-  config: NetworkConfig,
-  bundlerKeypair: Keypair,
-  salt: Buffer,
-  publicKey: Uint8Array
-): Promise<string> {
-  const server = new rpc.Server(config.rpcUrl);
-  const expectedAddress = computeAccountAddress(
-    config.factoryContractId,
-    salt,
-    config.networkPassphrase
-  );
-
-  const sourceAccount = await server
-    .getAccount(bundlerKeypair.publicKey())
-    .then((res: Account) => new Account(res.accountId(), res.sequenceNumber()));
-
-  const simTxn = new TransactionBuilder(sourceAccount, {
-    fee: "100",
-    networkPassphrase: config.networkPassphrase,
-  })
-    .addOperation(
-      Operation.invokeContractFunction({
-        contract: config.factoryContractId,
-        function: "deploy",
-        args: [
-          xdr.ScVal.scvBytes(salt),
-          xdr.ScVal.scvBytes(Buffer.from(publicKey)),
-        ],
-      })
-    )
-    .setTimeout(0)
-    .build();
-
-  const sim = await server.simulateTransaction(simTxn);
-
-  if (
-    rpc.Api.isSimulationError(sim) ||
-    rpc.Api.isSimulationRestore(sim)
-  ) {
-    throw sim;
-  }
-
-  const transaction = rpc.assembleTransaction(simTxn, sim)
-    .setTimeout(0)
-    .build();
-
-  transaction.sign(bundlerKeypair);
-
-  const response = await server.sendTransaction(transaction);
-
-  if (response.status === "ERROR") {
-    throw new Error(`Transaction submission failed: ${response.status}`);
-  }
-
-  // Poll for completion
-  let getResponse = await server.getTransaction(response.hash);
-  while (getResponse.status === "NOT_FOUND") {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    getResponse = await server.getTransaction(response.hash);
-  }
-
-  if (getResponse.status === "SUCCESS") {
-    return expectedAddress;
-  }
-
-  throw new Error(`Transaction failed: ${getResponse.status}`);
-}
+// NOTE: a `deploySmartAccount` helper was removed here. It
+// invoked a non-existent factory function (`deploy`; the factory exposes only
+// `create_account`/`get_c_address`), derived the salt from the credential id
+// after the passkey existed (contradicting the salt-first model), polled
+// `getTransaction` without a bound, and returned the locally predicted address
+// without reading the deployed account (the unverified-adoption hazard the
+// account-creation flow guards against). The wallet creates accounts through
+// `create_account` with the on-chain checks in `packages/frontend`; a
+// supported SDK deploy helper should be built around those, not reintroduced
+// as a predicted-address shortcut.

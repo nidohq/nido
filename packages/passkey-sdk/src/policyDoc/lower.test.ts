@@ -76,6 +76,16 @@ describe('lowerDoc: v1 scoped-session-key template', () => {
     expect(doc.rules[0].cap).toEqual({ limit: '50000000', 'period-ledgers': 17_280 });
   });
 
+  it('refuses a session scoped to the account itself (full-authority guard)', () => {
+    expect(() =>
+      scopedSessionKeyDoc({ sessionAddress: SESSION_G, targetContract: ACCOUNT, account: ACCOUNT }),
+    ).toThrow(/scoped to the account itself/);
+    // A different target with the same account bound is fine.
+    expect(() =>
+      scopedSessionKeyDoc({ sessionAddress: SESSION_G, targetContract: TARGET, account: ACCOUNT }),
+    ).not.toThrow();
+  });
+
   it('lowers to interpreter + spending-limit on the same rule', () => {
     const lowered = lowerDoc(doc, { account: ACCOUNT });
     expect(lowered.rules).toHaveLength(1);
