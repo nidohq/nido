@@ -23,7 +23,7 @@ This file describes how the pieces fit. The audit package around it:
 
 Recovery semantics are Perch's, and Perch's specification is the single
 source of truth for them:
-[Perch recovery spec](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/recovery/spec.md)
+[Perch recovery spec](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/recovery/spec.md)
 (`vendor/perch/docs/recovery/spec.md`). This file summarizes it only as far
 as Nido's integration needs; "§" and "D" numbers below are that spec's
 sections and decisions.
@@ -91,7 +91,7 @@ graph TB
 ### Contracts Nido consumes from Perch
 
 Perch deploys these, not Nido. Perch's
-[testnet manifest](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/deployments/testnet.json)
+[testnet manifest](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/deployments/testnet.json)
 (`vendor/perch/deployments/testnet.json`) records each by wasm hash and
 address; [DEPLOYED.md](DEPLOYED.md) lists them. Nido's tests run those exact
 bytes, fetched by hash (see [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md)).
@@ -201,7 +201,7 @@ controller.
 **Who can change the document.** `apply_doc` is the only write path, and it
 has two authorization paths (§15, entry-point table, `apply_doc` row; the
 `apply_doc` doc comment in
-[`perch-smart-account/src/lib.rs`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/crates/perch-smart-account/src/lib.rs)
+[`perch-smart-account/src/lib.rs`](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/crates/perch-smart-account/src/lib.rs)
 (`vendor/perch/crates/perch-smart-account/src/lib.rs`)):
 
 - **Owner authorization**: any ordinary rule scoped to the account, in
@@ -257,7 +257,7 @@ stateDiagram-v2
   The controller builds it from its own state. Guardians authorize its digest
   from their own accounts; the circuit binds it through its `statement_hash`
   public input
-  ([Perch statement encoding](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/recovery/statement.md)
+  ([Perch statement encoding](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/recovery/statement.md)
   (`vendor/perch/docs/recovery/statement.md`)).
 - The target document is derived on chain from the source document (for a
   compromise, the enrolled baseline) and the replacement set. Nobody supplies

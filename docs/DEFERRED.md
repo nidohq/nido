@@ -7,7 +7,7 @@ audited code.
 
 Perch owns the first eight items and keeps the authoritative entry for each in
 its own register,
-[`docs/DEFERRED.md`](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md)
+[`docs/DEFERRED.md`](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md)
 (`vendor/perch/docs/DEFERRED.md`). The sections below give Nido's side of
 each. The last item is Nido's.
 
@@ -43,7 +43,7 @@ check on `apply_doc`.
   regenerated parity vectors, followed by a review of the changed identity
   and integration surfaces.
 - **Owner:** Perch. Nido owns the wallet and factory migration.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#canon-v2-structured-document-identity)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#canon-v2-structured-document-identity)
   (`vendor/perch/docs/DEFERRED.md`).
 
 ## Canonical value spellings
@@ -61,7 +61,7 @@ check on `apply_doc`.
   it in `perch-ir` and perch-js with parity vectors, and bumps `CANON_VERSION`
   with CANON v2.
 - **Owner:** Perch, with Nido for the perch-js/SDK builders.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#canonical-value-spellings)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#canonical-value-spellings)
   (`vendor/perch/docs/DEFERRED.md`).
 
 ## Versioned policy backend and larger limits
@@ -88,7 +88,7 @@ check on `apply_doc`.
   existing funded accounts reach a new backend (each owner's seven-day
   upgrade, then re-application).
 - **Owner:** Perch, with Nido for the account migration decision.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#versioned-policy-backend-and-larger-limits)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#versioned-policy-backend-and-larger-limits)
   (`vendor/perch/docs/DEFERRED.md`).
 
 ## Revision-bound ordinary signatures
@@ -118,7 +118,7 @@ check on `apply_doc`.
   sign page, the Wallets Kit module, session keys) adopt them; the changed
   signing surface is reviewed.
 - **Owner:** Perch, with Nido for its signers.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#revision-bound-ordinary-signatures)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#revision-bound-ordinary-signatures)
   (`vendor/perch/docs/DEFERRED.md`).
 
 ## Stable numeric rule IDs
@@ -137,7 +137,7 @@ check on `apply_doc`.
   signature-validity semantics; Nido relies on them only after that
   definition is reviewed.
 - **Owner:** Perch.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#stable-numeric-rule-ids)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#stable-numeric-rule-ids)
   (`vendor/perch/docs/DEFERRED.md`).
 
 ## Persistent spending budgets across replacements
@@ -165,7 +165,7 @@ check on `apply_doc`.
   and state semantics with its own audit. Until then, Nido states the reset
   in its threat model and in the wallet's explanation of caps.
 - **Owner:** Perch, with Nido for the threat model and wallet wording.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#persistent-spending-budgets-across-replacements)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#persistent-spending-budgets-across-replacements)
   (`vendor/perch/docs/DEFERRED.md`).
 
 ## Additional formal models
@@ -184,7 +184,7 @@ check on `apply_doc`.
 - **Exit criterion:** set by Perch; a new model's coverage statement says
   what it establishes and what it does not.
 - **Owner:** Perch.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#additional-formal-models)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#additional-formal-models)
   (`vendor/perch/docs/DEFERRED.md`).
 
 ## OZ quiet-events fork pull requests
@@ -212,7 +212,7 @@ check on `apply_doc`.
   fork's main) and both repositories move to it after a diff review against
   the audited rev, or the accepted risk of staying on the rev is recorded.
 - **Owner:** Perch.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#oz-quiet-events-fork-pull-requests)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#oz-quiet-events-fork-pull-requests)
   (`vendor/perch/docs/DEFERRED.md`); the three fork pull requests above.
 
 ## npm publishing of perch-zk and the contract clients
@@ -250,7 +250,7 @@ This section is the one home for Nido's package-migration plans.
   then becomes publishable. Until then no Nido release publishes it
   ([SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md#npm)).
 - **Owner:** Perch publishes; Nido migrates.
-- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/391477ff22edd64a2da326eb9a92a92813b8e65d/docs/DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)
+- **Tracking:** [Perch entry](https://github.com/stellar-registry/perch/blob/845c49a376c08aeeed9f5d3c63356b753dc617f4/docs/DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)
   (`vendor/perch/docs/DEFERRED.md`);
   [nidohq/nido#208](https://github.com/nidohq/nido/issues/208) (Perch
   consumability gaps).
