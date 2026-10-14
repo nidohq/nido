@@ -7,7 +7,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^15.1.0"
+    "@stellar/stellar-sdk": "^15.1.0",
+    "usb": "^2.14.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

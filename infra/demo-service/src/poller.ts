@@ -39,7 +39,7 @@ export async function getBalance(
  *  retried on the next tick. */
 export async function pollOnce(
   server: rpc.Server = new rpc.Server(RPC_URL),
-  onFunded: (id: string, visit: Visit) => void = printReceipt,
+  onFunded: (id: string, visit: Visit) => void | Promise<void> = printReceipt,
 ): Promise<void> {
   const pending = getPending();
   console.log(`[poller] checking ${pending.length} pending visit(s)`);
@@ -48,7 +48,9 @@ export async function pollOnce(
       const balance = await getBalance(visit.address, server);
       if (balance > 0n) {
         const funded = markFunded(id);
-        if (funded) onFunded(id, funded);
+        // Awaited deliberately — there's one physical printer, so receipts
+        // for a tick's funded visits print one at a time, not concurrently.
+        if (funded) await onFunded(id, funded);
       }
     } catch (err) {
       console.warn(`[poller] balance check failed for visit ${id}`, err);
