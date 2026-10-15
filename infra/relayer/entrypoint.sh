@@ -2,15 +2,13 @@
 set -eu
 umask 077
 
-mkdir -p /app/config/keys
-printf '%s' "$KEYSTORE_FUND_B64" | base64 -d > /app/config/keys/fund.json
-printf '%s' "$KEYSTORE_CHANNEL_001_B64" | base64 -d > /app/config/keys/channel-001.json
-printf '%s' "$KEYSTORE_CHANNEL_002_B64" | base64 -d > /app/config/keys/channel-002.json
-# The relayer spawns the Channels plugin (ts-node + its npm dep tree) WITHOUT
-# env_clear, so anything left here is readable by third-party plugin code.
-# Drop the raw key material; KEYSTORE_PASSPHRASE must stay (config.json loads
-# it via env) — fully removing key access from the plugin is the KMS migration.
-unset KEYSTORE_FUND_B64 KEYSTORE_CHANNEL_001_B64 KEYSTORE_CHANNEL_002_B64
+# All three signers (fund + two channels) are Turnkey-backed — no local
+# keystore material to write. TURNKEY_API_PRIVATE_KEY stays set for the
+# relayer process's whole lifetime (every signature calls out to Turnkey), so
+# unlike the old local-keystore flow it can't be unset after a one-time setup
+# step. The relayer spawns the Channels plugin (ts-node + its npm dep tree)
+# without env_clear, so that subprocess inherits it too — see README.md
+# "Secret Handling" for the residual-exposure note.
 
 (caddy run --config /app/Caddyfile --adapter caddyfile || true; kill $$) &
 
