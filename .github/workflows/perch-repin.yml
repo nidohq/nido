@@ -3,9 +3,17 @@ name: Perch re-pin
 # Opens a PR re-pinning vendor/perch when Perch announces a deployment.
 #
 # Perch sends a `perch-deployed` repository_dispatch once a deployment
-# manifest lands on its main, with the client payload
-#   {"network": "testnet", "perch_sha": "<40-hex commit>",
-#    "manifest": "deployments/testnet.json"}
+# manifest lands on its main (its .github/workflows/nido-dispatch.yml). The
+# client payload is the versioned contract in Perch's docs/deploy/README.md
+# "Notifying Nido":
+#   {"schema": 1, "repository": "stellar-registry/perch",
+#    "network": "testnet", "perch_sha": "<40-hex main commit>",
+#    "manifest_path": "deployments/testnet.json",
+#    "manifest_sha256": "<hex>", "source_commit": "<40-hex>",
+#    "run_url": "<Perch run>"}
+# This workflow reads schema, repository, network, perch_sha and
+# manifest_path, and rejects any schema but 1 or any repository but
+# stellar-registry/perch.
 # `regenerate` runs scripts/repin-perch.sh, which fetches the stack by the
 # manifest's hashes and content addresses (never by name), regenerates every
 # derived file, and runs the Rust suites. `open-pr` then pushes the result to
@@ -20,7 +28,7 @@ name: Perch re-pin
 # builds; `regenerate` builds Perch's code with read-only access and hands
 # over a patch.
 #
-# Run it by hand from the Actions tab with the same three inputs; leave
+# Run it by hand from the Actions tab with network, perch_sha and manifest; leave
 # `open_pr` off to regenerate only and download the patch artifact.
 
 on:
@@ -66,15 +74,22 @@ jobs:
       changed: ${{ steps.diff.outputs.changed }}
       tests: ${{ steps.repin.outputs.tests }}
     steps:
-      # The payload is untrusted input: only a known network, a full commit
-      # id, and that network's manifest path get through.
+      # The payload is untrusted input: only Perch's schema-1 payload, a known
+      # network, a full commit id, and that network's manifest path get through.
       - name: Validate the request
         id: request
         env:
+          EVENT: ${{ github.event_name }}
+          SCHEMA: ${{ toJSON(github.event.client_payload.schema) }}
+          SOURCE_REPO: ${{ github.event.client_payload.repository }}
           NETWORK: ${{ github.event.client_payload.network || inputs.network }}
           PERCH_SHA: ${{ github.event.client_payload.perch_sha || inputs.perch_sha }}
-          MANIFEST: ${{ github.event.client_payload.manifest || inputs.manifest }}
+          MANIFEST: ${{ github.event.client_payload.manifest_path || inputs.manifest }}
         run: |
+          if [ "$EVENT" = repository_dispatch ]; then
+            [ "$SCHEMA" = 1 ] || { echo "::error::perch-deployed payload schema must be 1, not '$SCHEMA'"; exit 1; }
+            [ "$SOURCE_REPO" = stellar-registry/perch ] || { echo "::error::perch-deployed payload repository must be stellar-registry/perch, not '$SOURCE_REPO'"; exit 1; }
+          fi
           [ "$NETWORK" = testnet ] || { echo "::error::Nido carries Perch pins for testnet only, not '$NETWORK'"; exit 1; }
           [[ "$PERCH_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::perch_sha must be a full 40-hex commit"; exit 1; }
           [ "$MANIFEST" = "deployments/$NETWORK.json" ] || { echo "::error::manifest must be deployments/$NETWORK.json, not '$MANIFEST'"; exit 1; }
