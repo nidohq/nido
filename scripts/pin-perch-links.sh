@@ -6,7 +6,7 @@
 # left alone.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
-pinned="$(git ls-tree HEAD vendor/perch | awk '{print $3}')"
+pinned="$(git rev-parse :vendor/perch)"
 git ls-files -z -- '*.md' ':!vendor' ':!docs/reviews' |
     xargs -0 perl -pi -e "s{(github\.com/stellar-registry/perch/(?:blob|tree)/)(?:[0-9a-f]{40}|PERCH_SHA)}{\${1}$pinned}g"
 echo "Perch links pinned to ${pinned:0:7}"

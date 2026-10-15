@@ -82,7 +82,9 @@ just bindings-perch
 node scripts/repin-perch-pins.mjs "$manifest"
 npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-# 5. Everything consumed matches the manifest.
+# 5. The documentation links to the new pin, and everything consumed
+# matches the manifest.
+scripts/pin-perch-links.sh
 just check-vendor-drift
 
 # 6. The Rust suites against the new stack.
