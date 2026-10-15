@@ -37,7 +37,7 @@ Front end:
 ```bash
 just test-e2e                                              # UI tier, no chain
 PUBLIC_RELAYER_URL=https://nido.fly.dev \
-PUBLIC_RELAYER_SIM_SOURCE=GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2 \
+PUBLIC_RELAYER_SIM_SOURCE=GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3 \
   npx astro build --root ./packages/frontend
 npx playwright test --project=testnet-chromium perch-recovery account-policy-doc-apply
 ```

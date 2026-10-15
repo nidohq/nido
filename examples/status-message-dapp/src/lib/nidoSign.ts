@@ -61,7 +61,7 @@ export const XLM_SAC_ID = Asset.native().contractId(networkPassphrase)
  * public and always funded on testnet, so it serves as a constant sim source
  * — no friendbot, no locally stored keypair required.
  */
-const RELAYER_SIM_SOURCE = "GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2"
+const RELAYER_SIM_SOURCE = "GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3"
 
 /** True when a session passkey is already delegated for (account, contract). */
 export function hasSessionKey(account: string, contractId: string): boolean {
