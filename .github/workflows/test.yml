@@ -11,7 +11,10 @@ jobs:
     name: Contracts (cargo test --workspace)
     runs-on: ubuntu-latest
     steps:
-      # vendor/perch is the Perch stack this repo consumes (a submodule).
+      # vendor/perch (a submodule): Perch's deployment manifest and the fetch
+      # script `just perch-infra` runs, the drift check, and the ZK circuits
+      # and toolchain `just gen-zk-fixtures` uses. Cargo takes Perch's crates
+      # as git dependencies at the same commit.
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -50,9 +53,8 @@ jobs:
           tool: just,stellar-cli@28.1.0,stellar-scaffold-cli@0.0.27
 
       # Perch's testnet deployment, by the hashes in its manifest
-      # (vendor/perch/deployments/testnet.json): the account's build-time pin
-      # cache in the submodule, and every deployed contract's wasm, each
-      # refused unless its sha256 and content address match.
+      # (vendor/perch/deployments/testnet.json): every deployed contract's
+      # wasm, each refused unless its sha256 and content address match.
       - name: Fetch Perch's deployed stack
         run: just perch-infra
 
@@ -61,8 +63,9 @@ jobs:
         run: just build-contracts
 
       # The vendored Perch stack can't silently diverge from what Nido
-      # consumes: submodule pin and branch, the fetched wasm, pin cache, and
-      # factory embed against the manifest (scripts/check-perch-drift.sh).
+      # consumes: submodule pin and branch, Cargo's Perch rev, the fetched
+      # wasm, build-time pins, and factory embed against the manifest
+      # (scripts/check-perch-drift.sh).
       - name: Check vendor/perch for drift
         run: just check-vendor-drift
 

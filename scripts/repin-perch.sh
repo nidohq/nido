@@ -3,7 +3,10 @@
 # pin, leaving the result as working-tree changes for review:
 #
 #   1. vendor/perch moves to <perch-commit>, refused unless that commit is on
-#      the branch .gitmodules declares and carries deployments/<network>.json;
+#      the branch .gitmodules declares and carries deployments/<network>.json,
+#      and the Perch git dependencies in Cargo.toml move to the same rev
+#      (Cargo.lock follows), so the crates Nido builds and the manifest it
+#      fetches by come from one Perch commit;
 #   2. `just perch-infra` fetches the stack by the manifest's hashes and
 #      content addresses (Perch's fetch-infra-wasm.sh refuses any other byte;
 #      nothing is resolved by name), then `just build-contracts` rebuilds the
@@ -45,7 +48,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --network) network="$2"; shift 2 ;;
         --summary) summary="$2"; shift 2 ;;
-        -h|--help) sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *) commit="$1"; shift ;;
     esac
@@ -75,6 +78,12 @@ git -C vendor/perch merge-base --is-ancestor "$commit" "origin/$branch" ||
 git -C vendor/perch checkout --quiet --detach "$commit"
 git add vendor/perch
 [ -f "$manifest" ] || { echo "error: Perch $commit has no $manifest" >&2; exit 1; }
+# The Perch crates, at the submodule's commit. `cargo fetch` re-resolves only
+# the moved git source (and whatever its crates newly depend on) in Cargo.lock.
+perl -pi -e "s{(git = \"https://github\.com/stellar-registry/perch\", rev = \")[0-9a-f]{40}\"}{\${1}$commit\"}g" Cargo.toml
+grep -q "stellar-registry/perch\", rev = \"$commit\"" Cargo.toml ||
+    { echo "error: no Perch git dependency in Cargo.toml to move to $commit" >&2; exit 1; }
+cargo fetch --quiet
 echo "vendor/perch: ${old:0:7} -> ${commit:0:7} ($manifest, deployed from $(jq -r .source.commit "$manifest" | cut -c1-7))" >&2
 
 # 2-3. The stack by hash, Nido's contracts around it, the Perch bindings.

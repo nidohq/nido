@@ -1,6 +1,7 @@
 name: Perch re-pin
 
-# Opens a PR re-pinning vendor/perch when Perch announces a deployment.
+# Opens a PR re-pinning vendor/perch, and the Perch git dependencies in
+# Cargo.toml with it, when Perch announces a deployment.
 #
 # Perch sends a `perch-deployed` repository_dispatch once a deployment
 # manifest lands on its main (its .github/workflows/nido-dispatch.yml). The
@@ -259,7 +260,7 @@ jobs:
             echo
             echo "### What this regenerated"
             echo
-            echo "\`scripts/repin-perch.sh\`: the stack fetched by the manifest's hashes and content addresses (\`just perch-infra\`), Nido's contracts rebuilt around it, the \`perch-*\` bindings, the SDK's Perch pins (\`perch.TESTNET\` except \`factory\`, the policyDoc registry and wasm-hash pins), \`package-lock.json\`, \`Cargo.lock\`, and the Soroban test snapshots; \`just check-vendor-drift\` passed."
+            echo "\`scripts/repin-perch.sh\`: the Perch git dependencies in \`Cargo.toml\` moved to the same commit, the stack fetched by the manifest's hashes and content addresses (\`just perch-infra\`), Nido's contracts rebuilt around it, the \`perch-*\` bindings, the SDK's Perch pins (\`perch.TESTNET\` except \`factory\`, the policyDoc registry and wasm-hash pins), \`package-lock.json\`, \`Cargo.lock\`, and the Soroban test snapshots; \`just check-vendor-drift\` passed."
             echo
             echo "### After merging"
             echo

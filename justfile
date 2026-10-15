@@ -12,11 +12,11 @@ build:
     cargo build --workspace
 
 # Fetch the Perch stack Nido builds and tests against: Perch's testnet
-# deployment, by the hashes in vendor/perch/deployments/testnet.json. Fills the
-# submodule's build-time pin caches (the account's compiler, interpreter, and
-# spending limit) and puts every deployed contract's wasm in
-# target/wasm32v1-none/contract/ (perch_*.wasm), so the tests run the deployed
-# bytes and the factory embeds the deployed account. Perch's script refuses any
+# deployment, by the hashes in vendor/perch/deployments/testnet.json. Puts
+# every deployed contract's wasm in target/wasm32v1-none/contract/
+# (perch_*.wasm), so the tests run the deployed bytes and the factory embeds the
+# deployed account. (The Perch crates build from the pins Perch commits; cargo
+# fetches them at the submodule's commit, see the root Cargo.toml.) Perch's script refuses any
 # file whose sha256 or content address differs from the manifest. Needs the
 # Stellar CLI and jq. Run once after cloning and after bumping vendor/perch.
 perch-infra:
@@ -77,18 +77,13 @@ build-contracts:
 build-ts:
     npx tsc -p ./packages/passkey-sdk/tsconfig.json
 
-# Nido's own crates. Named explicitly because `cargo fmt --all` also formats
-# local path dependencies, which would rewrite the vendor/perch submodule.
-# Keep in sync with `[workspace.members]` in the root Cargo.toml.
-fmt-pkgs := "-p nido-integration-tests -p nido-factory -p nido-multisig-policy -p nido-name-registry -p nido-preauth-sweep-policy -p nido-spending-limit-policy -p nido-status-message"
-
 # Check formatting and clippy
 check:
-    cargo fmt {{fmt-pkgs}} -- --check
+    cargo fmt --all -- --check
     cargo clippy --all --tests -- -Dclippy::pedantic
 
 fmt:
-    cargo fmt {{fmt-pkgs}}
+    cargo fmt --all
 
 # Clean build artifacts
 clean:

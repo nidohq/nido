@@ -22,9 +22,9 @@ Run a single test by name: `cargo test -p nido-integration-tests --test it recov
 ## Workspace Architecture
 
 The smart account, WebAuthn verifier, recovery controller, ZK membership pool,
-and ZK adapter are Perch's (stellar-registry/perch epic #99), consumed from the `vendor/perch`
-submodule as path dependencies; the root `Cargo.toml` comment says why and
-which branch it pins. Nido's own crates:
+and ZK adapter are Perch's (stellar-registry/perch epic #99), consumed as git
+dependencies at the `vendor/perch` submodule's commit; the root `Cargo.toml`
+comment says how the two stay in lockstep. Nido's own crates:
 
 **`contracts/factory`** — Deploys Perch accounts (embedding the Perch account wasm) with a passkey admin rule checked by Perch's immutable WebAuthn verifier (pinned via `set_registry_pins`).
 

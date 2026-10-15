@@ -25,8 +25,8 @@ jobs:
       fail-fast: false
       matrix:
         # Nido's own contract crates under contracts/. The account, recovery
-        # controller, ZK pool, and ZK adapter are Perch's (vendor/perch) and
-        # are audited in Perch's pipeline.
+        # controller, ZK pool, and ZK adapter are Perch's (git dependencies)
+        # and are audited in Perch's pipeline.
         contract:
           - factory
           - multisig-policy
@@ -34,11 +34,18 @@ jobs:
           - spending-limit-policy
           - status-message
     steps:
-      # Submodules: the workspace's path dependencies on vendor/perch must
-      # exist for cargo to resolve any member.
+      # No submodules: the workspace takes Perch's crates as git dependencies,
+      # and Scout reads nothing else from vendor/perch.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          submodules: true
+          persist-credentials: false
+
+      # The workspace resolves and fetches without vendor/perch. Run on its
+      # own because Scout's step below tolerates build failures (factory's
+      # build.rs), which would hide a resolution failure too. Installs the
+      # rust-toolchain.toml toolchain.
+      - name: Fetch dependencies without the submodule
+        run: cargo fetch --locked
 
       # The action builds a Docker image with the Scout toolchain, mounts the
       # whole workspace into it, and runs `cargo scout-audit` from

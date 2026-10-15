@@ -7,7 +7,7 @@ members = [
 # examples/* are self-contained stellar-scaffold projects with their own
 # workspace + toolchain; keep them out of this workspace's resolution.
 # vendor/perch is the Perch submodule: its crates belong to Perch's own
-# workspace and are consumed below as path dependencies.
+# workspace (Nido consumes them as git dependencies, below).
 exclude = ["examples", "vendor/perch"]
 
 [workspace.package]
@@ -35,28 +35,27 @@ stellar-accounts = { version = "0.7.1", git = "https://github.com/theahaco/stell
 # soroban-sdk-tools 0.1.3 (crates.io) targets soroban-sdk 27.
 soroban-sdk-tools = "0.1.3"
 
-# The Perch stack (stellar-registry/perch epic #99), consumed from the
-# vendor/perch submodule, which pins Perch's main at bb746f9 (the merged #99
-# stack and its testnet deployment record, stellar-registry/perch#112) and its
-# testnet deployment manifest (deployments/testnet.json). The pin moves to
-# published crates once Perch publishes them.
-#
-# Path dependencies rather than git dependencies because
-# `perch-smart-account` reads a fetched, git-ignored pin cache at build time
-# (`crates/perch-smart-account/wasm/`); `just perch-infra` fills it from the
-# manifest. All Perch crates come from the one checkout so their types unify.
-perch-account = { path = "vendor/perch/crates/perch-account" }
-perch-smart-account = { path = "vendor/perch/crates/perch-smart-account" }
-perch-recovery = { path = "vendor/perch/crates/perch-recovery" }
-perch-recovery-interface = { path = "vendor/perch/crates/perch-recovery-interface" }
-perch-doc-compiler = { path = "vendor/perch/crates/perch-doc-compiler" }
-perch-interpreter = { path = "vendor/perch/crates/perch-interpreter" }
-perch-spending-limit = { path = "vendor/perch/crates/perch-spending-limit" }
-perch-zk-pool = { path = "vendor/perch/crates/perch-zk-pool" }
-perch-zk-adapter = { path = "vendor/perch/crates/perch-zk-adapter" }
-perch-zk-prover = { path = "vendor/perch/crates/perch-zk-prover" }
-perch-zk-primitives = { path = "vendor/perch/crates/perch-zk-primitives" }
-perch-ir = { path = "vendor/perch/crates/perch-ir" }
+# The Perch stack (stellar-registry/perch epic #99), as git dependencies on
+# Perch's main. Perch publishes no crates yet; versions replace the rev once it
+# does. The rev is the vendor/perch submodule's commit, which carries the
+# testnet deployment manifest (deployments/testnet.json) the stack is fetched
+# by: scripts/repin-perch.sh moves both together, and
+# scripts/check-perch-drift.sh fails when they differ. The build reads only
+# tracked files (the smart account's build-time pins are committed in Perch),
+# so cargo needs no submodule. All Perch crates come from the one rev so their
+# types unify.
+perch-account = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-smart-account = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-recovery = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-recovery-interface = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-doc-compiler = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-interpreter = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-spending-limit = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-zk-pool = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-zk-adapter = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-zk-prover = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-zk-primitives = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-ir = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
 
 [profile.release]
 overflow-checks = true

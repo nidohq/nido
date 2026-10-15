@@ -16,7 +16,7 @@ stellar-accounts = { workspace = true }
 # `ContractError::into_code()` for error-code assertions against scerr enums.
 soroban-sdk-tools = { workspace = true }
 
-# The Perch stack under test (vendor/perch). The deployables run from their
+# The Perch stack under test (git dependencies, root Cargo.toml). The deployables run from their
 # deployed wasm (`just perch-infra`); these crates provide the typed clients,
 # error enums, statement types, and the native ZK witness/proving helpers.
 perch-account = { workspace = true }
