@@ -17,16 +17,28 @@ const corpus = JSON.parse(
   readFileSync(resolve(here, './testdata/validate-differential.json'), 'utf8'),
 ) as { doc: unknown; errors: string[] }[];
 
+// validateDoc intentionally checks something that perch_ir::validate does not yet:
+// InvalidFunctionName (a function name that isn't a valid Soroban Symbol,
+// which would otherwise panic in Symbol::new when lowered on-chain rather
+// than failing cleanly here).
+// https://github.com/bitswell-hq/stellar-registry__perch/pull/5 includes the matching check.
+// Once this is merged into perch `main` and Nido re-pins, the SDK_ONLY_KINDS filter below 
+// becomes a no-op and should be deleted.
+const SDK_ONLY_KINDS = new Set(['InvalidFunctionName']);
+
 describe('validateDoc: differential against perch_ir::validate', () => {
   it('covers valid documents and every reachable ValidationError variant', () => {
     expect(corpus.some((c) => c.errors.length === 0)).toBe(true);
-    expect(new Set(corpus.flatMap((c) => c.errors)).size).toBeGreaterThanOrEqual(50);
+    // 49, not 50: InvalidFunctionName (see SDK_ONLY_KINDS) never appears in a
+    // corpus perch_ir itself generated, so it can't contribute to this count.
+    expect(new Set(corpus.flatMap((c) => c.errors)).size).toBeGreaterThanOrEqual(49);
   });
 
   it('reports exactly the Rust error variants for every corpus document', () => {
     const mismatches = corpus.flatMap((c, i) => {
       const got = validateDoc(parsePolicyDoc(c.doc))
         .map((e) => e.kind)
+        .filter((kind) => !SDK_ONLY_KINDS.has(kind))
         .sort();
       return JSON.stringify(got) === JSON.stringify(c.errors) ? [] : [{ i, want: c.errors, got }];
     });

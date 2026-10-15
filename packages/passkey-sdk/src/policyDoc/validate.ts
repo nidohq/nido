@@ -37,42 +37,16 @@ type Recovery = NonNullable<PolicyDoc['recovery']>;
 type ZkFields = Extract<Recovery['mode'], { type: 'zk-only' }>;
 type GuardianFields = Extract<Recovery['mode'], { type: 'guardian-only' }>;
 
-/** CRC16-XModem checksum check over a 56-char base32 strkey (perch-ir's
- *  `strkey_checksum_ok`). */
-function strkeyChecksumOk(s: string): boolean {
-  if (s.length !== 56) return false;
-  const data = new Uint8Array(35);
-  let buf = 0;
-  let bits = 0;
-  let out = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    let v: number;
-    if (c >= 65 && c <= 90) v = c - 65;
-    else if (c >= 50 && c <= 55) v = c - 50 + 26;
-    else return false;
-    buf = ((buf << 5) | v) & 0xffff;
-    bits += 5;
-    if (bits >= 8) {
-      bits -= 8;
-      data[out++] = (buf >> bits) & 0xff;
-    }
-  }
-  if (out !== 35) return false;
-  const want = data[33]! | (data[34]! << 8);
-  let crc = 0;
-  for (let i = 0; i < 33; i++) {
-    crc ^= data[i]! << 8;
-    for (let b = 0; b < 8; b++) {
-      crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
-    }
-  }
-  return crc === want;
-}
-
-/** Length 56, base32 alphabet, a leading letter from `leads`, valid checksum. */
+/** Length 56, base32 alphabet, a leading letter from `leads`. Shape only, no
+ *  checksum: perch-ir's `is_contract_address_shape`/`is_address_shape` don't
+ *  check it either — a bad checksum still fails later, at compile time,
+ *  when the doc-compiler decodes the strkey into a real `Address`.
+ *  https://github.com/bitswell-hq/stellar-registry__perch/pull/5 adds a
+ *  checksum check to perch-ir itself; if that merges to perch `main` and Nido
+ *  re-pins past it, re-add the check here too (see git history for the prior
+ *  implementation) so this stays stricter-or-equal to the chain, never looser. */
 function isStrkeyShape(s: string, leads: string): boolean {
-  return s.length === 56 && leads.includes(s[0]!) && /^[A-Z2-7]+$/.test(s) && strkeyChecksumOk(s);
+  return s.length === 56 && leads.includes(s[0]!) && /^[A-Z2-7]+$/.test(s);
 }
 
 const isContractAddress = (s: string) => isStrkeyShape(s, 'C');
