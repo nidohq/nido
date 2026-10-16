@@ -1,0 +1,76 @@
+---
+// The static QR's destination (see
+// docs/superpowers/specs/2026-10-12-meridian-onboarding-flow-design.md,
+// "Flow: one user at a time"). Generates the setup salt locally — same shape
+// `createNido()` produces for the normal "Get started" button — predicts the
+// account's address, registers a visit with the demo service against it (so
+// the kiosk can print a receipt once it's funded), then redirects into the
+// existing, unmodified `new-account/`. `new-account/` never finds out any of
+// this happened; it just sees the `?setup=1#salt=<hex>` shape it already
+// handles today.
+import NidoLayout from "../../../layouts/NidoLayout.astro";
+import Nest from "../../../components/Nest.astro";
+---
+
+<NidoLayout title="Nido — Starting your setup" shell="focused">
+  <div class="col-scroll scroll-hide pad screen-in">
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:70vh; text-align:center;">
+      <div style="display:grid; place-items:center; margin-bottom:26px;">
+        <Nest size={104} spin dur={1.1} />
+      </div>
+      <h1 class="disp" style="font-weight:800; font-size:26px; line-height:1.06;">
+        Setting up your Nido
+      </h1>
+      <p id="status-text" class="mut" style="font-size:14.5px; line-height:1.55; margin-top:12px; max-width:320px;">
+        Getting ready…
+      </p>
+      <div id="error-box" role="alert" class="alert danger" style="display:none; margin-top:18px; max-width:320px;"></div>
+    </div>
+  </div>
+</NidoLayout>
+
+<script>
+  import { generateSaltHex } from "../../../lib/demo/salt";
+  import { predictAddress } from "../../../lib/demo/predictAddress";
+  import { registerDemoVisit, eventTokenMatches } from "../../../lib/demo/visit";
+  import { DEMO_EVENT_TOKEN, DEMO_SERVICE_URL } from "../../../lib/demo/config";
+
+  const $status = document.getElementById("status-text")!;
+  const $error = document.getElementById("error-box")!;
+
+  function showError(msg: string) {
+    $status.style.display = "none";
+    $error.textContent = msg;
+    $error.style.display = "block";
+  }
+
+  async function main() {
+    const params = new URLSearchParams(window.location.search);
+    const providedKey = params.get("key");
+    if (!eventTokenMatches(DEMO_EVENT_TOKEN, providedKey)) {
+      showError("This link isn't valid. Please find someone from The Aha Company to scan the QR code.");
+      return;
+    }
+
+    const saltHex = generateSaltHex();
+
+    // This block predicts the address & registers the user's visit so that we're able to correlate this with the receipt printing.
+    // We are swallowing this error here because we don't want to stop the nido set up flow just for the receipt correlation.
+    try {
+      $status.textContent = "Reserving your address…";
+      const address = await predictAddress(saltHex);
+      try {
+        await registerDemoVisit(DEMO_SERVICE_URL, address, DEMO_EVENT_TOKEN);
+      } catch (err) {
+        console.warn("[nido demo] visit registration failed", err);
+      }
+    } catch (err) {
+      console.warn("[nido demo] address prediction failed", err);
+    }
+
+    $status.textContent = "Taking you there…";
+    window.location.replace(`//${window.location.host}/new-account/?setup=1#salt=${saltHex}`);
+  }
+
+  void main();
+</script>
