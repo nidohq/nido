@@ -35,7 +35,7 @@ const POLICY = 'CCJMCPGADKMVKYOIZXMV7UWH62XYDAIT6GJRNJPQSZ2CHPOF4K2AU2QC';
  *  recording-mode simulation source (mirrors the dApp's TIP_SIM_SOURCE in
  *  examples/status-message-dapp/src/lib/nidoSign.ts). It never signs and never
  *  pays here; the relayer's channel accounts source the real transaction. */
-const SIM_SOURCE = 'GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2';
+const SIM_SOURCE = 'GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3';
 
 /** Native-XLM Stellar Asset Contract on testnet — the contract the tipping
  *  session key is scoped to (the spending-limit policy meters SAC `transfer`). */

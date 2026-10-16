@@ -32,26 +32,35 @@
   "signers": [
     {
       "id": "fund-signer",
-      "type": "local",
+      "type": "turnkey",
       "config": {
-        "path": "config/keys/fund.json",
-        "passphrase": { "type": "env", "value": "KEYSTORE_PASSPHRASE" }
+        "api_public_key": "02782029120f7408b3cac1fc9f57a5987dda59dba1458a5e5e815de60f5fd10a5c",
+        "api_private_key": { "type": "env", "value": "TURNKEY_API_PRIVATE_KEY" },
+        "organization_id": "ab5ca46a-17b2-47a1-95fa-4aff7d413d12",
+        "private_key_id": "GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3",
+        "public_key": "b152a9b3ae41d0636a4d9f6e369cd73f418ca570a7c16ec272a838400146639e"
       }
     },
     {
       "id": "channel-001-signer",
-      "type": "local",
+      "type": "turnkey",
       "config": {
-        "path": "config/keys/channel-001.json",
-        "passphrase": { "type": "env", "value": "KEYSTORE_PASSPHRASE" }
+        "api_public_key": "02782029120f7408b3cac1fc9f57a5987dda59dba1458a5e5e815de60f5fd10a5c",
+        "api_private_key": { "type": "env", "value": "TURNKEY_API_PRIVATE_KEY" },
+        "organization_id": "ab5ca46a-17b2-47a1-95fa-4aff7d413d12",
+        "private_key_id": "GAPGVNKNFHOCER46FQ4WHMWXWA2DLUYY3HYXTBSIPIMPMRCE7Y6URAGA",
+        "public_key": "1e6ab54d29dc22479e2c3963b2d7b03435d318d9f17986487a18f64444fe3d48"
       }
     },
     {
       "id": "channel-002-signer",
-      "type": "local",
+      "type": "turnkey",
       "config": {
-        "path": "config/keys/channel-002.json",
-        "passphrase": { "type": "env", "value": "KEYSTORE_PASSPHRASE" }
+        "api_public_key": "02782029120f7408b3cac1fc9f57a5987dda59dba1458a5e5e815de60f5fd10a5c",
+        "api_private_key": { "type": "env", "value": "TURNKEY_API_PRIVATE_KEY" },
+        "organization_id": "ab5ca46a-17b2-47a1-95fa-4aff7d413d12",
+        "private_key_id": "GBYC4XMYN7WNBWZ363M3MD6BWUGIX633EIOTOOASSZ3IZUGS44HBA7JZ",
+        "public_key": "702e5d986fecd0db3bf6d9b60fc1b50c8bfb7b221d37381296768cd0d2e70e10"
       }
     }
   ],

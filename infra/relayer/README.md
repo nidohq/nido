@@ -17,7 +17,8 @@ The deployed stack is:
   made the relayer's always-on worker polling expensive (it hit the budget cap
   and throttled, taking the relayer down). It's a sibling app, not a sidecar,
   because the relayer's Wolfi/Chainguard base image has no `redis` apk package.
-- three local Stellar keystores loaded from Fly secrets
+- three Turnkey-backed Stellar signers (fund + two channels), each a
+  separate Turnkey wallet account under the same org/API user
 - single Fly machine in org `aha-684`, region `iad`
 
 Public browser traffic only reaches:
@@ -59,9 +60,9 @@ These are public keys only. Secrets live in 1Password and Fly secrets.
 
 | Relayer id | Role | Public G-address |
 | --- | --- | --- |
-| `channels-fund` | fee-bump fee source; simulation source | `GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2` |
-| `channel-001` | inner transaction source | `GA6QL5KWXBT5XPZ4CPJLYYJS4ARZVNEIUUXN5O3WQGFDMPJS2N34MRGR` |
-| `channel-002` | inner transaction source | `GBRWPW26ZA4TCUPO7ADVAGDKU6TXQJE45LZTV7XSJY6SJDZV5R72TA5L` |
+| `channels-fund` | fee-bump fee source; simulation source | `GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3` |
+| `channel-001` | inner transaction source | `GAPGVNKNFHOCER46FQ4WHMWXWA2DLUYY3HYXTBSIPIMPMRCE7Y6URAGA` |
+| `channel-002` | inner transaction source | `GBYC4XMYN7WNBWZ363M3MD6BWUGIX633EIOTOOASSZ3IZUGS44HBA7JZ` |
 
 If keys are rotated, update this table and update all frontend build env that
 uses `PUBLIC_RELAYER_SIM_SOURCE`.
@@ -96,10 +97,12 @@ fly apps create nido-redis --org aha-684
 fly volumes create nido_redis_data -a nido-redis -r iad -n 1 -s 1
 fly deploy infra/relayer-redis -a nido-redis --remote-only --ha=false
 
-# 3. Generate keystores.
-# Save this passphrase to 1Password before running. It is not recoverable.
-KEYSTORE_PASSPHRASE='<generate and save to 1Password first>' \
-  ./infra/relayer/scripts/create-keys.sh /tmp/relayer-keys
+# 3. Create the three signing keys in Turnkey console (app.turnkey.com):
+# one wallet ("Nido"), three wallet accounts under it (fund + two channels),
+# each ED25519 / Stellar. Note the org id, the API user's API public/private
+# key pair, and each account's address (doubles as its private_key_id — see
+# config/config.json). Save the API private key to 1Password; it is not
+# recoverable from Turnkey after creation.
 
 # 4. Generate write-only secrets.
 API_KEY=$(openssl rand -hex 32)
@@ -110,27 +113,20 @@ STORAGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
 
 # 5. Set the Fly secrets in one call.
 # No REDIS_URL — fly.toml sets REDIS_URL=redis://nido-redis.internal:6379.
-# macOS: use `openssl base64 -A -in <file>` instead of `base64 -w0 <file>`.
 fly secrets set -a nido \
   API_KEY="$API_KEY" \
   STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
-  KEYSTORE_PASSPHRASE="<same passphrase used in step 3>" \
   PLUGIN_ADMIN_SECRET="$PLUGIN_ADMIN_SECRET" \
-  KEYSTORE_FUND_B64="$(base64 -w0 /tmp/relayer-keys/fund.json)" \
-  KEYSTORE_CHANNEL_001_B64="$(base64 -w0 /tmp/relayer-keys/channel-001.json)" \
-  KEYSTORE_CHANNEL_002_B64="$(base64 -w0 /tmp/relayer-keys/channel-002.json)"
+  TURNKEY_API_PRIVATE_KEY="<from step 3>"
 
 # 6. Deploy.
 # --ha=false is mandatory. The positional directory is the Docker build context.
 fly deploy infra/relayer --remote-only --ha=false
 ```
 
-After deploy, confirm every generated secret value plus all three keystore JSON
-files are stored in 1Password vault `theahaco`, then remove local copies:
-
-```bash
-rm -rf /tmp/relayer-keys
-```
+After deploy, confirm every generated secret value — including the Turnkey API
+private key and org/account ids from step 3 — is stored in 1Password vault
+`theahaco`.
 
 ## Migrating Off Managed Upstash (one-time)
 
@@ -285,7 +281,7 @@ Frontend builds must set:
 
 ```bash
 PUBLIC_RELAYER_URL=https://nido.fly.dev
-PUBLIC_RELAYER_SIM_SOURCE=GAL42RUBXKQSVSJWBXFTBB4GFKMPQXA3SOJVGP6UMRJT2SGEIR63JFK2
+PUBLIC_RELAYER_SIM_SOURCE=GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
 ```
 
 `PUBLIC_RELAYER_SIM_SOURCE` is the fund account public key. It is only a
@@ -305,12 +301,22 @@ it and never spends from it.
 - The bootstrap commands place secret material on the shell command line. Use a
   shell with `HISTCONTROL=ignorespace` and prefix secret commands with a space,
   or read values through `op read`.
-- `entrypoint.sh` writes keystore JSON files to `/app/config/keys` with
-  `umask 077`, then unsets `KEYSTORE_*_B64`. `KEYSTORE_PASSPHRASE` remains
-  because OpenZeppelin Relayer reads it from env.
-- Current signer backend is local keystore. This is acceptable for testnet only.
-  Mainnet must migrate to KMS/HSM-backed signers before holding meaningful
-  funds.
+- Signer backend is Turnkey (A3 progress) for all three signers — no local
+  keystore material on disk or in the container image. `TURNKEY_API_PRIVATE_KEY`
+  stays in the relayer process's env for its whole lifetime (every signature
+  calls out to Turnkey), unlike the old keystore flow, which only needed its
+  raw secrets briefly at startup and could unset them right after. Known
+  residual exposure: the relayer spawns the Channels plugin (a third-party npm
+  package) without `env_clear()`, so the plugin subprocess inherits
+  `TURNKEY_API_PRIVATE_KEY` for the whole process lifetime too — confirmed, no
+  env filtering happens in the relayer's plugin-spawning code
+  (`script_executor.rs`). A leaked Turnkey API credential is revocable/rotatable
+  without moving funds (unlike a leaked raw keystore), but this isn't the full
+  "plugin can't read signing secrets" fix either.
+- Before mainnet: provision separate Turnkey wallet accounts for mainnet (do
+  not reuse the testnet ones), and confirm Turnkey's org policy for the
+  mainnet API user is configured for unattended signing (no required human
+  approval) the same way as testnet.
 
 ## Hard Safety Rules
 
@@ -468,7 +474,8 @@ still moving. Before upgrading:
 - CORS is wildcard.
 - Fee budget is a single global bucket (per-IP rate limiting bounds one client's share; true
   per-*client* fee accounting needs per-client keys — future work).
-- Local keystores are testnet-only operational posture (A4: migrate to KMS/HSM for mainnet).
+- Signers are Turnkey-backed on testnet (A3 progress); mainnet needs its own
+  separate Turnkey wallet accounts, not a reuse of the testnet ones.
 - Memos are not supported on Soroban operations; do not include memos in relay
   requests.
 - The relayer is now used for account creation; recovery rotation still has its

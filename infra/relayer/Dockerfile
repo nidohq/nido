@@ -17,8 +17,7 @@ COPY --from=caddybuild /usr/bin/caddy /usr/bin/caddy
 
 COPY plugins/channels /app/plugins/channels
 RUN cd /app/plugins/channels && pnpm install --prod --frozen-lockfile \
-    && mkdir -p /app/config/keys \
-    && chown -R nonroot /app/plugins/channels /app/config
+    && chown -R nonroot /app/plugins/channels
 
 COPY --chown=nonroot config/config.json /app/config/config.json
 COPY --chown=nonroot config/networks /app/config/networks
