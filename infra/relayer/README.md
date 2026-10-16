@@ -81,52 +81,65 @@ Syncing sequence for relayer: channel-002 (G...)
 Syncing sequence for relayer: channels-fund (G...)
 ```
 
+## Relayer Key Custody: Turnkey
+
+The relay signers and their keys are all managed by Turnkey as wallet accounts under one shared org.
+
+**Getting access:** 
+Ask an existing team member to invite you via the Turnkey console. You'll need org access before you can
+create keys or read the API credentials below.
+
+**Creating the keys (already done for testnet):** 
+In the Turnkey console (app.turnkey.com), create new wallet accounts under the Nido wallet. Note the
+org id, the API user's API public/private key pair, and each account's address (doubles as its `private_key_id` — see `config/config.json`). Save the API private key to 1Password; it is not recoverable from Turnkey after creation.
+
 ## One-Time Bootstrap
+This section describes the relayer bootstrap process that has already occurred, it is just for documentation. Please see the Turnkey section to learn how to get access and use the Nido Turnkey account.
 
 Run commands from the repo root unless noted.
 
-```bash
-# 1. Create the Fly app.
-# Already done 2026-06-10; re-running errors harmlessly if app exists.
-fly apps create nido --org aha-684
+1. Create the fly.io app
+    ```
+    fly apps create nido --org aha-684
+    ```
 
-# 2. Stand up the self-hosted Redis app (separate app, private 6PN only). The
-# relayer reaches it at redis://nido-redis.internal:6379 (set in fly.toml). 1GB
-# is ample — TRANSACTION_EXPIRATION_HOURS keeps the dataset tiny.
-fly apps create nido-redis --org aha-684
-fly volumes create nido_redis_data -a nido-redis -r iad -n 1 -s 1
-fly deploy infra/relayer-redis -a nido-redis --remote-only --ha=false
+2. Stand up the self-hosted Redis app. The relayer reaches it at redis://nido-redis.internal:6379 (set in fly.toml).
+    ```
+    fly apps create nido-redis --org aha-684
+    fly volumes create nido_redis_data -a nido-redis -r iad -n 1 -s 1
+    fly deploy infra/relayer-redis -a nido-redis --remote-only --ha=false
+    ```
 
-# 3. Create the three signing keys in Turnkey console (app.turnkey.com):
-# one wallet ("Nido"), three wallet accounts under it (fund + two channels),
-# each ED25519 / Stellar. Note the org id, the API user's API public/private
-# key pair, and each account's address (doubles as its private_key_id — see
-# config/config.json). Save the API private key to 1Password; it is not
-# recoverable from Turnkey after creation.
+3. Create three* signing keys in the Turnkey UI: app.turnkey.com
 
-# 4. Generate write-only secrets.
-API_KEY=$(openssl rand -hex 32)
-PLUGIN_ADMIN_SECRET=$(openssl rand -hex 32)
-STORAGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+    We created one wallet ("Nido"), with three wallet accounts under it (one fund account and two channel account). Each one is a ED25519 key. Note the org id, the API user's API public/private key pair, and each account's address (this doubles as its private_key_id). We saved the API private key to 1Password as it is not recoverable from Turnkey after creation.
 
-# Save API_KEY, PLUGIN_ADMIN_SECRET, and STORAGE_ENCRYPTION_KEY to 1Password now.
+    \*Currently there are only 3 signing keys, but we may need to create more channel keys if we see a throughput issue with the relayer.
 
-# 5. Set the Fly secrets in one call.
-# No REDIS_URL — fly.toml sets REDIS_URL=redis://nido-redis.internal:6379.
-fly secrets set -a nido \
-  API_KEY="$API_KEY" \
-  STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
-  PLUGIN_ADMIN_SECRET="$PLUGIN_ADMIN_SECRET" \
-  TURNKEY_API_PRIVATE_KEY="<from step 3>"
 
-# 6. Deploy.
-# --ha=false is mandatory. The positional directory is the Docker build context.
-fly deploy infra/relayer --remote-only --ha=false
-```
+4. Generate write-only secrets.
+    ```
+    API_KEY=$(openssl rand -hex 32)
+    PLUGIN_ADMIN_SECRET=$(openssl rand -hex 32)
+    STORAGE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+    ```
 
-After deploy, confirm every generated secret value — including the Turnkey API
-private key and org/account ids from step 3 — is stored in 1Password vault
-`theahaco`.
+5. Set the Fly secrets.
+    ```
+    fly secrets set -a nido \
+      API_KEY="$API_KEY" \
+      STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
+      PLUGIN_ADMIN_SECRET="$PLUGIN_ADMIN_SECRET" \
+      TURNKEY_API_PRIVATE_KEY="<from the Turnkey Setup section above>"
+    ```
+    REDIS_URL is not set here, but fly.toml sets REDIS_URL=redis://nido-redis.internal:6379.
+
+6. Deploy.
+    ```
+    fly deploy infra/relayer --remote-only --ha=false
+    ```
+
+    After deploy, confirm every generated secret value — including the Turnkey API private key and org/account ids - is stored in 1Password vault `theahaco`.
 
 ## Migrating Off Managed Upstash (one-time)
 
