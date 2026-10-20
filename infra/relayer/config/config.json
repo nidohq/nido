@@ -1,13 +1,22 @@
 {
   "relayers": [
     {
-      "id": "channels-fund",
-      "name": "Channels Fund",
+      "id": "fund",
+      "name": "Fund",
       "network": "testnet",
       "paused": false,
       "network_type": "stellar",
       "signer_id": "fund-signer",
       "policies": { "concurrent_transactions": true, "fee_payment_strategy": "relayer" }
+    },
+    {
+      "id": "channels-fee-payer",
+      "name": "Channels Fee Payer",
+      "network": "testnet",
+      "paused": false,
+      "network_type": "stellar",
+      "signer_id": "fee-payer-signer",
+      "policies": {"fee_payment_strategy": "relayer"}
     },
     {
       "id": "channel-001",
@@ -39,6 +48,17 @@
         "organization_id": "ab5ca46a-17b2-47a1-95fa-4aff7d413d12",
         "private_key_id": "GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3",
         "public_key": "b152a9b3ae41d0636a4d9f6e369cd73f418ca570a7c16ec272a838400146639e"
+      }
+    },
+    {
+      "id": "fee-payer-signer",
+      "type": "turnkey",
+      "config": {
+        "api_public_key": "02782029120f7408b3cac1fc9f57a5987dda59dba1458a5e5e815de60f5fd10a5c",
+        "api_private_key": { "type": "env", "value": "TURNKEY_API_PRIVATE_KEY" },
+        "organization_id": "ab5ca46a-17b2-47a1-95fa-4aff7d413d12",
+        "private_key_id": "GDF5IIBWEZIEBA43XAZSOM5A3X6KKZ7CCYX5K7SCO4M4DJGOPEPK7UOL",
+        "public_key": "cbd42036265040839bb8332733a0ddfca567e2162fd57e427719c1a4ce791eaf"
       }
     },
     {

@@ -29,7 +29,7 @@ primary_region = "iad"
   REDIS_POOL_MAX_SIZE = "10"
   TRANSACTION_EXPIRATION_HOURS = "6"
   STELLAR_NETWORK = "testnet"
-  FUND_RELAYER_ID = "channels-fund"
+  FUND_RELAYER_ID = "channels-fee-payer"
   RATE_LIMIT_REQUESTS_PER_SECOND = "20"
   RATE_LIMIT_BURST_SIZE = "60"
   # Hard ceiling on fund-account fee spend. Without FEE_LIMIT the plugin's fee
