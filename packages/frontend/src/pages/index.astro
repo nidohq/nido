@@ -154,8 +154,7 @@ const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : 
     resolveNameCached,
     fetchRegistryAddress,
   } from "@nidohq/passkey-sdk";
-
-  const RPC_URL = "https://soroban-testnet.stellar.org";
+  import { RPC_URL, NETWORK_PASSPHRASE } from "../lib/network";
 
   if (location.pathname === '/') {
     // --- Reserved dApp subdomain redirect ---
@@ -177,13 +176,13 @@ const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : 
     // --- Name resolution redirect (if visiting via name subdomain) ---
     const detectedName = nameFromHostname(hostname);
     if (detectedName && !isContractId(detectedName)) {
-      fetchRegistryAddress("name-registry")
+      fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE })
         .then((nameRegistryId) =>
           resolveNameCached(
             RPC_URL,
             nameRegistryId,
             detectedName,
-            "Test SDF Network ; September 2015",
+            NETWORK_PASSPHRASE,
           ),
         )
         .then((resolved) => {

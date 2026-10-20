@@ -1,7 +1,6 @@
 import {
   rpc,
   TransactionBuilder,
-  Networks,
   Keypair,
   xdr,
   type Transaction,
@@ -29,10 +28,12 @@ import {
   relayerEnabled,
   signatureExpirationOffset,
 } from './relayerClient';
-import { RELAYER_SIM_SOURCE } from './network';
+import { RELAYER_SIM_SOURCE, RPC_URL, NETWORK_PASSPHRASE } from './network';
 import { relayerSubmitAndConfirm, classicSubmitAndPoll } from './signing/submit';
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+// Friendbot has no mainnet equivalent (testnet-only faucet) -- not migrated
+// to network.ts. getSubmitter() below is only reached in classic (non-relayer)
+// mode, which mainnet account creation doesn't use yet (see docs/TODO_meridian.md).
 const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 
 // The expiration offset (relayer-mode auth-entry validity window) is computed by
@@ -119,7 +120,7 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   opClone.body().invokeHostFunctionOp().auth([]);
   const simTx = new TransactionBuilder(sourceAccount, {
     fee: '10000000',
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(opClone)
     .setTimeout(0)
@@ -136,7 +137,7 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   const authEntry = getAuthEntry(successSim);
   const lastLedger = successSim.latestLedger;
   const expirationOffset = signatureExpirationOffset();
-  const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger, expirationOffset);
+  const signaturePayload = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger, expirationOffset);
 
   // 4. Assemble so auth entries are baked into the tx XDR before signing.
   const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
@@ -262,7 +263,7 @@ export async function signAndSubmit(args: {
   const scheme = await perch.authDigestScheme({
     account: args.account,
     rpcUrl: RPC_URL,
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
   });
   const challengeBytes = computeAuthDigest(args.account, prepared.signaturePayload, contextRuleIds, scheme);
   const authHashHex = buf2hex(challengeBytes);
@@ -310,7 +311,7 @@ export async function applyDocWithPasskey(args: {
   const reader = perch.accountSnapshotReader({
     account: args.account,
     rpcUrl: RPC_URL,
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
     docCompiler: deployment.docCompiler,
   });
   const signer = await resolveSignerRule(args.account, cred.publicKey);
@@ -323,7 +324,7 @@ export async function applyDocWithPasskey(args: {
       const tx = await buildApplyDocTx(args.doc, {
         account,
         rpcUrl: RPC_URL,
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase: NETWORK_PASSPHRASE,
         approvalValidUntil,
         expectedRevision,
       });
@@ -356,7 +357,7 @@ export async function applyDocWithPasskey(args: {
   const scheme = await perch.authDigestScheme({
     account: args.account,
     rpcUrl: RPC_URL,
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
   });
   const op = perch.applyDocument(
     args.doc,

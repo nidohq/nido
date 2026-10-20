@@ -218,7 +218,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 </style>
 
 <script>
-  import { Networks, TransactionBuilder, Operation, Address, Account, rpc, xdr, hash } from "@stellar/stellar-sdk";
+  import { TransactionBuilder, Operation, Address, Account, rpc, xdr, hash } from "@stellar/stellar-sdk";
   import { Buffer } from "buffer";
   import {
     parseRegistration,
@@ -239,12 +239,10 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
-  import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE } from "../../lib/network";
+  import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL } from "../../lib/network";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
   import { syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
   import { signAndSubmit } from "../../lib/primaryPasskeySigner";
-
-  const RPC_URL = "https://soroban-testnet.stellar.org";
 
   // --- State ---
 
@@ -578,7 +576,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
           const sourceAccount = await waitForSourceAccount(server, RELAYER_SIM_SOURCE);
           const simTxn = new TransactionBuilder(sourceAccount, {
             fee: "100",
-            networkPassphrase: Networks.TESTNET,
+            networkPassphrase: NETWORK_PASSPHRASE,
           })
             .addOperation(
               Operation.invokeContractFunction({
@@ -611,7 +609,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
     const simTxn = new TransactionBuilder(sourceAccount, {
       fee: "100",
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(
         Operation.invokeContractFunction({
@@ -797,7 +795,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       // the account's first apply_doc.
       const simTxn = new TransactionBuilder(sourceAccount, {
         fee: "100",
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase: NETWORK_PASSPHRASE,
       })
         .addOperation(
           Operation.invokeContractFunction({

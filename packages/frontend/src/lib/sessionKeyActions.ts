@@ -4,9 +4,7 @@ import {
 } from '@nidohq/passkey-sdk';
 import { fetchVerifierAddress, readAccountConfiguration } from './policyChainFetch.js';
 import { signAndSubmit } from './primaryPasskeySigner.js';
-import { latestLedgerSequence } from './network.js';
-
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+import { latestLedgerSequence, RPC_URL } from './network.js';
 
 export async function delegateSessionKey(args: {
   account: string;

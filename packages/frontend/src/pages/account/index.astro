@@ -325,14 +325,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { shouldShowBackupBanner, snoozeBackupPrompt } from "../../lib/recoveryBackupPrompt";
   import { toast } from "../../lib/toast";
   import { stashSignRequest, safeRouteUrl, type SignRequest } from "../../lib/signing/signRequest";
-  import { EXPLORER_BASE } from "../../lib/network";
+  import { EXPLORER_BASE, RPC_URL, NETWORK_PASSPHRASE } from "../../lib/network";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { formatXlm } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
-
-  const RPC_URL = "https://soroban-testnet.stellar.org";
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
   // round-trip was broken (bug #3); re-enabled now that the finalize flow signs
@@ -381,9 +379,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     try {
       const resolved = await resolveNameCached(
         RPC_URL,
-        await fetchRegistryAddress("name-registry"),
+        await fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }),
         detectedName,
-        "Test SDF Network ; September 2015"
+        NETWORK_PASSPHRASE
       );
       if (resolved) {
         // Stay on name subdomain — use resolved ID for all operations

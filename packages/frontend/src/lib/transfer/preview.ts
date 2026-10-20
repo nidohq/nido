@@ -1,5 +1,5 @@
-import { Networks, TransactionBuilder, rpc, xdr } from "@stellar/stellar-sdk";
-import { RPC_URL, RELAYER_SIM_SOURCE } from "../network.js";
+import { TransactionBuilder, rpc, xdr } from "@stellar/stellar-sdk";
+import { RPC_URL, RELAYER_SIM_SOURCE, NETWORK_PASSPHRASE } from "../network.js";
 import { getSubmitter } from "../primaryPasskeySigner.js";
 import { relayerEnabled } from "../relayerClient.js";
 
@@ -44,7 +44,7 @@ export async function previewOperation(args: {
       : await server.getAccount(RELAYER_SIM_SOURCE);
     const tx = new TransactionBuilder(source, {
       fee: "10000000",
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(args.operation)
       .setTimeout(0)

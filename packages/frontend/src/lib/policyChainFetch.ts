@@ -3,7 +3,6 @@ import {
   Contract,
   TransactionBuilder,
   Account,
-  Networks,
   Address,
   nativeToScVal,
   scValToNative,
@@ -13,13 +12,16 @@ import type { ChainRule, ChainSigner, PolicyState } from '@nidohq/passkey-sdk';
 import { fetchRegistryAddress as sdkFetchRegistryAddress, perch } from '@nidohq/passkey-sdk';
 import { Client as SpendingLimitPolicyClient } from '@nidohq/spending-limit-policy';
 import { perchDeployment } from './recovery/deployment.js';
+import { RPC_URL, NETWORK_PASSPHRASE } from './network.js';
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
-const NETWORK_PASSPHRASE = Networks.TESTNET;
 // Unverified registry on testnet — the one that holds bare-name → contract-id
 // mappings. The verified registry (CAMLHK…) doesn't dispatch prefixed names
 // natively; the CLI does that client-side. We target unverified directly so
 // `fetch_contract_id("verifier")` resolves without a prefix.
+
+// TESTNET-ONLY, not migrated: there is no mainnet deployment of this registry
+// yet (see mainnet-readiness notes). Needs a real mainnet address before
+// NETWORK_NAME=mainnet builds can use this module correctly.
 const REGISTRY_ADDRESS = 'CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S';
 
 /** Simulate-only invocation of a contract view method. Returns the result ScVal. */
@@ -195,8 +197,9 @@ export async function fetchSpendingLimit(
  *  policy and verifier addresses without going through the factory.
  *
  *  Delegates to the SDK's `fetchRegistryAddress` (single source of truth for
- *  registry routing + hardcoded fallbacks), pinned to this frontend's testnet
- *  RPC / network / registry constants. */
+ *  registry routing + hardcoded fallbacks), pinned to this frontend's
+ *  env-driven RPC/network (see network.ts) and its testnet-only registry
+ *  constant (REGISTRY_ADDRESS above has no mainnet deployment yet). */
 export async function fetchRegistryAddress(name: string): Promise<string> {
   return sdkFetchRegistryAddress(name, {
     rpcUrl: RPC_URL,

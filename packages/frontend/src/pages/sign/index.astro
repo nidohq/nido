@@ -322,7 +322,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       document.getElementById('payload-label')!.textContent = 'Transaction XDR';
       document.getElementById('payload-text')!.textContent = payload || '(missing)';
       if (payload && account) {
-        const passphrase = req.networkPassphrase ?? network ?? 'Test SDF Network ; September 2015';
+        const passphrase = req.networkPassphrase ?? network ?? NETWORK_PASSPHRASE;
         void renderTxDetail(payload, account, passphrase);
       }
     } else if (op.type === 'transfer') {
@@ -628,7 +628,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     // behind a toggle. Best-effort: any decode/enrich failure leaves the raw
     // payload visible, exactly as before this enhancement.
     if (kind === 'tx' && payload && account) {
-      void renderTxDetail(payload, account, network ?? 'Test SDF Network ; September 2015');
+      void renderTxDetail(payload, account, network ?? NETWORK_PASSPHRASE);
     }
   }
 

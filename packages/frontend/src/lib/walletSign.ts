@@ -23,7 +23,6 @@
 import {
   rpc,
   TransactionBuilder,
-  Networks,
   xdr,
   Transaction,
   FeeBumpTransaction,
@@ -51,8 +50,7 @@ import {
 } from './policyChainFetch.js';
 import { signatureExpirationOffset } from './relayerClient';
 import { deriveMessageChallenge } from './messageSigning.js';
-
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+import { RPC_URL, NETWORK_PASSPHRASE } from './network.js';
 
 /** How many rule-0 signatures a ceremony must collect, given the rule's
  *  on-chain state. Policy-less multi-signer rules are N-of-N under OZ
@@ -97,7 +95,7 @@ export async function signTransactionXdr(args: {
   /** Progress callback for multi-passkey ceremonies ("signature 1 of 2…"). */
   onStatus?: (msg: string) => void;
 }): Promise<string> {
-  const networkPassphrase = args.networkPassphrase ?? Networks.TESTNET;
+  const networkPassphrase = args.networkPassphrase ?? NETWORK_PASSPHRASE;
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
 
@@ -482,7 +480,7 @@ export async function signAuthEntryXdr(args: { account: string; authEntryXdr: st
   const scheme = await perch.authDigestScheme({
     account: args.account,
     rpcUrl: RPC_URL,
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
   });
   const digest = new Uint8Array(
     computeAuthDigest(args.account, signaturePayload, [resolved.ruleId], scheme),

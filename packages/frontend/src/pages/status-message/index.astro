@@ -212,17 +212,16 @@ import Icon from "../../components/Icon.astro";
   } from "@nidohq/passkey-sdk";
   import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
   import { startDelegation, readDelegationReturn, consumePendingDelegation, writePendingDelegation } from "../../lib/delegationHandover.js";
-  import { Keypair, Networks, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
+  import { Keypair, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
   import { defineNidoWalletButton, WALLET_CHANGED_EVENT } from "../../components/nido-wallet-button.js";
   import { signTransaction as kitSignTransaction, isNidoWallet, type WalletSession } from "../../lib/walletConnect.js";
-
-  const RPC_URL = "https://soroban-testnet.stellar.org";
+  import { RPC_URL, NETWORK_PASSPHRASE } from "../../lib/network.js";
   // Resolved by name via the on-chain registry (with a single hardcoded
   // fallback inside `fetchRegistryAddress` for registry outages). Previously
   // hardcoded here so bindings could be regenerated without --contract-id;
   // routing through the registry keeps that property while making a redeploy
   // a registry-only change.
-  const STATUS_CONTRACT = await fetchRegistryAddress("status-message");
+  const STATUS_CONTRACT = await fetchRegistryAddress("status-message", { rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
 
   // WebAuthn verifier — resolved per-account from chain when signing.
   // Was previously a deterministic derivation from FACTORY+wasm_hash,
@@ -505,7 +504,7 @@ import Icon from "../../components/Icon.astro";
     const keypair = await keypairReady;
     const client = new Client({
       contractId: STATUS_CONTRACT,
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase: NETWORK_PASSPHRASE,
       rpcUrl: RPC_URL,
       publicKey: keypair.publicKey(),
     });
@@ -559,7 +558,7 @@ import Icon from "../../components/Icon.astro";
       const keypair = await keypairReady;
       const client = new Client({
         contractId: STATUS_CONTRACT,
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase: NETWORK_PASSPHRASE,
         rpcUrl: RPC_URL,
         publicKey: keypair.publicKey(),
       });
@@ -570,7 +569,7 @@ import Icon from "../../components/Icon.astro";
       // Extract auth entry and compute hash
       const authEntry = getAuthEntry(sim);
       const lastLedger = sim.latestLedger;
-      const authHash = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
+      const authHash = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger);
 
       // --- Session-passkey in-page signing path ---
       const material = loadSessionKeyMaterial(contract, STATUS_CONTRACT);
@@ -612,7 +611,7 @@ import Icon from "../../components/Icon.astro";
         const scheme = await perch.authDigestScheme({
           account: contract,
           rpcUrl: RPC_URL,
-          networkPassphrase: Networks.TESTNET,
+          networkPassphrase: NETWORK_PASSPHRASE,
         });
         const authDigest = computeAuthDigest(
           contract,
@@ -677,7 +676,7 @@ import Icon from "../../components/Icon.astro";
         // the round-trip intact.
         const reparsedAuthTxn = TransactionBuilder.fromXDR(
           authTxn.toEnvelope().toXDR('base64'),
-          Networks.TESTNET,
+          NETWORK_PASSPHRASE,
         ) as Transaction;
         const oldResourceFee = BigInt(
           (reparsedAuthTxn.toEnvelope().v1().tx().ext().value() as xdr.SorobanTransactionData | undefined)
@@ -687,7 +686,7 @@ import Icon from "../../components/Icon.astro";
         const finalTx = TransactionBuilder.cloneFrom(reparsedAuthTxn, {
           fee: (classicFee + newResourceFee).toString(),
           sorobanData: newSorobanData,
-          networkPassphrase: Networks.TESTNET,
+          networkPassphrase: NETWORK_PASSPHRASE,
         }).build();
         finalTx.sign(keypair);
 
@@ -791,7 +790,7 @@ import Icon from "../../components/Icon.astro";
     // connectedCallback reads it when it inits the kit.
     const apexBase = `${window.location.protocol}//${stripSubdomain(window.location.host)}`;
     $kitWallet.setAttribute("base", apexBase);
-    $kitWallet.setAttribute("network-passphrase", Networks.TESTNET);
+    $kitWallet.setAttribute("network-passphrase", NETWORK_PASSPHRASE);
 
     // Register the <nido-wallet-button> custom element. It inits the kit once
     // (Nido + standard modules) and owns connect/disconnect/session-restore.
@@ -860,7 +859,7 @@ import Icon from "../../components/Icon.astro";
         kitSetStatus("Building transaction…");
         const client = new Client({
           contractId: STATUS_CONTRACT,
-          networkPassphrase: Networks.TESTNET,
+          networkPassphrase: NETWORK_PASSPHRASE,
           rpcUrl: RPC_URL,
           publicKey: keypair.publicKey(),
         });
@@ -877,7 +876,7 @@ import Icon from "../../components/Icon.astro";
         //    `{ signedTxXdr: <tx hash>, submitted: true }`.
         kitSetStatus("Awaiting wallet signature (passkey)…");
         const result = await kitSignTransaction(unsignedXdr, {
-          networkPassphrase: Networks.TESTNET,
+          networkPassphrase: NETWORK_PASSPHRASE,
           address: kitAccount,
         });
 
@@ -906,7 +905,7 @@ import Icon from "../../components/Icon.astro";
         //    but still needs the fee-payer (tx source) signature. Add it and submit.
         kitSetStatus("Submitting signed transaction…");
         const server = new rpc.Server(RPC_URL);
-        const signedTx = TransactionBuilder.fromXDR(signedTxXdr, Networks.TESTNET) as Transaction;
+        const signedTx = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE) as Transaction;
         signedTx.sign(keypair);
 
         const sendResult = await server.sendTransaction(signedTx);
