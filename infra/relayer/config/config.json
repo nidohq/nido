@@ -86,6 +86,7 @@
   ],
   "networks": "./config/networks",
   "plugins": [
-    { "id": "channels", "path": "channels/index.ts", "timeout": 120, "emit_logs": true }
+    { "id": "channels", "path": "channels/index.ts", "timeout": 120, "emit_logs": true },
+    { "id": "funder", "path": "funder/index.ts", "timeout": 30, "emit_logs": true }
   ]
 }

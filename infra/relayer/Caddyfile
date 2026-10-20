@@ -9,7 +9,7 @@
 :8080 {
 	@preflight {
 		method OPTIONS
-		path /relay
+		path /relay /fund
 	}
 	handle @preflight {
 		header Access-Control-Allow-Origin "*"
@@ -51,6 +51,26 @@
 		request_header Authorization "Bearer {$API_KEY}"
 		request_header x-api-key "nido-wallet"
 		rewrite * /api/v1/plugins/channels/call
+		reverse_proxy 127.0.0.1:8090
+	}
+	@fund {
+		method POST
+		path /fund
+	}
+	handle @fund {
+		# This zone is more tightly locked down than relay_per_ip since this is
+		# moving real XLM (unlike relay, which is just triggering sponsorship)
+		rate_limit {
+			zone fund_per_ip {
+				key {http.request.header.Fly-Client-IP}
+				events 10
+				window 1h
+			}
+		}
+		header Access-Control-Allow-Origin "*"
+		request_header Authorization "Bearer {$API_KEY}"
+		request_header x-api-key "nido-wallet"
+		rewrite * /api/v1/plugins/funder/call
 		reverse_proxy 127.0.0.1:8090
 	}
 	handle /api/v1/health {
