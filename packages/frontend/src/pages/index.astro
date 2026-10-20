@@ -6,9 +6,14 @@ import Nest from "../components/Nest.astro";
 import Toast from "../components/Toast.astro";
 import MyNidoMenu from "../components/MyNidoMenu.astro";
 import TrustSection from "../components/TrustSection.astro";
+import { NETWORK_NAME } from "../lib/network";
 
 const githubRepository = import.meta.env.PUBLIC_GITHUB_REPOSITORY as string | undefined;
 const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : undefined;
+
+// Account creation from index is testnet-only today; everything else (mainnet) sees a
+// disabled "Coming soon" badge instead of the working CTA.
+const isTestnet = NETWORK_NAME === "testnet";
 ---
 
 <NidoLayout title="Nido — A safe place for everything" shell="bleed">
@@ -40,11 +45,18 @@ const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : 
             Set up in seconds with just your face. Nothing to memorize, and no way to get locked out.
           </p>
           <div class="lp-cta">
-            <button id="get-started-hero" class="btn acc" style="width: auto; padding: 0 26px; height: 54px;">
-              Get started <Icon name="arrow" size={18} color="#fff" />
-            </button>
+            {isTestnet ? (
+              <button id="get-started-hero" class="btn acc" style="width: auto; padding: 0 26px; height: 54px;">
+                Get started <Icon name="arrow" size={18} color="#fff" />
+              </button>
+            ) : (
+              <span aria-disabled="true" style="width: auto; padding: 0 26px; height: 54px; opacity: .55; cursor: default; pointer-events: none;">
+              </span>
+            )}
           </div>
-          <div class="mut" style="font-size: 12.5px; font-weight: 600; margin-top: 12px; display:inline-flex; align-items:center; gap:7px;"><span class="dot acc" style="width:7px;height:7px;border-radius:50%;background:var(--acc);display:inline-block;"></span> Demo on Stellar testnet — no real funds.</div>
+          {isTestnet && (
+            <div class="mut" style="font-size: 12.5px; font-weight: 600; margin-top: 12px; display:inline-flex; align-items:center; gap:7px;"><span class="dot acc" style="width:7px;height:7px;border-radius:50%;background:var(--acc);display:inline-block;"></span> Demo on Stellar testnet — no real funds.</div>
+          )}
           <div class="lp-trust">
             <span><Icon name="faceid" size={15} color="var(--mut)" /> Set up with your face</span>
             <span><Icon name="bolt" size={15} color="var(--mut)" /> Ready in seconds</span>
@@ -131,9 +143,15 @@ const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : 
         <div style="display: flex; justify-content: center; margin-bottom: 22px; position: relative;"><Nest size={64} /></div>
         <h2 class="disp" style="font-weight: 800; font-size: clamp(28px,7vw,40px); letter-spacing: -.01em; position: relative; line-height: 1.05;">Everything you own,<br />in one safe place.</h2>
         <p class="lp-sub" style="margin: 14px auto 0; max-width: 360px; position: relative;">Create your Nido in under a minute. Just your face — nothing to memorize.</p>
-        <button id="get-started-band" class="btn acc" style="width: auto; padding: 0 28px; height: 54px; margin: 26px auto 0; position: relative;">
-          Get started <Icon name="arrow" size={18} color="#fff" />
-        </button>
+        {isTestnet ? (
+          <button id="get-started-band" class="btn acc" style="width: auto; padding: 0 28px; height: 54px; margin: 26px auto 0; position: relative;">
+            Get started <Icon name="arrow" size={18} color="#fff" />
+          </button>
+        ) : (
+          <span class="btn" aria-disabled="true" style="width: auto; padding: 0 28px; height: 54px; margin: 26px auto 0; position: relative; opacity: .55; cursor: default; pointer-events: none;">
+            Coming soon
+          </span>
+        )}
       </section>
 
       <footer class="lp-foot">
