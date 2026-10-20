@@ -366,12 +366,13 @@ Frontend builds must set:
 
 ```bash
 PUBLIC_RELAYER_URL=https://nido.fly.dev
-PUBLIC_RELAYER_SIM_SOURCE=GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
+PUBLIC_RELAYER_SIM_SOURCE=GDF5IIBWEZIEBA43XAZSOM5A3X6KKZ7CCYX5K7SCO4M4DJGOPEPK7UOL
 ```
 
-`PUBLIC_RELAYER_SIM_SOURCE` is the fund account public key. It is only a
-simulation source for recording-mode simulation; browser code never signs with
-it and never spends from it.
+`PUBLIC_RELAYER_SIM_SOURCE` is `channels-fee-payer`'s public key — the
+account that actually fee-bumps channel deploy transactions. It is a
+simulation source for recording-mode simulation; browser code never signs
+with it and never spends from it.
 
 ## Secret Handling
 
@@ -529,7 +530,17 @@ Options:
 ## Versioning
 
 OpenZeppelin Relayer is pinned to `v1.5.0` intentionally. Stellar support is
-still moving. Before upgrading:
+still moving.
+
+A bump to `v1.6.0` was attempted on 2026-10-20 specifically for
+https://github.com/OpenZeppelin/openzeppelin-relayer/pull/789, but was
+reverted because the `v1.6.0` base image broke the plugin build. Plus 1.6.0
+flags a regression risk (a multi-threaded transaction pipeline (#810)), and we
+had time constraints so this risk didn't seem work it. Instead, the `funder`
+plugin routes around the bug entirely by getting the seq number, and handling
+the tx creation and submission via rpc calls.
+
+Before attempting this upgrade again:
 
 1. Read OZ Relayer changelog and Channels plugin changelog.
 2. Re-run `scripts/relayer-proof.mjs`.

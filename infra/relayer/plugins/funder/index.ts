@@ -1,34 +1,54 @@
 /**
  * Entry point for the Nido funder relayer plugin. Funds newly-deployed
- * smart account's with a spendable balance of TOPUP_STROOPS
- * from the `fund` treasury relayer.
+ * smart accounts with a spendable balance of TOPUP_STROOPS from the `fund`
+ * treasury relayer.
  *
  * The caller may only choose *which* address gets funded, never *how much*:
  * the amount is fixed server-side (FUNDER_TOPUP_STROOPS), not read from the
  * request.
+ *
+ * Sequence-number workaround: OZ Relayer's own sequence-assignment path
+ * (`get_next_sequence`) corrupts large Stellar sequence numbers - a confirmed
+ * https://github.com/OpenZeppelin/openzeppelin-relayer/pull/789 upstream bug. 
+ * Fixed in * openzeppelin-relayer v1.6.0, but that version broke this image's plugin
+ * build, so we're * staying on v1.5.0 and routing around the bug instead.
+ *
+ * The workaround: fetch `fund`'s sequence number ourselves directly from
+ * Soroban RPC (never touching the relayer's buggy counter), build+simulate+
+ * assemble the transaction ourselves (same as the old Friendbot-funded
+ * flow's drainTestnetFunding()), ask the relayer to sign the fully-assembled
+ * envelope (a plain "sign this blob with your Turnkey key" call -- confirmed
+ * via the relayer's own source that this never touches sequence-assignment
+ * code at all), and submit the signed envelope directly to Soroban RPC
+ * ourselves. The relayer's own transaction-submission API is never used.
  */
 import type { PluginContext } from "@openzeppelin/relayer-sdk";
+import {
+  Asset,
+  Networks,
+  Operation,
+  TransactionBuilder,
+  nativeToScVal,
+  rpc,
+} from "@stellar/stellar-sdk";
 
 const FUND_RELAYER_ID = "fund";
 const TOPUP_STROOPS = Number(process.env.FUNDER_TOPUP_STROOPS ?? "50000000");
-// Same STELLAR_NETWORK the relayer itself is configured with (fly.toml) —
-// plugins inherit the relayer's full environment, so this stays in sync
-// automatically rather than needing its own separate mainnet/testnet flag.
 const STELLAR_NETWORK = process.env.STELLAR_NETWORK ?? "testnet";
 
-// XLM's SAC id
-const NATIVE_SAC_ID: Record<string, string> = {
-  testnet: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-  mainnet: "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+const NETWORK_CONFIG: Record<string, { passphrase: string; rpcUrl: string }> = {
+  testnet: { passphrase: Networks.TESTNET, rpcUrl: "https://soroban-testnet.stellar.org" },
+  mainnet: { passphrase: Networks.PUBLIC, rpcUrl: "https://mainnet.sorobanrpc.com" },
 };
 
 type Params = {
   destination: string;
 };
 
-/**
- * Wrapped plugin handler exported for OpenZeppelin Relayer.
- */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function handler({ api, params }: PluginContext<Params>): Promise<unknown> {
   // Kill switch for turning this off after Meridian without touching Caddy
   // or config.json (neither takes live effect post-bootstrap anyway — see
@@ -46,42 +66,65 @@ export async function handler({ api, params }: PluginContext<Params>): Promise<u
     throw new Error("Invalid destination: must be a Stellar contract address");
   }
 
-  const relayer = api.useRelayer(FUND_RELAYER_ID);
-
-  const sacId = NATIVE_SAC_ID[STELLAR_NETWORK];
-  if (!sacId) {
-    throw new Error(`No native SAC id configured for network: ${STELLAR_NETWORK}`);
+  const networkConfig = NETWORK_CONFIG[STELLAR_NETWORK];
+  if (!networkConfig) {
+    throw new Error(`No network config for: ${STELLAR_NETWORK}`);
   }
+
+  const relayer = api.useRelayer(FUND_RELAYER_ID);
 
   // `from` is fund's own address, fetched live rather than hardcoded so a
   // future Turnkey key rotation for `fund` doesn't silently break this.
-  // TODO: confirm the exact field name/shape on ApiResponseRelayerResponseData
-  // against a live call -- assumed `.address` to mirror RelayerRepoModel's
-  // own field name, not yet verified against this SDK type specifically.
   const relayerInfo = await relayer.getRelayer();
   const fundAddress = (relayerInfo as { address: string }).address;
 
-  const result = await relayer.sendTransaction({
-    network: STELLAR_NETWORK,
-    operations: [
-      {
-        type: "invoke_contract",
-        contract_address: sacId,
-        function_name: "transfer",
-        args: [
-          { address: fundAddress },
-          { address: destination },
-          { i128: { hi: "0", lo: String(TOPUP_STROOPS) } },
-        ],
-        // fund is both the transaction's source account and the `from` in
-        // transfer, so the tx's own signature authorizes it -- no separate
-        // signed SorobanAuthorizationEntry needed.
-        auth: { type: "source_account" },
-      },
-    ],
-  });
+  const sacId = Asset.native().contractId(networkConfig.passphrase);
 
-  // Return immediately; the caller polls for confirmation the same way the
-  // existing deploy flow already does (relayerClient.waitForConfirmation).
-  return { id: result.id, relayer_id: result.relayer_id, status: result.status };
+  const server = new rpc.Server(networkConfig.rpcUrl);
+  const sourceAccount = await server.getAccount(fundAddress);
+
+  const txn = new TransactionBuilder(sourceAccount, {
+    fee: "1000000",
+    networkPassphrase: networkConfig.passphrase,
+  })
+    .addOperation(
+      Operation.invokeContractFunction({
+        contract: sacId,
+        function: "transfer",
+        args: [
+          nativeToScVal(fundAddress, { type: "address" }),
+          nativeToScVal(destination, { type: "address" }),
+          nativeToScVal(TOPUP_STROOPS, { type: "i128" }),
+        ],
+      })
+    )
+    .setTimeout(60)
+    .build();
+
+  const SIM_ATTEMPTS = 6;
+  let sim = await server.simulateTransaction(txn);
+  for (let simAttempt = 1; simAttempt < SIM_ATTEMPTS; simAttempt++) {
+    if (!rpc.Api.isSimulationError(sim) && !rpc.Api.isSimulationRestore(sim)) break;
+    await sleep(1500);
+    sim = await server.simulateTransaction(txn);
+  }
+  if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
+    throw new Error(`Funding simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
+  }
+
+  const assembled = rpc.assembleTransaction(txn, sim).build();
+
+  // Relayer only signs (Turnkey-backed, no sequence-assignment code
+  // touched) -- we submit the result ourselves.
+  const signResult = await relayer.signTransaction({ unsigned_xdr: assembled.toXDR() });
+  const signedXdr = (signResult as { signedXdr: string }).signedXdr;
+
+  const signedEnvelope = TransactionBuilder.fromXDR(signedXdr, networkConfig.passphrase);
+
+  const send = await server.sendTransaction(signedEnvelope);
+  if (send.status === "ERROR") {
+    throw new Error(`Funding transaction failed: ${send.errorResult?.toString() ?? "submission error"}`);
+  }
+
+  return { hash: send.hash, status: send.status };
 }
