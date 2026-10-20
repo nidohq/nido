@@ -218,7 +218,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 </style>
 
 <script>
-  import { Networks, TransactionBuilder, Operation, Address, Account, Keypair, nativeToScVal, rpc, xdr, hash, Contract } from "@stellar/stellar-sdk";
+  import { Networks, TransactionBuilder, Operation, Address, Account, rpc, xdr, hash } from "@stellar/stellar-sdk";
   import { Buffer } from "buffer";
   import {
     parseRegistration,
@@ -239,14 +239,12 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
-  import { NATIVE_SAC_ID, RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE } from "../../lib/network";
+  import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE } from "../../lib/network";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
   import { syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
   import { signAndSubmit } from "../../lib/primaryPasskeySigner";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
-  const FRIENDBOT_URL = "https://friendbot.stellar.org";
-  const TESTNET_TOPUP_STROOPS = 99_900_000_000n;
 
   // --- State ---
 
@@ -292,7 +290,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
   let passkeyPublicKey: Uint8Array | null = null;
   let credentialIdBytes: Uint8Array | null = null;
-  let testnetFundingPromise: Promise<Keypair> | null = null;
   // Lets a manual tap abort an in-flight auto-attempt of the passkey prompt.
   let autoPasskeyController: AbortController | null = null;
 
@@ -337,8 +334,8 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
   // Animated "Setting up your Nido" checklist — full-sized boxed checkbox cards.
   // Each step is one of: "pending" (dim box) · "active" (spinner) · "done" (teal
-  // checkmark). The friendbot funding that backs "Finalizing your wallet" runs
-  // concurrently behind the scenes and is never surfaced as a testnet detail.
+  // checkmark). "Finalizing your wallet" is backed by a relayer-funded treasury
+  // transfer (see fundAccount), run after deploy and never surfaced as a detail.
   const CHECK_LABELS = ["check-0", "check-1", "check-2", "check-3", "check-4", "check-5"];
 
   function renderCheck(i: number, state: "pending" | "active" | "done") {
@@ -430,69 +427,34 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       : new Error("Funded setup account is not available yet.");
   }
 
-  async function startTestnetFunding(): Promise<Keypair> {
-    if (testnetFundingPromise) return testnetFundingPromise;
-    testnetFundingPromise = (async () => {
-      const keypair = Keypair.random();
-      const resp = await fetch(`${FRIENDBOT_URL}?addr=${keypair.publicKey()}`);
-      if (!resp.ok) {
-        const detail = await resp.text().catch(() => resp.statusText);
-        throw new Error(`Friendbot funding failed: ${detail || resp.statusText}`);
-      }
-      await waitForSourceAccount(new rpc.Server(RPC_URL), keypair.publicKey());
-      return keypair;
-    })().catch((err) => {
-      testnetFundingPromise = null;
-      throw err;
+  async function fundAccount(server: rpc.Server, destination: string): Promise<void> {
+    if (!RELAYER_URL) {
+      throw new Error("Relayer is not configured for account funding.");
+    }
+    const resp = await fetch(`${RELAYER_URL}/fund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ params: { destination } }),
     });
-    return testnetFundingPromise;
-  }
-
-  async function drainTestnetFunding(server: rpc.Server, destination: string): Promise<void> {
-    const keypair = await startTestnetFunding();
-    const sourceAccount = await waitForSourceAccount(server, keypair.publicKey());
-    const txn = new TransactionBuilder(sourceAccount, {
-      fee: "1000000",
-      networkPassphrase: Networks.TESTNET,
-    })
-      .addOperation(
-        Operation.invokeContractFunction({
-          contract: NATIVE_SAC_ID,
-          function: "transfer",
-          args: [
-            Address.fromString(keypair.publicKey()).toScVal(),
-            Address.fromString(destination).toScVal(),
-            nativeToScVal(TESTNET_TOPUP_STROOPS, { type: "i128" }),
-          ],
-        })
-      )
-      .setTimeout(60)
-      .build();
-
-    const SIM_ATTEMPTS = 6;
-    let sim = await server.simulateTransaction(txn);
-    for (let simAttempt = 1; simAttempt < SIM_ATTEMPTS; simAttempt++) {
-      if (!rpc.Api.isSimulationError(sim) && !rpc.Api.isSimulationRestore(sim)) break;
-      await sleep(1500);
-      sim = await server.simulateTransaction(txn);
+    const body = await resp.json().catch(() => null);
+    if (!resp.ok || !body?.success) {
+      throw new Error(`Funding failed: ${body?.error ?? resp.statusText}`);
     }
-    if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
-      throw new Error(`Funding simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
+    const sendHash = body.data?.hash as string | undefined;
+    if (!sendHash) {
+      throw new Error("Funding succeeded but returned no transaction hash");
     }
 
-    const assembled = rpc.assembleTransaction(txn, sim).build();
-    assembled.sign(keypair);
-
-    const send = await server.sendTransaction(assembled);
-    if (send.status === "ERROR") {
-      throw new Error(`Funding transaction failed: ${send.errorResult?.toString() ?? "submission error"}`);
-    }
-
-    let got = await server.getTransaction(send.hash);
+    // The funder plugin submits straight to Soroban RPC (bypassing the
+    // relayer's own transaction tracking, which has a sequence-number bug —
+    // see docs/ISSUE_DRAFT_sequence_number_precision_loss.md), so we poll
+    // the same RPC endpoint directly for confirmation rather than the
+    // relayer's own status API.
+    let got = await server.getTransaction(sendHash);
     let attempts = 0;
     while (got.status === "NOT_FOUND" && attempts < 20) {
       await sleep(1000);
-      got = await server.getTransaction(send.hash);
+      got = await server.getTransaction(sendHash);
       attempts++;
     }
     if (got.status !== "SUCCESS") {
@@ -700,7 +662,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     credentialIdBytes = reg.credentialId;
 
     sdkSaveCredential(contractId!, credentialIdBytes, passkeyPublicKey);
-    void startTestnetFunding().catch((err) => console.warn("[nido] testnet funding prep failed", err));
 
     void buf2base64url(credentialIdBytes);
     void buf2hex(passkeyPublicKey);
@@ -821,9 +782,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
 
     try {
       // 0 · "Locked to you" is already done; 1 · "Preparing transaction" begins.
-      // Friendbot funding (a testnet-only detail) is already running from
-      // completeRegistration, concurrent with this whole deploy — it backs the
-      // "Finalizing your wallet" step below and is never surfaced to the user.
       setCheckProgress(1, 1);
 
       if (!RELAYER_URL || !RELAYER_SIM_SOURCE) {
@@ -878,14 +836,12 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
       clearSetupSaltCookie(contractId!);
       await syncNidoStorageViaBridge();
 
-      // Confirmed — 3 done, 4 · "Finalizing your wallet" begins. Behind this card
-      // we drain the friendbot-funded keypair into the account; it must follow
-      // deploy since the account contract is the transfer destination. The funding
-      // itself already ran in parallel with steps 1–3, so this is usually a quick
-      // transfer rather than a fresh wait.
+      // Confirmed — 3 done, 4 · "Finalizing your wallet" begins. Funds the new
+      // account directly from the relayer's `fund` treasury; must follow
+      // deploy since the account contract is the destination.
       setCheckProgress(4, 4);
       try {
-        await drainTestnetFunding(server, contractId!);
+        await fundAccount(server, contractId!);
       } catch (fundingErr) {
         console.warn("[nido] wallet finalize failed", fundingErr);
         renderCheck(4, "pending");
