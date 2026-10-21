@@ -292,6 +292,12 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   let credentialIdBytes: Uint8Array | null = null;
   // Lets a manual tap abort an in-flight auto-attempt of the passkey prompt.
   let autoPasskeyController: AbortController | null = null;
+  // Backs checkSetupConsistency() below. Declared here (not next to that
+  // function) because the `autopass=1` auto-trigger a few lines down can call
+  // into checkSetupConsistency() synchronously, before the script's own
+  // top-to-bottom execution would otherwise reach a `let` declared later —
+  // that was a real TDZ ReferenceError, not a hoisting quirk that fixes itself.
+  let setupConsistencyCheck: Promise<string | null> | null = null;
 
   // --- Recovery choice ("Never get locked out") ---
   //
@@ -564,7 +570,6 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
   // rather than deploying one account while we fund another. Memoized so the
   // register step and the deploy step share one on-chain derivation. Returns a
   // user-facing error string, or null when setup may proceed.
-  let setupConsistencyCheck: Promise<string | null> | null = null;
   function checkSetupConsistency(): Promise<string | null> {
     if (!setupConsistencyCheck) {
       setupConsistencyCheck = (async (): Promise<string | null> => {
