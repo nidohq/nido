@@ -5,6 +5,8 @@ import {
   dappPathFromHostname,
   dappUrl,
   nameFromHostname,
+  isReservedName,
+  splitHost,
   stripSubdomain,
 } from './url.js';
 
@@ -39,8 +41,8 @@ describe('accountUrl', () => {
   // preview deploy. accountUrl previously produced the wallet hostname with
   // a duplicated preview prefix (`<acc>--24.24.mysoroban.xyz`)
   // because `stripSubdomain` preserves the prefix as its own segment for
-  // wallet-context usage. The fix derives the apex from `host.split('.').slice(1)`
-  // instead, dropping the dApp's first label outright.
+  // wallet-context usage. The account is built from the apex instead,
+  // dropping the dApp's label outright.
   it('preview from a reserved-dApp origin (status-message--N): no duplicate prefix', () => {
     expect(accountUrl('status-message--100.mysoroban.xyz', C, '/security/delegate/')).toBe(
       `//${C.toLowerCase()}--100.mysoroban.xyz/security/delegate/`,
@@ -96,10 +98,10 @@ describe('stripSubdomain', () => {
   it('normalizes a legacy bare preview root to the numeric form', () => {
     expect(stripSubdomain('pr-10.mysoroban.xyz')).toBe('10.mysoroban.xyz');
   });
-  it('returns the tail when host has no subdomain (no-op on apex is the caller\'s job)', () => {
-    // The function always drops the first label. Callers know whether they
-    // hold an apex or a subdomain before calling — `accountUrl` doesn't.
-    expect(stripSubdomain('mysoroban.xyz')).toBe('xyz');
+  it('leaves an apex as it is', () => {
+    expect(stripSubdomain('mysoroban.xyz')).toBe('mysoroban.xyz');
+    expect(stripSubdomain('nido.fyi')).toBe('nido.fyi');
+    expect(stripSubdomain('test.nido.fyi')).toBe('test.nido.fyi');
   });
   it('returns host unchanged when there is only one label', () => {
     expect(stripSubdomain('localhost')).toBe('localhost');
@@ -123,10 +125,15 @@ describe('contractIdFromHostname', () => {
     const alias = `c-${'a'.repeat(32)}`;
     expect(contractIdFromHostname(`${alias}--100.mysoroban.xyz`)).toBe(`C-${'A'.repeat(32)}`);
   });
-  it('does not validate — returns the first-label uppercased for any host with >1 label', () => {
+  it('does not validate — returns any account label uppercased', () => {
     // contractIdFromHostname has no strkey check; isContractId does that.
     // Callers needing validation should pipe the result through isContractId.
-    expect(contractIdFromHostname('mysoroban.xyz')).toBe('MYSOROBAN');
+    expect(contractIdFromHostname('alice.mysoroban.xyz')).toBe('ALICE');
+  });
+  it('returns null on an apex', () => {
+    expect(contractIdFromHostname('mysoroban.xyz')).toBe(null);
+    expect(contractIdFromHostname('nido.fyi')).toBe(null);
+    expect(contractIdFromHostname('test.nido.fyi')).toBe(null);
   });
   it('returns null when there is no subdomain at all', () => {
     expect(contractIdFromHostname('localhost')).toBe(null);
@@ -196,5 +203,113 @@ describe('dappPathFromHostname', () => {
     expect(dappPathFromHostname('alice.mysoroban.xyz')).toBe(null);
     expect(dappPathFromHostname(`${C.toLowerCase()}.mysoroban.xyz`)).toBe(null);
     expect(dappPathFromHostname('mysoroban.xyz')).toBe(null);
+  });
+});
+
+// Every host shape Nido serves, on the 2-label mainnet-to-be apex and on the
+// 3-label testnet apex. The testnet apex must never collapse to `nido.fyi`, and
+// no apex is ever read as an account.
+describe('splitHost', () => {
+  const c = C.toLowerCase();
+  const shapes: [string, { apex: string; preview: string | null; label: string | null }][] = [
+    ['nido.fyi', { apex: 'nido.fyi', preview: null, label: null }],
+    ['test.nido.fyi', { apex: 'test.nido.fyi', preview: null, label: null }],
+    [`${c}.nido.fyi`, { apex: 'nido.fyi', preview: null, label: c }],
+    [`${c}.test.nido.fyi`, { apex: 'test.nido.fyi', preview: null, label: c }],
+    [`${c}--126.test.nido.fyi`, { apex: 'test.nido.fyi', preview: '126', label: c }],
+    ['126.test.nido.fyi', { apex: 'test.nido.fyi', preview: '126', label: null }],
+    ['pr-126.test.nido.fyi', { apex: 'test.nido.fyi', preview: '126', label: null }],
+    ['126.nido.fyi', { apex: 'nido.fyi', preview: '126', label: null }],
+    ['alice.test.nido.fyi', { apex: 'test.nido.fyi', preview: null, label: 'alice' }],
+    ['alice--126.test.nido.fyi', { apex: 'test.nido.fyi', preview: '126', label: 'alice' }],
+    ['status-message.test.nido.fyi', { apex: 'test.nido.fyi', preview: null, label: 'status-message' }],
+    ['localhost:4321', { apex: 'localhost:4321', preview: null, label: null }],
+    [`${c}.localhost:4321`, { apex: 'localhost:4321', preview: null, label: c }],
+    ['alice--24.localhost:4321', { apex: 'localhost:4321', preview: '24', label: 'alice' }],
+    ['127.0.0.1:4321', { apex: '127.0.0.1:4321', preview: null, label: null }],
+    ['mysoroban.xyz', { apex: 'mysoroban.xyz', preview: null, label: null }],
+    ['alice.mysoroban.xyz', { apex: 'mysoroban.xyz', preview: null, label: 'alice' }],
+  ];
+  for (const [host, parts] of shapes) {
+    it(host, () => expect(splitHost(host)).toEqual(parts));
+  }
+
+  it('reads hosts case-insensitively', () => {
+    expect(splitHost('Alice.Test.Nido.FYI')).toEqual({ apex: 'test.nido.fyi', preview: null, label: 'alice' });
+  });
+
+  it('takes the generic rule for a host deeper than one label below a known apex', () => {
+    expect(splitHost('a.b.nido.fyi')).toEqual({ apex: 'b.nido.fyi', preview: null, label: 'a' });
+  });
+
+  it('takes an explicit apex list', () => {
+    expect(splitHost('alice.wallet.example.com', ['wallet.example.com'])).toEqual({
+      apex: 'wallet.example.com',
+      preview: null,
+      label: 'alice',
+    });
+  });
+});
+
+describe('host helpers on the testnet apex', () => {
+  const c = C.toLowerCase();
+  it('accountUrl stays on test.nido.fyi', () => {
+    expect(accountUrl('test.nido.fyi', 'CBOB')).toBe('//cbob.test.nido.fyi/');
+    expect(accountUrl(`${c}.test.nido.fyi`, 'CBOB')).toBe('//cbob.test.nido.fyi/');
+    expect(accountUrl('alice.test.nido.fyi', 'CBOB')).toBe('//cbob.test.nido.fyi/');
+    expect(accountUrl('status-message.test.nido.fyi', 'CBOB')).toBe('//cbob.test.nido.fyi/');
+    expect(accountUrl(`${c}--126.test.nido.fyi`, 'CBOB')).toBe('//cbob--126.test.nido.fyi/');
+    expect(accountUrl('126.test.nido.fyi', 'CBOB')).toBe('//cbob--126.test.nido.fyi/');
+  });
+  it('accountUrl on the 2-label apex', () => {
+    expect(accountUrl('nido.fyi', 'CBOB')).toBe('//cbob.nido.fyi/');
+  });
+  it('dappUrl stays on test.nido.fyi', () => {
+    expect(dappUrl('test.nido.fyi', 'status-message')).toBe('//status-message.test.nido.fyi/');
+    expect(dappUrl(`${c}.test.nido.fyi`, 'status-message')).toBe('//status-message.test.nido.fyi/');
+    expect(dappUrl('126.test.nido.fyi', 'status-message')).toBe('//status-message--126.test.nido.fyi/');
+  });
+  it('stripSubdomain reduces to the testnet apex or preview root', () => {
+    expect(stripSubdomain(`${c}.test.nido.fyi`)).toBe('test.nido.fyi');
+    expect(stripSubdomain(`${c}--126.test.nido.fyi`)).toBe('126.test.nido.fyi');
+    expect(stripSubdomain('126.test.nido.fyi')).toBe('126.test.nido.fyi');
+    expect(stripSubdomain('alice.test.nido.fyi')).toBe('test.nido.fyi');
+  });
+  it('no apex is read as a name', () => {
+    expect(nameFromHostname('test.nido.fyi')).toBe(null);
+    expect(nameFromHostname('nido.fyi')).toBe(null);
+    expect(nameFromHostname('localhost:4321')).toBe(null);
+  });
+  it('names and contracts below the testnet apex', () => {
+    expect(nameFromHostname('alice.test.nido.fyi')).toBe('alice');
+    expect(nameFromHostname(`${c}.test.nido.fyi`)).toBe(null);
+    expect(nameFromHostname('126.test.nido.fyi')).toBe(null);
+    expect(contractIdFromHostname(`${c}--126.test.nido.fyi`)).toBe(C);
+    expect(contractIdFromHostname('126.test.nido.fyi')).toBe(null);
+  });
+  it('dappPathFromHostname below the testnet apex', () => {
+    expect(dappPathFromHostname('status-message.test.nido.fyi')).toBe('/status-message/');
+    expect(dappPathFromHostname('test.nido.fyi')).toBe(null);
+  });
+});
+
+describe('isReservedName', () => {
+  it('reserves the labels that collide with hosts', () => {
+    for (const name of ['test', 'www', 'nido', 'relay', 'status-message', 'TEST']) {
+      expect(isReservedName(name), name).toBe(true);
+    }
+  });
+  it('reserves numeric and pr-<N> preview roots', () => {
+    expect(isReservedName('126')).toBe(true);
+    expect(isReservedName('pr-126')).toBe(true);
+  });
+  it('leaves ordinary names free', () => {
+    expect(isReservedName('alice')).toBe(false);
+    expect(isReservedName('tester')).toBe(false);
+  });
+  it('nameFromHostname never yields a reserved name', () => {
+    expect(nameFromHostname('www.nido.fyi')).toBe(null);
+    expect(nameFromHostname('relay.nido.fyi')).toBe(null);
+    expect(nameFromHostname('nido.test.nido.fyi')).toBe(null);
   });
 });

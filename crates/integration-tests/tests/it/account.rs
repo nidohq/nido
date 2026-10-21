@@ -305,12 +305,12 @@ fn an_upgrade_waits_seven_days_and_installs_the_scheduled_wasm() {
     // The account now runs the scheduled Wasm (the factory's): its
     // entry points answer at the account's address.
     let as_factory = nido_integration_tests::world::FactoryClient::new(&w.env, &alice.address);
-    let salt = BytesN::from_array(&w.env, &[1; 32]);
+    let setup = nido_integration_tests::world::SetupKey::labelled("upgraded");
     assert_eq!(
-        as_factory.get_c_address(&salt),
+        as_factory.get_c_address(&setup.public(&w.env)),
         w.env
             .deployer()
-            .with_address(alice.address.clone(), salt)
+            .with_address(alice.address.clone(), setup.salt(&w.env))
             .deployed_address()
     );
 }

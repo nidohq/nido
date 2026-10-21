@@ -4,6 +4,7 @@ import { Contract, Keypair, Networks, rpc, scValToNative, TransactionBuilder, xd
 // session-key.testnet.spec.ts), and this keeps `TESTNET` the one source of
 // the factory address.
 import { TESTNET } from '../../packages/passkey-sdk/src/perch/deployment';
+import { setupPublicKey, signSetupBinding } from '../../packages/passkey-sdk/src/perch/setupKey';
 import { credentialFor, seedCredential } from './auth/seed';
 import { SEED_HEX } from './fixtures';
 import { FRIENDBOT_URL, RPC_URL } from './testnet';
@@ -17,8 +18,9 @@ async function friendbot(address: string): Promise<void> {
 /**
  * A fresh Nido whose admin passkey is the test authenticator's `label`
  * identity, created without the hosted relayer: a Friendbot-funded keypair
- * pays for the release factory's `create_account(salt, key)` (permissionless,
- * so nothing else signs), and the passkey is seeded into the account's own
+ * pays for the release factory's `create_account(setup_pk, key, setup_sig)`
+ * (permissionless on testnet, so nothing but a fresh setup key signs), and
+ * the passkey is seeded into the account's own
  * origin as onboarding would leave it. Everything after this runs through the
  * wallet unchanged: the deployed contracts, real passkey assertions under the
  * account's own `__check_auth`, and real in-page proofs.
@@ -38,7 +40,8 @@ export async function deployAccountDirect(
   const payer = Keypair.random();
   await friendbot(payer.publicKey());
 
-  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const secret = crypto.getRandomValues(new Uint8Array(32));
+  const key = Buffer.from(publicKeyHex, 'hex');
   const tx = new TransactionBuilder(await server.getAccount(payer.publicKey()), {
     fee: '1000000',
     networkPassphrase: Networks.TESTNET,
@@ -46,8 +49,9 @@ export async function deployAccountDirect(
     .addOperation(
       new Contract(TESTNET.factory).call(
         'create_account',
-        xdr.ScVal.scvBytes(Buffer.from(salt)),
-        xdr.ScVal.scvBytes(Buffer.from(publicKeyHex, 'hex')),
+        xdr.ScVal.scvBytes(setupPublicKey(secret)),
+        xdr.ScVal.scvBytes(key),
+        xdr.ScVal.scvBytes(signSetupBinding(secret, Networks.TESTNET, TESTNET.factory, key)),
       ),
     )
     .setTimeout(120)
@@ -66,8 +70,8 @@ export async function deployAccountDirect(
   await page.goto(`http://${host}/account/`, { waitUntil: 'domcontentloaded' });
   await seedCredential(page, cAddress, SEED_HEX, label);
   await page.evaluate((account) => {
-    const list: string[] = JSON.parse(localStorage.getItem('nido:accounts') || '[]');
-    if (!list.includes(account)) localStorage.setItem('nido:accounts', JSON.stringify([...list, account]));
+    const list: string[] = JSON.parse(localStorage.getItem('nido:testnet:accounts') || '[]');
+    if (!list.includes(account)) localStorage.setItem('nido:testnet:accounts', JSON.stringify([...list, account]));
   }, cAddress);
   return { cAddress, host };
 }

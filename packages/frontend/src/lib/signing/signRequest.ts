@@ -76,6 +76,9 @@ export interface SignRequest {
 }
 
 import { stripSubdomain } from "@nidohq/passkey-sdk";
+import { isLoopbackHttpHost } from "../loopbackHost.js";
+
+export { isLoopbackHttpHost };
 
 const KEY = (id: string) => `nido:signreq:${id}`;
 
@@ -125,45 +128,26 @@ function hostnameOf(host: string): string {
   return i === -1 ? host : host.slice(0, i);
 }
 
-/** True iff `hostname` is a loopback dev host that may be served over plain
- *  `http:` (everything else must be `https:`).
- *
- *  Loopback means `localhost`, any `*.localhost` subdomain, or `127.0.0.1`.
- *  The `.localhost` TLD is reserved by RFC 6761 and browsers resolve every
- *  `*.localhost` name to the loopback interface and treat it as a secure
- *  context, so a remote attacker cannot point one at their server on a
- *  victim's machine — http there is exactly as safe as bare `localhost`.
- *  Nido's whole dev topology is `.localhost` subdomains (the wallet at
- *  `<contractid>.localhost:<port>`, a dApp at `dapp.localhost:<port>`), so the
- *  bare-`localhost` check alone wrongly refused legitimate local dApp origins.
- *  Callers still require an `http:`/`https:` protocol, so `javascript:`/`data:`/
- *  `blob:`/opaque schemes and real remote-http origins stay rejected. */
-export function isLoopbackHttpHost(hostname: string): boolean {
-  return hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "127.0.0.1";
-}
-
 /** Validate a route-return URL and normalise it (F1 — XSS / open-redirect guard).
  *
  *  Returns the URL string only when it resolves (against `base`) to an http(s)
- *  location whose hostname is the SAME PARENT DOMAIN as `base` — i.e. the apex
- *  itself, or a subdomain of it. Everything else (including `javascript:`,
- *  `data:`, foreign origins, protocol-relative `//evil`, and userinfo tricks)
- *  is rejected. Used at BOTH the source (reject a hostile `sm-return`) and the
- *  sink (fall back to /account/).
+ *  location on the SAME ACCOUNT ROOT as `base` — the apex itself, or one label
+ *  below it (`stripSubdomain`, which reads the apex from the known-apex list).
+ *  Everything else (including `javascript:`, `data:`, foreign origins, another
+ *  Nido apex such as `test.nido.fyi` from `nido.fyi`, protocol-relative
+ *  `//evil`, and userinfo tricks) is rejected. Used at the /sign/ sink (fall
+ *  back to /account/).
  *
- *  Why not strict same-origin? Nido's multi-subdomain architecture has
- *  legitimate cross-subdomain hops that the unified /sign/ surface depends on:
- *   - name-claim returns from `<contractid>.<apex>` to `<name>.<apex>`
- *     (`/account/?namepasskey=1`, to fire moment-B passkey registration);
- *   - the status-message bridge returns to `status-message.<apex>`.
- *  Both build their destinations with `accountUrl(stripSubdomain(host), …)`, so
- *  the allowlist is derived the SAME way (`stripSubdomain(base.host)`) and thus
- *  matches exactly those destinations and no more.
+ *  Why not strict same-origin? Name-claim returns from `<contractid>.<apex>`
+ *  to `<name>.<apex>` (`/account/?namepasskey=1`, to fire moment-B passkey
+ *  registration), a cross-subdomain hop the unified /sign/ surface depends on.
+ *  It builds its destination with `accountUrl(stripSubdomain(host), …)`, so the
+ *  allowlist is derived the SAME way (`stripSubdomain(base.host)`).
  *
  *  SECURITY: parse with the WHATWG `URL` so backslash / userinfo / whitespace
- *  tricks are normalised before the hostname check. The apex suffix test
- *  requires a literal leading dot (`"." + apex`), so `evil-nido.fyi` does NOT
- *  match `.nido.fyi`. http is permitted only for localhost/127.0.0.1 (dev).
+ *  tricks are normalised before the hostname check. The roots are compared
+ *  whole, so `evil-nido.fyi` and `nido.fyi.evil.com` never match `nido.fyi`.
+ *  http is permitted only for localhost/127.0.0.1 (dev).
  *
  *  `base` lets callers resolve relative URLs (e.g. `/account/`) and supplies the
  *  current host whose parent domain forms the allowlist — pass
@@ -183,17 +167,12 @@ export function safeRouteUrl(url: string | null | undefined, base: string): stri
       return null;
     }
 
-    // Same parent domain as the current host. `stripSubdomain` reduces a host to
-    // its account-root (apex in prod, the `--<N>` preview root in previews,
-    // `localhost:<port>` in dev); the candidate is allowed when it is that apex,
-    // a subdomain of it, or reduces to the same root (covers preview siblings
-    // like `<name>--24.apex` whose dot-suffix differs from the bare root).
-    const apex = hostnameOf(stripSubdomain(baseUrl.host));
-    const candidateRoot = hostnameOf(stripSubdomain(u.host));
-    if (u.hostname === apex || u.hostname.endsWith("." + apex) || candidateRoot === apex) {
-      return u.href;
-    }
-    return null;
+    // Same account root as the current host. `stripSubdomain` reduces a host to
+    // its account root (apex in prod, the `<N>.<apex>` preview root in previews,
+    // `localhost:<port>` in dev), so preview siblings like `<name>--24.<apex>`
+    // share their root and production never reaches into a preview.
+    const root = hostnameOf(stripSubdomain(baseUrl.host));
+    return hostnameOf(stripSubdomain(u.host)) === root ? u.href : null;
   } catch {
     return null;
   }
@@ -222,6 +201,18 @@ export function httpOrigin(url: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/** Why a request naming `requested` as its network can't be signed by a
+ *  wallet on `walletNetwork`, or undefined when it names none or the wallet's
+ *  own. The `network` a dApp passes is only a claim; a signature made for
+ *  another network's passphrase would be valid there, not here. */
+export function networkProblem(
+  requested: string | null | undefined,
+  walletNetwork: string,
+): string | undefined {
+  if (requested == null || requested === "" || requested === walletNetwork) return undefined;
+  return "This request is for a different Stellar network than this wallet, so Nido won't sign it.";
 }
 
 /** Why a dApp origin / return pair was rejected, for the page's error copy. */

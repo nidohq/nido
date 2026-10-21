@@ -37,7 +37,7 @@ check on `apply_doc`.
   vectors (`packages/passkey-sdk/src/policyDoc/testdata/`). No Nido behaviour
   depends on a structured identity.
 - **Exit criterion:** Perch ships a compiler and account build with the new
-  identity. Nido then needs a factory build embedding that account, every
+  identity. Nido then needs a factory build pinning that account, every
   account's own upgrade and re-application of its document (with the
   recovery condition under `Protected`), renewed baseline approval, and
   regenerated parity vectors, followed by a review of the changed identity
@@ -75,7 +75,7 @@ check on `apply_doc`.
   The generated recovery rule is additional to the 11. Each admin key and
   each app grant takes its own rule; after the founding passkey, added
   devices and app keys share 7 signer slots
-  ([RUNBOOKS §6](./RUNBOOKS.md#user-support)). The factory embeds exactly one
+  ([RUNBOOKS §6](./RUNBOOKS.md#user-support)). The factory pins exactly one
   account build.
 - **Why it is safe to defer:** the account's compiler enforces the caps on
   every `apply_doc` and in `derive_target`; the wallet's check only gives a
@@ -257,37 +257,42 @@ This section is the one home for Nido's package-migration plans.
 
 ## Registry import-macro migration
 
-- **Deferred:** resolving the factory's contract imports through the Stellar
+- **Deferred:** resolving the factory's verifier through the Stellar
   Registry's import macro (registry-resolved contract imports) instead of
-  Nido's own registry client and build-time embed.
+  Nido's own registry client.
 - **Current behaviour in Nido:** the factory (`contracts/factory/src/contract.rs`)
   declares its own `RegistryInterface` client (`fetch_contract_id(name)`)
   against a hardcoded `REGISTRY` constant, the unverified testnet Stellar
   Registry `CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S`.
-  `create_account` resolves only `"verifier"`: the admin pin set by
-  `set_registry_pins` if there is one, else an address cached in the
-  factory's instance storage from an earlier lookup, else a registry lookup
-  that it then caches. The Perch account wasm is embedded at build time:
-  `contracts/factory/build.rs` stages the wasm `just perch-infra` fetched and
-  exports its path as `PERCH_ACCOUNT_WASM`; the factory `include_bytes!` it,
-  deploys by `sha256` of those bytes (cached; an upgrade clears the cache),
-  and needs the same bytes already installed on the network.
+  `create_account` resolves only `"verifier"`: the pin set by the
+  constructor or `pin_verifier` if there is one, else an
+  address cached in the factory's instance storage from an earlier lookup,
+  else a registry lookup that it then caches. The Perch account wasm hash
+  is pinned at build time with Perch's `registry_contract!` from the
+  committed `contracts/factory/wasm/perch-account.sha256`, which `just
+  perch-infra` writes from `vendor/perch/deployments/<STELLAR_NETWORK>.json`
+  (default testnet); a missing or malformed pin fails the build. The
+  factory deploys every account from that hash (`account_wasm_hash`), so
+  the wasm must already be installed on the network. A pin from another
+  network's manifest still builds: `just check-vendor-drift` and
+  `scripts/deploy-factory.sh` (before it deploys) refuse it.
 - **Why it is safe to defer:** the deployed factory has Perch's verifier
   pinned, so the registry is off the account-creation path; a repointed or
   failing registry can neither reroute nor block creation
-  (SECURITY_INVARIANTS F5). `scripts/deploy-factory.sh` never hands over an
-  unpinned factory, and checks the account the *deployed* factory produces
-  against the manifest's hash on a runtime readback (`refresh_account_wasm_hash`);
-  `scripts/check-perch-drift.sh` checks the fetched and staged `perch-account`
-  build inputs, not the built `nido_factory.wasm` artifact (the embed is a
-  compile-time `include_bytes!`). The residual risk is a
+  (SECURITY_INVARIANTS F5). `scripts/deploy-factory.sh` pins it in the
+  constructor, installs the account wasm and reads it back from the ledger,
+  and checks the *deployed* factory's `account_wasm_hash` against the
+  manifest; `scripts/check-perch-drift.sh` checks the committed pin and the
+  built `nido_factory.wasm` against the manifest's hash, and `just check-factory`
+  checks the deployed factory's. The residual risk is a
   factory used before its pin, which trusts whatever the registry returns
   for `"verifier"`, and a mainnet build, which needs `REGISTRY` changed and
   the factory rebuilt (MAINNET_READINESS A4).
-- **Exit criterion:** the factory takes its account and verifier through
-  registry-resolved imports with the pins checked at build time, and Nido's
+- **Exit criterion:** the factory takes its verifier through a
+  registry-resolved import too (`registry_contract!` can derive it from a
+  pinned registry id and verifier hash, replacing `REGISTRY`; nidohq/nido#279), and Nido's
   wasm is published through `stellar-registry/actions`; or Nido records that
-  the embed-and-pin design stays. Either way, the factory's resolution path
+  the build-time pin design stays. Either way, the factory's resolution path
   is reviewed again.
 - **Owner:** Nido.
 - **Tracking:** [stellar-registry/perch#41](https://github.com/stellar-registry/perch/issues/41)

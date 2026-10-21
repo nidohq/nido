@@ -1038,6 +1038,9 @@ name = "nido-factory"
 version = "0.1.0"
 dependencies = [
  "admin-sep",
+ "ed25519-dalek",
+ "perch-registry-resolve",
+ "serde_json",
  "soroban-sdk",
  "soroban-sdk-tools",
  "stellar-accounts",
@@ -1048,6 +1051,7 @@ name = "nido-integration-tests"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "ed25519-dalek",
  "hex",
  "nido-preauth-sweep-policy",
  "p256",

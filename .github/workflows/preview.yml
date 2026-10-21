@@ -9,7 +9,7 @@ on:
       - 'package-lock.json'
       - '.github/workflows/preview.yml'
       # The example-dApp preview (example-preview.yml) points its wallet at
-      # THIS PR's N.nido.fyi — so a dApp-only PR still needs the wallet
+      # THIS PR's N.test.nido.fyi — so a dApp-only PR still needs the wallet
       # preview deployed alongside.
       - 'examples/status-message-dapp/**'
 
@@ -70,8 +70,8 @@ jobs:
         with:
           script: |
             const prNum = context.payload.pull_request.number;
-            const previewUrl = `https://${prNum}.nido.fyi`;
-            const body = `**Preview deployed!**\n\n${previewUrl}\n\nAccount URLs use numeric preview suffixes, for example \`<contract-address>--${prNum}.nido.fyi\`.`;
+            const previewUrl = `https://${prNum}.test.nido.fyi`;
+            const body = `**Preview deployed!**\n\n${previewUrl}\n\nAccount URLs use numeric preview suffixes, for example \`<contract-address>--${prNum}.test.nido.fyi\`.`;
 
             // Find existing bot comment
             const { data: comments } = await github.rest.issues.listComments({

@@ -52,6 +52,11 @@ describe("buildOperation", () => {
         warnSpy.mockRestore();
       }
     });
+
+    it("refuses a reserved name before touching the network", async () => {
+      await expect(buildOperation({ type: "register", name: "test" }, C1)).rejects.toThrow(/can't be claimed/);
+      await expect(buildOperation({ type: "register", name: "status-message" }, C1)).rejects.toThrow(/can't be claimed/);
+    });
   });
 
   describe("transfer", () => {

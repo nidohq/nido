@@ -1,6 +1,79 @@
 const PREVIEW_SEP = "--";
 
 /**
+ * The apexes Nido is served under, longest first: a host is read against the
+ * longest apex it ends with, so `alice.test.nido.fyi` is the name `alice` on
+ * the testnet apex `test.nido.fyi`, and `test.nido.fyi` itself is an apex
+ * rather than an account named `test` on `nido.fyi`. `localhost` is always an
+ * apex too. A host under none of them falls back to "the last two labels are
+ * the apex" (`cabc.mysoroban.xyz` → `mysoroban.xyz`); this codebase doesn't
+ * deal with multi-segment TLDs like co.uk.
+ */
+export const NIDO_APEXES: readonly string[] = ["test.nido.fyi", "nido.fyi"];
+
+/**
+ * A Nido host taken apart.
+ *
+ *   apex     the site apex, with any port: "nido.fyi", "test.nido.fyi", "localhost:4321"
+ *   preview  the PR preview number, or null in production
+ *   label    the one label below the apex (contract id, name, or reserved dApp),
+ *            lowercased and without its `--<N>` preview suffix; null on the
+ *            apex itself and on a bare preview root (`<N>.<apex>`)
+ */
+export interface HostParts {
+  apex: string;
+  preview: string | null;
+  label: string | null;
+}
+
+const PREVIEW_ROOT_RE = /^(?:pr-)?(\d+)$/;
+const PREVIEW_LABEL_RE = /^(.*)--(?:pr-)?(\d+)$/;
+const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+function apexOfHostname(hostname: string, apexes: readonly string[]): string {
+  if (hostname.startsWith("[") || IPV4_RE.test(hostname)) return hostname;
+  const known = [...apexes, "localhost"].sort((a, b) => b.length - a.length);
+  for (const apex of known) {
+    if (hostname === apex) return apex;
+    // Exactly one label below a known apex. Anything deeper is not a Nido
+    // host shape and takes the generic rule below.
+    if (hostname.endsWith(`.${apex}`) && !hostname.slice(0, -apex.length - 1).includes(".")) {
+      return apex;
+    }
+  }
+  const labels = hostname.split(".");
+  return labels.length > 2 ? labels.slice(1).join(".") : hostname;
+}
+
+/**
+ * Split a host (`window.location.host`, port included, or a bare hostname)
+ * into its apex, preview number and account label. Every helper in this file
+ * reads hosts through here, so the apex is never guessed by counting labels.
+ *
+ *   splitHost("nido.fyi")                 → { apex: "nido.fyi",      preview: null,  label: null }
+ *   splitHost("test.nido.fyi")            → { apex: "test.nido.fyi", preview: null,  label: null }
+ *   splitHost("alice.test.nido.fyi")      → { apex: "test.nido.fyi", preview: null,  label: "alice" }
+ *   splitHost("126.test.nido.fyi")        → { apex: "test.nido.fyi", preview: "126", label: null }
+ *   splitHost("cabc--126.nido.fyi")       → { apex: "nido.fyi",      preview: "126", label: "cabc" }
+ *   splitHost("cabc.localhost:4321")      → { apex: "localhost:4321", preview: null, label: "cabc" }
+ */
+export function splitHost(host: string, apexes: readonly string[] = NIDO_APEXES): HostParts {
+  const portAt = host.startsWith("[") ? host.indexOf("]:") + 1 : host.lastIndexOf(":");
+  const port = portAt > 0 ? host.slice(portAt) : "";
+  const hostname = (portAt > 0 ? host.slice(0, portAt) : host).toLowerCase();
+  const apexName = apexOfHostname(hostname, apexes);
+  const apex = apexName + port;
+  if (apexName === hostname) return { apex, preview: null, label: null };
+
+  const sub = hostname.slice(0, -apexName.length - 1);
+  const root = sub.match(PREVIEW_ROOT_RE);
+  if (root) return { apex, preview: root[1], label: null };
+  const preview = sub.match(PREVIEW_LABEL_RE);
+  if (preview) return { apex, preview: preview[2], label: preview[1] || null };
+  return { apex, preview: null, label: sub };
+}
+
+/**
  * Reserved subdomains that map to a built-in dApp path on this site.
  * `status-message.<base>` is served the same static bundle as the wallet,
  * but the root page redirects to the listed path. Keep keys lowercase.
@@ -10,15 +83,44 @@ export const RESERVED_DAPP_SUBDOMAINS: Record<string, string> = {
 };
 
 /**
+ * Labels no Nido name may take, on either network: each is, or would collide
+ * with, a host of its own one label below an apex. `test` is the testnet apex
+ * (`test.nido.fyi` under `nido.fyi`), `www` and `nido` are aliases people type
+ * for an apex, `relay` is the recovery relay, and the built-in dApps have their
+ * subdomains. Keep in sync with infra/nido-resolver/src/handler.ts.
+ */
+export const RESERVED_NAMES: ReadonlySet<string> = new Set([
+  'test',
+  'www',
+  'nido',
+  'relay',
+  ...Object.keys(RESERVED_DAPP_SUBDOMAINS),
+]);
+
+/**
+ * Whether `label` is reserved: one of {@link RESERVED_NAMES}, or a numeric or
+ * `pr-<N>` preview root (`<N>.<apex>`). The name syntax already refuses the
+ * preview roots; they are listed so every host-shaped check agrees.
+ */
+export function isReservedName(label: string): boolean {
+  const l = label.toLowerCase();
+  return RESERVED_NAMES.has(l) || PREVIEW_ROOT_RE.test(l);
+}
+
+/**
  * If `host` is a reserved dApp subdomain, return the path the root should
- * redirect to. Strips any numeric preview suffix before matching, so
+ * redirect to. Ignores any numeric preview suffix, so
  * `status-message--24.<base>` resolves the same as production.
  */
 export function dappPathFromHostname(host: string): string | null {
-  const parts = host.split(".");
-  if (parts.length <= 1) return null;
-  const raw = previewSubdomain(parts[0]).raw.toLowerCase();
-  return RESERVED_DAPP_SUBDOMAINS[raw] ?? null;
+  const { label } = splitHost(host);
+  return label ? (RESERVED_DAPP_SUBDOMAINS[label] ?? null) : null;
+}
+
+/** `<label>.<apex>`, or `<label>--<N>.<apex>` when `host` is in PR preview N. */
+function siblingHost(host: string, label: string): string {
+  const { apex, preview } = splitHost(host);
+  return preview ? `${label}${PREVIEW_SEP}${preview}.${apex}` : `${label}.${apex}`;
 }
 
 /**
@@ -29,29 +131,14 @@ export function dappPathFromHostname(host: string): string | null {
  *   dappUrl("cabc--24.mysoroban.xyz", "status-message", "/?contract=C…")
  *     → "//status-message--24.mysoroban.xyz/?contract=C…"
  *
- *   dappUrl("cabc.mysoroban.xyz", "status-message", "/?contract=C…")
- *     → "//status-message.mysoroban.xyz/?contract=C…"
+ *   dappUrl("cabc.test.nido.fyi", "status-message", "/?contract=C…")
+ *     → "//status-message.test.nido.fyi/?contract=C…"
  *
- * Pass `window.location.host` (with port) as the host parameter.
+ * The calling host may be the apex, a contract or name subdomain, a preview
+ * root, or another reserved dApp. Pass `window.location.host` (with port).
  */
 export function dappUrl(host: string, dappName: string, path: string = "/"): string {
-  const preview = previewPrefix(host);
-  if (preview) {
-    // Drop the calling page's first label entirely (whether it's a
-    // contract+preview subdomain, bare preview root, or another reserved
-    // dApp) and rebuild from the apex.
-    const apex = host.split(".").slice(1).join(".");
-    return `//${dappName}${PREVIEW_SEP}${preview}.${apex}${path}`;
-  }
-  // Production: the calling host could be a contract subdomain
-  // (cabc.mysoroban.xyz), a name subdomain (alice.mysoroban.xyz), the apex
-  // (mysoroban.xyz), or another reserved dApp (status-message.mysoroban.xyz).
-  // Strip to the apex: 3+ labels means there's a subdomain to drop, 2 labels
-  // means we're already at the apex. (This codebase doesn't deal with
-  // multi-segment TLDs like co.uk.)
-  const parts = host.split(".");
-  const apex = parts.length > 2 ? parts.slice(1).join(".") : host;
-  return `//${dappName}.${apex}${path}`;
+  return `//${siblingHost(host, dappName)}${path}`;
 }
 
 /**
@@ -62,48 +149,35 @@ export function isContractId(subdomain: string): boolean {
   return subdomain.length === 56 && /^[cC]/i.test(subdomain);
 }
 
-function previewSubdomain(sub: string): { raw: string; preview: string | null } {
-  const m = sub.match(/^(.*)--(?:pr-)?(\d+)$/);
-  return m ? { raw: m[1], preview: m[2] } : { raw: sub, preview: null };
-}
-
 /**
  * Extract contract ID from a subdomain hostname.
  * Handles both production and preview URLs:
  *   "cabc1234.mysoroban.xyz"             → "CABC1234"
  *   "cabc1234--10.mysoroban.xyz"         → "CABC1234"
- * Returns null if hostname has no subdomain or contract ID.
+ * Returns null on an apex or a bare preview root. Does no strkey validation
+ * (a name host returns the name upper-cased); pipe through `isContractId`.
  */
 export function contractIdFromHostname(hostname: string): string | null {
-  const parts = hostname.split(".");
-  if (parts.length <= 1) return null;
-
-  const { raw } = previewSubdomain(parts[0]);
-  return raw ? raw.toUpperCase() : null;
+  const { label } = splitHost(hostname);
+  return label ? label.toUpperCase() : null;
 }
 
 /**
  * Extract a human-readable name from a subdomain hostname.
- * Returns null if the subdomain is a contract ID, empty, or a preview prefix.
+ * Returns null if the subdomain is a contract ID, a reserved name (built-in
+ * dApps included), or there is no account label (an apex or a preview root).
  *   "alice.mysoroban.xyz"               → "alice"
  *   "alice--10.mysoroban.xyz"           → "alice"
  *   "cabc1234...mysoroban.xyz"          → null (contract ID)
- *   "10.mysoroban.xyz"                 → null (preview root)
+ *   "10.mysoroban.xyz"                  → null (preview root)
+ *   "test.nido.fyi"                     → null (apex)
  */
 export function nameFromHostname(hostname: string): string | null {
-  const parts = hostname.split(".");
-  if (parts.length <= 1) return null;
-
-  const sub = parts[0];
-  const { raw } = previewSubdomain(sub);
-
-  if (!raw) return null;
-  if (isContractId(raw)) return null;
-  if (/^\d+$/.test(sub)) return null;
-  if (/^pr-\d+$/.test(sub)) return null;
-  if (RESERVED_DAPP_SUBDOMAINS[raw.toLowerCase()]) return null;
-
-  return raw.toLowerCase();
+  const { label } = splitHost(hostname);
+  if (!label) return null;
+  if (isContractId(label)) return null;
+  if (isReservedName(label)) return null;
+  return label;
 }
 
 /**
@@ -114,84 +188,37 @@ export function nameFromHostname(hostname: string): string | null {
  *     → "//cabc--10.mysoroban.xyz/account/"
  *
  * In production:
- *   accountUrl("mysoroban.xyz", "CABC", "/account/")
- *     → "//cabc.mysoroban.xyz/account/"
+ *   accountUrl("test.nido.fyi", "CABC", "/account/")
+ *     → "//cabc.test.nido.fyi/account/"
+ *
+ * The calling host may be the apex, a contract or name subdomain, or a
+ * reserved-dApp subdomain (status-message.nido.fyi); the account is always
+ * built one label below the apex. Full C-address labels are 56 chars:
+ * appending `--pr-100` would exceed DNS's 63-character label limit, but
+ * `--100` keeps PR #100 at 61 chars, valid through PR #99999.
  *
  * Pass `window.location.host` (includes port) as the host parameter.
  */
 export function accountUrl(host: string, contractId: string, path: string = "/"): string {
-  const preview = previewPrefix(host);
-  if (preview) {
-    // Full C-address labels are 56 chars. Appending `--pr-100` exceeds DNS's
-    // 63-character label limit, but `--100` keeps PR #100 at 61 chars.
-    // This remains valid through PR #99999; re-evaluate at six digits.
-    const apex = host.split(".").slice(1).join(".");
-    return `//${contractId.toLowerCase()}${PREVIEW_SEP}${preview}.${apex}${path}`;
-  }
-  // The calling host could be the apex (mysoroban.xyz), a contract subdomain
-  // (cabc.mysoroban.xyz), or a reserved-dApp subdomain (status-message.nido.fyi).
-  // Strip to the apex before prepending, mirroring dappUrl: 3+ labels means
-  // there's a subdomain to drop, 2 labels means we're already at the apex.
-  // (This codebase doesn't deal with multi-segment TLDs like co.uk.)
-  const parts = host.split(".");
-  const apex = parts.length > 2 ? parts.slice(1).join(".") : host;
-  return `//${contractId.toLowerCase()}.${apex}${path}`;
+  return `//${siblingHost(host, contractId.toLowerCase())}${path}`;
 }
 
 /**
- * Strip the contract ID from a host string, preserving any preview prefix.
+ * Reduce a host to its account root: the apex in production, the `<N>.<apex>`
+ * preview root in a preview.
  *   "cabc1234.mysoroban.xyz"            → "mysoroban.xyz"
  *   "cabc1234--10.mysoroban.xyz"        → "10.mysoroban.xyz"
  *   "10.mysoroban.xyz"                  → "10.mysoroban.xyz"   (already a root)
  *   "pr-10.mysoroban.xyz"               → "10.mysoroban.xyz"   (legacy → numeric)
+ *   "alice.test.nido.fyi"               → "test.nido.fyi"
+ *   "nido.fyi"                          → "nido.fyi"           (already an apex)
  *   "cabc1234.localhost:3000"           → "localhost:3000"
+ *
+ * A bare preview root keeps its preview number: callers rebuild account URLs
+ * from this base (`accountUrl(stripSubdomain(host), …)`), and dropping it would
+ * send a preview account onto the production host.
  */
 export function stripSubdomain(host: string): string {
-  const parts = host.split(".");
-  if (parts.length <= 1) return host;
-
-  const sub = parts[0];
-  const rest = parts.slice(1).join(".");
-
-  // A bare preview root ("10" or legacy "pr-10") IS already the stripped base —
-  // keep it (normalized to the numeric form) rather than dropping the preview
-  // number. Otherwise callers that rebuild an account URL from this base (e.g.
-  // `accountUrl(stripSubdomain(host), …)`) lose the `--<N>` suffix and fall back
-  // to the production apex.
-  const bareRoot = sub.match(/^(?:pr-)?(\d+)$/);
-  if (bareRoot) return `${bareRoot[1]}.${rest}`;
-
-  const { preview } = previewSubdomain(sub);
-  if (preview) {
-    // Preserve the preview root: "contract--10" → "10"
-    return `${preview}.${rest}`;
-  }
-  return rest;
-}
-
-/**
- * Extract the preview number from a hostname, or null if production.
- * Checks the first subdomain segment for the numeric `--<N>` separator,
- * and also matches bare numeric roots. Legacy `--pr-<N>`/`pr-<N>` links are
- * accepted as input but new URLs emit the numeric form.
- */
-function previewPrefix(host: string): string | null {
-  const parts = host.split(".");
-  if (parts.length <= 1) return null;
-
-  const sub = parts[0];
-
-  const { preview } = previewSubdomain(sub);
-  if (preview) return preview;
-
-  // Bare numeric preview root: "10"
-  if (/^\d+$/.test(sub)) return sub;
-
-  // Legacy bare preview root: "pr-10"
-  const prMatch = sub.match(/^pr-(\d+)$/);
-  if (prMatch) {
-    return prMatch[1];
-  }
-
-  return null;
+  const { apex, preview } = splitHost(host);
+  return preview ? `${preview}.${apex}` : apex;
 }

@@ -17,16 +17,19 @@ import type { FreezeGate, UpgradeRequest } from '@nidohq/perch-account';
 import { Client as CompilerClient } from '@nidohq/perch-doc-compiler';
 import {
   accountReader,
+  decodeConfiguration,
   readSnapshot,
   type AccountBindings,
+  type AccountConfiguration,
   type AccountReader,
   type CompilerBindings,
+  type SignRequest,
   type Snapshot,
   type SnapshotOptions,
 } from '@stellar-registry/perch';
 import { nativeToScVal, type xdr } from '@stellar/stellar-sdk';
 import { extractXdrOperations } from '../assembledTx.js';
-import type { AuthDigestScheme } from '../auth.js';
+import { computeAuthDigest, type AuthDigestScheme } from '../auth.js';
 import type { TxBuild } from '../policyBlocks/types.js';
 
 export type { FreezeGate, UpgradeRequest };
@@ -105,33 +108,94 @@ export async function buildExecute(
   return { operations: extractXdrOperations(tx, 'execute'), description: `Call ${args.fn} as the account` };
 }
 
+/** perch-js's {@link AccountReader}, plus the auth-digest scheme the
+ *  account's last `capabilities()` read reported (`undefined` before one).
+ *
+ *  perch-js signs only `addr_oz_v1` and `readSnapshot` refuses any other
+ *  scheme, but an account minted before the redeploy reports `oz_rule_ids`,
+ *  which Nido signs itself (`computeAuthDigest`). So this reader shows such an
+ *  account to perch-js as `addr_oz_v1` and records its real scheme here; a
+ *  signer reads `authDigest` and signs in that dialect, never perch-js's
+ *  `digest`. Any other scheme reaches perch-js unchanged and is refused. */
+export interface PerchAccountReader extends AccountReader {
+  readonly authDigest: AuthDigestScheme | undefined;
+}
+
 /** perch-js's account reader over the generated clients: the account's
  *  `configuration()`, `revision()`, `document()`, and `capabilities()`
- *  views, and `limits()` of `docCompiler`, the compiler the account pins
- *  (the deployment's). */
-export function accountSnapshotReader(args: AccountArgs & { docCompiler: string }): AccountReader {
+ *  views, and `limits()` of `docCompiler`. `readSnapshot` refuses it with
+ *  `CompilerMismatch` unless `docCompiler` is the one the account pins
+ *  (`configuration().infra.docCompiler`); {@link openAccountReader} reads
+ *  that first. */
+export function accountSnapshotReader(args: AccountArgs & { docCompiler: string }): PerchAccountReader {
   const compiler = new CompilerClient({
     contractId: args.docCompiler,
     networkPassphrase: args.networkPassphrase,
     rpcUrl: args.rpcUrl,
   });
-  return accountReader(
+  const inner = accountReader(
     args.account,
     client(args) as unknown as AccountBindings,
     compiler as unknown as CompilerBindings,
   );
+  let authDigest: AuthDigestScheme | undefined;
+  return {
+    ...inner,
+    get authDigest() {
+      return authDigest;
+    },
+    async capabilities() {
+      const read = await inner.capabilities();
+      if (read.value.authDigest === 'oz_rule_ids') {
+        authDigest = 'oz_rule_ids';
+        return { ...read, value: { ...read.value, authDigest: 'addr_oz_v1' } };
+      }
+      if (read.value.authDigest === 'addr_oz_v1') authDigest = 'addr_oz_v1';
+      return read;
+    },
+  };
+}
+
+/** The digest an `applyDocument` sign request's signers sign, in the scheme
+ *  `reader` recorded from the snapshot the apply was planned from: perch-js's
+ *  `request.digest` is always the `addr_oz_v1` one, which an account minted
+ *  before the redeploy does not verify. */
+export function signRequestDigest(reader: PerchAccountReader, request: SignRequest): Buffer {
+  return computeAuthDigest(
+    request.account,
+    request.signaturePayload,
+    request.selection.ruleIds,
+    reader.authDigest,
+  );
+}
+
+/** The account's `configuration()` view, decoded: its rules, recovery rule,
+ *  freeze, pinned infrastructure, and the revision they belong to. */
+export async function readConfiguration(args: AccountArgs): Promise<AccountConfiguration> {
+  const { result } = await client(args).configuration();
+  return decodeConfiguration(result as unknown as Record<string, unknown>);
+}
+
+/** {@link accountSnapshotReader} over the compiler the account pins, read
+ *  from its own `configuration().infra.docCompiler`. Accounts minted by
+ *  different Perch releases pin different compilers, so a reader built from
+ *  the deployment's compiler would refuse every account but the newest. */
+export async function openAccountReader(args: AccountArgs): Promise<PerchAccountReader> {
+  const { infra } = await readConfiguration(args);
+  return accountSnapshotReader({ ...args, docCompiler: infra.docCompiler });
 }
 
 /** One consistent read of the account (perch-js `readSnapshot`): its rules,
  *  recovery rule, freeze, and document limits at one configuration
  *  revision, and with `{ document: true }` the applied canonical bytes of
  *  that revision. Select rules from it, and name its revision as an
- *  apply's `expected_revision`. */
-export function readAccountSnapshot(
-  args: AccountArgs & { docCompiler: string },
-  options?: SnapshotOptions,
-): Promise<Snapshot> {
-  return readSnapshot(accountSnapshotReader(args), options);
+ *  apply's `expected_revision`. `capabilities.authDigest` is the account's
+ *  real scheme. */
+export async function readAccountSnapshot(args: AccountArgs, options?: SnapshotOptions): Promise<Snapshot> {
+  const reader = await openAccountReader(args);
+  const snapshot = await readSnapshot(reader, options);
+  const authDigest = reader.authDigest ?? snapshot.capabilities.authDigest;
+  return { ...snapshot, capabilities: { ...snapshot.capabilities, authDigest } };
 }
 
 /** The applied document's canonical JSON and the configuration revision it

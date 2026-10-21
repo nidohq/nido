@@ -4,7 +4,7 @@
 //! and Perch's account, `WebAuthn` verifier, doc compiler, interpreter,
 //! spending limit, recovery controller, ZK membership pool, and ZK adapter,
 //! exactly as deployed on testnet (`just perch-infra`). Accounts are minted by the factory, so
-//! their code is the exact Perch account wasm the factory embeds.
+//! their code is the exact Perch account wasm whose hash the factory pins.
 //!
 //! Every key is a P-256 passkey checked by the `WebAuthn` verifier. Every
 //! authorization is a hand-built `SorobanAuthorizationEntry` signed like a
@@ -85,13 +85,67 @@ impl Target {
     }
 }
 
-/// The parts of Nido's factory the world drives (the factory crate is
-/// cdylib-only, so it has no Rust client of its own).
+/// Nido's factory: what the world and the factory suites drive (the
+/// factory crate is cdylib-only, so it has no Rust client of its own).
 #[contractclient(name = "FactoryClient")]
 pub trait Factory {
-    fn create_account(e: Env, salt: BytesN<32>, key: BytesN<65>) -> Address;
-    fn get_c_address(e: Env, salt: BytesN<32>) -> Address;
-    fn set_registry_pins(e: Env, verifier: Address);
+    fn create_account(
+        e: Env,
+        setup_pk: BytesN<32>,
+        key: BytesN<65>,
+        setup_sig: BytesN<64>,
+    ) -> Address;
+    fn get_c_address(e: Env, setup_pk: BytesN<32>) -> Address;
+    fn admin(e: Env) -> Address;
+    fn set_admin(e: Env, new_admin: Address);
+    fn pinned_verifier(e: Env) -> Option<Address>;
+    fn manager(e: Env) -> Option<Address>;
+    fn upgrade(e: Env, wasm_hash: BytesN<32>);
+    fn account_wasm_hash(e: Env) -> BytesN<32>;
+    fn pin_verifier(e: Env, verifier: Address);
+    fn set_manager(e: Env, manager: Option<Address>);
+}
+
+/// A one-time setup key, as the browser generates one in place of a salt:
+/// its public key fixes the account's address, and its signature binds the
+/// passkey there.
+pub struct SetupKey(ed25519_dalek::SigningKey);
+
+impl SetupKey {
+    /// The deterministic setup key for `label`.
+    #[must_use]
+    pub fn labelled(label: &str) -> Self {
+        use sha2::{Digest, Sha256};
+        let seed: [u8; 32] = Sha256::digest(format!("nido-it/setup/{label}")).into();
+        Self(ed25519_dalek::SigningKey::from_bytes(&seed))
+    }
+
+    #[must_use]
+    pub fn public(&self, env: &Env) -> BytesN<32> {
+        BytesN::from_array(env, &self.0.verifying_key().to_bytes())
+    }
+
+    /// The signature binding passkey `key` to `factory` on this network:
+    /// over `sha256("nido/bind/v1" || network_id || factory_id || key)`.
+    #[must_use]
+    pub fn bind(&self, env: &Env, factory: &Address, key: &BytesN<65>) -> BytesN<64> {
+        use ed25519_dalek::Signer as _;
+        let mut message = Bytes::from_slice(env, b"nido/bind/v1");
+        message.extend_from_array(&env.ledger().network_id().to_array());
+        message.extend_from_array(&contract_id(factory));
+        message.extend_from_array(&key.to_array());
+        let digest = env.crypto().sha256(&message).to_array();
+        BytesN::from_array(env, &self.0.sign(&digest).to_bytes())
+    }
+
+    /// The deploy salt the factory derives from this key:
+    /// `sha256("nido/setup/v1" || setup_pk)`.
+    #[must_use]
+    pub fn salt(&self, env: &Env) -> BytesN<32> {
+        let mut preimage = Bytes::from_slice(env, b"nido/setup/v1");
+        preimage.extend_from_array(&self.public(env).to_array());
+        env.crypto().sha256(&preimage).to_bytes()
+    }
 }
 
 /// The ZK adapter's identity views.
@@ -233,6 +287,11 @@ impl Profile {
 pub struct Recovery {
     pub profile: Profile,
     pub mode: Mode,
+    /// The controller the account adopts; [`World::recovery`] names the
+    /// world's.
+    pub controller: Address,
+    /// The pool a ZK factor names; [`World::recovery`] names the world's.
+    pub pool: Address,
     pub guardians: std::vec::Vec<Address>,
     pub quorum: u32,
     pub enrollment: Option<ZkEnrollment>,
@@ -314,7 +373,7 @@ impl Recovery {
                 r#""adapter":"{}","circuit-id":"{}","pool":"{}","enrollment-id":"{}","commitment":"{}""#,
                 strkey(&w.adapter),
                 hex::encode(w.circuit_id().to_array()),
-                strkey(&w.pool),
+                strkey(&self.pool),
                 hex::encode(z.id.to_array()),
                 hex::encode(z.commitment.to_array())
             )
@@ -342,7 +401,7 @@ impl Recovery {
         format!(
             r#"{{"profile":"{}","mode":{mode},"controller":"{}"{baseline},"replaceable":[{}],"delay-ledgers":{},"expiry-ledgers":{},"max-cancels":{}}}"#,
             self.profile.as_str(),
-            strkey(&w.controller),
+            strkey(&self.controller),
             replaceable.join(","),
             self.delay,
             self.expiry,
@@ -383,7 +442,8 @@ pub struct World {
 }
 
 /// A fresh world at ledger [`START`], with every contract registered at a
-/// fixed address and the factory pinned to the `WebAuthn` verifier.
+/// fixed address and the factory constructed pinned to the `WebAuthn`
+/// verifier.
 #[must_use]
 pub fn world() -> World {
     // No test snapshot: every contract here is registered from wasm, which
@@ -434,10 +494,12 @@ pub fn world() -> World {
     env.register_at(&target, Target, ());
 
     let factory = contract_at(&env, "factory");
-    env.register_at(&factory, FACTORY_WASM, (admin,));
+    env.register_at(
+        &factory,
+        FACTORY_WASM,
+        (admin, Some(verifier.clone()), None::<Address>),
+    );
     env.deployer().upload_contract_wasm(PERCH_ACCOUNT_WASM);
-    env.mock_all_auths();
-    FactoryClient::new(&env, &factory).set_registry_pins(&verifier);
 
     // Enforcing authorization from here on: only explicit entries pass.
     env.set_auths(&[]);
@@ -493,8 +555,9 @@ impl World {
 
     // --- accounts ----------------------------------------------------------
 
-    /// Mint an account through the factory: salt `sha256("nido-it/salt/<label>")`,
-    /// admin passkey `owner`, plus `extra` passkeys its documents may name.
+    /// Mint an account through the permissionless world factory: setup key
+    /// [`SetupKey::labelled`]`(label)`, admin passkey `owner`, plus `extra`
+    /// passkeys its documents may name.
     #[must_use]
     pub fn mint(
         &self,
@@ -502,16 +565,13 @@ impl World {
         owner: Passkey,
         extra: std::vec::Vec<(&'static str, Passkey)>,
     ) -> Account {
-        let salt = self
-            .env
-            .crypto()
-            .sha256(&Bytes::from_slice(
-                &self.env,
-                format!("nido-it/salt/{label}").as_bytes(),
-            ))
-            .to_bytes();
-        let address = FactoryClient::new(&self.env, &self.factory)
-            .create_account(&salt, &BytesN::from_array(&self.env, &owner.pubkey()));
+        let setup = SetupKey::labelled(label);
+        let key = BytesN::from_array(&self.env, &owner.pubkey());
+        let address = FactoryClient::new(&self.env, &self.factory).create_account(
+            &setup.public(&self.env),
+            &key,
+            &setup.bind(&self.env, &self.factory, &key),
+        );
         let mut keys = std::vec![("owner", owner)];
         keys.extend(extra);
         Account { address, keys }
@@ -563,6 +623,8 @@ impl World {
         Recovery {
             profile,
             mode,
+            controller: self.controller.clone(),
+            pool: self.pool.clone(),
             guardians: guardians.iter().map(|g| g.address.clone()).collect(),
             quorum,
             enrollment,
@@ -1043,6 +1105,15 @@ impl World {
         self.ctl().statement(&account.address, &attempt, &domain)
     }
 
+    /// The recovery controller wasm registered again at `label`'s address:
+    /// what a Perch redeploy does (a new address, no state).
+    #[must_use]
+    pub fn redeployed_controller(&self, label: &str) -> Address {
+        let controller = contract_at(&self.env, label);
+        self.env.register_at(&controller, PERCH_RECOVERY_WASM, ());
+        controller
+    }
+
     #[must_use]
     pub fn digest(&self, statement: &RecoveryStatement) -> BytesN<32> {
         statement.digest(&self.env).unwrap()
@@ -1057,16 +1128,33 @@ impl World {
         attempt: u64,
         domain: EvidenceDomain,
     ) -> RecoveryResult<()> {
-        let digest = self.digest(&self.statement(account, attempt, domain));
-        let root = self.invocation(
+        self.try_guardian_at(
             &self.controller,
-            "submit_guardian",
-            std::vec![self.sc(digest)],
-        );
-        let entry = self.signed(guardian, "owner", "guardian", root);
+            "guardian",
+            account,
+            guardian,
+            attempt,
+            domain,
+        )
+    }
+
+    /// `guardian`'s approval at `controller`, signed through its rule named
+    /// `rule`.
+    pub fn try_guardian_at(
+        &self,
+        controller: &Address,
+        rule: &str,
+        account: &Account,
+        guardian: &Account,
+        attempt: u64,
+        domain: EvidenceDomain,
+    ) -> RecoveryResult<()> {
+        let ctl = PerchRecoveryClient::new(&self.env, controller);
+        let digest = self.digest(&ctl.statement(&account.address, &attempt, &domain));
+        let root = self.invocation(controller, "submit_guardian", std::vec![self.sc(digest)]);
+        let entry = self.signed(guardian, "owner", rule, root);
         self.with_auths(&[entry], || {
-            self.ctl()
-                .try_submit_guardian(&account.address, &attempt, &domain, &guardian.address)
+            ctl.try_submit_guardian(&account.address, &attempt, &domain, &guardian.address)
                 .map(|r| r.unwrap())
         })
     }

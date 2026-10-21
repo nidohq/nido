@@ -26,6 +26,9 @@ import { summarizeRecovery, type RecoverySummary } from './model.js';
 /** The guardian rule name a guardian's document scopes to the controller. */
 export const GUARDIAN_RULE = 'guardian';
 
+/** A client for each account's own recovery stack (`perch.RecoveryWiring`).
+ *  It reads an account's stack once, so make a new one after an `apply_doc`
+ *  that may have moved it. */
 export function recoveryClient(): perch.PerchRecovery {
   return new perch.PerchRecovery({ deployment: requireDeployment(), rpcUrl: RPC_URL });
 }
@@ -40,21 +43,25 @@ export interface RecoveryState {
    *  from it names as `expected_revision`. */
   revision: bigint;
   summary: RecoverySummary | undefined;
+  /** Where the account's recovery runs: the controller it adopted, which
+   *  `gate` and `epoch` come from, not the deployment's. */
+  wiring: perch.RecoveryWiring;
   gate: perch.ActivityGate | undefined;
   epoch: bigint;
 }
 
 /** What the account's applied document says about recovery, and whether an
- *  attempt is authorized right now. */
+ *  attempt is authorized right now at the account's own controller. */
 export async function readRecoveryState(account: string): Promise<RecoveryState> {
   const client = recoveryClient();
   const { revision, canonical } = await client.document(account);
+  const wiring = await client.wiring(account);
   const doc = canonical ? parsePolicyDocJson(canonical) : undefined;
   const summary = summarizeRecovery(doc);
   const [gate, epoch] = summary
     ? await Promise.all([client.activityGate(account), client.epoch(account)])
     : [undefined, 0n];
-  return { doc, revision, summary, gate, epoch };
+  return { doc, revision, summary, wiring, gate, epoch };
 }
 
 /** The account's applied document, or, before its first `apply_doc`, the
@@ -96,13 +103,20 @@ export async function submitAsOwner(account: string, operation: xdr.Operation): 
 }
 
 /** A guardian's approval. A Nido guardian signs on its own subdomain with
- *  its passkey through its `guardian` rule; a `G…` guardian signs the whole
- *  transaction with a connected Stellar wallet. */
-export async function submitAsGuardian(guardian: string, operation: xdr.Operation): Promise<string> {
+ *  its passkey through `rule`, its guardian rule scoped to the controller
+ *  `operation` calls (`guardianRuleName`); a `G…` guardian signs the whole
+ *  transaction with a connected Stellar wallet, once that transaction is
+ *  checked to authorize exactly `approval`. */
+export async function submitAsGuardian(
+  guardian: string,
+  operation: xdr.Operation,
+  approval: perch.GuardianApproval,
+  rule = GUARDIAN_RULE,
+): Promise<string> {
   if (guardian.startsWith('G')) {
-    return (await submitGuardianOp(operation, guardian)).hash;
+    return (await submitGuardianOp(operation, guardian, approval)).hash;
   }
-  const result = await signAndSubmit({ account: guardian, operation, ruleName: GUARDIAN_RULE });
+  const result = await signAndSubmit({ account: guardian, operation, ruleName: rule });
   return result.hash;
 }
 

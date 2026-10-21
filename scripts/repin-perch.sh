@@ -7,10 +7,12 @@
 #      and the Perch git dependencies in Cargo.toml move to the same rev
 #      (Cargo.lock follows), so the crates Nido builds and the manifest it
 #      fetches by come from one Perch commit;
-#   2. `just perch-infra` fetches the stack by the manifest's hashes and
-#      content addresses (Perch's fetch-infra-wasm.sh refuses any other byte;
-#      nothing is resolved by name), then `just build-contracts` rebuilds the
-#      factory around the fetched account;
+#   2. `just perch-infra` writes the factory's account pin
+#      (contracts/factory/wasm/perch-account.sha256) from the manifest and
+#      fetches the stack by the manifest's hashes and content addresses
+#      (Perch's fetch-infra-wasm.sh refuses any other byte; nothing is
+#      resolved by name), then `just build-contracts` rebuilds the factory
+#      around that pin;
 #   3. `just bindings-perch` regenerates packages/contract-bindings/perch-*;
 #   4. scripts/repin-perch-pins.mjs rewrites the SDK's Perch pins from the
 #      manifest (`perch.TESTNET`, except Nido's own factory, and the policyDoc
@@ -20,12 +22,16 @@
 #   6. the SDK's validate-differential corpus is regenerated from the new
 #      perch_ir::validate (its generator is seeded, so an unchanged validator
 #      leaves it byte-identical); a changed verdict is for the SDK's
-#      validate.ts to match, which its vitest suite checks;
+#      validate.ts to match, which its vitest suite checks; the new-account
+#      reads the SDK's newAccount test replays are regenerated from the new
+#      account wasm too;
 #   7. `cargo test --workspace` runs every Rust suite against the new stack,
-#      which also refreshes Cargo.lock and the Soroban test snapshots.
+#      which also refreshes Cargo.lock.
 #
-# Nido's factory is not redeployed: `perch.TESTNET.factory` keeps naming the
-# deployed one until `just deploy-factory` follows the merged re-pin.
+# Nido's factory is not redeployed. When the manifest moves `perch-account`
+# or `perch-webauthn-verifier`, the SDK's deployment.test.ts fails until the
+# factory is: run `just deploy-factory` on the re-pin's branch and commit the
+# record it writes, with `perch.TESTNET.factory`, before the re-pin merges.
 #
 # Exit status: 0 when everything passes, 3 when the re-pin is complete but
 # `cargo test` failed (the changes are still written, for a human to adapt),
@@ -107,6 +113,8 @@ NIDO_WRITE_VALIDATE_CORPUS=1 cargo test -p nido-integration-tests --test it vali
     echo "warning: could not regenerate $corpus" >&2
 corpus_changed=false
 git diff --quiet -- "$corpus" || corpus_changed=true
+NIDO_WRITE_NEW_ACCOUNT_READS=1 cargo test -p nido-integration-tests --test it new_account_reads ||
+    echo "warning: could not regenerate packages/passkey-sdk/src/perch/testdata/new-account-reads.json" >&2
 
 # 7. The Rust suites against the new stack.
 tests=passed

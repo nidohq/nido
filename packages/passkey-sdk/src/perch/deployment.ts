@@ -18,7 +18,7 @@ export interface PerchDeployment {
   /** Nido's account factory. Not Perch's: Perch's factory derives an
    *  address from the admin signers, but a Nido passkey's RP ID is the
    *  account's own subdomain, so the address must exist before the passkey
-   *  does. Nido's derives it from a salt alone. */
+   *  does. Nido's derives it from a one-time setup key alone. */
   factory: string;
   /** Perch's WebAuthn verifier, which passkey signers name and the factory
    *  pins. Constructorless, with no admin. */
@@ -41,11 +41,11 @@ export interface PerchDeployment {
 }
 
 /** Perch's testnet release (`vendor/perch/deployments/testnet.json`, at the
- *  submodule's pin) and Nido's factory built around its account
- *  (`scripts/deploy-factory.sh`). */
+ *  submodule's pin) and Nido's factory, as its record (`factory.testnet.json`,
+ *  written by `scripts/deploy-factory.sh`) names it. */
 export const TESTNET: PerchDeployment = {
   network: 'Test SDF Network ; September 2015',
-  factory: 'CBJRCUECFC2FSJBSVOVYHWC73A2SN7LIKSLWJBQUNEOWPE4PXG33M54H',
+  factory: 'CAE33LHBXQGBI6QLDHBUOSCLPUD267NRJXANHO65PQ6PU2BMGHOKF6QV',
   webauthnVerifier: 'CDRYDB7O2JFLF7FAIIQUQK4BKQT3N6ACFFGZQ7AHKMX52RIWTHBHJY6K',
   statelessRegistry: 'CDX2DMYMMEYU6FGN3HPJ2GQSSL5EZHIAMEJD4SPF55FZE5LEUBPPPDA7',
   docCompiler: 'CAV47HI46VZ4JMAN5OA7IFECNFNJHINYZMYUGN27EZI6STEHQFLW23RB',

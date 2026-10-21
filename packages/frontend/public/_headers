@@ -8,8 +8,22 @@
 # MAINNET CUTOVER: the connect-src Stellar hosts below are TESTNET
 # (soroban-testnet/horizon-testnet/friendbot) — swap to soroban.stellar.org +
 # horizon.stellar.org and remove friendbot at cutover, in BOTH places.
+# HSTS covers every subdomain: the storage bridge and the setup cookie trust
+# *.nido.fyi, so none of it may be reachable over plain http.
 /*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.nido.fyi https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org https://api.refractor.space https://api.soroswap.finance; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
+
+# The storage bridge is the one page meant to be framed: account and name
+# origins embed it to share the account list. Detach the site-wide framing
+# denial and report-only policy, and enforce a policy of its own that admits
+# only *.nido.fyi ancestors over https. The page's own message handler
+# narrows that further (account and name labels only, no built-in dApps).
+# Keep in sync with frontend/worker-proxy-nido/index.js.
+/nido-storage-bridge/
+  ! X-Frame-Options
+  ! Content-Security-Policy-Report-Only
+  Content-Security-Policy: default-src 'none'; script-src 'self'; frame-ancestors https://*.nido.fyi; base-uri 'none'; form-action 'none'

@@ -2,6 +2,33 @@ name = "nido-proxy"
 main = "index.js"
 compatibility_date = "2024-01-01"
 
+# Production: today the testnet build on nido.fyi.
 routes = [
   { pattern = "*.nido.fyi/*", zone_name = "nido.fyi" }
 ]
+
+[vars]
+# The Pages production origin for nido (Cloudflare appended "-1am" because the
+# bare `nido` project subdomain was taken).
+PAGES = "nido-1am.pages.dev"
+CSP_SITE_HOSTS = "https://*.nido.fyi"
+CSP_NETWORK_HOSTS = "https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org"
+
+# Testnet on test.nido.fyi (`wrangler deploy --env testnet`), the same testnet
+# build. Not deployed yet: until an advanced certificate covering
+# *.test.nido.fyi is active those hosts have no TLS, and the production route
+# above already reaches them. Add its routes, together with nido-resolver's
+# testnet route, only once that certificate is active: a `*.test.nido.fyi/*`
+# proxy route outranks the production resolver route for
+# `*.test.nido.fyi/.well-known/nido.json` (hostname specificity beats path), so
+# deploying one without the other breaks testnet name resolution. Until then
+# nothing serves this environment.
+[env.testnet]
+name = "nido-proxy-testnet"
+workers_dev = false
+routes = []
+
+[env.testnet.vars]
+PAGES = "nido-1am.pages.dev"
+CSP_SITE_HOSTS = "https://*.nido.fyi"
+CSP_NETWORK_HOSTS = "https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org"

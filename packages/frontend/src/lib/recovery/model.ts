@@ -140,6 +140,55 @@ export function recoveryChangeRows(current: unknown, proposed: unknown): Recover
   });
 }
 
+/** The settings naming who or what can recover the account: the contracts
+ *  and circuit that judge evidence, and the friends and kit that give it. */
+const TRUST_SETTINGS = ['controller', 'mode.adapter', 'mode.pool', 'mode.circuit-id', 'mode.guardians', 'mode.enrollment-id', 'mode.commitment'];
+
+/** One move of trust a reconfiguration makes, for the guardian to see before
+ *  the full table. */
+export interface TrustChange {
+  path: string;
+  label: string;
+  /** Values the proposal drops. */
+  removed: string[];
+  /** Values the proposal adds. */
+  added: string[];
+  /** For a contract or circuit: the one this site's deployment uses, when
+   *  the proposal names a different one. A link can name any contract. */
+  expected?: string;
+}
+
+/**
+ * The trust a reconfiguration moves, from its {@link recoveryChangeRows}: a
+ * changed controller, proof checker, pool, circuit, friend, or recovery kit,
+ * and a lower quorum. Each contract or circuit the proposal names is also
+ * compared with `deployment`'s.
+ */
+export function trustChanges(rows: RecoveryChangeRow[], deployment: perch.PerchDeployment): TrustChange[] {
+  const expected: Record<string, string> = {
+    controller: deployment.recoveryController,
+    'mode.adapter': deployment.zkAdapter,
+    'mode.pool': deployment.zkPool,
+    'mode.circuit-id': deployment.circuitId,
+  };
+  const quorumDrops = (r: RecoveryChangeRow) =>
+    r.path === 'mode.quorum' && r.current.length > 0 && r.proposed.length > 0 && Number(r.proposed[0]) < Number(r.current[0]);
+  return rows
+    .filter((r) => r.changed && (TRUST_SETTINGS.includes(r.path) || quorumDrops(r)))
+    .map((r) => {
+      const change: TrustChange = {
+        path: r.path,
+        label: r.label,
+        removed: r.current.filter((v) => !r.proposed.includes(v)),
+        added: r.proposed.filter((v) => !r.current.includes(v)),
+      };
+      const want = expected[r.path];
+      if (want !== undefined && change.added.some((v) => v !== want)) change.expected = want;
+      return change;
+    })
+    .filter((t) => t.removed.length > 0 || t.added.length > 0);
+}
+
 /** About five seconds per ledger: for display only. Every on-chain bound is
  *  in ledgers. */
 export const SECONDS_PER_LEDGER = 5;
@@ -256,6 +305,36 @@ export function adminsOutsideRecovery(doc: PolicyDoc | undefined): string[] {
   if (summary === undefined || doc === undefined) return [];
   const covered = new Set(summary.replaceable);
   return adminSignerIds(doc).filter((id) => !covered.has(id));
+}
+
+/** OZ's longest context-rule name, in bytes. */
+const MAX_RULE_NAME = 20;
+
+/**
+ * The guardian rule `rules` scope to `controller`, by name, or undefined. A
+ * Nido guardian approves through a rule its own document scopes to the
+ * controller the guarded account adopted. A guardian of Nidos enrolled at
+ * different controllers (one per Perch redeploy) holds one rule for each:
+ * `guardian`, and `guardian-<start of the controller's address>` for each
+ * further controller (`newGuardianRuleName`).
+ */
+export function guardianRuleAt(
+  rules: readonly { name: string; contract: string; recovery?: boolean }[],
+  controller: string,
+): string | undefined {
+  return rules.find(
+    (r) => !r.recovery && r.contract === controller && (r.name === 'guardian' || r.name.startsWith('guardian-')),
+  )?.name;
+}
+
+/** The name for a new guardian rule scoped to `controller`, beside rules
+ *  named `taken`. */
+export function newGuardianRuleName(taken: readonly string[], controller: string): string {
+  const name = taken.includes('guardian')
+    ? `guardian-${controller.slice(0, MAX_RULE_NAME - 'guardian-'.length).toLowerCase()}`
+    : 'guardian';
+  if (taken.includes(name)) throw new Error(`Your Nido already has a rule named ${name}.`);
+  return name;
 }
 
 /** What a guardian is asked to approve. Travels in the URL fragment of a

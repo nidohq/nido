@@ -10,9 +10,11 @@
  *   - `submitGuardianOp`: a `G…` guardian's approval. The guardian is both
  *     source and signer of a classic transaction signed through the
  *     `walletConnect.ts` session; a `require_auth` of a G-address is
- *     satisfied by the envelope signature.
+ *     satisfied by the envelope signature, so the envelope must authorize
+ *     exactly the approval the guardian reviewed (`perch.guardianApprovalProblem`).
  */
 import { rpc, TransactionBuilder, Transaction, xdr } from '@stellar/stellar-sdk';
+import { perch } from '@nidohq/passkey-sdk';
 import { RPC_URL, NETWORK_PASSPHRASE } from './network.js';
 import { getSubmitter } from './primaryPasskeySigner.js';
 import { signTransaction as walletSignTransaction } from './walletConnect.js';
@@ -61,18 +63,26 @@ export async function submitPermissionlessOp(
  *  by `guardianAddress`, signed via the connected wallet kit
  *  (`walletConnect.ts`). Fee-payer is the SAME guardian account (simplest
  *  correct thing for an experimental page — the guardian's account must be
- *  funded on testnet). */
+ *  funded on testnet). The envelope goes to the wallet only if it
+ *  authorizes exactly `approval`: the controller wrote its authorization
+ *  tree at simulation, and the guardian's signature covers all of it. */
 export async function submitGuardianOp(
   operation: xdr.Operation,
   guardianAddress: string,
+  approval: perch.GuardianApproval,
 ): Promise<{ hash: string }> {
   const server = new rpc.Server(RPC_URL);
   const sourceAccount = await server.getAccount(guardianAddress);
+  // The binding simulated from a placeholder source, so the entry it left
+  // names the guardian by address credentials, which the envelope signature
+  // does not satisfy. Record afresh with the guardian as the source.
+  const opClone = xdr.Operation.fromXDR(operation.toXDR());
+  opClone.body().invokeHostFunctionOp().auth([]);
   const tx = new TransactionBuilder(sourceAccount, {
     fee: '1000000',
     networkPassphrase: NETWORK_PASSPHRASE,
   })
-    .addOperation(xdr.Operation.fromXDR(operation.toXDR()))
+    .addOperation(opClone)
     .setTimeout(60)
     .build();
 
@@ -80,9 +90,11 @@ export async function submitGuardianOp(
   if (rpc.Api.isSimulationError(sim)) {
     throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
   }
-  const assembled = rpc.assembleTransaction(tx, sim as rpc.Api.SimulateTransactionSuccessResponse).build();
+  const envelope = rpc.assembleTransaction(tx, sim as rpc.Api.SimulateTransactionSuccessResponse).build().toXDR();
+  const problem = perch.guardianApprovalProblem(envelope, guardianAddress, approval);
+  if (problem) throw new Error(problem);
 
-  const { signedTxXdr, submitted } = await walletSignTransaction(assembled.toXDR(), {
+  const { signedTxXdr, submitted } = await walletSignTransaction(envelope, {
     networkPassphrase: NETWORK_PASSPHRASE,
     address: guardianAddress,
   });

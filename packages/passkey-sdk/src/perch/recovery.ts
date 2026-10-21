@@ -18,6 +18,12 @@
  * `recovery` member changed (see `doc.ts`). Under `Protected` the change's
  * evidence is recorded first (`approveChange`/`submitZkChange`), then the
  * owner's `apply_doc` carries the same `approval_valid_until`.
+ *
+ * Every call goes to the account's own recovery stack (`RecoveryWiring`),
+ * read from the account, never to the deployment's. Each Perch redeploy puts
+ * the controller, pool, and adapter at new addresses, and an account keeps
+ * the ones it enrolled with until its owner moves it (`movedRecovery`). The
+ * deployment's controller is only what a new enrollment adopts.
  */
 
 import { Buffer } from 'buffer';
@@ -32,6 +38,7 @@ import {
 import type {
   ActivityGate,
   Attempt,
+  CompiledRecoveryMode,
   ReplacementSet as BindingReplacementSet,
   RecoveryStatement as BindingStatement,
   StatementSubject as BindingSubject,
@@ -63,8 +70,33 @@ export { EvidenceDomain };
 export type { ActivityGate, Attempt };
 
 export interface ChainArgs {
+  /** The network, and the stack a new enrollment adopts. */
   deployment: PerchDeployment;
   rpcUrl: string;
+}
+
+/** Where an account's recovery runs, read from the account and its
+ *  controller. (The compiler the account pins is read by its snapshot
+ *  reader, `openAccountReader`.) */
+export interface RecoveryWiring {
+  /** The controller the account adopted (`configuration()`'s
+   *  `recovery_controller`), or, with recovery off, the deployment's: the
+   *  one a new enrollment adopts. */
+  controller: string;
+  /** Whether the account has adopted `controller`. */
+  adopted: boolean;
+}
+
+/** An enrolled ZK factor's contracts; `circuitId` is lowercase hex. */
+export interface EnrolledZk {
+  pool: string;
+  adapter: string;
+  circuitId: string;
+}
+
+function zkOf(mode: CompiledRecoveryMode): EnrolledZk | undefined {
+  const z = mode.tag === 'ZkOnly' ? mode.values[0] : mode.tag === 'Combined' ? mode.values[1] : undefined;
+  return z && { pool: z.pool, adapter: z.adapter, circuitId: Buffer.from(z.circuit_id).toString('hex') };
 }
 
 const b = (u: Uint8Array): Buffer => Buffer.from(u);
@@ -240,17 +272,15 @@ function ok<T>(r: { unwrap(): T } | T): T {
     : (r as T);
 }
 
+/** The wallet's recovery client. It talks to each account's own stack
+ *  (`wiring`), read once per account for the client's lifetime, so make a
+ *  new client after an `apply_doc` that may have moved it. */
 export class PerchRecovery {
-  private readonly controller: RecoveryClient;
   private readonly args: ChainArgs;
+  private readonly wirings = new Map<string, Promise<RecoveryWiring>>();
 
   constructor(args: ChainArgs) {
     this.args = args;
-    this.controller = new RecoveryClient({
-      contractId: args.deployment.recoveryController,
-      networkPassphrase: args.deployment.network,
-      rpcUrl: args.rpcUrl,
-    });
   }
 
   private account(account: string): AccountClient {
@@ -261,28 +291,67 @@ export class PerchRecovery {
     });
   }
 
+  private recoveryAt(controller: string): RecoveryClient {
+    return new RecoveryClient({
+      contractId: controller,
+      networkPassphrase: this.args.deployment.network,
+      rpcUrl: this.args.rpcUrl,
+    });
+  }
+
+  /** Where `account`'s recovery runs: its adopted controller, from one
+   *  `configuration()` read. A failed read is not kept. */
+  wiring(account: string): Promise<RecoveryWiring> {
+    let wiring = this.wirings.get(account);
+    if (!wiring) {
+      wiring = this.readWiring(account);
+      wiring.catch(() => this.wirings.delete(account));
+      this.wirings.set(account, wiring);
+    }
+    return wiring;
+  }
+
+  private async readWiring(account: string): Promise<RecoveryWiring> {
+    const adopted = (await this.account(account).configuration()).result.recovery_controller ?? undefined;
+    return adopted === undefined
+      ? { controller: this.args.deployment.recoveryController, adopted: false }
+      : { controller: adopted, adopted: true };
+  }
+
+  /** The contracts of `account`'s enrolled ZK factor, from its controller's
+   *  `config`, or undefined without one. Read only when proving needs it. */
+  async enrolledZk(account: string): Promise<EnrolledZk | undefined> {
+    const enrolled = (await (await this.controller(account)).config({ account })).result ?? undefined;
+    return enrolled && zkOf(enrolled.mode);
+  }
+
+  private async controller(account: string): Promise<RecoveryClient> {
+    return this.recoveryAt((await this.wiring(account)).controller);
+  }
+
   // --- reads -------------------------------------------------------------
 
   async activityGate(account: string): Promise<ActivityGate> {
-    return (await this.controller.activity_gate({ account })).result;
+    return (await (await this.controller(account)).activity_gate({ account })).result;
   }
 
   async epoch(account: string): Promise<bigint> {
-    return BigInt((await this.controller.epoch({ account })).result);
+    return BigInt((await (await this.controller(account)).epoch({ account })).result);
   }
 
   async attempt(account: string, attemptId: bigint): Promise<Attempt | undefined> {
-    return (await this.controller.attempt({ account, attempt_id: attemptId })).result ?? undefined;
+    const c = await this.controller(account);
+    return (await c.attempt({ account, attempt_id: attemptId })).result ?? undefined;
   }
 
   /** Whether an attempt is live: not expired, invalidated, completed, or
    *  cancelled. */
   async attemptLive(account: string, attemptId: bigint): Promise<boolean> {
-    return (await this.controller.attempt_live({ account, attempt_id: attemptId })).result;
+    return (await (await this.controller(account)).attempt_live({ account, attempt_id: attemptId })).result;
   }
 
   async nextAttemptId(account: string): Promise<bigint> {
-    return BigInt((await this.controller.next_attempt_id({ account })).result);
+    return BigInt((await (await this.controller(account)).next_attempt_id({ account })).result);
   }
 
   /** The exact statement evidence for an attempt must sign or prove. */
@@ -291,7 +360,7 @@ export class PerchRecovery {
     attemptId: bigint,
     domain: EvidenceDomain,
   ): Promise<RecoveryStatement> {
-    const tx = await this.controller.statement({ account, attempt_id: attemptId, domain });
+    const tx = await (await this.controller(account)).statement({ account, attempt_id: attemptId, domain });
     return statementFromChain(ok(tx.result));
   }
 
@@ -302,7 +371,7 @@ export class PerchRecovery {
     subject: ChangeSubject,
     validUntil: number,
   ): Promise<RecoveryStatement> {
-    const tx = await this.controller.change_statement({
+    const tx = await (await this.controller(account)).change_statement({
       account,
       subject: subjectToChain(subject),
       valid_until: validUntil,
@@ -312,29 +381,32 @@ export class PerchRecovery {
 
   /** Evidence recorded so far for a change statement digest. */
   async changeEvidence(account: string, digest: Uint8Array): Promise<{ guardians: string[]; zk: boolean }> {
-    const r = (await this.controller.change_evidence({ account, digest: b(digest) })).result;
+    const r = (await (await this.controller(account)).change_evidence({ account, digest: b(digest) })).result;
     return { guardians: r.guardians, zk: r.zk };
   }
 
   /** Whether the account's controller config is enrolled at all. */
   async enrolled(account: string): Promise<boolean> {
-    return (await this.controller.config({ account })).result != null;
+    return (await (await this.controller(account)).config({ account })).result != null;
   }
 
   async nullifierSpent(account: string, nullifier: Uint8Array): Promise<boolean> {
-    return (await this.controller.nullifier_spent({ account, nullifier: b(nullifier) })).result;
+    return (await (await this.controller(account)).nullifier_spent({ account, nullifier: b(nullifier) })).result;
+  }
+
+  /** The baseline's canonical JSON as published at the account's
+   *  controller, or undefined before `publish_baseline`. */
+  async baseline(account: string): Promise<string | undefined> {
+    const bytes = (await (await this.controller(account)).baseline({ account })).result;
+    return bytes ? Buffer.from(bytes).toString('utf8') : undefined;
   }
 
   /** One consistent read of `account` at one configuration revision
-   *  (perch-js `readSnapshot`; see `readAccountSnapshot`). */
+   *  (perch-js `readSnapshot`; see `readAccountSnapshot`), its limits from
+   *  the compiler the account pins. */
   snapshot(account: string, options?: SnapshotOptions): Promise<Snapshot> {
     return readAccountSnapshot(
-      {
-        account,
-        rpcUrl: this.args.rpcUrl,
-        networkPassphrase: this.args.deployment.network,
-        docCompiler: this.args.deployment.docCompiler,
-      },
+      { account, rpcUrl: this.args.rpcUrl, networkPassphrase: this.args.deployment.network },
       options,
     );
   }
@@ -364,27 +436,32 @@ export class PerchRecovery {
 
   // --- the ZK pool -------------------------------------------------------
 
-  private pool(): PoolClient {
+  /** The pool `account`'s enrolled ZK factor names. */
+  private async pool(account: string): Promise<PoolClient> {
+    const zk = await this.enrolledZk(account);
+    if (!zk) throw new Error('the account has no enrolled ZK factor');
     return new PoolClient({
-      contractId: this.args.deployment.zkPool,
+      contractId: zk.pool,
       networkPassphrase: this.args.deployment.network,
       rpcUrl: this.args.rpcUrl,
     });
   }
 
-  /** Where `account`'s credential `enrollmentId` sits in the pool. */
+  /** Where `account`'s credential `enrollmentId` sits in its pool. */
   async leafPosition(
     account: string,
     enrollmentId: Uint8Array,
   ): Promise<{ treeId: number; index: number } | undefined> {
-    const at = (await this.pool().enrollment({ account, enrollment_id: b(enrollmentId) })).result;
+    const pool = await this.pool(account);
+    const at = (await pool.enrollment({ account, enrollment_id: b(enrollmentId) })).result;
     return at ? { treeId: at.tree_id, index: Number(at.index) } : undefined;
   }
 
-  /** Every leaf of `treeId`, read from the pool's own storage (no indexer
-   *  needed; the proof fails on-chain if any leaf here were wrong). */
-  async treeLeaves(treeId: number, pageSize = 64): Promise<Uint8Array[]> {
-    const pool = this.pool();
+  /** Every leaf of `treeId` in `account`'s pool, read from the pool's own
+   *  storage (no indexer needed; the proof fails on-chain if any leaf here
+   *  were wrong). */
+  async treeLeaves(account: string, treeId: number, pageSize = 64): Promise<Uint8Array[]> {
+    const pool = await this.pool(account);
     const size = Number(ok((await pool.tree({ tree_id: treeId })).result).size);
     const leaves: Uint8Array[] = [];
     while (leaves.length < size) {
@@ -400,7 +477,7 @@ export class PerchRecovery {
   // --- attempts ----------------------------------------------------------
 
   async beginLostKey(account: string, replacements: ReplacementSet): Promise<TxBuild> {
-    const tx = await this.controller.begin_lost_key({
+    const tx = await (await this.controller(account)).begin_lost_key({
       account,
       replacements: replacementSetToChain(replacements),
     });
@@ -408,7 +485,7 @@ export class PerchRecovery {
   }
 
   async beginCompromise(account: string, replacements: ReplacementSet): Promise<TxBuild> {
-    const tx = await this.controller.begin_compromise({
+    const tx = await (await this.controller(account)).begin_compromise({
       account,
       replacements: replacementSetToChain(replacements),
     });
@@ -424,7 +501,8 @@ export class PerchRecovery {
     domain: EvidenceDomain,
     guardian: string,
   ): Promise<TxBuild> {
-    const tx = await this.controller.submit_guardian({ account, attempt_id: attemptId, domain, guardian });
+    const c = await this.controller(account);
+    const tx = await c.submit_guardian({ account, attempt_id: attemptId, domain, guardian });
     return {
       operations: extractXdrOperations(tx, 'submit_guardian'),
       description: domain === EvidenceDomain.Cancel ? 'Approve cancelling a recovery' : 'Approve a recovery',
@@ -438,7 +516,7 @@ export class PerchRecovery {
     domain: EvidenceDomain,
     evidence: ZkEvidence,
   ): Promise<TxBuild> {
-    const tx = await this.controller.submit_zk({
+    const tx = await (await this.controller(account)).submit_zk({
       account,
       attempt_id: attemptId,
       domain,
@@ -453,7 +531,7 @@ export class PerchRecovery {
     validUntil: number,
     guardian: string,
   ): Promise<TxBuild> {
-    const tx = await this.controller.approve_change({
+    const tx = await (await this.controller(account)).approve_change({
       account,
       subject: subjectToChain(subject),
       valid_until: validUntil,
@@ -468,7 +546,7 @@ export class PerchRecovery {
     validUntil: number,
     evidence: ZkEvidence,
   ): Promise<TxBuild> {
-    const tx = await this.controller.submit_zk_change({
+    const tx = await (await this.controller(account)).submit_zk_change({
       account,
       subject: subjectToChain(subject),
       valid_until: validUntil,
@@ -481,7 +559,7 @@ export class PerchRecovery {
    *  open. Permissionless; refused unless the document compiles to exactly
    *  the enrolled baseline hash. */
   async publishBaseline(account: string, baselineJson: string): Promise<TxBuild> {
-    const tx = await this.controller.publish_baseline({
+    const tx = await (await this.controller(account)).publish_baseline({
       account,
       doc_json: Buffer.from(baselineJson, 'utf8'),
     });
@@ -511,10 +589,11 @@ export class PerchRecovery {
     const current = snap.document;
     if (!current) throw new Error('the account has no applied document');
     const source =
-      action === 'lost-key' ? current : (await this.controller.baseline({ account })).result;
+      action === 'lost-key' ? current : (await (await this.controller(account)).baseline({ account })).result;
     if (!source) throw new Error('the account has no published baseline');
+    // The compiler the account pins, which its own apply path compiles with.
     const compiler = new CompilerClient({
-      contractId: this.args.deployment.docCompiler,
+      contractId: snap.configuration.infra.docCompiler,
       networkPassphrase: this.args.deployment.network,
       rpcUrl: this.args.rpcUrl,
     });

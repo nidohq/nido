@@ -18,6 +18,9 @@ import { NETWORK_PASSPHRASE } from "../network.js";
 
 export interface RunSignHooks {
   onProgress?: (p: { phase: string; detail?: string }) => void;
+  /** For a dApp transaction: the authorization tree the user reviewed
+   *  (`previewTransactionAuth`'s `invocationXdr`). Required on that path. */
+  reviewedInvocationXdr?: string;
 }
 
 export interface RunSignResult {
@@ -40,6 +43,9 @@ export async function runSign(req: SignRequest, hooks?: RunSignHooks): Promise<R
   // via relayer (Model A), then returns the confirmed hash to the caller.
   // The route is responsible for postResultToOpener.
   const networkPassphrase = req.networkPassphrase ?? NETWORK_PASSPHRASE;
+  if (!hooks?.reviewedInvocationXdr) {
+    throw new Error("This transaction's authorization wasn't reviewed, so it can't be signed.");
+  }
 
   const onStatus = (msg: string) => {
     hooks?.onProgress?.({ phase: "sign", detail: msg });
@@ -49,6 +55,7 @@ export async function runSign(req: SignRequest, hooks?: RunSignHooks): Promise<R
     account: req.account,
     txXdr: req.operation.xdr,
     networkPassphrase,
+    reviewedInvocationXdr: hooks.reviewedInvocationXdr,
     onStatus,
   });
 

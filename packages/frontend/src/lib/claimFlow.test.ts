@@ -6,6 +6,7 @@ import {
   buildClaimHandoffUrl,
   parseReturnIntent,
   buildClaimReturnUrl,
+  isClaimableName,
 } from "./claimFlow";
 
 // Valid strkey C-addresses (reused from other lib tests).
@@ -18,6 +19,11 @@ describe("classifyNameState", () => {
     expect(classifyNameState("1abc", null)).toBe("invalid"); // leading digit
     expect(classifyNameState("toolongname12345", null)).toBe("invalid"); // 16 chars
     expect(classifyNameState("", null)).toBe("invalid");
+  });
+  it("invalid for a name reserved for a host, on either network", () => {
+    for (const name of ["test", "www", "nido", "relay"]) {
+      expect(classifyNameState(name, null)).toBe("invalid");
+    }
   });
   it("taken when resolved", () => {
     expect(classifyNameState("alice", C1)).toBe("taken");
@@ -129,5 +135,18 @@ describe("buildClaimReturnUrl", () => {
   it("returns to the name subdomain account page with the new account param", () => {
     const url = buildClaimReturnUrl({ apexHost: "nido.fyi", name: "alice", contractId: C1 });
     expect(url).toBe(`https://alice.nido.fyi/account/?account=${C1}`);
+  });
+});
+
+describe("isClaimableName", () => {
+  it("refuses reserved names and accepts others", () => {
+    expect(isClaimableName("alice")).toBe(true);
+    expect(isClaimableName("tester")).toBe(true);
+    expect(isClaimableName("test")).toBe(false);
+    expect(isClaimableName("www")).toBe(false);
+  });
+  it("a return intent never carries a reserved name", () => {
+    expect(parseReturnIntent("claim:test")).toBeNull();
+    expect(parseReturnIntent("claim:alice")).toEqual({ kind: "claim", name: "alice" });
   });
 });

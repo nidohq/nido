@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildSessionGrantOperation, parseDocDelegateParams } from './docRequest.js';
+import {
+  buildSessionGrantOperation,
+  describeSessionScope,
+  parseDocDelegateParams,
+} from './docRequest.js';
 
 const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
 const SIGNER = 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ';
@@ -33,27 +37,81 @@ describe('parseDocDelegateParams', () => {
       functions: ['udpate_message'],
       duration: '24h',
       label: 'status-note-session',
-      limitStroops: null,
+      cap: null,
     });
   });
 
-  it('defaults duration to 30d and label to "session"', () => {
-    const r = parseDocDelegateParams(params({ duration: 'bogus', label: null }));
+  it('defaults an absent duration to 30d and label to "session"', () => {
+    const r = parseDocDelegateParams(params({ duration: null, label: null }));
     expect(r.ok && r.req.duration).toBe('30d');
     expect(r.ok && r.req.label).toBe('session');
   });
+
+  it.each(['24h', '7d', '30d', 'none'])('accepts duration %s', (duration) => {
+    const r = parseDocDelegateParams(params({ duration }));
+    expect(r.ok && r.req.duration).toBe(duration);
+  });
+
+  it.each(['', 'bogus', '24H', ' 24h', 'toString', '__proto__'])(
+    'rejects a present invalid duration %j',
+    (duration) => {
+      const r = parseDocDelegateParams(params({ duration }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain('Invalid duration');
+    },
+  );
 
   it('treats absent functions as any-function', () => {
     const r = parseDocDelegateParams(params({ functions: null }));
     expect(r.ok && r.req.functions).toBeUndefined();
   });
 
-  it('parses a decimal-XLM limit to stroops and tolerates a malformed one', () => {
-    const good = parseDocDelegateParams(params({ limit: '2.5', limit_period: 'week' }));
-    expect(good.ok && good.req.limitStroops).toBe('25000000');
-    expect(good.ok && good.req.limitPeriod).toBe('week');
-    const bad = parseDocDelegateParams(params({ limit: 'lots' }));
-    expect(bad.ok && bad.req.limitStroops).toBeNull();
+  it('requests no cap only when limit and limit_period are both absent', () => {
+    const r = parseDocDelegateParams(params());
+    expect(r.ok && r.req.cap).toBeNull();
+  });
+
+  it.each([
+    ['2.5', 'week', { stroops: '25000000', period: 'week' }],
+    ['0.0000001', 'day', { stroops: '1', period: 'day' }],
+    ['5', '30d', { stroops: '50000000', period: '30d' }],
+    ['9999999', null, { stroops: '99999990000000', period: 'day' }],
+  ] as const)('parses limit %j / limit_period %j', (limit, limit_period, cap) => {
+    const r = parseDocDelegateParams(params({ limit, limit_period }));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.req.cap).toEqual(cap);
+  });
+
+  it.each([
+    ['empty', '', 'Invalid limit amount'],
+    ['malformed', 'lots', 'Invalid limit amount'],
+    ['malformed (exponent)', '1e3', 'Invalid limit amount'],
+    ['malformed (two points)', '1.2.3', 'Invalid limit amount'],
+    ['zero', '0', 'greater than zero'],
+    ['zero with decimals', '0.0000000', 'greater than zero'],
+    ['negative', '-1', 'Invalid limit amount'],
+    ['too precise', '1.00000001', 'Invalid limit amount'],
+    ['over the maximum', '10000000', 'at most'],
+    ['overflowing', '170141183460469231731687303715884105728', 'at most'],
+  ])('rejects a %s limit (never an uncapped request)', (_case, limit, msg) => {
+    const r = parseDocDelegateParams(params({ limit, limit_period: 'day' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain(msg);
+  });
+
+  it.each(['', 'month', 'Day', 'toString'])(
+    'rejects a present invalid limit_period %j',
+    (limit_period) => {
+      const r = parseDocDelegateParams(params({ limit: '1', limit_period }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain('Invalid limit_period');
+    },
+  );
+
+  it('rejects a limit_period without a limit', () => {
+    const r = parseDocDelegateParams(params({ limit_period: 'week' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('without a limit');
   });
 
   it.each([
@@ -85,6 +143,51 @@ describe('parseDocDelegateParams', () => {
   it('rejects a cross-origin return URL', () => {
     const r = parseDocDelegateParams(params({ return: 'https://evil.example/cb' }));
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('describeSessionScope', () => {
+  it('states a capped, expiring scope exactly', () => {
+    expect(
+      describeSessionScope({
+        target: TARGET,
+        functions: ['tip', 'transfer'],
+        cap: { stroops: '25000000', period: 'week' },
+        duration: '24h',
+        notAfterLedger: 5145276,
+      }),
+    ).toEqual({
+      functions: `Only tip, transfer on ${TARGET}`,
+      amount: 'Up to 2.5 XLM per week',
+      expiry: 'At ledger 5,145,276 (≈ 24 hours)',
+    });
+  });
+
+  it('states an uncapped, never-expiring scope plainly', () => {
+    expect(
+      describeSessionScope({
+        target: TARGET,
+        functions: undefined,
+        cap: null,
+        duration: 'none',
+        notAfterLedger: null,
+      }),
+    ).toEqual({
+      functions: `Any function on ${TARGET}`,
+      amount: 'No spending cap',
+      expiry: 'Never (until revoked)',
+    });
+  });
+
+  it('falls back to the span before the ledger is read', () => {
+    const d = describeSessionScope({
+      target: TARGET,
+      functions: undefined,
+      cap: null,
+      duration: '7d',
+      notAfterLedger: null,
+    });
+    expect(d.expiry).toBe('After 7 days');
   });
 });
 
