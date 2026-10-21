@@ -1,7 +1,7 @@
 import express from "express";
 import { InviteClient } from "./inviteClient.js";
 import { buildInvitation } from "./invitationHandler.js";
-import { FilePrinter } from "./printer.js";
+import { createPrinter } from "./printerFactory.js";
 import { startReceiptPolling } from "./receiptPoller.js";
 import { requestLogger } from "./requestLogger.js";
 
@@ -13,7 +13,7 @@ const RECEIPT_POLL_INTERVAL_MS = Number(process.env.RECEIPT_POLL_INTERVAL_MS ?? 
 const PRINT_OUTPUT_DIR = process.env.PRINT_OUTPUT_DIR ?? "./print-jobs";
 
 const client = new InviteClient(INVITE_API_URL, INVITE_API_KEY);
-const printer = new FilePrinter(PRINT_OUTPUT_DIR);
+const printer = createPrinter(PRINT_OUTPUT_DIR);
 
 const app = express();
 app.use(requestLogger);
