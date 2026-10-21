@@ -17,8 +17,9 @@ The deployed stack is:
   made the relayer's always-on worker polling expensive (it hit the budget cap
   and throttled, taking the relayer down). It's a sibling app, not a sidecar,
   because the relayer's Wolfi/Chainguard base image has no `redis` apk package.
-- three Turnkey-backed Stellar signers (fund + two channels), each a
-  separate Turnkey wallet account under the same org/API user
+- four Turnkey-backed Stellar signers (treasury fund + fee-payer + two
+  channels), each a separate Turnkey wallet account under the same org/API
+  user
 - single Fly machine in org `aha-684`, region `iad`
 
 Public browser traffic only reaches:
@@ -60,9 +61,15 @@ These are public keys only. Secrets live in 1Password and Fly secrets.
 
 | Relayer id | Role | Public G-address |
 | --- | --- | --- |
-| `channels-fund` | fee-bump fee source; simulation source | `GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3` |
+| `fund` | treasury; funds new C-accounts' spendable balance | `GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3` |
+| `channels-fee-payer` | fee-bump fee source for channel deploys; simulation source | `GDF5IIBWEZIEBA43XAZSOM5A3X6KKZ7CCYX5K7SCO4M4DJGOPEPK7UOL` |
 | `channel-001` | inner transaction source | `GAPGVNKNFHOCER46FQ4WHMWXWA2DLUYY3HYXTBSIPIMPMRCE7Y6URAGA` |
 | `channel-002` | inner transaction source | `GBYC4XMYN7WNBWZ363M3MD6BWUGIX633EIOTOOASSZ3IZUGS44HBA7JZ` |
+
+`fund` used to be named `channels-fund` and doubled as the fee-bump source; that
+role moved to the new `channels-fee-payer` so the names match what each
+account actually does (see "Changing Relayers/Signers After Initial Bootstrap"
+below for how this kind of change gets applied).
 
 If keys are rotated, update this table and update all frontend build env that
 uses `PUBLIC_RELAYER_SIM_SOURCE`.
@@ -78,7 +85,8 @@ Expected log shape:
 ```text
 Syncing sequence for relayer: channel-001 (G...)
 Syncing sequence for relayer: channel-002 (G...)
-Syncing sequence for relayer: channels-fund (G...)
+Syncing sequence for relayer: fund (G...)
+Syncing sequence for relayer: channels-fee-payer (G...)
 ```
 
 ## Relayer Key Custody: Turnkey
@@ -140,6 +148,70 @@ Run commands from the repo root unless noted.
     ```
 
     After deploy, confirm every generated secret value — including the Turnkey API private key and org/account ids - is stored in 1Password vault `theahaco`.
+
+## Changing Relayers/Signers After Initial Bootstrap
+
+`config.json` only seeds Redis when the relayer/signer repositories are
+genuinely empty (first-ever boot, or `RESET_STORAGE_ON_START=true`) — every
+other restart only checks whether *anything* exists at all, not whether it
+matches the file. Confirmed in OZ Relayer's own source
+(`src/bootstrap/config_processor.rs`): `validate_config_bootstrap_state` only
+distinguishes Empty / Complete / Incomplete at the whole-repository level, and
+the actual per-item seed loop (`process_relayers`/`process_signers`)
+unconditionally `.create()`s everything in the file but only ever runs on
+that Empty/reset path. So **editing `config.json` and restarting does nothing**
+once Redis already has data — which it always does, on any already-deployed
+environment.
+
+In other words: after the one-time bootstrap, `config.json` is disaster-recovery
+reference only (what a fresh Redis would be seeded with), not a live source of
+truth. To add, change, or remove a relayer/signer going forward, use the
+relayer's own CRUD API directly — `POST`/`DELETE /api/v1/relayers`,
+`POST /api/v1/signers` — then update `config.json` to match afterward so it
+stays an accurate reference.
+
+That API is only reachable over loopback inside the `nido` machine itself —
+same constraint as "Keep Management Private" below: not via `fly proxy`, not
+via another app's 6PN connection (confirmed both get refused/reset; Fly
+appears to firewall every port except the app's primary `http_service` port).
+The container also has neither `curl` nor `wget`, but does have `node`
+(it runs the Channels plugin), so that's the tool:
+
+```bash
+fly ssh console -a nido
+```
+then, inside that shell:
+```bash
+node -e '
+const http = require("http");
+const data = JSON.stringify({ /* signer or relayer body — see
+  src/models/signer/request.rs::SignerCreateRequest and
+  src/models/relayer/request.rs::CreateRelayerRequest upstream for the exact
+  shape per type; Turnkey signer bodies need the real api_private_key value
+  inline, not the config.json {"type":"env",...} indirection */ });
+const req = http.request({
+  host: "127.0.0.1", port: 8090, path: "/api/v1/signers", method: "POST",
+  headers: {
+    "Authorization": "Bearer <API_KEY>",
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(data),
+  },
+}, res => {
+  let body = "";
+  res.on("data", c => body += c);
+  res.on("end", () => console.log(res.statusCode, body));
+});
+req.on("error", e => console.error("ERR", e.message));
+req.write(data);
+req.end();
+'
+```
+
+Deleting a relayer this way is safe and atomic — the repository's
+`delete_by_id` removes the record *and* its `relayer_list` index entry in one
+pipeline, unlike ad-hoc `redis-cli` surgery (see
+`docs/ISSUE_DRAFT_stale_relayer_signer_state.md` for what goes wrong when that
+pairing is done by hand instead).
 
 ## Migrating Off Managed Upstash (one-time)
 
@@ -294,12 +366,13 @@ Frontend builds must set:
 
 ```bash
 PUBLIC_RELAYER_URL=https://nido.fly.dev
-PUBLIC_RELAYER_SIM_SOURCE=GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
+PUBLIC_RELAYER_SIM_SOURCE=GDF5IIBWEZIEBA43XAZSOM5A3X6KKZ7CCYX5K7SCO4M4DJGOPEPK7UOL
 ```
 
-`PUBLIC_RELAYER_SIM_SOURCE` is the fund account public key. It is only a
-simulation source for recording-mode simulation; browser code never signs with
-it and never spends from it.
+`PUBLIC_RELAYER_SIM_SOURCE` is `channels-fee-payer`'s public key — the
+account that actually fee-bumps channel deploy transactions. It is a
+simulation source for recording-mode simulation; browser code never signs
+with it and never spends from it.
 
 ## Secret Handling
 
@@ -457,7 +530,17 @@ Options:
 ## Versioning
 
 OpenZeppelin Relayer is pinned to `v1.5.0` intentionally. Stellar support is
-still moving. Before upgrading:
+still moving.
+
+A bump to `v1.6.0` was attempted on 2026-10-20 specifically for
+https://github.com/OpenZeppelin/openzeppelin-relayer/pull/789, but was
+reverted because the `v1.6.0` base image broke the plugin build. Plus 1.6.0
+flags a regression risk (a multi-threaded transaction pipeline (#810)), and we
+had time constraints so this risk didn't seem work it. Instead, the `funder`
+plugin routes around the bug entirely by getting the seq number, and handling
+the tx creation and submission via rpc calls.
+
+Before attempting this upgrade again:
 
 1. Read OZ Relayer changelog and Channels plugin changelog.
 2. Re-run `scripts/relayer-proof.mjs`.

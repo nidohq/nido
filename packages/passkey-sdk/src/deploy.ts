@@ -77,7 +77,7 @@ export async function lookupExistingAccount(
 // NOTE: a `deploySmartAccount` helper was removed here. It
 // invoked a non-existent factory function (`deploy`; the factory exposes only
 // `create_account`/`get_c_address`), derived the salt from the credential id
-// after the passkey existed (contradicting the salt-first model), polled
+// after the passkey existed (contradicting the address-first model), polled
 // `getTransaction` without a bound, and returned the locally predicted address
 // without reading the deployed account (the unverified-adoption hazard the
 // account-creation flow guards against). The wallet creates accounts through

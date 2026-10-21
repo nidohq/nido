@@ -18,6 +18,7 @@ node_modules/
 
 # Generated TypeScript build output (regenerated via `npm run build:packages`)
 packages/frontend/dist/
+packages/frontend/dist-perch/
 packages/passkey-sdk/dist/
 packages/stellar-wallets-kit-module/dist/
 packages/contract-bindings/*/dist/
@@ -65,3 +66,8 @@ test-results/
 tests/.env.testnet
 .env.testnet
 infra/relayer/config/keys/
+
+# Soroban test snapshots: soroban-sdk writes one per test Env on drop and
+# never reads it back. They carry random test keys and the bytes of the
+# locally built contract wasm, so every run rewrites them.
+test_snapshots/

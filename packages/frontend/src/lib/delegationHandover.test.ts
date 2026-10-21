@@ -44,13 +44,13 @@ describe('pending delegation', () => {
   });
 
   it('returns null (rather than throwing) on corrupt JSON', () => {
-    const store = fakeStorage({ 'nido:pendingDelegation': '{not json' });
+    const store = fakeStorage({ 'nido:testnet:pendingDelegation': '{not json' });
     expect(consumePendingDelegation(store)).toBeNull();
   });
 
   it('returns null when required fields are missing', () => {
     const store = fakeStorage({
-      'nido:pendingDelegation': JSON.stringify({ account: 'CACC' }),
+      'nido:testnet:pendingDelegation': JSON.stringify({ account: 'CACC' }),
     });
     expect(consumePendingDelegation(store)).toBeNull();
   });

@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { deriveMessageChallenge, MESSAGE_SIGNING_DOMAIN } from './messageSigning';
-import { ruleIdsXdr, signingDigest } from '@stellar-registry/perch';
+import { hash } from '@stellar/stellar-sdk';
+import { ruleIdsXdr } from '@stellar-registry/perch';
 
 /**
  * A Perch account verifies an on-chain authorization against
  *   auth_digest = sha256(bound ‖ context_rule_ids.to_xdr())
- * where `bound` folds in the account address, but the OZ rule-id layer
- * (perch-js `signingDigest`) is still a plain sha256 over a 32-byte payload ‖
- * the rule-ids XDR — the preimage space the message ceremony must stay out of.
+ * where `bound` folds in the account address, but the OZ rule-id layer is
+ * still a plain sha256 over a 32-byte payload ‖ the rule-ids XDR — the
+ * preimage space the message ceremony must stay out of.
  *
  * The "sign an arbitrary message" ceremony must NOT be able to produce a
  * signature over any such digest, or a message approval could be replayed as
@@ -23,13 +24,12 @@ describe('message-signing domain separation', () => {
     const signaturePayload = new Uint8Array(32).fill(0x41); // "AAAA…"
     const ruleIds = [7];
 
-    const authDigest = new Uint8Array(signingDigest(signaturePayload, ruleIds));
-
-    // The exact preimage of that digest: signature_payload ‖ ruleIds XDR.
+    // The rule-id layer's preimage: signature_payload ‖ ruleIds XDR.
     const idsXdr = ruleIdsXdr(ruleIds);
     const preimage = new Uint8Array(signaturePayload.length + idsXdr.length);
     preimage.set(signaturePayload);
     preimage.set(idsXdr, signaturePayload.length);
+    const authDigest = new Uint8Array(hash(Buffer.from(preimage)));
 
     // The dApp hands the user a "message" that decodes to exactly that preimage.
     const message = Buffer.from(preimage).toString('utf-8');

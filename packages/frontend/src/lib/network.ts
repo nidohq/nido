@@ -1,7 +1,13 @@
 import { Asset, Networks, rpc } from "@stellar/stellar-sdk";
+import { setStorageNetwork } from "@nidohq/passkey-sdk";
 
 /** Single source of truth for the network this build targets (currently testnet). */
 export const NETWORK_NAME = "testnet" as const;
+
+// Wallet state in localStorage lives under `nido:<network>:*` (passkey-sdk
+// `nidoKey`), so a build for one network never reads another's.
+setStorageNetwork(NETWORK_NAME);
+
 export const NETWORK_PASSPHRASE = Networks.TESTNET;
 export const RPC_URL = "https://soroban-testnet.stellar.org";
 

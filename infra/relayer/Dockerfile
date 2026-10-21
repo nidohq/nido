@@ -19,6 +19,10 @@ COPY plugins/channels /app/plugins/channels
 RUN cd /app/plugins/channels && pnpm install --prod --frozen-lockfile \
     && chown -R nonroot /app/plugins/channels
 
+COPY plugins/funder /app/plugins/funder
+RUN cd /app/plugins/funder && pnpm install --prod --frozen-lockfile \
+    && chown -R nonroot /app/plugins/funder
+
 COPY --chown=nonroot config/config.json /app/config/config.json
 COPY --chown=nonroot config/networks /app/config/networks
 COPY --chown=nonroot Caddyfile /app/Caddyfile

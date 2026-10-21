@@ -24,6 +24,7 @@ import { buildApplyDocTx, parsePolicyDocJson } from "@nidohq/passkey-sdk";
 import type { OperationDescriptor } from "./signRequest";
 import { buildSendOperation } from "../transfer/buildSend.js";
 import { fetchRegistryAddress } from "../policyChainFetch.js";
+import { isClaimableName } from "../claimFlow.js";
 import { RPC_URL } from "../network.js";
 import { recoveryEditProblem } from "../policy/docDraft.js";
 import { fetchAppliedDocument, fetchDocLimits } from "../policy/docPolicyFetch.js";
@@ -45,6 +46,7 @@ export async function buildOperation(
 ): Promise<xdr.Operation> {
   switch (d.type) {
     case "register": {
+      if (!isClaimableName(d.name)) throw new Error(`"${d.name}" can't be claimed as a name.`);
       // Mirror: account/index.astro runNameClaim (~lines 1262-1278).
       // The name-registry `register(account, name)` call: the account invokes
       // the registry's `register` function directly (NOT through its own

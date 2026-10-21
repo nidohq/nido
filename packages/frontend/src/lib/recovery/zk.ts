@@ -12,6 +12,7 @@
 import type { perch } from '@nidohq/passkey-sdk';
 import { NETWORK_PASSPHRASE } from '../network.js';
 import { recoveryClient } from './chain.js';
+import { requireDeployment } from './deployment.js';
 import { hex, type RecoveryKit } from './model.js';
 
 const bytes = (h: string) => Uint8Array.from(h.match(/../g)!.map((x) => parseInt(x, 16)));
@@ -46,9 +47,10 @@ export function kitFile(kit: RecoveryKit): Blob {
   return new Blob([JSON.stringify(kit, null, 2) + '\n'], { type: 'application/json' });
 }
 
-/** Prove `statement` with `kit`: find the kit's leaf in the pool, rebuild its
- *  tree from the pool's stored leaves, and prove. The adapter refuses the
- *  result unless the kit really is the enrolled credential. */
+/** Prove `statement` with `kit`: find the kit's leaf in the pool the
+ *  account's enrolled factor names, rebuild its tree from the pool's stored
+ *  leaves, and prove. The adapter refuses the result unless the kit really
+ *  is the enrolled credential. */
 export async function proveWithKit(
   kit: RecoveryKit,
   statement: perch.RecoveryStatement,
@@ -58,10 +60,16 @@ export async function proveWithKit(
     throw new Error('This recovery kit belongs to a different Nido.');
   }
   const client = recoveryClient();
+  // The wallet proves with the deployment's circuit; an enrolled factor
+  // checked against another would fail on chain.
+  const zkFactor = await client.enrolledZk(kit.account);
+  if (zkFactor && zkFactor.circuitId !== requireDeployment().circuitId) {
+    throw new Error('This Nido’s recovery kit uses a proof circuit this wallet cannot prove with.');
+  }
   onProgress?.('Finding your credential in the pool');
   const position = await client.leafPosition(kit.account, bytes(kit.enrollmentId));
   if (!position) throw new Error("This recovery kit isn't enrolled for this Nido.");
-  const leaves = await client.treeLeaves(position.treeId);
+  const leaves = await client.treeLeaves(kit.account, position.treeId);
   onProgress?.('Loading the prover');
   const mod = await zk();
   const circuit = (await import('@stellar-registry/perch-zk/artifacts/perch_zk_recovery.json')).default;

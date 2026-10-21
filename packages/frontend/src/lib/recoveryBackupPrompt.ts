@@ -17,8 +17,10 @@
  * unavailable (SSR, privacy modes).
  */
 
-const BACKUP_KEY = (account: string) => `nido:zkrecovery:backup:${account}`;
-const SNOOZE_KEY = (account: string) => `nido:zkrecovery:backup-snooze:${account}`;
+import { nidoKey } from '@nidohq/passkey-sdk';
+
+const BACKUP_KEY = (account: string) => nidoKey(`zkrecovery:backup:${account}`);
+const SNOOZE_KEY = (account: string) => nidoKey(`zkrecovery:backup-snooze:${account}`);
 
 /** How long a dismissal hides the banner before it reappears (still suppressed
  *  permanently once a backup is recorded). Dismiss = "not now", not "never". */

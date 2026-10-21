@@ -30,6 +30,12 @@ describe('deriveBase', () => {
     expect(deriveBase(loc('nido.fyi'))).toBe('https://nido.fyi');
   });
 
+  it('keeps testnet hosts on the testnet apex', () => {
+    expect(deriveBase(loc('test.nido.fyi'))).toBe('https://test.nido.fyi');
+    expect(deriveBase(loc('status-message.test.nido.fyi'))).toBe('https://test.nido.fyi');
+    expect(deriveBase(loc('status-message--100.test.nido.fyi'))).toBe('https://100.test.nido.fyi');
+  });
+
   it('keeps the scheme and port for localhost dev', () => {
     expect(deriveBase(loc('status-message.localhost', 'http:', '4321'))).toBe('http://localhost:4321');
     expect(deriveBase(loc('localhost', 'http:', '4321'))).toBe('http://localhost:4321');
@@ -60,18 +66,18 @@ describe('session store', () => {
   });
 
   it('returns null (rather than throwing) on corrupt JSON', () => {
-    const store = fakeStorage({ 'nido:walletSession': '{not json' });
+    const store = fakeStorage({ 'nido:testnet:walletSession': '{not json' });
     expect(readSession(store)).toBeNull();
   });
 
   it('returns null when the stored object is missing required fields', () => {
-    const store = fakeStorage({ 'nido:walletSession': JSON.stringify({ walletId: 'g2c' }) });
+    const store = fakeStorage({ 'nido:testnet:walletSession': JSON.stringify({ walletId: 'g2c' }) });
     expect(readSession(store)).toBeNull();
   });
 
   it('normalizes the legacy stored Nido wallet id', () => {
     const store = fakeStorage({
-      'nido:walletSession': JSON.stringify({ walletId: 'g2c', walletAddress: 'CABC' }),
+      'nido:testnet:walletSession': JSON.stringify({ walletId: 'g2c', walletAddress: 'CABC' }),
     });
     expect(readSession(store)).toEqual({ walletId: NIDO_ID, walletAddress: 'CABC' });
   });
@@ -181,7 +187,7 @@ describe('restoreWith', () => {
 
   it('re-selects Nido for a legacy stored wallet id', () => {
     const store = fakeStorage({
-      'nido:walletSession': JSON.stringify({ walletId: 'g2c', walletAddress: 'CABC' }),
+      'nido:testnet:walletSession': JSON.stringify({ walletId: 'g2c', walletAddress: 'CABC' }),
     });
     const setWallet = vi.fn();
     const session = restoreWith({ setWallet }, store);

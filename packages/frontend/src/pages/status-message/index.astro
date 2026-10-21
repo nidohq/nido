@@ -215,6 +215,7 @@ import Icon from "../../components/Icon.astro";
   import { Keypair, Networks, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
   import { defineNidoWalletButton, WALLET_CHANGED_EVENT } from "../../components/nido-wallet-button.js";
   import { signTransaction as kitSignTransaction, isNidoWallet, type WalletSession } from "../../lib/walletConnect.js";
+  import { signTransactionUrl } from "@nidohq/stellar-wallets-kit-module";
 
   const RPC_URL = "https://soroban-testnet.stellar.org";
   // Resolved by name via the on-chain registry (with a single hardcoded
@@ -278,7 +279,8 @@ import Icon from "../../components/Icon.astro";
 
   const params = new URLSearchParams(window.location.search);
   const contractParam = params.get("contract");
-  const txhashParam = params.get("txhash");
+  // The wallet's sign page returns the submitted hash as `nido_submitted`.
+  const txhashParam = params.get("nido_submitted");
 
   if (contractParam) {
     $contractInput.value = contractParam;
@@ -720,20 +722,22 @@ import Icon from "../../components/Icon.astro";
         return;
       }
 
-      // --- Fallback: route to /sign/ via the canonical signing surface ---
-      // Navigate to the contract's account subdomain with the assembled tx XDR
-      // and the return URL encoded as ?sm-sign=&sm-return= params. The account
-      // page (running on the contract's subdomain) stashes a SignRequest in
-      // sessionStorage and redirects to /sign/?req=<id> on the same origin,
-      // so the passkey ceremony uses the correct WebAuthn rpId. On return,
-      // ?txhash=<hash> is appended so we can show the explorer link.
+      // --- Fallback: the wallet's dApp signing page ---
+      // This page is a dApp like any other: hand the assembled tx to the
+      // account's /sign/ page as a dApp request (`kind=tx`, this origin as
+      // `dapp`). The wallet shows this origin as the requester and the full
+      // authorization the account would give, signs on the account's own
+      // origin (so the passkey's rpId matches), submits through the relayer,
+      // and returns `?nido_submitted=<hash>` to `returnUrl`.
       const returnUrl = `${window.location.origin}/status-message/?contract=${encodeURIComponent(contract)}`;
-      const smSignUrl = accountUrl(
-        window.location.host,
-        contract,
-        `/account/?sm-sign=${encodeURIComponent(tx.built!.toXDR())}&sm-return=${encodeURIComponent(returnUrl)}`
-      );
-      window.location.href = smSignUrl;
+      window.location.href = signTransactionUrl({
+        base: `${window.location.protocol}//${stripSubdomain(window.location.host)}`,
+        account: contract,
+        xdr: tx.built!.toXDR(),
+        networkPassphrase: Networks.TESTNET,
+        dappOrigin: window.location.origin,
+        returnUrl,
+      });
     } catch (err: any) {
       showError(`Failed to build transaction: ${err.message}`);
       $setForm.disabled = false;
@@ -746,11 +750,11 @@ import Icon from "../../components/Icon.astro";
   if (txhashParam) {
     // We returned from the canonical /sign/ surface after a successful Set-note
     // signing. Show the result section with the explorer link, then clean the
-    // txhash out of the URL so reloads don't re-show the banner.
+    // hash out of the URL so reloads don't re-show the banner.
     $resultSection.classList.remove("hidden");
     $statusValue.textContent = "Message updated successfully!";
     // Validate hash is hex-only before embedding in a URL (XSS guard: only
-    // allow known-safe characters so a crafted ?txhash= can't inject a
+    // allow known-safe characters so a crafted ?nido_submitted= can't inject a
     // javascript: URI or path traversal).
     if (/^[0-9a-f]{64}$/i.test(txhashParam)) {
       $txLink.href = `https://stellar.expert/explorer/testnet/tx/${txhashParam}`;
@@ -763,9 +767,10 @@ import Icon from "../../components/Icon.astro";
       loadMessage(returnContract).catch(() => { /* non-critical */ });
     }
 
-    // Drop ?txhash from the URL, keeping ?contract if present.
+    // Drop the result params from the URL, keeping ?contract if present.
     const cleanUrl = new URL(window.location.href);
-    cleanUrl.searchParams.delete("txhash");
+    cleanUrl.searchParams.delete("nido_submitted");
+    cleanUrl.searchParams.delete("kind");
     window.history.replaceState({}, "", cleanUrl.toString());
   }
 

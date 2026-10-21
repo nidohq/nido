@@ -1,4 +1,4 @@
-import { handleResolve } from "./handler.js";
+import { DEFAULT_APEXES, handleResolve } from "./handler.js";
 import { makeRegistry } from "./registry.js";
 
 export interface ResolverEnv {
@@ -6,6 +6,8 @@ export interface ResolverEnv {
   NIDO_RPC_URL: string;
   NIDO_REGISTRY_ID: string;
   NIDO_NETWORK_PASSPHRASE: string;
+  /** Comma-separated apexes whose one-label subdomains are accounts. */
+  NIDO_APEXES?: string;
 }
 
 export default {
@@ -15,6 +17,9 @@ export default {
       registryId: env.NIDO_REGISTRY_ID,
       networkPassphrase: env.NIDO_NETWORK_PASSPHRASE,
     });
-    return handleResolve(request, registry, env.NIDO_NETWORK);
+    const apexes = env.NIDO_APEXES
+      ? env.NIDO_APEXES.split(",").map((a) => a.trim()).filter(Boolean)
+      : DEFAULT_APEXES;
+    return handleResolve(request, registry, env.NIDO_NETWORK, apexes);
   },
 };

@@ -33,7 +33,6 @@ import {
   loadCredential,
   buildAuthHash,
   computeAuthDigest,
-  getAuthEntry,
   injectPasskeySignature,
   injectSignedAuthPayload,
   identifyAssertionSigner,
@@ -51,6 +50,15 @@ import {
 } from './policyChainFetch.js';
 import { signatureExpirationOffset } from './relayerClient';
 import { deriveMessageChallenge } from './messageSigning.js';
+import { latestLedgerSequence } from './network.js';
+import {
+  accountAuthEntry,
+  authEntryExpiryProblem,
+  authTreeProblem,
+  describeAuthTree,
+  reviewAuthEntry,
+  type AuthNode,
+} from './signing/authReview.js';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 
@@ -81,6 +89,85 @@ function isSorobanTx(tx: Transaction): boolean {
   );
 }
 
+/** Parse a dApp's transaction XDR, refusing what a Nido account can't sign. */
+function parseSorobanTx(txXdr: string, networkPassphrase: string): Transaction {
+  const parsed = TransactionBuilder.fromXDR(txXdr, networkPassphrase);
+  if (parsed instanceof FeeBumpTransaction) {
+    throw new Error('Fee-bump transactions are not supported by the Nido passkey signer.');
+  }
+  const tx = parsed as Transaction;
+  if (!isSorobanTx(tx)) {
+    throw new Error(
+      'This transaction is not a Soroban contract invocation. A Nido smart ' +
+        'account (a contract address) can only authorize Soroban operations, ' +
+        'so there is nothing for the passkey to sign on a classic Stellar ' +
+        'transaction.',
+    );
+  }
+  return tx;
+}
+
+/**
+ * Simulate a dApp transaction afresh in recording mode and return this
+ * account's authorization entry from it — the entry the ceremony signs.
+ *
+ * Any auth templates the dApp attached are stripped first: the simulator
+ * regenerates the smart account's entry (Void signatures trap recording-mode
+ * `__check_auth` otherwise — same reasoning as
+ * primaryPasskeySigner.signAndSubmit). The rebuilt transaction keeps the
+ * dApp's source and fee so the footprint matches what will be submitted.
+ */
+async function simulateAccountAuth(
+  server: rpc.Server,
+  tx: Transaction,
+  account: string,
+  networkPassphrase: string,
+): Promise<{
+  simTx: Transaction;
+  sim: rpc.Api.SimulateTransactionSuccessResponse;
+  authEntry: xdr.SorobanAuthorizationEntry;
+}> {
+  const op = tx.operations[0] as Operation.InvokeHostFunction;
+  const sourceAccount = await server.getAccount(tx.source);
+  const simTx = new TransactionBuilder(sourceAccount, {
+    fee: tx.fee,
+    networkPassphrase,
+  })
+    .addOperation(Operation.invokeHostFunction({ func: op.func, auth: [] }))
+    .setTimeout(0)
+    .build();
+
+  const sim = await server.simulateTransaction(simTx);
+  if (rpc.Api.isSimulationError(sim)) {
+    throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
+  }
+  const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
+  const authEntry = accountAuthEntry(successSim.result?.auth ?? [], account);
+  return { simTx, sim: successSim, authEntry };
+}
+
+/**
+ * What a dApp transaction would have this account authorize, for review
+ * before the ceremony: the account's full authorization tree from a fresh
+ * simulation, and that tree's XDR, which the ceremony later requires to be
+ * unchanged. Throws when the tree is one a dApp may not ask for.
+ */
+export async function previewTransactionAuth(args: {
+  account: string;
+  txXdr: string;
+  networkPassphrase?: string;
+  nameRegistry?: string;
+}): Promise<{ invocationXdr: string; tree: AuthNode }> {
+  const networkPassphrase = args.networkPassphrase ?? Networks.TESTNET;
+  const tx = parseSorobanTx(args.txXdr, networkPassphrase);
+  const { authEntry } = await simulateAccountAuth(new rpc.Server(RPC_URL), tx, args.account, networkPassphrase);
+  const invocation = authEntry.rootInvocation();
+  const tree = describeAuthTree(invocation, args.account, args.nameRegistry);
+  const problem = authTreeProblem(tree, args.account);
+  if (problem) throw new Error(problem);
+  return { invocationXdr: invocation.toXDR('base64'), tree };
+}
+
 /**
  * Sign a transaction XDR with the account's primary passkey and return the
  * signed XDR (NOT submitted).
@@ -94,6 +181,9 @@ export async function signTransactionXdr(args: {
   account: string;
   txXdr: string;
   networkPassphrase?: string;
+  /** The authorization tree the user reviewed (`previewTransactionAuth`'s
+   *  `invocationXdr`). The ceremony refuses to sign a different one. */
+  reviewedInvocationXdr: string;
   /** Progress callback for multi-passkey ceremonies ("signature 1 of 2…"). */
   onStatus?: (msg: string) => void;
 }): Promise<string> {
@@ -101,20 +191,7 @@ export async function signTransactionXdr(args: {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
 
-  const parsed = TransactionBuilder.fromXDR(args.txXdr, networkPassphrase);
-  if (parsed instanceof FeeBumpTransaction) {
-    throw new Error('Fee-bump transactions are not supported by the Nido passkey signer.');
-  }
-  const tx = parsed as Transaction;
-
-  if (!isSorobanTx(tx)) {
-    throw new Error(
-      'This transaction is not a Soroban contract invocation. A Nido smart ' +
-        'account (a contract address) can only authorize Soroban operations, ' +
-        'so there is nothing for the passkey to sign on a classic Stellar ' +
-        'transaction.',
-    );
-  }
+  const tx = parseSorobanTx(args.txXdr, networkPassphrase);
 
   const server = new rpc.Server(RPC_URL);
   // Resolve which rule this passkey signs under + that rule's verifier in one
@@ -157,29 +234,22 @@ export async function signTransactionXdr(args: {
     }
   }
 
-  // Strip any auth templates and simulate fresh in recording mode so the
-  // simulator regenerates the smart account's auth entry — same reasoning as
-  // primaryPasskeySigner.signAndSubmit (Void signatures trap recording-mode
-  // __check_auth otherwise). Rebuild the tx from the host function with no
-  // auth, using the SAME source/sequence/fee the dApp chose so the simulation
-  // footprint matches what the dApp will submit.
-  const op = tx.operations[0] as Operation.InvokeHostFunction;
-  const sourceAccount = await server.getAccount(tx.source);
-  const simTx = new TransactionBuilder(sourceAccount, {
-    fee: tx.fee,
+  const { simTx, sim: successSim, authEntry } = await simulateAccountAuth(
+    server,
+    tx,
+    args.account,
     networkPassphrase,
-  })
-    .addOperation(Operation.invokeHostFunction({ func: op.func, auth: [] }))
-    .setTimeout(0)
-    .build();
-
-  const sim = await server.simulateTransaction(simTx);
-  if (rpc.Api.isSimulationError(sim)) {
-    throw new Error(`Simulation failed: ${(sim as rpc.Api.SimulateTransactionErrorResponse).error}`);
+  );
+  // Sign only what the user reviewed: the same tree, and one a dApp may ask for.
+  const invocation = authEntry.rootInvocation();
+  const problem = authTreeProblem(describeAuthTree(invocation, args.account), args.account);
+  if (problem) throw new Error(problem);
+  if (invocation.toXDR('base64') !== args.reviewedInvocationXdr) {
+    throw new Error(
+      'What this transaction asks your account to authorize changed after you ' +
+        'reviewed it. Nothing was signed; reload to review it again.',
+    );
   }
-  const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
-
-  const authEntry = getAuthEntry(successSim);
   const lastLedger = successSim.latestLedger;
   // SECURITY (F6): the signed XDR this function returns is ALWAYS relayer-
   // submitted by runSign (the dApp raw-xdr path ships the signed auth entry to
@@ -459,7 +529,8 @@ export async function signMessageRaw(args: { account: string; message: string })
 }
 
 /**
- * Sign a Soroban auth-entry preimage with the primary passkey. `authEntryXdr`
+ * Sign a Soroban auth-entry preimage with the primary passkey, after the
+ * checks in `reviewAuthEntry` and `authEntryExpiryProblem`. `authEntryXdr`
  * is the base64 XDR of a `HashIdPreimageSorobanAuthorization`; we SHA-256 it to
  * the signature payload, apply the OZ v0.7 auth digest over the passkey's
  * resolved signing rule, and produce the WebAuthn assertion envelope. The
@@ -477,6 +548,12 @@ export async function signAuthEntryXdr(args: { account: string; authEntryXdr: st
   if (!resolved) {
     throw new Error('This passkey is not registered on any authorization rule of the account.');
   }
+  // The same checks the review ran, enforced here: a Soroban authorization
+  // for this network, with a tree a dApp may ask for, expiring soon.
+  const checked = reviewAuthEntry(args.authEntryXdr, args.account, Networks.TESTNET);
+  if (!checked.ok) throw new Error(checked.reason);
+  const expiry = authEntryExpiryProblem(checked.review.expirationLedger, await latestLedgerSequence());
+  if (expiry) throw new Error(expiry);
   const preimage = xdr.HashIdPreimage.fromXDR(args.authEntryXdr, 'base64');
   const signaturePayload = new Uint8Array(hash(preimage.toXDR()));
   const scheme = await perch.authDigestScheme({

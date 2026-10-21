@@ -15,7 +15,7 @@
  * one doesn't.
  */
 
-import { createSessionPasskey, saveSessionKeyMaterial, buf2hex } from '@nidohq/passkey-sdk';
+import { createSessionPasskey, saveSessionKeyMaterial, buf2hex, nidoKey } from '@nidohq/passkey-sdk';
 
 // ---------------------------------------------------------------------------
 // Pending-delegation persistence.
@@ -29,7 +29,7 @@ import { createSessionPasskey, saveSessionKeyMaterial, buf2hex } from '@nidohq/p
 // (and can locate the session-key material it saved, which is keyed by them).
 // ---------------------------------------------------------------------------
 
-const PENDING_KEY = 'nido:pendingDelegation';
+const pendingKey = () => nidoKey('pendingDelegation');
 
 /** Minimal Storage shape so the store is testable with a fake. */
 export type DelegationStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -57,7 +57,7 @@ export function writePendingDelegation(
   pending: PendingDelegation,
   store: DelegationStorage | null = defaultStorage(),
 ): void {
-  store?.setItem(PENDING_KEY, JSON.stringify(pending));
+  store?.setItem(pendingKey(), JSON.stringify(pending));
 }
 
 /**
@@ -68,9 +68,9 @@ export function consumePendingDelegation(
   store: DelegationStorage | null = defaultStorage(),
 ): PendingDelegation | null {
   if (!store) return null;
-  const raw = store.getItem(PENDING_KEY);
+  const raw = store.getItem(pendingKey());
   if (!raw) return null;
-  store.removeItem(PENDING_KEY);
+  store.removeItem(pendingKey());
   try {
     const o = JSON.parse(raw) as Partial<PendingDelegation>;
     if (o && typeof o.account === 'string' && typeof o.target === 'string') {

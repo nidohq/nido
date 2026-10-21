@@ -49,7 +49,7 @@ graph TB
     end
 
     subgraph "Stellar (Nido-owned)"
-        Factory["nido-factory<br/>admin-upgradeable"]
+        Factory["nido-factory<br/>admin changes after a delay"]
         Names["nido-name-registry"]
     end
 
@@ -83,7 +83,7 @@ graph TB
 
 | Contract | Path | Role |
 | --- | --- | --- |
-| `nido-factory` | `contracts/factory/` | `create_account(salt, key)` deploys a `perch-account` at the address `get_c_address(salt)` predicts, with one constructor rule: the passkey `key` as admin, scoped to the account itself, checked by Perch's WebAuthn verifier. `create_account` needs no authorization, and the address derives from the salt alone: a Nido passkey's RP ID is the account's own subdomain, so the address has to exist before the passkey (Perch's own factory, whose addresses commit to the admin signers, cannot serve this). The factory embeds the release's account wasm and deploys by its hash. It is admin-upgradeable (`admin-sep`): the admin can replace the factory's wasm and pin the verifier (`set_registry_pins`, which takes the registry off the creation path), and has no authority over a deployed account (THREAT_MODEL 8). |
+| `nido-factory` | `contracts/factory/` | `create_account(setup_pk, key, setup_sig)` deploys a `perch-account` at the address `get_c_address(setup_pk)` predicts, with one constructor rule: the passkey `key` as admin, scoped to the account itself, checked by Perch's WebAuthn verifier. The address derives from a one-time setup key alone: a Nido passkey's RP ID is the account's own subdomain, so the address has to exist before the passkey (Perch's own factory, whose addresses commit to the admin signers, cannot serve this). The factory deploys only if the setup key signed `key`, so only the setup key's holder chooses the passkey at its address. If a manager is set, its authorization is required too; it decides admission, never whose account it is. The factory pins the release's account wasm hash at build time (Perch's `registry_contract!` over a pin written from Perch's deployment manifest) and deploys every account from it, and is constructed with the verifier pinned, which takes the registry off the creation path. Its admin (`admin-sep`) can upgrade the factory, repin the verifier, and set the manager, each at once and announced by an event; any delay is the admin smart account's. It has no authority over a deployed account (THREAT_MODEL 8). |
 | `nido-name-registry` | `contracts/name-registry/` | Human-readable names for accounts. |
 | `nido-multisig-policy`, `nido-spending-limit-policy`, `nido-preauth-sweep-policy` | `contracts/*-policy/` | OZ policies a Perch document cannot attach (the compiler attaches only Perch's interpreter and spending limit), so no account the factory mints can install them. Whether to retire or port them is an open product question (MAINNET_READINESS D6). |
 | `nido-status-message` | `contracts/status-message/` | Demo contract for the example dApp. Excluded from mainnet (MAINNET_READINESS E3). |
@@ -113,7 +113,7 @@ bytes, fetched by hash (see [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md)).
 | Wallet | `packages/frontend/` | Static Astro site on Cloudflare Pages. Each account lives at its own subdomain, `<contract-id>.nido.fyi`, served by the worker proxy in `frontend/worker-proxy-nido/`. All chain access is client-side. |
 | Passkey SDK | `packages/passkey-sdk/` | WebAuthn parsing, Soroban auth, policy documents, and the `perch` namespace: statement encodings, recovery as document changes, controller and account clients. `@nidohq/passkey-sdk/perch-zk` proves. |
 | Contract bindings | `packages/contract-bindings/` | Generated clients, including private `perch-*` clients generated from the deployed Perch wasm; Perch does not publish them ([docs/DEFERRED.md](docs/DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)). |
-| Relayer | `infra/relayer/` | OpenZeppelin relayer with the channels plugin. Pays fees for any contract call whose authorization is already complete. It cannot authorize anything for an existing account; it does see each setup salt before the account exists (THREAT_MODEL 10). |
+| Relayer | `infra/relayer/` | OpenZeppelin relayer with the channels plugin. Pays fees for any contract call whose authorization is already complete. It cannot authorize anything for an existing account. It sees each setup's public key and the setup key's signature over the passkey before the account exists, which lets it withhold a setup but not claim the address (THREAT_MODEL 10). |
 | Name resolver | `infra/nido-resolver/` | Serves `/.well-known/nido.json` from the name registry. Read-only. |
 
 ## 2. Subdomain isolation
@@ -125,6 +125,20 @@ holds no passkey. A storage bridge (`/nido-storage-bridge/`,
 `packages/frontend/src/pages/nido-storage-bridge/`) shares the
 browser's account list, names, and the setup keys of accounts still being
 created across the apex and account origins.
+
+Hosts are read against a list of known apexes, never by counting labels:
+`splitHost` and `NIDO_APEXES` in `packages/passkey-sdk/src/url.ts` (`test.nido.fyi`
+and `nido.fyi`, longest first, plus `localhost`). An account, name or built-in
+dApp is exactly one label below its apex; a PR preview adds `--<N>` to that
+label, and `<N>.<apex>` is the preview root. An apex is never an account, so
+`test.nido.fyi` is the testnet apex and not a name `test` on `nido.fyi`, and the
+storage bridge, return-URL checks and links never cross from one apex to the
+other. Names that are, or would shadow, a host (`test`, `www`, `nido`, `relay`,
+the built-in dApps, preview roots) are reserved on both networks. No RP ID is
+ever an apex: a credential for `nido.fyi` would be usable from every testnet and
+preview origin (`packages/frontend/src/lib/rpIdInvariant.test.ts`). Wallet state
+in `localStorage` that is not tied to one account address lives under
+`nido:<network>:*`, so one origin serving another network later starts empty.
 
 ## 3. Onboarding
 
@@ -140,12 +154,15 @@ sequenceDiagram
     participant Pool as perch-zk-pool
 
     User->>Apex: Create a Nido
-    Apex->>Apex: random 32-byte salt (setup secret)
-    Apex-->>Sub: redirect, salt in the URL fragment
+    Apex->>Apex: random 32-byte setup secret (Ed25519 seed)
+    Apex-->>Sub: redirect, secret in the URL fragment
     User->>Sub: create passkey (RP ID = subdomain)
-    Sub->>Relayer: create_account(salt, passkey)
+    Sub->>Sub: setup key signs the passkey
+    Sub->>Relayer: create_account(setup_pk, passkey, setup_sig)
     Relayer->>Factory: sponsored invocation
-    Factory->>Account: deploy at get_c_address(salt)<br/>rule 0: passkey admin, scoped to self
+    Factory->>Factory: check setup_sig over the passkey
+    Factory->>Account: deploy at get_c_address(setup_pk)<br/>rule 0: passkey admin, scoped to self
+    Sub->>Account: read back over RPC: code and configuration<br/>(stop unless it is this passkey's untouched account)
     Sub->>Account: testnet funding moves in
     User->>Sub: /security/recovery/: choose recovery
     Sub->>Account: apply_doc(document with recovery), signed by the passkey
@@ -154,14 +171,24 @@ sequenceDiagram
     Note over Account,Pool: one invocation: any failure reverts all of it
 ```
 
-The salt is a setup secret: whoever submits `create_account` with it first
-owns the address it derives, with their own key. It travels in the URL
-fragment and is scrubbed from the address bar on load. During setup it is
-also kept in the browser's `nido:pending` storage and in a
-`nido_setup_<account>` cookie on the parent domain (30 minutes), which sends
-it with requests to Nido's subdomains until the account exists. The relayer
-sees it in the setup transaction. A second `create_account` with the same salt fails,
-so the exposure is a race before the first deploy (THREAT_MODEL 5, 10).
+The setup secret is the seed of a one-time Ed25519 setup key. Its public key
+fixes the address, and once the passkey exists the setup key signs
+`sha256("nido/bind/v1" || network_id || factory_id || passkey)`; the factory
+deploys only with that signature (SECURITY_INVARIANTS F6). The relayer and
+anyone else who sees the setup transaction see only the public key and the
+signature, so they can't bind another passkey to the address. The secret
+travels in the URL fragment (as `salt`) and is scrubbed from the address bar
+on load. During setup it is also kept in the browser's `nido:<network>:pending` storage
+and in a `nido_setup_<account>` cookie on the site apex (30 minutes),
+which sends it with requests to Nido's subdomains until the account exists;
+the page drops its copies once the account is checked. Whoever holds the
+secret can still bind its own passkey first, and a second `create_account`
+with the same setup key fails, so that exposure is a race before the first
+deploy (THREAT_MODEL 5). The wallet does not take the relayer's confirmation
+as proof of what was deployed: before it activates or funds the account, it
+reads it back over RPC and stops unless it is exactly what `create_account`
+makes for the user's passkey (SECURITY_INVARIANTS W11). A lost race therefore
+costs the user the address, not funds.
 
 Until the first `apply_doc`, the account has only its admin rule and no
 recovery. Recovery is enrolled by that `apply_doc`: the account synchronizes

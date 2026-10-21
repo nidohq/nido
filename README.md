@@ -99,7 +99,9 @@ through Perch, and Soroban's native authorization model.
 - Rust and Cargo
 - [`just`](https://github.com/casey/just)
 - [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/cli/install-cli)
-  and `jq` (for `just perch-infra`)
+  with `curl` and `jq` (for `just perch-infra`; it falls back to another
+  testnet RPC while the manifest's is down, see
+  [docs/RUNBOOKS.md](./docs/RUNBOOKS.md) "RPC endpoints")
 - `stellar-scaffold` for scaffold-based contract workflows
 
 Fetch the Perch submodule and its build inputs, then install dependencies from

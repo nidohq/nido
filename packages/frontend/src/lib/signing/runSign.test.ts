@@ -11,6 +11,7 @@ vi.mock("@stellar/stellar-sdk", async (orig) => {
 });
 
 import { runSign } from "./runSign";
+import { signTransactionXdr } from "../walletSign.js";
 const C1 = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 
 describe("runSign", () => {
@@ -29,7 +30,21 @@ describe("runSign", () => {
       operation: { type: "raw-xdr", xdr: "RAW" },
       title: "t", submitMode: "return-to-dapp",
       returnTarget: { type: "dapp", origin: "https://x" },
-    });
+    }, { reviewedInvocationXdr: "TREE" });
     expect(out).toEqual({ hash: "dapphash" });
+    expect(signTransactionXdr).toHaveBeenCalledWith(
+      expect.objectContaining({ txXdr: "RAW", reviewedInvocationXdr: "TREE" }),
+    );
+  });
+  it("dapp raw-xdr: refuses to sign a transaction whose authorization wasn't reviewed", async () => {
+    await expect(
+      runSign({
+        v: 1, kind: "dapp-tx", account: C1,
+        operation: { type: "raw-xdr", xdr: "RAW" },
+        title: "t", submitMode: "return-to-dapp",
+        returnTarget: { type: "dapp", origin: "https://x" },
+      }),
+    ).rejects.toThrow(/wasn't reviewed/);
+    expect(signTransactionXdr).not.toHaveBeenCalled();
   });
 });

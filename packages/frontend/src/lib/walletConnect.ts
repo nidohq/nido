@@ -34,6 +34,7 @@
  * to the real `StellarWalletsKit` + `window`/`localStorage`.
  */
 
+import { nidoKey } from '@nidohq/passkey-sdk';
 import { StellarWalletsKit, type ModuleInterface } from '@creit.tech/stellar-wallets-kit';
 import { NidoModule, NIDO_ID } from '@nidohq/stellar-wallets-kit-module';
 import { apexHostForHost } from './nidoSharedStorage';
@@ -41,7 +42,7 @@ import { apexHostForHost } from './nidoSharedStorage';
 export { NIDO_ID };
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
-const SESSION_KEY = 'nido:walletSession';
+const sessionKey = () => nidoKey('walletSession');
 const LEGACY_NIDO_ID = 'g2c';
 
 // ---------------------------------------------------------------------------
@@ -74,7 +75,7 @@ function normalizeWalletId(walletId: string): string {
 /** Read the persisted session, or null if absent/corrupt. */
 export function readSession(store: SessionStorage | null = defaultStorage()): WalletSession | null {
   if (!store) return null;
-  const raw = store.getItem(SESSION_KEY);
+  const raw = store.getItem(sessionKey());
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<WalletSession>;
@@ -92,12 +93,12 @@ export function writeSession(
   session: WalletSession,
   store: SessionStorage | null = defaultStorage(),
 ): void {
-  store?.setItem(SESSION_KEY, JSON.stringify(session));
+  store?.setItem(sessionKey(), JSON.stringify(session));
 }
 
 /** Clear any persisted session. */
 export function clearSession(store: SessionStorage | null = defaultStorage()): void {
-  store?.removeItem(SESSION_KEY);
+  store?.removeItem(sessionKey());
 }
 
 // ---------------------------------------------------------------------------
@@ -243,8 +244,9 @@ export function deriveBase(
   // would DROP the `--<N>` preview suffix and collapse every preview host to the
   // production apex, so the kit module would build its WebAuthn ceremony origins
   // on production and the rpId would not match the preview credential.
-  // apexHostForHost preserves the preview root (`<N>.<apex>`), keeps the 2-label
-  // apex intact, and resolves localhost — exactly the base NidoModule expects.
+  // apexHostForHost preserves the preview root (`<N>.<apex>`), keeps an apex
+  // (`nido.fyi`, `test.nido.fyi`) intact, and resolves localhost — exactly the
+  // base NidoModule expects.
   const { protocol, hostname, port } = loc;
   const apexHost = apexHostForHost(hostname);
   const portPart = port ? `:${port}` : '';

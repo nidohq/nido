@@ -56,6 +56,7 @@ perch-zk-adapter = { git = "https://github.com/stellar-registry/perch", rev = "6
 perch-zk-prover = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
 perch-zk-primitives = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
 perch-ir = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-registry-resolve = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
 
 [profile.release]
 overflow-checks = true

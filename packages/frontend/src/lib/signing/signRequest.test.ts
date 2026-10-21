@@ -3,6 +3,7 @@ import {
   stashSignRequest,
   loadSignRequest,
   clearSignRequest,
+  networkProblem,
   safeRouteUrl,
   signRequestFromParams,
   validateDappReturn,
@@ -95,6 +96,20 @@ describe("safeRouteUrl (F1 XSS / open-redirect guard)", () => {
   it("accepts a SIBLING subdomain on the same parent domain (name-claim hop)", () => {
     expect(safeRouteUrl("https://alice.nido.fyi/account/?namepasskey=1", ORIGIN))
       .toBe("https://alice.nido.fyi/account/?namepasskey=1");
+  });
+  it("rejects the other Nido apex and its subdomains", () => {
+    expect(safeRouteUrl("https://alice.test.nido.fyi/account/", ORIGIN)).toBeNull();
+    expect(safeRouteUrl("https://test.nido.fyi/", ORIGIN)).toBeNull();
+    expect(safeRouteUrl("https://nido.fyi/", "https://cabc.test.nido.fyi")).toBeNull();
+    expect(safeRouteUrl("https://alice.nido.fyi/", "https://cabc.test.nido.fyi")).toBeNull();
+  });
+  it("accepts siblings and the apex on the testnet apex", () => {
+    expect(safeRouteUrl("https://alice.test.nido.fyi/account/", "https://cabc.test.nido.fyi"))
+      .toBe("https://alice.test.nido.fyi/account/");
+    expect(safeRouteUrl("https://test.nido.fyi/", "https://cabc.test.nido.fyi")).toBe("https://test.nido.fyi/");
+  });
+  it("rejects a preview host from production", () => {
+    expect(safeRouteUrl("https://alice--24.nido.fyi/account/", ORIGIN)).toBeNull();
   });
   it("accepts the status-message sibling subdomain (Set-note bridge)", () => {
     expect(safeRouteUrl("https://status-message.nido.fyi/status-message/?contract=C", ORIGIN))
@@ -281,5 +296,19 @@ describe("validateDappReturn (entry-point origin/return guard)", () => {
     expect(validateDappReturn("http://localhost.evil.example", undefined)).toEqual({
       error: "malformed-dapp",
     });
+  });
+});
+
+describe("networkProblem", () => {
+  const TESTNET = "Test SDF Network ; September 2015";
+  it("accepts no network or the wallet's own", () => {
+    expect(networkProblem(undefined, TESTNET)).toBeUndefined();
+    expect(networkProblem("", TESTNET)).toBeUndefined();
+    expect(networkProblem(TESTNET, TESTNET)).toBeUndefined();
+  });
+  it("refuses a request for another network", () => {
+    expect(networkProblem("Public Global Stellar Network ; September 2015", TESTNET)).toMatch(
+      /different Stellar network/,
+    );
   });
 });

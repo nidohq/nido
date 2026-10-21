@@ -20,7 +20,7 @@
 
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { configHash as perchConfigHash, parsePolicyDoc } from '@stellar-registry/perch';
-import type { PolicyDoc, RecoverySpec, ZkFactorSpec } from '@stellar-registry/perch';
+import type { PolicyDoc, RecoveryModeSpec, RecoverySpec, ZkFactorSpec } from '@stellar-registry/perch';
 import type { PerchDeployment } from './deployment.js';
 import type { Bytes32 } from './statement.js';
 
@@ -141,6 +141,90 @@ export function recoveryToWire(spec: RecoverySpec): Record<string, unknown> {
     'expiry-ledgers': spec.expiryLedgers,
     'max-cancels': spec.maxCancels,
   };
+}
+
+type WireRecovery = NonNullable<PolicyDoc['recovery']>;
+
+/** A document's recovery member as a `RecoverySpec`: the inverse of
+ *  `recoveryToWire`. */
+export function recoveryFromWire(r: WireRecovery): RecoverySpec {
+  const m = r.mode;
+  const zk = (z: Extract<WireRecovery['mode'], { pool: string }>): ZkFactorSpec => ({
+    adapter: z.adapter,
+    circuitId: z['circuit-id'],
+    pool: z.pool,
+    enrollmentId: z['enrollment-id'],
+    commitment: z.commitment,
+  });
+  const mode: RecoveryModeSpec =
+    m.type === 'guardian-only'
+      ? { kind: 'guardian-only', guardians: m.guardians, quorum: m.quorum }
+      : m.type === 'zk-only'
+        ? { kind: 'zk-only', ...zk(m) }
+        : { kind: 'combined', guardians: m.guardians, quorum: m.quorum, ...zk(m) };
+  return {
+    profile: r.profile,
+    mode,
+    controller: r.controller,
+    ...(r.baseline !== undefined ? { baseline: { docHash: r.baseline['doc-hash'] } } : {}),
+    replaceable: r.replaceable,
+    delayLedgers: r['delay-ledgers'],
+    expiryLedgers: r['expiry-ledgers'],
+    maxCancels: r['max-cancels'],
+  };
+}
+
+/** What of `spec` is not on `deployment`'s recovery stack: its controller,
+ *  and its ZK factor's pool, adapter, or circuit. A Perch redeploy moves
+ *  every one of them to a new address, and an account keeps what it
+ *  enrolled with until its owner moves it (`movedRecovery`). */
+export function recoveryStackDrift(
+  deployment: PerchDeployment,
+  spec: RecoverySpec,
+): { controller: boolean; zk: boolean } {
+  const m = spec.mode;
+  return {
+    controller: spec.controller !== deployment.recoveryController,
+    zk:
+      m.kind !== 'guardian-only' &&
+      (m.pool !== deployment.zkPool || m.adapter !== deployment.zkAdapter || m.circuitId !== deployment.circuitId),
+  };
+}
+
+/**
+ * `spec` moved onto `deployment`'s stack: the deployment's controller, and
+ * with `zk` a new credential on the deployment's pool, adapter, and circuit.
+ * Every setting the owner chose (profile, guardians, quorum, baseline,
+ * replaceable signers, timing) stays as it is.
+ *
+ * Applying it is a reconfiguration evaluated by the controller the account
+ * leaves (Perch spec §10, "Remove or switch away"): under `Protected` the
+ * evidence is recorded there first. A ZK factor that moves to another pool,
+ * adapter, or circuit needs `zk`, because the account refuses a changed
+ * factor that keeps its enrollment id (`ZkFactorChangedInPlace`, §3.4).
+ * Throws when it would.
+ */
+export function movedRecovery(
+  deployment: PerchDeployment,
+  spec: RecoverySpec,
+  zk?: ZkEnrollmentSpec,
+): RecoverySpec {
+  const m = spec.mode;
+  if (m.kind === 'guardian-only') return { ...spec, controller: deployment.recoveryController };
+  if (zk === undefined && recoveryStackDrift(deployment, spec).zk) {
+    throw new Error('the recovery kit is enrolled in an earlier pool; moving it needs a new recovery kit');
+  }
+  const factor: ZkFactorSpec =
+    zk === undefined
+      ? { adapter: m.adapter, circuitId: m.circuitId, pool: m.pool, enrollmentId: m.enrollmentId, commitment: m.commitment }
+      : {
+          adapter: deployment.zkAdapter,
+          circuitId: deployment.circuitId,
+          pool: deployment.zkPool,
+          enrollmentId: bytesToHex(zk.enrollmentId),
+          commitment: bytesToHex(zk.commitment),
+        };
+  return { ...spec, mode: { ...m, ...factor }, controller: deployment.recoveryController };
 }
 
 /** `doc` with its recovery member set to `spec` (or removed), validated.

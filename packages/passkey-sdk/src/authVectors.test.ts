@@ -1,15 +1,15 @@
 // The SDK's auth digest and AuthPayload against the vectors Perch's Rust
 // suite writes from the account's own types
 // (vendor/perch/testdata/auth/auth-vectors.json, crates/integration-tests/
-// tests/auth_vectors.rs there). `computeAuthDigest` folds the account address
-// into the payload (the addr_oz_v1 binding) and then uses perch-js for the
-// rule-id layer; `buildAuthPayloadScVal` delegates to perch-js. This checks the
-// SDK's wrappers reproduce Perch's account-bound digest and payload byte for
-// byte.
+// tests/auth_vectors.rs there). `computeAuthDigest` delegates the addr_oz_v1
+// digest to perch-js and computes the unbound oz_rule_ids digest itself;
+// `buildAuthPayloadScVal` delegates to perch-js. This checks the SDK's
+// wrappers reproduce Perch's account-bound digest and payload byte for byte.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { signingDigest } from '@stellar-registry/perch';
+import { hash } from '@stellar/stellar-sdk';
+import { ruleIdsXdr } from '@stellar-registry/perch';
 import { computeAuthDigest } from './auth.js';
 import { buildAuthPayloadScVal } from './multiSigner.js';
 
@@ -46,7 +46,7 @@ describe('Perch auth vectors', () => {
     // binding — it is the raw OZ rule-id layer over the bare payload, so it
     // differs from the bound digest and does not depend on the account.
     const unbound = computeAuthDigest(v.account, payload, v.rule_ids, 'oz_rule_ids');
-    expect(unbound).toEqual(Buffer.from(signingDigest(payload, v.rule_ids)));
+    expect(unbound).toEqual(hash(Buffer.concat([payload, ruleIdsXdr(v.rule_ids)])));
     expect(unbound.toString('hex')).not.toBe(v.digest);
     const other = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
     expect(computeAuthDigest(other, payload, v.rule_ids, 'oz_rule_ids')).toEqual(unbound);

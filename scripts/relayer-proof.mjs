@@ -51,7 +51,10 @@ import {
 } from "@stellar/stellar-sdk";
 
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
-const RPC_URL = "https://soroban-testnet.stellar.org";
+// RPC_URL/STELLAR_RPC_URL override the endpoint, as for the shell scripts
+// (docs/RUNBOOKS.md "RPC endpoints"); no automatic fallback here.
+const RPC_URL =
+  process.env.RPC_URL || process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
 const FRIENDBOT_URL = "https://friendbot.stellar.org";
 const DEFAULT_RELAYER_URL = "https://nido.fly.dev";
 const EXPLORER_TX_URL = "https://stellar.expert/explorer/testnet/tx";

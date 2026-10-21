@@ -67,11 +67,11 @@ function onChain(attempts: perch.Attempt[]): void {
 
 function savePending(attemptId: string): void {
   localStorage.setItem(
-    `nido:recover:${ACCOUNT}`,
+    `nido:testnet:recover:${ACCOUNT}`,
     JSON.stringify({ action: 'lost-key', attemptId, credentialId: 'AQID', publicKey: MINE.signers[0]!.key, replacements: MINE }),
   );
 }
-const savedAttemptId = () => JSON.parse(localStorage.getItem(`nido:recover:${ACCOUNT}`)!).attemptId;
+const savedAttemptId = () => JSON.parse(localStorage.getItem(`nido:testnet:recover:${ACCOUNT}`)!).attemptId;
 
 async function mount(): Promise<HTMLElement> {
   const root = document.createElement('div');
@@ -156,7 +156,7 @@ describe('recover page: whose attempt it works on', () => {
   it('finds its own attempt when it saved no id', async () => {
     onChain([attempt(MINE), attempt(THEIRS)]);
     localStorage.setItem(
-      `nido:recover:${ACCOUNT}`,
+      `nido:testnet:recover:${ACCOUNT}`,
       JSON.stringify({ action: 'lost-key', credentialId: 'AQID', publicKey: MINE.signers[0]!.key, replacements: MINE }),
     );
     const root = await mount();

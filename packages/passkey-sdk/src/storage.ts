@@ -1,10 +1,94 @@
 import { buf2hex, buf2base64url, base64url2buf } from "./encoding.js";
 
-declare const localStorage: {
+/** The slice of the Web Storage API this module uses. */
+export interface KeyValueStore {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
-};
+  key(index: number): string | null;
+  readonly length: number;
+}
+
+declare const localStorage: KeyValueStore;
+
+// --- Network namespace ------------------------------------------------------
+//
+// Wallet state that is not tied to one account address (the account list,
+// pending setups, cached names, the connected wallet, asset caches, ...) lives
+// under `nido:<network>:<rest>`, so a mainnet build served from an origin that
+// once served testnet never shows testnet state. Per-account keys
+// (`passkey:<contract>:*`, `nido.<contract>.*`) need no namespace: a contract
+// address already differs between networks.
+
+export type StorageNetwork = "testnet" | "mainnet";
+
+/** Every un-namespaced `nido:*` key was written by a testnet build. */
+const LEGACY_NETWORK: StorageNetwork = "testnet";
+const NAMESPACED_RE = /^nido:(?:testnet|mainnet):/;
+
+let storageNetwork: StorageNetwork = "testnet";
+let keyIssued = false;
+let legacyMoved = false;
+
+function defaultStore(): KeyValueStore | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Choose the network whose namespace {@link nidoKey} builds. Call it before
+ * anything reads storage: once a key has been handed out under one network,
+ * switching to another throws rather than splitting a page's state in two.
+ */
+export function setStorageNetwork(network: StorageNetwork): void {
+  if (keyIssued && network !== storageNetwork) {
+    throw new Error(`storage network set to ${network} after keys were built for ${storageNetwork}`);
+  }
+  storageNetwork = network;
+}
+
+/**
+ * Move every legacy `nido:<rest>` key to `nido:testnet:<rest>`. A key whose
+ * namespaced copy already exists is left where it is rather than overwrite
+ * newer state. Returns how many keys moved. {@link nidoKey} runs this once per
+ * page, before the first key it builds, so nothing reads storage unmigrated.
+ */
+export function moveLegacyNidoKeys(store: KeyValueStore | null = defaultStore()): number {
+  if (!store) return 0;
+  const legacy: string[] = [];
+  for (let i = 0; i < store.length; i++) {
+    const key = store.key(i);
+    if (key?.startsWith("nido:") && !NAMESPACED_RE.test(key)) legacy.push(key);
+  }
+  let moved = 0;
+  for (const key of legacy) {
+    const value = store.getItem(key);
+    const target = `nido:${LEGACY_NETWORK}:${key.slice("nido:".length)}`;
+    if (value === null || store.getItem(target) !== null) continue;
+    store.setItem(target, value);
+    store.removeItem(key);
+    moved++;
+  }
+  return moved;
+}
+
+/** The storage key `nido:<network>:<rest>` for network-scoped wallet state. */
+export function nidoKey(rest: string): string {
+  if (!legacyMoved) {
+    legacyMoved = true;
+    try {
+      moveLegacyNidoKeys();
+    } catch {
+      // Storage that throws on access is unusable either way; the read that
+      // follows fails or falls back on its own.
+    }
+  }
+  keyIssued = true;
+  return `nido:${storageNetwork}:${rest}`;
+}
 
 export function saveCredential(contractId: string, credentialId: Uint8Array, publicKey: Uint8Array): void {
   const prefix = `passkey:${contractId}:`;
@@ -21,15 +105,15 @@ export function loadCredential(contractId: string): { credentialId: Uint8Array; 
 }
 
 export function saveAccount(contractId: string): void {
-  const accounts: string[] = JSON.parse(localStorage.getItem("nido:accounts") || "[]");
+  const accounts: string[] = JSON.parse(localStorage.getItem(nidoKey("accounts")) || "[]");
   if (!accounts.includes(contractId)) {
     accounts.push(contractId);
-    localStorage.setItem("nido:accounts", JSON.stringify(accounts));
+    localStorage.setItem(nidoKey("accounts"), JSON.stringify(accounts));
   }
 }
 
 export function loadAccounts(): string[] {
-  return JSON.parse(localStorage.getItem("nido:accounts") || "[]");
+  return JSON.parse(localStorage.getItem(nidoKey("accounts")) || "[]");
 }
 
 export interface PendingAccount {
@@ -39,19 +123,19 @@ export interface PendingAccount {
   secretKey?: string;
 }
 
-const PENDING_KEY = "nido:pending";
+const pendingKey = () => nidoKey("pending");
 /** Sidecar map (contractId -> creation epoch ms) recording when each pending
  * setup was started. Kept in its own key, not inside each `PendingAccount`, so
- * the wallet's cross-tab reconciler — which rewrites `nido:pending` from a
+ * the wallet's cross-tab reconciler — which rewrites the pending list from a
  * normalized shape that has no timestamp field — cannot strip it. */
-const PENDING_TS_KEY = "nido:pending:ts";
+const pendingTsKey = () => nidoKey("pending:ts");
 /** Setup window: a pending salt older than this is treated as abandoned and
  * purged. Matches the setup-salt cookie's `Max-Age` (1800s). */
 const PENDING_TTL_MS = 30 * 60 * 1000;
 
 function readPending(): PendingAccount[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+    const raw = JSON.parse(localStorage.getItem(pendingKey()) || "[]");
     return Array.isArray(raw) ? (raw as PendingAccount[]) : [];
   } catch {
     return [];
@@ -60,7 +144,7 @@ function readPending(): PendingAccount[] {
 
 function readPendingTimestamps(): Record<string, number> {
   try {
-    const raw = JSON.parse(localStorage.getItem(PENDING_TS_KEY) || "{}");
+    const raw = JSON.parse(localStorage.getItem(pendingTsKey()) || "{}");
     return raw && typeof raw === "object" ? (raw as Record<string, number>) : {};
   } catch {
     return {};
@@ -100,8 +184,8 @@ export function purgeExpiredPendingAccounts(now: number = Date.now()): PendingAc
     }
   }
   if (changed) {
-    localStorage.setItem(PENDING_KEY, JSON.stringify(kept));
-    localStorage.setItem(PENDING_TS_KEY, JSON.stringify(ts));
+    localStorage.setItem(pendingKey(), JSON.stringify(kept));
+    localStorage.setItem(pendingTsKey(), JSON.stringify(ts));
   }
   return kept;
 }
@@ -115,10 +199,10 @@ export function savePendingAccount(contractId: string, setupKey: string): void {
   } else {
     pending.push({ contractId, setupKey });
   }
-  localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  localStorage.setItem(pendingKey(), JSON.stringify(pending));
   const ts = readPendingTimestamps();
   ts[contractId] = Date.now();
-  localStorage.setItem(PENDING_TS_KEY, JSON.stringify(ts));
+  localStorage.setItem(pendingTsKey(), JSON.stringify(ts));
 }
 
 export function loadPendingAccounts(): PendingAccount[] {
@@ -129,11 +213,11 @@ export function loadPendingAccounts(): PendingAccount[] {
 export function removePendingAccount(contractId: string): void {
   const pending = readPending();
   const filtered = pending.filter((p) => p.contractId !== contractId);
-  localStorage.setItem(PENDING_KEY, JSON.stringify(filtered));
+  localStorage.setItem(pendingKey(), JSON.stringify(filtered));
   const ts = readPendingTimestamps();
   if (ts[contractId] !== undefined) {
     delete ts[contractId];
-    localStorage.setItem(PENDING_TS_KEY, JSON.stringify(ts));
+    localStorage.setItem(pendingTsKey(), JSON.stringify(ts));
   }
 }
 
@@ -143,11 +227,11 @@ export function activateAccount(contractId: string): void {
 }
 
 export function saveAccountName(contractId: string, name: string): void {
-  localStorage.setItem(`nido:names:${contractId}`, name);
+  localStorage.setItem(nidoKey(`names:${contractId}`), name);
 }
 
 export function loadAccountName(contractId: string): string | null {
-  return localStorage.getItem(`nido:names:${contractId}`);
+  return localStorage.getItem(nidoKey(`names:${contractId}`));
 }
 
 // --- Policy storage (Tier C/D from the spec) -------------------------------

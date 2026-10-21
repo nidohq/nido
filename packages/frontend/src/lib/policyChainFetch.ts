@@ -67,15 +67,7 @@ export function isRuleNotFound(err: unknown): boolean {
  *  on an id scan: ids move when a document replaces a rule, and OZ never
  *  reuses one. */
 export async function readAccountConfiguration(account: string): Promise<perch.AccountConfiguration> {
-  const deployment = perchDeployment();
-  if (!deployment) throw new Error('This build has no Perch deployment.');
-  const reader = perch.accountSnapshotReader({
-    account,
-    rpcUrl: RPC_URL,
-    networkPassphrase: NETWORK_PASSPHRASE,
-    docCompiler: deployment.docCompiler,
-  });
-  return (await reader.configuration()).value;
+  return perch.readConfiguration({ account, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
 }
 
 /** An installed Perch rule in the `ChainRule` shape the UI consumes. */

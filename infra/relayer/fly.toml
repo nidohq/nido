@@ -29,7 +29,7 @@ primary_region = "iad"
   REDIS_POOL_MAX_SIZE = "10"
   TRANSACTION_EXPIRATION_HOURS = "6"
   STELLAR_NETWORK = "testnet"
-  FUND_RELAYER_ID = "channels-fund"
+  FUND_RELAYER_ID = "channels-fee-payer"
   RATE_LIMIT_REQUESTS_PER_SECOND = "20"
   RATE_LIMIT_BURST_SIZE = "60"
   # Hard ceiling on fund-account fee spend. Without FEE_LIMIT the plugin's fee
@@ -39,6 +39,9 @@ primary_region = "iad"
   # Per-client fairness needs per-client keys forwarded through Caddy first.
   FEE_LIMIT = "1000000000"
   FEE_RESET_PERIOD_SECONDS = "86400"
+  # Fixed per-account topup from the `fund` treasury, read by the `funder` plugin
+  # This is not client-controlled.
+  FUNDER_TOPUP_STROOPS = "50000000"
 
 [http_service]
   internal_port = 8080

@@ -8,10 +8,11 @@ import {
   loadAccountName,
   saveAccountName,
   activateAccount,
+  loadCredential,
+  hex2buf,
   lookupName,
   fetchRegistryAddress,
 } from "@nidohq/passkey-sdk";
-import { rpc, xdr } from "@stellar/stellar-sdk";
 import { buildMyNidoModel, type MyNidoRow } from "./myNidoModel";
 import { nidoRowHref, accountShareUrl } from "./accountLinks";
 import { resolveMissingNames } from "./resolveMyNidoNames";
@@ -22,6 +23,7 @@ import { formatXlm } from "./money";
 import { createNido } from "./createNido";
 import { syncNidoStorageViaBridge } from "./nidoSharedStorage";
 import { NETWORK_NAME } from "./network";
+import { verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
 
 const RPC_URL = "https://soroban-testnet.stellar.org";
 export const NAME_NETWORK = "Test SDF Network ; September 2015";
@@ -50,7 +52,7 @@ function rowHtml(row: MyNidoRow): string {
       <span class="mn-main"><span class="mn-name">${title}</span><span class="mn-meta">Finishing setup…</span></span>
       <span class="mn-chev">›</span></a>`;
   }
-  return `<a class="mn-row" role="menuitem" href="${href}" data-balance-for="${row.contractId}">${av}
+  return `<a class="mn-row" role="menuitem" href="${href}" data-balance-for="${esc(row.contractId)}">${av}
     <span class="mn-main"><span class="mn-name">${title}</span><span class="mn-meta">${esc(shortAddr(row.contractId, 6, 6))}</span></span>
     <span class="mn-bal"><span class="skeleton">&nbsp;</span></span>
     <span class="mn-chev">›</span></a>`;
@@ -86,21 +88,26 @@ function refreshOpenSwitchers() {
   for (const inst of instances) inst.refreshIfOpen();
 }
 
-// Promote any pending account that has since deployed.
+// Promote a pending account once it is deployed as this device's own: the
+// account create_account makes for the passkey this origin registered for it.
+// A contract at the address proves nothing by itself (anyone who has the setup
+// secret can deploy there first), and without the passkey there is nothing to check,
+// so such an account stays pending; resuming it on its own page settles it.
 async function verifyPendingAccounts(): Promise<boolean> {
   const pending = loadPendingAccounts();
   if (pending.length === 0) return false;
   const active = new Set(loadAccounts());
   let changed = false;
-  const server = new rpc.Server(RPC_URL);
   for (const { contractId } of pending) {
     if (active.has(contractId)) continue;
+    const stored = loadCredential(contractId);
+    if (!stored) continue;
     try {
-      await server.getContractData(contractId, xdr.ScVal.scvLedgerKeyContractInstance());
+      await verifyNewNidoAccount(contractId, hex2buf(stored.publicKey));
       activateAccount(contractId);
       changed = true;
     } catch {
-      /* not deployed yet */
+      /* not deployed yet, unreadable, or not this passkey's account */
     }
   }
   return changed;
@@ -235,7 +242,7 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
     const resolved = await resolveMissingNames(rows, lookup, saveAccountName);
     resolved.forEach((name, contractId) => {
       const rowEl = panel!.querySelector<HTMLAnchorElement>(
-        `.mn-row[data-balance-for="${contractId}"]`,
+        `.mn-row[data-balance-for="${CSS.escape(contractId)}"]`,
       );
       if (!rowEl) return;
       const nameEl = rowEl.querySelector(".mn-name");

@@ -306,10 +306,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     saveAccountName,
     loadAccountName,
     fetchRegistryAddress,
+    isReservedName,
   } from "@nidohq/passkey-sdk";
   import { accountShareUrl, accountShareLabel } from "../../lib/accountLinks";
   import {
     classifyNameState,
+    isClaimableName,
     selectClaimer,
     formatClaimerLabel,
     buildClaimHandoffUrl,
@@ -319,7 +321,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { markUsed, readLastUsed } from "../../lib/lastUsed";
   import { shouldShowBackupBanner, snoozeBackupPrompt } from "../../lib/recoveryBackupPrompt";
   import { toast } from "../../lib/toast";
-  import { stashSignRequest, safeRouteUrl, type SignRequest } from "../../lib/signing/signRequest";
+  import { stashSignRequest, type SignRequest } from "../../lib/signing/signRequest";
   import { EXPLORER_BASE } from "../../lib/network";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
@@ -466,7 +468,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   async function showClaimEntry(name: string) {
     const state = classifyNameState(name, null); // resolved was null in this branch
     if (state === "invalid") {
-      showError(`"${name}" isn't a valid name.`);
+      showError(isReservedName(name) ? `"${name}" is reserved.` : `"${name}" isn't a valid name.`);
       return;
     }
 
@@ -901,6 +903,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         showError("Name must be 1-15 characters, lowercase letters and digits only, starting with a letter.");
         return;
       }
+      if (isReservedName(name)) {
+        showError(`"${name}" is reserved.`);
+        return;
+      }
       if (!contractId) {
         showError("Navigate to your account's subdomain to claim a name.");
         return;
@@ -926,7 +932,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     const claimParam = params.get("claim");
     if (claimParam && contractId) {
       const name = claimParam.trim().toLowerCase();
-      if (/^[a-z][a-z0-9]{0,14}$/.test(name)) {
+      if (isClaimableName(name)) {
         const rootHost = stripSubdomain(window.location.host);
         const returnUrl = `${window.location.protocol}${accountUrl(rootHost, name, "/account/?namepasskey=1")}`;
         const req: SignRequest = {
@@ -943,43 +949,5 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       }
     }
 
-  }
-
-  // --- Auto-run on ?sm-sign=<xdr>&sm-return=<url> (status-message handoff) ---
-  // status-message redirects here (on the account's subdomain) carrying the
-  // assembled tx XDR and a return URL. We stash a SignRequest in sessionStorage
-  // (now on the correct origin) and redirect to /sign/?req=<id>, exactly like
-  // the ?claim= handoff above. The return URL already encodes the contract
-  // address so the status-message page can repopulate its input on return.
-  //
-  // Hoisted out of the name-section gate: this bridge has nothing to do with the
-  // name section; it only needs an account context (`contractId`), so it runs on
-  // its own condition. Behavior is unchanged.
-  const smSignXdr = params.get("sm-sign");
-  const smReturnUrl = params.get("sm-return");
-  if (smSignXdr && smReturnUrl && contractId) {
-    // SECURITY (F1): the bridge returns to the SIBLING `status-message.<apex>`
-    // /status-message/ page (a different subdomain than this contract subdomain),
-    // so validate sm-return is an http(s) URL on the SAME PARENT DOMAIN before
-    // stashing it as the /sign/ returnTarget. A crafted `?sm-return=javascript:…`
-    // (or a foreign-origin URL) would otherwise be navigated to verbatim on the
-    // /sign/ success path — an XSS / open redirect.
-    const safeReturn = safeRouteUrl(smReturnUrl, window.location.origin);
-    if (!safeReturn) {
-      showError("That status-message return link isn't valid. Open the status-message page again to retry.");
-    } else {
-      const req: SignRequest = {
-        v: 1,
-        kind: "generic",
-        account: contractId,
-        operation: { type: "raw-xdr", xdr: smSignXdr },
-        title: "Set your note",
-        subtitle: "Sign the on-chain status-message update.",
-        submitMode: "relayer",
-        returnTarget: { type: "route", url: safeReturn },
-      };
-      const id = stashSignRequest(req);
-      window.location.href = `/sign/?req=${id}`;
-    }
   }
 </script>
