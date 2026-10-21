@@ -10,12 +10,13 @@ export async function pollReceiptsOnce(client: InvitePrintQueue, printer: Printe
     const record = await client.nextPendingPrint();
     if (!record) return;
 
+    const NEW_LINE = "\n"
     // fix this url
     const walletUrl = `http://${record.address}.localhost:4321/account/`
     const qrCode = await buildQrCode(walletUrl);
     await printer.print({
-      title: "\nWelcome to Nido!",
-      lines: [`Your Nido Account is ready!`, `${record.address ?? "(unknown)"}`, `${walletUrl}`],
+      title: "",
+      lines: [`Your Nido account is ready:\n${record.address ?? "(unknown)"}`],
       qrDataUrl: qrCode,
     });
 
