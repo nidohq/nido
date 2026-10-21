@@ -35,11 +35,11 @@ app.post("/invitations", (_req, res) => {
     const { code } = await client.createCode();
     const invitation = await buildInvitation(code, FRONTEND_BASE_URL);
 
-    await printer.print({
-      title: "Scan to create your Nido!",
-      lines: [invitation.url],
-      qrDataUrl: invitation.qrDataUrl,
-    });
+    // await printer.print({
+    //   title: "Scan to create your Nido!",
+    //   lines: [invitation.url],
+    //   qrDataUrl: invitation.qrDataUrl,
+    // });
 
     res.type("html").send(`<!doctype html>
 <html>
