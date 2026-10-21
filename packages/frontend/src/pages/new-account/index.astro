@@ -444,7 +444,11 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     });
     const body = await resp.json().catch(() => null);
     if (!resp.ok || !body?.success) {
-      throw new Error(`Funding failed: ${body?.error ?? resp.statusText}`);
+      // A slow plugin cold-start can blow the relayer's own plugin timeout
+      // (see docs/ISSUE_DRAFT_plugin_pool_orphaned_processes.md), which comes
+      // back with no JSON error and an empty statusText — fall back to the
+      // HTTP status itself rather than showing a bare "Funding failed:".
+      throw new Error(`Funding failed: ${body?.error || resp.statusText || `HTTP ${resp.status}`}`);
     }
     const sendHash = body.data?.hash as string | undefined;
     if (!sendHash) {
