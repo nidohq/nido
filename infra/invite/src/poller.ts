@@ -1,5 +1,5 @@
 import type { CodeStore } from "./codeStore.js";
-import { accountExists } from "./chain.js";
+import { accountExists, isFunded } from "./chain.js";
 
 /** Confirms completion independently of the frontend: a browser that
  *  crashes, closes, or simply never calls back should not leave a code
@@ -15,9 +15,11 @@ export async function pollOnce(store: CodeStore): Promise<void> {
       continue;
     }
     if (!record.address) continue; // shouldn't happen: claimed implies bound
-    if (await accountExists(record.address)) {
+    // Both conditions: deployed AND funded. Deploy alone isn't "ready" — see
+    // isFunded()'s doc comment for why printing on deploy alone was handing
+    // out receipts before the account actually had a balance.
+    if ((await accountExists(record.address)) && (await isFunded(record.address))) {
       await store.put({ ...record, status: "used", usedAt: now });
-      console.log("account exists on chain - print the receipt!");
     }
   }
 
