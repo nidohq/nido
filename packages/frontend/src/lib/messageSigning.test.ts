@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { hash } from '@stellar/stellar-sdk';
 import { deriveMessageChallenge, MESSAGE_SIGNING_DOMAIN } from './messageSigning';
-import { ruleIdsXdr, signingDigest } from '@stellar-registry/perch';
+import { ruleIdsXdr } from '@stellar-registry/perch';
 
 /**
  * A Perch account verifies an on-chain authorization against
@@ -23,13 +24,15 @@ describe('message-signing domain separation', () => {
     const signaturePayload = new Uint8Array(32).fill(0x41); // "AAAA…"
     const ruleIds = [7];
 
-    const authDigest = new Uint8Array(signingDigest(signaturePayload, ruleIds));
-
-    // The exact preimage of that digest: signature_payload ‖ ruleIds XDR.
+    // perch-js no longer exports an unbound signingDigest (its 2-arg overload
+    // was removed in 0.4.0 alongside adding a 3-arg account-bound one — see
+    // auth.ts's computeAuthDigest doc comment), so the rule-id layer's plain
+    // formula is computed directly: sha256(signature_payload ‖ ruleIds XDR).
     const idsXdr = ruleIdsXdr(ruleIds);
     const preimage = new Uint8Array(signaturePayload.length + idsXdr.length);
     preimage.set(signaturePayload);
     preimage.set(idsXdr, signaturePayload.length);
+    const authDigest = new Uint8Array(hash(Buffer.from(preimage)));
 
     // The dApp hands the user a "message" that decodes to exactly that preimage.
     const message = Buffer.from(preimage).toString('utf-8');

@@ -1,6 +1,6 @@
-import { hash, xdr, rpc, Operation, StrKey } from "@stellar/stellar-sdk";
+import { hash, xdr, rpc, Operation } from "@stellar/stellar-sdk";
 import { derToCompact } from "./signature.js";
-import { signingDigest } from "@stellar-registry/perch";
+import { signingDigest, ruleIdsXdr } from "@stellar-registry/perch";
 import { buildAuthPayloadScVal } from "./multiSigner.js";
 import type { SignerSignature } from "./multiSigner.js";
 import type { PasskeySignature } from "./types.js";
@@ -75,13 +75,6 @@ export function buildAuthHashAt(
  *  so each account is signed in its own dialect. */
 export type AuthDigestScheme = "addr_oz_v1" | "oz_rule_ids";
 
-/** Domain tag binding a Perch account's auth digest to the account's own
- *  address — the `addr_oz_v1` scheme. MUST match `perch_smart_account`'s
- *  `AUTH_ADDR_DOMAIN` (and perch-js's copy); the Rust and perch-js suites pin
- *  the on-chain result, and `authVectors.test.ts` pins this wrapper against
- *  Perch's `auth-vectors.json`. */
-const AUTH_ADDR_DOMAIN = new TextEncoder().encode("perch/account/auth-addr-v1");
-
 /**
  * Compute the OZ v0.7+ auth digest the smart `account`'s `__check_auth` will
  * verify each signer's signature against, in the account's own `scheme`:
@@ -101,11 +94,12 @@ const AUTH_ADDR_DOMAIN = new TextEncoder().encode("perch/account/auth-addr-v1");
  * caller must read the account's scheme (`authDigestScheme`) and pass it. The
  * WebAuthn challenge MUST be this digest, not the bare `signature_payload`.
  *
- * `bound` is computed here and handed to perch-js's `signingDigest` for the
- * rule-id layer. When `@stellar-registry/perch` publishes the account-bound
- * `signingDigest(account, payload, ruleIds)` (> 0.3.2), replace the local
- * binding with that one 3-arg call for the `addr_oz_v1` branch and drop
- * `AUTH_ADDR_DOMAIN`.
+ * `addr_oz_v1` delegates entirely to perch-js's own account-bound
+ * `signingDigest(account, payload, ruleIds)` (>= 0.4.0). `oz_rule_ids` has no
+ * perch-js equivalent anymore (its 2-arg unbound overload was removed in
+ * 0.4.0 alongside adding the 3-arg bound one), so it's reimplemented here
+ * directly from the documented formula using perch-js's still-exported
+ * `ruleIdsXdr`.
  *
  * `account` is the smart account's C-address (whose `__check_auth` runs).
  * `signaturePayload` is the 32-byte result from `buildAuthHash`.
@@ -123,18 +117,12 @@ export function computeAuthDigest(
   scheme: AuthDigestScheme = "addr_oz_v1",
 ): Buffer {
   if (scheme === "oz_rule_ids") {
-    return Buffer.from(signingDigest(signaturePayload, contextRuleIds));
+    // auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())
+    return Buffer.from(
+      hash(Buffer.concat([Buffer.from(signaturePayload), Buffer.from(ruleIdsXdr(contextRuleIds))])),
+    );
   }
-  const accountId = StrKey.decodeContract(account);
-  if (accountId.length !== 32) {
-    throw new Error(`computeAuthDigest: account must be a contract address, got "${account}"`);
-  }
-  const preimage = new Uint8Array(AUTH_ADDR_DOMAIN.length + 32 + 32);
-  preimage.set(AUTH_ADDR_DOMAIN, 0);
-  preimage.set(accountId, AUTH_ADDR_DOMAIN.length);
-  preimage.set(signaturePayload, AUTH_ADDR_DOMAIN.length + 32);
-  const bound = hash(Buffer.from(preimage));
-  return Buffer.from(signingDigest(bound, contextRuleIds));
+  return Buffer.from(signingDigest(account, signaturePayload, contextRuleIds));
 }
 
 /**
