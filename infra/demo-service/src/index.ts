@@ -7,7 +7,7 @@ import { startReceiptPolling } from "./receiptPoller.js";
 const PORT = Number(process.env.PORT ?? 4000);
 const INVITE_API_URL = (process.env.INVITE_API_URL ?? "http://localhost:8080").replace(/\/+$/, "");
 const INVITE_API_KEY = process.env.INVITE_API_KEY;
-const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL ?? "https://nido.fyi";
+const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL ?? "http://localhost:4321";
 const RECEIPT_POLL_INTERVAL_MS = Number(process.env.RECEIPT_POLL_INTERVAL_MS ?? 5000);
 const PRINT_OUTPUT_DIR = process.env.PRINT_OUTPUT_DIR ?? "./print-jobs";
 
@@ -28,7 +28,6 @@ app.get("/", (_req, res) => {
 </html>`);
 });
 
-// Admin: "press button to create an invitation & QR code" (demo-plan.md).
 app.post("/invitations", (_req, res) => {
   (async () => {
     const { code } = await client.createCode();

@@ -24,6 +24,22 @@ async function main() {
   const app = express();
   app.use(express.json());
 
+  // The dApp (a static site on its own origin, e.g. nido.fyi or localhost:4321
+  // in dev) calls the Checker directly from the browser. Wildcard is fine
+  // here, same as infra/relayer/Caddyfile's own CORS block: there's no
+  // cookie/session auth to leak cross-origin, and the x-api-key is a soft
+  // gate that already ships inside that public bundle (see auth.ts).
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, x-api-key");
+    if (req.method === "OPTIONS") {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
   app.get("/health", (_req, res) => res.json({ ok: true }));
 
   app.use(requireApiKey);
