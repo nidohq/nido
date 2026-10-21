@@ -1,4 +1,4 @@
-import type { Store } from "./store.js";
+import type { CodeStore } from "./codeStore.js";
 
 export type CheckResult =
   | { ok: true; status: "claimed" }
@@ -9,12 +9,12 @@ export type CheckResult =
  *  (the same front-running concern the factory's setup-key signature closes
  *  for account creation itself — see contracts/factory). A retry with the
  *  same address the frontend already bound is idempotent. */
-export function checkAndClaim(store: Store, code: string, address: string): CheckResult {
-  const record = store.get(code);
+export async function checkAndClaim(store: CodeStore, code: string, address: string): Promise<CheckResult> {
+  const record = await store.get(code);
   if (!record) return { ok: false, reason: "not_found" };
 
   if (record.status === "issued" && Date.now() > record.expiresAt) {
-    record.status = "expired";
+    await store.put({ ...record, status: "expired" });
     return { ok: false, reason: "expired" };
   }
   if (record.status === "expired") return { ok: false, reason: "expired" };
@@ -26,8 +26,6 @@ export function checkAndClaim(store: Store, code: string, address: string): Chec
   }
 
   // status === "issued" and not expired: first claim.
-  record.status = "claimed";
-  record.address = address;
-  record.claimedAt = Date.now();
+  await store.put({ ...record, status: "claimed", address, claimedAt: Date.now() });
   return { ok: true, status: "claimed" };
 }

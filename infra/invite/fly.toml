@@ -1,8 +1,13 @@
 # Invitation code service for in-person demo events (see diagram in
 # demo-plan.md): Builder issues codes, Checker validates+claims one against a
 # predicted C-address, Poller confirms on chain that the address was actually
-# created. In-memory Store (src/store.ts) — fine for the span of one event,
-# lost on redeploy/restart.
+# created.
+#
+# Store is Fly Postgres (src/postgresStore.ts), not the in-memory one local
+# dev uses — DATABASE_URL isn't set here because `fly postgres attach` injects
+# it as a secret when the Postgres app is attached (see README "Deploy").
+# API_KEY is a secret too (`fly secrets set API_KEY=...`), same as the
+# relayer's own — never put it in this [env] block.
 app = "nido-invite"
 primary_region = "iad"
 
@@ -11,7 +16,7 @@ primary_region = "iad"
 
 [env]
   RPC_URL = "https://soroban-testnet.stellar.org"
-  CODE_TTL_MS = "1800000"
+  CODE_TTL_MS = "604800000"
   POLL_INTERVAL_MS = "5000"
 
 [http_service]

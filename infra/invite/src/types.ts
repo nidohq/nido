@@ -10,5 +10,9 @@ export interface CodeRecord {
   issuedAt: number;
   claimedAt?: number;
   usedAt?: number;
+  /** Set once the local Demo Server's printer has confirmed the receipt
+   *  printed — see `/pending-print/next` + `/pending-print/:code/ack`. A
+   *  `used` record with no `deliveredAt` is still waiting to be printed. */
+  deliveredAt?: number;
   expiresAt: number;
 }

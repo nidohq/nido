@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Store } from "./store.js";
+import type { CodeStore } from "./codeStore.js";
 
 // Excludes 0/O/1/I/L so a staff member can read a code off a screen or a
 // printed card without ambiguity.
@@ -14,12 +14,12 @@ function randomCode(): string {
 }
 
 /** Issues a fresh code, good for `ttlMs` from now. */
-export function issueCode(store: Store, ttlMs: number): { code: string; expiresAt: number } {
+export async function issueCode(store: CodeStore, ttlMs: number): Promise<{ code: string; expiresAt: number }> {
   let code = randomCode();
-  while (store.get(code)) code = randomCode();
+  while (await store.get(code)) code = randomCode(); // collision: vanishingly rare, cheap to guard anyway
 
   const now = Date.now();
   const expiresAt = now + ttlMs;
-  store.put({ code, status: "issued", issuedAt: now, expiresAt });
+  await store.put({ code, status: "issued", issuedAt: now, expiresAt });
   return { code, expiresAt };
 }

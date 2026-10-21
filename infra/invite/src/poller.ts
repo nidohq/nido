@@ -1,4 +1,4 @@
-import type { Store } from "./store.js";
+import type { CodeStore } from "./codeStore.js";
 import { accountExists } from "./chain.js";
 
 /** Confirms completion independently of the frontend: a browser that
@@ -6,27 +6,27 @@ import { accountExists } from "./chain.js";
  *  stuck "claimed" forever, and a malicious client self-reporting success
  *  shouldn't be trusted either. The Poller watches the chain directly for
  *  the address the Checker bound to each claimed code. */
-export async function pollOnce(store: Store): Promise<void> {
+export async function pollOnce(store: CodeStore): Promise<void> {
   const now = Date.now();
 
-  for (const record of store.listByStatus("claimed")) {
+  for (const record of await store.listByStatus("claimed")) {
     if (now > record.expiresAt) {
-      record.status = "expired";
+      await store.put({ ...record, status: "expired" });
       continue;
     }
     if (!record.address) continue; // shouldn't happen: claimed implies bound
     if (await accountExists(record.address)) {
-      record.status = "used";
-      record.usedAt = now;
+      await store.put({ ...record, status: "used", usedAt: now });
+      console.log("account exists on chain - print the receipt!");
     }
   }
 
-  for (const record of store.listByStatus("issued")) {
-    if (now > record.expiresAt) record.status = "expired";
+  for (const record of await store.listByStatus("issued")) {
+    if (now > record.expiresAt) await store.put({ ...record, status: "expired" });
   }
 }
 
-export function startPolling(store: Store, intervalMs: number): NodeJS.Timeout {
+export function startPolling(store: CodeStore, intervalMs: number): NodeJS.Timeout {
   return setInterval(() => {
     pollOnce(store).catch((err) => console.error("poll error:", err));
   }, intervalMs);
