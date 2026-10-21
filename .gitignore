@@ -21,6 +21,7 @@ packages/frontend/dist/
 packages/passkey-sdk/dist/
 packages/stellar-wallets-kit-module/dist/
 packages/contract-bindings/*/dist/
+infra/invite/dist/
 
 # Astro build cache
 packages/frontend/.astro/
