@@ -1,4 +1,4 @@
-import QRCode from "qrcode";
+import { buildQrCode } from "./qrCode.js";
 
 export interface Invitation {
   code: string;
@@ -10,6 +10,6 @@ export interface Invitation {
  *  QR code that encodes it. */
 export async function buildInvitation(code: string, frontendBaseUrl: string): Promise<Invitation> {
   const url = `${frontendBaseUrl.replace(/\/+$/, "")}/demo/start?invitationCode=${encodeURIComponent(code)}`;
-  const qrDataUrl = await QRCode.toDataURL(url);
+  const qrDataUrl = await buildQrCode(url);
   return { code, url, qrDataUrl };
 }
