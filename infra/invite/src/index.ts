@@ -4,6 +4,7 @@ import { issueCode } from "./builder.js";
 import { checkAndClaim } from "./checker.js";
 import { startPolling } from "./poller.js";
 import { requireApiKey } from "./auth.js";
+import { requestLogger } from "./requestLogger.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const CODE_TTL_MS = Number(process.env.CODE_TTL_MS ?? 7 * 24 * 60 * 60 * 1000); // 1 week
@@ -22,6 +23,7 @@ async function main() {
   const store = await createStore();
 
   const app = express();
+  app.use(requestLogger);
   app.use(express.json());
 
   // The dApp (a static site on its own origin, e.g. nido.fyi or localhost:4321

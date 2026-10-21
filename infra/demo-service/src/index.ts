@@ -3,6 +3,7 @@ import { InviteClient } from "./inviteClient.js";
 import { buildInvitation } from "./invitationHandler.js";
 import { FilePrinter } from "./printer.js";
 import { startReceiptPolling } from "./receiptPoller.js";
+import { requestLogger } from "./requestLogger.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
 const INVITE_API_URL = (process.env.INVITE_API_URL ?? "http://localhost:8080").replace(/\/+$/, "");
@@ -15,6 +16,7 @@ const client = new InviteClient(INVITE_API_URL, INVITE_API_KEY);
 const printer = new FilePrinter(PRINT_OUTPUT_DIR);
 
 const app = express();
+app.use(requestLogger);
 
 app.get("/", (_req, res) => {
   res.type("html").send(`<!doctype html>
