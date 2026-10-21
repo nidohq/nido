@@ -10,9 +10,10 @@ Two roles in one process:
 - **Demo Server + InvitationHandler** — `GET /` renders a page with a
   "Create Invitation" button for the Admin; `POST /invitations` calls
   `infra/invite`'s Builder (`POST /codes`), builds the `/demo/start?invitationCode=...`
-  URL and its QR code (`src/invitationHandler.ts`), prints an invitation card,
-  and shows the same QR on screen so staff/visitor can scan it even without
-  working printer hardware.
+  URL and its QR code (`src/invitationHandler.ts`), and shows it on screen so
+  staff can hand it off to a visitor. Printing the invitation card itself is
+  on hold for now (see `src/index.ts`) — the confirmation receipt below is
+  the one in active use.
 - **ReceiptPoller** (`src/receiptPoller.ts`) — a background loop that pulls
   from `infra/invite`'s `/pending-print/next` + `/pending-print/:code/ack`
   (not a bulk code listing — see that service's README for why) and prints a
@@ -49,6 +50,19 @@ no other code changes. Both printer implementations throw instead of
 silently no-op'ing when something's wrong (device/queue not found, `lp`
 fails) — see their doc comments for why that matters for ReceiptPoller's ack
 semantics.
+
+### Receipt branding
+
+`src/escposBytes.ts` builds every receipt with the same shape: the Nido mark
++ "Welcome to Nido!", then the job's own title/lines/QR, then a "brought to
+you by" Aha logo (`assets/nido-logo.png`, `assets/aha-logo.png`). Known
+issue, not yet resolved: the Nido logo garbles into noise on the real
+hardware intermittently, non-deterministically — confirmed by repeat testing
+that the *exact same bytes* print clean sometimes and garble other times,
+with no pixel-size or timing variable found that makes it reliable. The Aha
+logo and QR code have not shown this problem. If this resurfaces before a
+live event, it's a known risk, not a regression — see `escposBytes.ts`'s doc
+comments for the full investigation (SVG vs. PNG source, threshold, sizing).
 
 ### One-time hardware setup (macOS, `cups` driver)
 

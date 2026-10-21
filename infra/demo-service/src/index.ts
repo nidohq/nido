@@ -35,11 +35,9 @@ app.post("/invitations", (_req, res) => {
     const { code } = await client.createCode();
     const invitation = await buildInvitation(code, FRONTEND_BASE_URL);
 
-    // await printer.print({
-    //   title: "Scan to create your Nido!",
-    //   lines: [invitation.url],
-    //   qrDataUrl: invitation.qrDataUrl,
-    // });
+    // Printing the invitation QR itself is on hold for now — the confirmation
+    // receipt (receiptPoller.ts) is the one in active use. The admin page
+    // below still shows the QR on screen so staff can hand it off either way.
 
     res.type("html").send(`<!doctype html>
 <html>

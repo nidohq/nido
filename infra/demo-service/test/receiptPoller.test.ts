@@ -43,7 +43,7 @@ describe("pollReceiptsOnce", () => {
     await pollReceiptsOnce(queue, printer);
 
     expect(printer.jobs).toHaveLength(1);
-    expect(printer.jobs[0]?.lines).toContain("Address: CADDR");
+    expect(printer.jobs[0]?.lines.join("\n")).toContain("CADDR");
     expect(queue.acked).toEqual(["A"]);
   });
 

@@ -13,9 +13,10 @@ export interface Printer {
 
 /** Stands in for the real hardware: writes each job to a timestamped file
  *  under `outputDir` and logs it, instead of sending it to a physical
- *  printer. Swap this for a real driver (ESC/POS receipt printer, a label
- *  printer, whatever ends up at the booth) by implementing the same
- *  `Printer` interface — nothing else in this service needs to change. */
+ *  printer. The real drivers — `CupsPrinter` (cupsPrinter.ts, the one to use
+ *  on macOS) and `EscposUsbPrinter` (escposPrinter.ts) — implement this same
+ *  `Printer` interface; `printerFactory.ts` picks between the three via
+ *  `PRINTER_DRIVER`. */
 export class FilePrinter implements Printer {
   constructor(private outputDir: string) {}
 

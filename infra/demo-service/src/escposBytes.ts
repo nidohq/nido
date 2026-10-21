@@ -39,9 +39,8 @@ const THRESHOLD = 190;
 /** 1-bit raster bitmap of `buffer` (an image file's bytes, e.g. a decoded QR
  *  PNG), resized to `targetWidth` — same conversion already validated
  *  against this printer in ../fordefi-waas/client/receipt.ts. Flattened onto
- *  white first: an SVG's transparent regions (e.g. rounded-corner cutouts)
- *  otherwise composite to BLACK by default, printing as solid blobs instead
- *  of blank paper. */
+ *  white first: a transparent source image otherwise composites to BLACK by
+ *  default, printing as solid blobs instead of blank paper. */
 async function rasterizeImage(
   buffer: Buffer,
   targetWidth: number,
@@ -81,8 +80,9 @@ async function imageCommandFromFile(filePath: string, targetWidth: number): Prom
 
 /** The ESC/POS byte stream for a receipt — transport-agnostic (raw USB, a
  *  CUPS raw queue, whatever comes next all just need these bytes). Every
- *  receipt gets the same branding: the Nido mark under the title, and an
- *  "brought to you by" Aha logo under the job's own QR (when it has one). */
+ *  receipt gets the same branding: the Nido mark + "Welcome to Nido!" up
+ *  top, then the job's own title/lines/QR, then a "brought to you by" Aha
+ *  logo at the bottom. */
 export async function buildReceiptBytes(job: PrintJob, imageWidthPx: number): Promise<Uint8Array> {
   const logoWidthPx = Math.round(imageWidthPx * 0.65);
 

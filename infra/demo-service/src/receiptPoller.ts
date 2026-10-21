@@ -10,9 +10,8 @@ export async function pollReceiptsOnce(client: InvitePrintQueue, printer: Printe
     const record = await client.nextPendingPrint();
     if (!record) return;
 
-    const NEW_LINE = "\n"
     // fix this url
-    const walletUrl = `http://${record.address}.localhost:4321/account/`
+    const walletUrl = `http://${record.address}.localhost:4321/account/`;
     const qrCode = await buildQrCode(walletUrl);
     await printer.print({
       title: "",
