@@ -1,0 +1,104 @@
+---
+// The QR's destination (see `demo-plan.md` at the repo root for the full
+// flow). Generates the setup salt locally — same shape `createNido()`
+// produces for the normal "Get started" button — predicts the account's
+// address, then checks the per-visitor invitation code against
+// `infra/invite`'s Checker (which atomically binds the predicted address to
+// the code in the same call). Only on success does it hand off into the
+// existing, unmodified `new-account/`; that page never finds out any of this
+// happened — it just sees the `?setup=1#salt=<hex>` shape it already handles
+// today.
+import NidoLayout from "../../../layouts/NidoLayout.astro";
+import Nest from "../../../components/Nest.astro";
+---
+
+<NidoLayout title="Nido — Starting your setup" shell="focused">
+  <div class="col-scroll scroll-hide pad screen-in">
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:70vh; text-align:center;">
+      <div style="display:grid; place-items:center; margin-bottom:26px;">
+        <Nest size={104} spin dur={1.1} />
+      </div>
+      <h1 class="disp" style="font-weight:800; font-size:26px; line-height:1.06;">
+        Setting up your Nido
+      </h1>
+      <p id="status-text" class="mut" style="font-size:14.5px; line-height:1.55; margin-top:12px; max-width:320px;">
+        Getting ready…
+      </p>
+      <div id="error-box" role="alert" class="alert danger" style="display:none; margin-top:18px; max-width:320px;"></div>
+    </div>
+  </div>
+</NidoLayout>
+
+<script>
+  import { generateSaltHex } from "../../../lib/demo/salt";
+  import { predictAddress } from "../../../lib/demo/predictAddress";
+  import { checkInvitationCode, type CheckInvitationResult } from "../../../lib/demo/inviteCheck";
+  import { INVITE_SERVICE_URL, INVITE_SERVICE_API_KEY } from "../../../lib/demo/config";
+
+  const $status = document.getElementById("status-text")!;
+  const $error = document.getElementById("error-box")!;
+
+  function showError(msg: string) {
+    $status.style.display = "none";
+    $error.textContent = msg;
+    $error.style.display = "block";
+  }
+
+  const NEED_HELP = "Please find someone from The Aha Company for help.";
+
+  function invitationErrorMessage(reason: Extract<CheckInvitationResult, { ok: false }>["reason"]): string {
+    switch (reason) {
+      case "not_found":
+        return `This invitation code isn't valid. ${NEED_HELP}`;
+      case "expired":
+        return `This invitation link has expired. ${NEED_HELP}`;
+      case "used":
+        return `This invitation code has already been used. ${NEED_HELP}`;
+      case "claimed_by_other":
+        return `This invitation code is already in use on another device. ${NEED_HELP}`;
+      default:
+        return `Something went wrong setting up your Nido. ${NEED_HELP}`;
+    }
+  }
+
+  async function main() {
+    const params = new URLSearchParams(window.location.search);
+    const invitationCode = params.get("invitationCode");
+    if (!invitationCode) {
+      showError(`This link isn't valid. ${NEED_HELP}`);
+      return;
+    }
+
+    const saltHex = generateSaltHex();
+
+    let address: string;
+    try {
+      $status.textContent = "Reserving your address…";
+      address = await predictAddress(saltHex);
+    } catch (err) {
+      console.error("[nido demo] address prediction failed", err);
+      showError(invitationErrorMessage("service_error"));
+      return;
+    }
+
+    $status.textContent = "Checking your invitation…";
+    let result: CheckInvitationResult;
+    try {
+      result = await checkInvitationCode(INVITE_SERVICE_URL, INVITE_SERVICE_API_KEY, invitationCode, address);
+    } catch (err) {
+      console.error("[nido demo] invitation check failed", err);
+      showError(invitationErrorMessage("service_error"));
+      return;
+    }
+
+    if (!result.ok) {
+      showError(invitationErrorMessage(result.reason));
+      return;
+    }
+
+    $status.textContent = "Taking you there…";
+    window.location.replace(`//${window.location.host}/new-account/?setup=1#salt=${saltHex}`);
+  }
+
+  void main();
+</script>
