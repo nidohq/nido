@@ -131,6 +131,17 @@ test.describe('delegate-doc page — UI only (no chain) @fast', () => {
     await expect(page.locator('#approve')).toBeDisabled();
   });
 
+  test('rejects a request with a malformed limit instead of dropping the cap @fast', async ({ page }) => {
+    await page.goto(
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate-doc/` +
+        `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&signer=${SIGNER_G}` +
+        `&duration=24h&limit=lots&limit_period=day&return=https%3A%2F%2Fdapp.example%2Fpage`,
+      { waitUntil: 'networkidle' },
+    );
+    await expect(page.locator('#status')).toContainText('Invalid limit amount');
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+
   test('renders a well-formed request but fails closed without the doc baseline @fast', async ({ page }) => {
     await page.goto(
       `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate-doc/` +

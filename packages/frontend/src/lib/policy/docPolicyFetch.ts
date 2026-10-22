@@ -12,18 +12,15 @@ import { rpc, Contract, scValToNative } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
 import {
   perch,
-  perchTestnetAddresses,
   readPolicy,
   type ChainRule,
   type PolicyDoc,
   type ReadPolicyResult,
 } from '@nidohq/passkey-sdk';
-import { fetchDefaultRuleAuthInfo, readAccountConfiguration } from '../policyChainFetch.js';
+import { fetchDefaultRuleAuthInfo, readAccountConfiguration, simulateView } from '../policyChainFetch.js';
 import { adminBaseline } from './docDraft.js';
 import { Client as InterpreterClient } from '@stellar-registry/perch-interpreter';
-import { fetchRegistryAddress, simulateView } from '../policyChainFetch.js';
 import { RPC_URL, NETWORK_PASSPHRASE } from '../network.js';
-import { perchDeployment } from '../recovery/deployment.js';
 
 /** How far back the `DocApplied` event fallback scans. Testnet RPC keeps
  *  roughly a day of events; ask for a bit less so the request never starts
@@ -102,13 +99,7 @@ export async function fetchAppliedDocument(account: string): Promise<{ revision:
  * the views don't answer.
  */
 export async function fetchDocLimits(account: string): Promise<perch.FlatDocLimits> {
-  const config = await readAccountConfiguration(account);
-  const reader = perch.accountSnapshotReader({
-    account,
-    rpcUrl: RPC_URL,
-    networkPassphrase: NETWORK_PASSPHRASE,
-    docCompiler: config.infra.docCompiler,
-  });
+  const reader = await perch.openAccountReader({ account, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
   return (await reader.limits()).value;
 }
 
@@ -130,22 +121,20 @@ export async function fetchAppliedDocJson(account: string): Promise<RecoveredDoc
   }
 }
 
-/** The interpreter the account's pinned build attaches: from the Perch
- *  deployment manifest, else the canonical testnet one. */
-function interpreterAddress(): string {
-  return perchDeployment()?.interpreter ?? perchTestnetAddresses().interpreter;
-}
-
 /** Fetch the interpreter's install params (program and rule-hash
- *  provenance) for each doc-managed rule, keyed by rule id. Missing/unreadable entries are simply absent (readPolicy
- *  treats absence as "cannot check program content", not as drift). */
+ *  provenance) for each doc-managed rule, keyed by rule id, from
+ *  `interpreter`: the one the account pins (`configuration().infra`), which
+ *  is the one its rules attach. Missing/unreadable entries are simply absent
+ *  (readPolicy treats absence as "cannot check program content", not as
+ *  drift). */
 export async function fetchInterpreterPrograms(
   account: string,
+  interpreter: string,
   ruleIds: number[],
 ): Promise<Record<number, { program: import('@nidohq/passkey-sdk').RpnProgram; ruleHash: Uint8Array }>> {
   if (ruleIds.length === 0) return {};
   const client = new InterpreterClient({
-    contractId: interpreterAddress(),
+    contractId: interpreter,
     networkPassphrase: NETWORK_PASSPHRASE,
     rpcUrl: RPC_URL,
   });
@@ -193,18 +182,20 @@ export async function readDocPolicy(
   const surface = await fetchDocSurface(account);
   const storedHex = surface.appliedDocHash === null ? null : toHex(surface.appliedDocHash);
   const recovered = storedHex === null ? null : await fetchAppliedDocJson(account);
+  // The interpreter and spending limit are the ones the account's own build
+  // pins, never the deployment's: an account minted by an older factory
+  // attaches older ones, and a program looked up at the wrong interpreter
+  // reads as absent, which readPolicy cannot tell from "nothing to check".
+  const config = await readAccountConfiguration(account);
+  const { interpreter, spendingLimit } = config.infra;
   // Every live rule but the zero-signer recovery rule came from the
   // document (`apply_doc` replaces the whole set). The recovery rule is
   // known by the account's own flag, never by its name: a document may name
   // a rule "recovery".
   const docRuleIds = surface.appliedDocHash === null
     ? []
-    : (await readAccountConfiguration(account)).rules.filter((r) => !r.recovery).map((r) => r.id);
-  const programs = await fetchInterpreterPrograms(account, docRuleIds);
-  const deployment = perchDeployment();
-  const spendingLimitAddress =
-    deployment?.spendingLimit ??
-    (await fetchRegistryAddress('spending-limit-policy').catch(() => undefined));
+    : config.rules.filter((r) => !r.recovery).map((r) => r.id);
+  const programs = await fetchInterpreterPrograms(account, interpreter, docRuleIds);
 
   const result = readPolicy({
     chainRules,
@@ -213,8 +204,8 @@ export async function readDocPolicy(
     ...(recovered ? { storedDocJson: recovered.json } : {}),
     decompileCtx: {
       account,
-      interpreterAddress: interpreterAddress(),
-      ...(spendingLimitAddress !== undefined ? { spendingLimitAddress } : {}),
+      interpreterAddress: interpreter,
+      spendingLimitAddress: spendingLimit,
       programs,
     },
   });

@@ -34,7 +34,7 @@ export interface TxSummary {
  * contract cannot borrow a benign-looking preview for an authorization that
  * does something else. Decoding by function name alone is never sufficient.
  */
-function describeInvokeContract(
+export function describeInvokeContract(
   ic: xdr.InvokeContractArgs,
   account?: string,
   nameRegistry?: string,

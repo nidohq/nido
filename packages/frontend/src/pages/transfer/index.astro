@@ -159,10 +159,8 @@ import Icon from "../../components/Icon.astro";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
   import { shortAddr } from "../../lib/address";
   import { esc } from "../../lib/html";
-  import { RPC_URL } from "../../lib/network.js";
+  import { RPC_URL, NETWORK_PASSPHRASE as NAME_NETWORK } from "../../lib/network.js";
   import { stashSignRequest, type SignRequest } from "../../lib/signing/signRequest";
-
-  const NAME_NETWORK = "Test SDF Network ; September 2015";
   const CHEVRON = `<svg class="tsend-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>`;
 
   const passkey = detectPasskeyLabel();
@@ -206,7 +204,7 @@ import Icon from "../../components/Icon.astro";
       try {
         const resolved = await resolveNameCached(
           RPC_URL,
-          await fetchRegistryAddress("name-registry"),
+          await fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NAME_NETWORK }),
           detectedName,
           NAME_NETWORK,
         );
@@ -380,7 +378,7 @@ import Icon from "../../components/Icon.astro";
   // =====================
   let _registryIdPromise: Promise<string> | null = null;
   function registryId(): Promise<string> {
-    return (_registryIdPromise ??= fetchRegistryAddress("name-registry"));
+    return (_registryIdPromise ??= fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NAME_NETWORK }));
   }
   // Always FRESH (no cache) so a just-moved name can't bind to a stale address.
   const resolveNameFresh = async (n: string): Promise<string | null> =>

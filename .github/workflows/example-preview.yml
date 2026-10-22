@@ -14,7 +14,7 @@ on:
       - ".github/workflows/example-preview.yml"
       # The example exercises the wallet's connect / delegation-handover /
       # session-signing flows, so a wallet or SDK PR needs the example preview
-      # too — pointed at THIS PR's pr-N.nido.fyi wallet — for end-to-end review.
+      # too — pointed at THIS PR's N.test.nido.fyi wallet — for end-to-end review.
       # This is the mirror of preview.yml, which already triggers on examples/**.
       - "packages/**"
       - "package.json"
@@ -33,12 +33,12 @@ env:
   PUBLIC_STELLAR_RPC_URL: "https://soroban-testnet.stellar.org"
   PUBLIC_STELLAR_HORIZON_URL: "https://horizon-testnet.stellar.org"
   # Wallet = THIS PR's preview, not production: the kit module's accountOrigin
-  # maps an N.nido.fyi base to <account>--N.nido.fyi account origins, so connect,
+  # maps an N.test.nido.fyi base to <account>--N.test.nido.fyi account origins, so connect,
   # delegation handover, and session signing exercise the PR's wallet build —
   # cross-site (pages.dev is on the Public Suffix List), like the GH Pages
   # production demo. preview.yml also triggers on examples/** so the wallet
   # preview exists even for dApp-only PRs.
-  PUBLIC_NIDO_BASE: "https://${{ github.event.pull_request.number }}.nido.fyi"
+  PUBLIC_NIDO_BASE: "https://${{ github.event.pull_request.number }}.test.nido.fyi"
   PUBLIC_RELAYER_URL: "https://nido.fly.dev"
 
 jobs:
@@ -104,7 +104,7 @@ jobs:
             const previewUrl = process.env.PREVIEW_URL
               || `https://example-pr-${prNum}.mysoroban.pages.dev`;
             const liveUrl = `https://${context.repo.owner}.github.io/${context.repo.repo}/`;
-            const body = `**Example dApp preview deployed!**\n\n${previewUrl}\n\nThe \`status-message\` example (testnet), wallet = THIS PR's preview (https://${prNum}.nido.fyi). The live home is ${liveUrl} once merged.`;
+            const body = `**Example dApp preview deployed!**\n\n${previewUrl}\n\nThe \`status-message\` example (testnet), wallet = THIS PR's preview (https://${prNum}.test.nido.fyi). The live home is ${liveUrl} once merged.`;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,

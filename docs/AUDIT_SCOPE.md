@@ -18,9 +18,9 @@ Read these before the manifest.
   `vendor/perch` at the audit fork's `audit/integration` branch so the audited Nido
   head pulls the audited Perch head; it is reverted to upstream `main` before
   mainnet. [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md) describes the upstream pin.
-- **perch-js.** The pinned source's `packages/perch-js` is `0.3.1` (unreleased
-  section); the wallet runs the published `0.3.2` tarball, built from a later
-  Perch commit. Tarball-vs-source equality is a post-audit release gate
+- **perch-js.** The pinned source's `packages/perch-js` is `0.4.0`; the wallet
+  runs the published `0.4.0` tarball, built at Perch's `perch-js-v0.4.0` tag.
+  Tarball-vs-source equality is a post-audit release gate
   ([DEFERRED.md](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)).
 - **What is deferred until after the audit** is in [DEFERRED.md](./DEFERRED.md).
 
@@ -45,7 +45,7 @@ from `git` against the tree.
 | Perch source | The `vendor/perch` gitlink of that commit. Every commit-pinned Perch link in Nido's documents names it. | `git -C vendor/perch rev-parse HEAD`, which must equal `git ls-tree HEAD vendor/perch`. `scripts/check-perch-drift.sh` fails otherwise. |
 | OZ `stellar-accounts` fork | theahaco/stellar-contracts-OZ at rev `33726766a1fd5e7e3d2977d79f64ee29e1ea3ca9`, the same rev in Nido's and Perch's `Cargo.toml`. | `Cargo.lock` (`source = "git+…?rev=3372676…"`). |
 | `admin-sep` | crates.io `0.27.0`. | `Cargo.lock` checksum `b45f70e98918c7ecfcda164bc45811cfc282be96f38e57e1198f401d9466eb7a`. |
-| Toolchains | `rust-toolchain.toml` at the Nido commit (Nido's wasm and tests); Perch's [`scripts/zk-toolchain.sh`](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/scripts/zk-toolchain.sh) (`vendor/perch/scripts/zk-toolchain.sh`) at the Perch commit (`nargo`, `bb`, each download checked against a pinned SHA-256). | Both files at the recorded commits. Pins and known gaps: [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md). |
+| Toolchains | `rust-toolchain.toml` at the Nido commit (Nido's wasm and tests); Perch's [`scripts/zk-toolchain.sh`](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/scripts/zk-toolchain.sh) (`vendor/perch/scripts/zk-toolchain.sh`) at the Perch commit (`nargo`, `bb`, each download checked against a pinned SHA-256). | Both files at the recorded commits. Pins and known gaps: [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md). |
 | npm packages | `package-lock.json` at the Nido commit. The Perch packages the wallet runs are below. | `npm ci` refuses a tarball whose integrity differs. |
 | Audit date | Recorded with the handoff. | |
 
@@ -53,22 +53,19 @@ Perch packages in the wallet:
 
 | Package | Source | Version | Integrity (`package-lock.json`) |
 | --- | --- | --- | --- |
-| `@stellar-registry/perch` (Perch's `packages/perch-js`) | npm | 0.3.2 | `sha512-34lGg5GJpfzTsWNEski31WFMgCgXSNp6ShyHuFT3CfWAA1FRLF+SWZ3QoJJ38w/TGAfUxf69cf8+J3SeZnzvYg==` |
+| `@stellar-registry/perch` (Perch's `packages/perch-js`) | npm | 0.4.0 | `sha512-U+jER/hzoVX/AkAYHwE7O9oARAhosf0Ptzr3YbLLTZirJ0kd7KWb7fOjAxKZKVoXNF26mTecmIKhqoGij7JxgQ==` |
 | `@stellar-registry/perch-interpreter` (Perch's `packages/perch-interpreter-js`) | npm | 0.1.0 | `sha512-ZUW1+/ojzTw0tjlfOxjHtWB7b+I6kWEMz5oQIH6wZrpk2H2vsPfdsc5wnQCU8NNWrLqWJlRKG+yxsbHB/p7Vtw==` |
 | `@stellar-registry/perch-zk` | npm workspace link to `vendor/perch/packages/perch-zk` | 0.1.0 | None: its identity is the Perch source commit. |
 
 Perch publishes the two npm packages from release tags, not from the Perch
-source commit, and the pinned Perch source corresponds to neither published
-version. `packages/perch-js` declares `0.3.1` with an unreleased section (ahead
-of the `0.3.1` release) —
-Perch's manifest,
-[`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/docs/audit-scope.md)
-(`vendor/perch/docs/audit-scope.md`), records that "no release it records
-contains this source" — while the wallet runs the published `0.3.2` tarball,
-built from a Perch commit later than the pinned one. `packages/perch-interpreter-js`
-declares `0.1.0`, the published version. So no `perch-js-v0.3.2` tag exists in
-this tree, and the published `perch-js` tarball cannot be diffed against the
-pinned source by any tag in a single-commit snapshot. This audit reviews the
+source commit. The wallet runs the published perch-js `0.4.0` tarball, built at
+tag `perch-js-v0.4.0`; `packages/perch-js` at the pinned commit declares
+`0.4.0`, and Perch's manifest,
+[`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/docs/audit-scope.md)
+(`vendor/perch/docs/audit-scope.md`), records that `src/` at that tag equals
+the pinned source. `packages/perch-interpreter-js` declares `0.1.0`, the
+published version. A single-commit snapshot carries no tags, so the published
+tarballs cannot be diffed against the pinned source by tag within it. This audit reviews the
 perch-js and perch-interpreter-js encoders as the source at the pinned commit
 (`vendor/perch/packages/perch-js`, `vendor/perch/packages/perch-interpreter-js`).
 Establishing that a published `dist` is a reproducible build of an audited
@@ -82,7 +79,7 @@ change outside this audit.
 
 | Artifact | Record |
 | --- | --- |
-| Perch's testnet stack | Perch's manifest [`deployments/testnet.json`](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/deployments/testnet.json) (`vendor/perch/deployments/testnet.json`) at the Perch source commit: the build commit (`source.commit`, with `dirty`), the build toolchain (`toolchain`), and every contract's version, `sha256`, and address. |
+| Perch's testnet stack | Perch's manifest [`deployments/testnet.json`](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/deployments/testnet.json) (`vendor/perch/deployments/testnet.json`) at the Perch source commit: the build commit (`source.commit`, with `dirty`), the build toolchain (`toolchain`), and every contract's version, `sha256`, and address. |
 | Nido's testnet factory | [DEPLOYED.md](../DEPLOYED.md#nidos-factory): wasm hash, build commit, toolchain, verifier pin, admin. |
 
 The deployed Perch wasm was built from `source.commit`, which can be an
@@ -112,28 +109,28 @@ ZK verifier delta, the Perch JavaScript source, Perch's artifact selection).
 Perch's two units are a boundary for Perch's audit; a later Perch backend
 still needs its own integration review in Nido. Perch's map of its paths to
 the two units is its audit manifest,
-[`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/docs/audit-scope.md)
+[`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/docs/audit-scope.md)
 (`vendor/perch/docs/audit-scope.md`).
 
 | Item | Path or identity | Stream |
 | --- | --- | --- |
-| Factory | `contracts/factory/`: deterministic deployment of `perch-account` with the passkey admin rule; the embedded account wasm and its hash cache across upgrades; admin, upgrade, and verifier pin; the registry fallback for an unpinned verifier | Nido integration |
+| Factory | `contracts/factory/`: deterministic deployment of `perch-account` with the passkey admin rule at an address derived from a one-time setup key, and the setup key's Ed25519 signature binding the passkey (`create_account`, `get_c_address`); the optional manager whose authorization gates creation; the account wasm hash pinned at build time (`registry_contract!` over the committed `wasm/perch-account.sha256`, written from Perch's deployment manifest), and that every account is deployed from exactly that hash; the admin's immediate changes (`upgrade`, `pin_verifier`, `set_manager`, `set_admin`) and their events; the registry fallback for an unpinned verifier | Nido integration |
 | Name registry | `contracts/name-registry/`: name ownership and release | Nido integration |
-| `admin-sep` 0.27.0 | `admin`, `set_admin`, and `upgrade` for the factory (whose `upgrade` override also clears the account-hash cache), the name registry, and the multisig and spending-limit policies. About 50 lines. `admin()` reads the stored admin with `unwrap_unchecked`, and `set_admin` requires no authorization while no admin is stored; the factory's constructor stores one. | Explicit dependency review: read in full |
+| `admin-sep` 0.27.0 | `admin` and `set_admin` for the factory (which overrides `set_admin` to emit `admin_changed`, and does not use `Upgradable`), and `admin`, `set_admin`, and `upgrade` for the name registry and the multisig and spending-limit policies. About 50 lines. `admin()` reads the stored admin with `unwrap_unchecked`, and `set_admin` requires no authorization while no admin is stored; the factory's constructor stores one. | Explicit dependency review: read in full |
 | Passkey SDK | `packages/passkey-sdk/`: `src/perch/` (statement encodings, recovery builders, document helpers, proving), `src/policyDoc/`, WebAuthn parsing, auth-entry signing | Nido integration |
 | Wallet | `packages/frontend/`: recovery pages (`src/lib/recovery/`), onboarding and the setup secret (`src/pages/new-account/`, `src/lib/createNido.ts`), signing flows, the storage bridge, `public/_headers` | Nido integration |
 | Wallets Kit module | `packages/stellar-wallets-kit-module/`: dApp signing handoff | Nido integration |
 | Infrastructure | `infra/relayer/` (fee sponsorship and submission, the channels plugin, key custody), `infra/nido-resolver/` (name resolution), `frontend/worker-proxy-nido/` (subdomain proxy, security headers) | Nido integration |
 | Integration harness | `crates/integration-tests/`: that it runs under enforcing authorization with real proofs and that its fixtures cannot drift silently (`src/zk.rs`) | Nido integration |
-| `@stellar-registry/perch` (perch-js; npm `0.3.2`, pinned source `0.3.1`, see manifest note) | Statement and document encodings, `applyDocument`, rule selection, signing digests. | Source at the pinned commit: explicit dependency review. The published tarball vs an audited source: post-audit release gate ([DEFERRED.md](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)). The wallet's use of it: Nido integration |
+| `@stellar-registry/perch` (perch-js; npm `0.4.0`, pinned source `0.4.0`, see manifest note) | Statement and document encodings, `applyDocument`, rule selection, signing digests. | Source at the pinned commit: explicit dependency review. The published tarball vs an audited source: post-audit release gate ([DEFERRED.md](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)). The wallet's use of it: Nido integration |
 | `@stellar-registry/perch-interpreter` 0.1.0 | Interpreter install parameters and bindings the SDK uses (`src/policyDoc/params.ts`) | Nido integration; tarball against source: explicit dependency review |
-| `perch-zk` | [`packages/perch-zk`](https://github.com/stellar-registry/perch/tree/603f7d5504f2d4d9338c135771cea18ac70dbe0c/packages/perch-zk) (`vendor/perch/packages/perch-zk`): in-page proving and the circuit artifact it ships | Source: explicit dependency review; the wallet's use of it: Nido integration |
+| `perch-zk` | [`packages/perch-zk`](https://github.com/stellar-registry/perch/tree/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/packages/perch-zk) (`vendor/perch/packages/perch-zk`): in-page proving and the circuit artifact it ships | Source: explicit dependency review; the wallet's use of it: Nido integration |
 | Generated Perch clients | `packages/contract-bindings/perch-*`, generated from the deployed wasm (`just bindings-perch`) | Nido integration (provenance) |
-| Artifact selection | `just perch-infra` (runs Perch's [`scripts/fetch-infra-wasm.sh`](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/scripts/fetch-infra-wasm.sh) (`vendor/perch/scripts/fetch-infra-wasm.sh`) `--stack`), `scripts/check-perch-drift.sh`, `scripts/deploy-factory.sh`, `packages/passkey-sdk/src/perch/deployment.ts` (`perch.TESTNET`) and its test. Perch's own artifact selection (`fetch-infra-wasm.sh`, `build-stack.sh`, `verify-deployment.sh`) is in Perch's explicit dependency review. | Nido integration |
-| Perch contracts | `perch-account`, `perch-smart-account` (recovery and capability paths), `perch-recovery`, `perch-zk-pool`, `perch-zk-adapter`, `perch-doc-compiler`, `perch-interpreter`, `perch-webauthn-verifier`, in Perch's [`crates/`](https://github.com/stellar-registry/perch/tree/603f7d5504f2d4d9338c135771cea18ac70dbe0c/crates) (`vendor/perch/crates/`) | Perch core |
-| Circuit | Perch's [`circuits/`](https://github.com/stellar-registry/perch/tree/603f7d5504f2d4d9338c135771cea18ac70dbe0c/circuits) (`vendor/perch/circuits/`), specialist review: soundness, domain separation, nullifier binding | Perch core |
-| ZK verifier delta | Perch's `UltraKeccakZKFlavor` delta on NethermindEth's UltraHonk verifier, in Perch's `vendor/ultrahonk-soroban-verifier/`: `src/zk.rs` (new), `src/lib.rs` (+3 lines: the module and its re-exports), and visibility-only changes to `src/transcript.rs`, `src/sumcheck.rs`, `src/utils.rs`, and `src/verifier.rs`, as listed in its [`NOTICE`](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/vendor/ultrahonk-soroban-verifier/NOTICE) (`vendor/perch/vendor/ultrahonk-soroban-verifier/NOTICE`). Not audited. | Explicit dependency review (cryptographic specialist) |
-| Upstream UltraHonk verifier | The rest of Perch's [`vendor/ultrahonk-soroban-verifier/`](https://github.com/stellar-registry/perch/tree/603f7d5504f2d4d9338c135771cea18ac70dbe0c/vendor/ultrahonk-soroban-verifier) (`vendor/perch/vendor/ultrahonk-soroban-verifier/`): NethermindEth's verifier at the upstream commit its `NOTICE` names, audited by OpenZeppelin for the non-ZK flavor only. Confirm the vendored bytes are upstream's (`UPSTREAM.sha256`, `CHECKSUMS.sha256`, Perch's `crates/perch-zk-adapter/tests/vendor.rs`). | Explicit dependency review: provenance only |
+| Artifact selection | `just perch-infra` (runs Perch's [`scripts/fetch-infra-wasm.sh`](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/scripts/fetch-infra-wasm.sh) (`vendor/perch/scripts/fetch-infra-wasm.sh`) `--stack`), `scripts/check-perch-drift.sh`, `scripts/deploy-factory.sh`, `packages/passkey-sdk/src/perch/deployment.ts` (`perch.TESTNET`) and its test. Perch's own artifact selection (`fetch-infra-wasm.sh`, `build-stack.sh`, `verify-deployment.sh`) is in Perch's explicit dependency review. | Nido integration |
+| Perch contracts | `perch-account`, `perch-smart-account` (recovery and capability paths), `perch-recovery`, `perch-zk-pool`, `perch-zk-adapter`, `perch-doc-compiler`, `perch-interpreter`, `perch-webauthn-verifier`, in Perch's [`crates/`](https://github.com/stellar-registry/perch/tree/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/crates) (`vendor/perch/crates/`) | Perch core |
+| Circuit | Perch's [`circuits/`](https://github.com/stellar-registry/perch/tree/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/circuits) (`vendor/perch/circuits/`), specialist review: soundness, domain separation, nullifier binding | Perch core |
+| ZK verifier delta | Perch's `UltraKeccakZKFlavor` delta on NethermindEth's UltraHonk verifier, in Perch's `vendor/ultrahonk-soroban-verifier/`: `src/zk.rs` (new), `src/lib.rs` (+3 lines: the module and its re-exports), and visibility-only changes to `src/transcript.rs`, `src/sumcheck.rs`, `src/utils.rs`, and `src/verifier.rs`, as listed in its [`NOTICE`](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/vendor/ultrahonk-soroban-verifier/NOTICE) (`vendor/perch/vendor/ultrahonk-soroban-verifier/NOTICE`). Not audited. | Explicit dependency review (cryptographic specialist) |
+| Upstream UltraHonk verifier | The rest of Perch's [`vendor/ultrahonk-soroban-verifier/`](https://github.com/stellar-registry/perch/tree/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/vendor/ultrahonk-soroban-verifier) (`vendor/perch/vendor/ultrahonk-soroban-verifier/`): NethermindEth's verifier at the upstream commit its `NOTICE` names, audited by OpenZeppelin for the non-ZK flavor only. Confirm the vendored bytes are upstream's (`UPSTREAM.sha256`, `CHECKSUMS.sha256`, Perch's `crates/perch-zk-adapter/tests/vendor.rs`). | Explicit dependency review: provenance only |
 | Rule reconciler, install paths, caps, spending limit | `perch-smart-account/src/rules.rs`, the install half of `apply`, the caps in `perch-doc-compiler`, `perch-spending-limit` (all in Perch's `crates/`) | Perch OZ materialization |
 | OZ fork #3: CAP-0071 delegated auth | [theahaco/stellar-contracts-OZ#3](https://github.com/theahaco/stellar-contracts-OZ/pull/3), in the rev above | Explicit dependency review |
 | OZ fork #4: `_no_events` mutations | [theahaco/stellar-contracts-OZ#4](https://github.com/theahaco/stellar-contracts-OZ/pull/4), in the rev above | Explicit dependency review |
@@ -163,7 +160,7 @@ Named exclusions:
    that indexes each threat's STRIDE category, invariants, release gate, and
    status.
 4. Perch's recovery specification,
-   [`docs/recovery/spec.md`](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/docs/recovery/spec.md)
+   [`docs/recovery/spec.md`](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/docs/recovery/spec.md)
    (`vendor/perch/docs/recovery/spec.md`): the single source of truth for
    recovery semantics.
 5. [SECURITY_INVARIANTS.md](./SECURITY_INVARIANTS.md): each property and the
@@ -175,7 +172,7 @@ Named exclusions:
 9. [RUNBOOKS.md](./RUNBOOKS.md) and [MAINNET_READINESS.md](./MAINNET_READINESS.md):
    how it is built, deployed, and operated, and what is still open.
 10. Perch's audit manifest,
-    [`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/docs/audit-scope.md)
+    [`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/docs/audit-scope.md)
     (`vendor/perch/docs/audit-scope.md`), for the Perch streams.
 
 Not in the reading order, because they are historical records rather than
@@ -202,32 +199,34 @@ specification intends:
 ## Questions we want answered
 
 1. **Factory admin.** The factory admin can replace the whole factory wasm,
-   and with it the account code and verifier new accounts get
-   (THREAT_MODEL 8); pinning the verifier does not constrain an upgrade.
-   MAINNET_READINESS B1 requires a multisig with a visible upgrade delay, or
-   no upgrade authority. Is that enough for accounts created while an
-   upgrade is pending?
-
-   _As built:_ the factory's `upgrade` and `set_registry_pins` take effect in
-   the same transaction (`admin.require_auth`, then
-   `update_current_contract_wasm` / the pin write) — there is no on-chain
-   timelock, so any "visible upgrade delay" is a property of the admin
-   multisig's off-chain process, not an on-chain guarantee. An account created
-   while an upgrade is pending gets whatever factory code and pin are live at
-   its ledger, and nothing on-chain or in the wallet compares the new account's
-   wasm hash or admin-rule verifier against `perch.TESTNET` / the manifest. A
-   multisig delay alone therefore does not protect accounts created during or
-   after a malicious upgrade unless the wallet verifies the deployed result
-   (see B1).
+   and with it the account code new accounts get, repin the verifier, change
+   the manager, or hand the factory on (THREAT_MODEL 8). The factory makes
+   each change at once and emits an event (SECURITY_INVARIANTS F4); on
+   mainnet the admin is a smart account that enforces a 24-hour delay and a
+   quorum (MAINNET_READINESS B1), with candidate mechanisms in RUNBOOKS §3.
+   Is a delay enforced by the admin account rather than the factory enough,
+   given that the factory can't tell how its admin decided? An account
+   created during the delay gets the code and pin live at its ledger. The
+   wallet compares a new account's wasm hash and admin-rule verifier with
+   its deployment before activating an account it set up (SECURITY_INVARIANTS
+   W11), so it refuses such an account, but accounts other clients create
+   through the factory are not covered.
 2. **The ZK verifier delta.** Proofs are zero-knowledge, verified by Perch's
    unaudited `UltraKeccakZKFlavor` delta on the audited verifier
    (THREAT_MODEL 13). Is it sound?
 3. **Guardian checks.** Is what the guardian page verifies (W2, W3) enough for
    a guardian who follows its instructions?
-4. **Setup secret.** Whoever submits a salt first owns its address, and the
-   relayer sees every salt (THREAT_MODEL 5, 10, L5). Is the window between
-   creating a salt and deploying acceptable, and does the mitigation
-   MAINNET_READINESS A6 requires close it?
+4. **Setup key.** The address derives from a one-time setup key, and the
+   factory deploys only the passkey that key signed over
+   `sha256("nido/bind/v1" || network_id || factory_id || key)`
+   (SECURITY_INVARIANTS F6), so the relayer and the manager, which see only
+   the public key, can't claim the address (THREAT_MODEL 10, L5). Is the
+   binding complete (domain separation, the message, Ed25519 over a 32-byte
+   digest), and is the remaining exposure, a thief holding the setup secret
+   before the passkey exists (THREAT_MODEL 5), adequately covered by the
+   wallet's check (MAINNET_READINESS A6, SECURITY_INVARIANTS W11)? With a
+   manager set, can its approval be lifted to another `create_account`
+   (F7)?
 5. **Deployment.** `perch.TESTNET` is checked against Perch's manifest in a
    test, and the manifest against the chain by Perch's `verify-deployment.sh`.
    Is that enough, and should a `PUBLIC_PERCH_DEPLOYMENT` override be checked

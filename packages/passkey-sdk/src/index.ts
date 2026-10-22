@@ -51,8 +51,13 @@ export {
   stripSubdomain,
   dappPathFromHostname,
   dappUrl,
+  splitHost,
+  NIDO_APEXES,
   RESERVED_DAPP_SUBDOMAINS,
+  RESERVED_NAMES,
+  isReservedName,
 } from "./url.js";
+export type { HostParts } from "./url.js";
 
 export { resolveName, resolveNameCached, lookupName } from "./resolve.js";
 
@@ -68,9 +73,12 @@ export {
 } from "./relayer.js";
 export type { RelayerStatus, RelayerTxResponse } from "./relayer.js";
 
-export type { PendingAccount, SessionKeyMaterial } from "./storage.js";
+export type { PendingAccount, SessionKeyMaterial, StorageNetwork, KeyValueStore } from "./storage.js";
 
 export {
+  nidoKey,
+  setStorageNetwork,
+  moveLegacyNidoKeys,
   saveCredential,
   loadCredential,
   saveAccount,

@@ -13,11 +13,14 @@ import {
   encodeGuardianRequest,
   findOwnAttempt,
   foreignVerifiers,
+  guardianRuleAt,
   hex,
+  newGuardianRuleName,
   ownAttemptProblem,
   parseRecoveryKit,
   passkeyCheckCode,
   recoveryChangeRows,
+  trustChanges,
   quickRecoveryTimingAllowed,
   PUBLIC_NETWORK_PASSPHRASE,
   replacementsFromWire,
@@ -400,6 +403,41 @@ describe('recoveryChangeRows', () => {
   });
 });
 
+describe('trustChanges', () => {
+  const rows = (current: unknown, proposed: unknown) => recoveryChangeRows(current, proposed);
+
+  it('lists who leaves and who joins, and a contract Nido does not use', () => {
+    const current = withChoice('protected', 'guardian-only').recovery as Record<string, unknown>;
+    const proposed = { ...current, controller: contract(90), mode: { ...(current.mode as object), guardians: [guardians[0], contract(91), guardians[2]] } };
+    expect(trustChanges(rows(current, proposed), deployment)).toEqual([
+      { path: 'mode.guardians', label: 'Friends (guardian addresses)', removed: [guardians[1]], added: [contract(91)] },
+      {
+        path: 'controller',
+        label: 'Recovery controller (contract)',
+        removed: [deployment.recoveryController],
+        added: [contract(90)],
+        expected: deployment.recoveryController,
+      },
+    ]);
+  });
+
+  it('counts a lower quorum but not a higher one, and ignores a reordering', () => {
+    const current = withChoice('protected', 'guardian-only').recovery as Record<string, unknown> & { mode: Record<string, unknown> };
+    const at = (mode: Record<string, unknown>) => ({ ...current, mode: { ...current.mode, ...mode } });
+    expect(trustChanges(rows(current, at({ quorum: 1 })), deployment).map((t) => t.path)).toEqual(['mode.quorum']);
+    expect(trustChanges(rows(current, at({ quorum: 3 })), deployment)).toEqual([]);
+    expect(trustChanges(rows(current, at({ guardians: [...guardians].reverse() })), deployment)).toEqual([]);
+  });
+
+  it('does not flag moving onto the contracts Nido uses', () => {
+    const current = { ...(withChoice('protected', 'guardian-only').recovery as object), controller: contract(92) };
+    const proposed = withChoice('protected', 'guardian-only').recovery;
+    expect(trustChanges(rows(current, proposed), deployment)).toEqual([
+      { path: 'controller', label: 'Recovery controller (contract)', removed: [contract(92)], added: [deployment.recoveryController] },
+    ]);
+  });
+});
+
 describe('recovery kits', () => {
   it('accepts a well-formed kit and refuses anything else', () => {
     const kit = { version: 1, network: NETWORK, account: contract(30), enrollmentId: 'ab'.repeat(32), secret: '01'.repeat(32) };
@@ -416,5 +454,32 @@ describe('quickRecoveryTimingAllowed', () => {
   it('allows it on testnet and other non-public networks', () => {
     expect(quickRecoveryTimingAllowed('Test SDF Network ; September 2015')).toBe(true);
     expect(quickRecoveryTimingAllowed('Standalone Network ; February 2017')).toBe(true);
+  });
+});
+
+describe('guardian rules, one per controller', () => {
+  const current = StrKey.encodeContract(Buffer.alloc(32, 7));
+  const earlier = StrKey.encodeContract(Buffer.alloc(32, 50));
+  const rule = (name: string, contract: string, recovery = false) => ({ name, contract, recovery });
+
+  it('finds the guardian rule scoped to the controller, never the recovery rule or another rule', () => {
+    const rules = [
+      rule('admin', current),
+      rule('guardian', current),
+      rule('recovery', earlier, true),
+      rule('app', earlier),
+      rule('guardian-x', earlier),
+    ];
+    expect(guardianRuleAt(rules, current)).toBe('guardian');
+    expect(guardianRuleAt(rules, earlier)).toBe('guardian-x');
+    expect(guardianRuleAt(rules.slice(0, 4), earlier)).toBeUndefined();
+  });
+
+  it('names the first `guardian` and each further one after its controller, within 20 bytes', () => {
+    expect(newGuardianRuleName(['admin'], earlier)).toBe('guardian');
+    const second = newGuardianRuleName(['admin', 'guardian'], earlier);
+    expect(second).toBe(`guardian-${earlier.slice(0, 11).toLowerCase()}`);
+    expect(new TextEncoder().encode(second).length).toBe(20);
+    expect(() => newGuardianRuleName(['guardian', second], earlier)).toThrow(/already has a rule/);
   });
 });

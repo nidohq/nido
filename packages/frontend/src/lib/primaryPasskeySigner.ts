@@ -1,7 +1,6 @@
 import {
   rpc,
   TransactionBuilder,
-  Networks,
   Keypair,
   xdr,
   type Transaction,
@@ -22,17 +21,19 @@ import {
   buf2hex,
   type PasskeySignature,
   type PolicyDoc,
+  nidoKey,
 } from '@nidohq/passkey-sdk';
 import { resolveSignerRule } from './policyChainFetch.js';
-import { perchDeployment } from './recovery/deployment.js';
 import {
   relayerEnabled,
   signatureExpirationOffset,
 } from './relayerClient';
-import { RELAYER_SIM_SOURCE } from './network';
+import { RELAYER_SIM_SOURCE, RPC_URL, NETWORK_PASSPHRASE } from './network';
 import { relayerSubmitAndConfirm, classicSubmitAndPoll } from './signing/submit';
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+// Friendbot has no mainnet equivalent (testnet-only faucet) -- not migrated
+// to network.ts. getSubmitter() below is only reached in classic (non-relayer)
+// mode, which mainnet account creation doesn't use yet (see docs/TODO_meridian.md).
 const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 
 // The expiration offset (relayer-mode auth-entry validity window) is computed by
@@ -40,9 +41,9 @@ const FRIENDBOT_URL = 'https://friendbot.stellar.org';
 // signing path (here + walletSign) shares ONE source of
 // truth, passed identically to buildAuthHash and the injector.
 
-/** localStorage key shared with `account/index.astro` so we don't
- *  proliferate ephemeral submitter accounts. */
-const SUBMITTER_KEY = 'nido:name-keypair';
+/** One stored submitter keypair, so we don't proliferate ephemeral
+ *  submitter accounts. */
+const submitterKey = () => nidoKey('name-keypair');
 
 /**
  * Get or mint an ephemeral G-address keypair used as the tx submitter
@@ -55,12 +56,12 @@ const SUBMITTER_KEY = 'nido:name-keypair';
  * fees. Auth is via the passkey on the auth entry, not the source.
  */
 export async function getSubmitter(): Promise<Keypair> {
-  const stored = localStorage.getItem(SUBMITTER_KEY);
+  const stored = localStorage.getItem(submitterKey());
   if (stored) return Keypair.fromSecret(stored);
   const kp = Keypair.random();
   const resp = await fetch(`${FRIENDBOT_URL}?addr=${kp.publicKey()}`);
   if (!resp.ok) throw new Error(`Friendbot funding failed: ${resp.statusText}`);
-  localStorage.setItem(SUBMITTER_KEY, kp.secret());
+  localStorage.setItem(submitterKey(), kp.secret());
   return kp;
 }
 
@@ -119,7 +120,7 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   opClone.body().invokeHostFunctionOp().auth([]);
   const simTx = new TransactionBuilder(sourceAccount, {
     fee: '10000000',
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(opClone)
     .setTimeout(0)
@@ -136,7 +137,7 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   const authEntry = getAuthEntry(successSim);
   const lastLedger = successSim.latestLedger;
   const expirationOffset = signatureExpirationOffset();
-  const signaturePayload = buildAuthHash(authEntry, Networks.TESTNET, lastLedger, expirationOffset);
+  const signaturePayload = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger, expirationOffset);
 
   // 4. Assemble so auth entries are baked into the tx XDR before signing.
   const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
@@ -262,7 +263,7 @@ export async function signAndSubmit(args: {
   const scheme = await perch.authDigestScheme({
     account: args.account,
     rpcUrl: RPC_URL,
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
   });
   const challengeBytes = computeAuthDigest(args.account, prepared.signaturePayload, contextRuleIds, scheme);
   const authHashHex = buf2hex(challengeBytes);
@@ -305,13 +306,12 @@ export async function applyDocWithPasskey(args: {
 }): Promise<{ hash: string; revision: bigint }> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
-  const deployment = perchDeployment();
-  if (!deployment) throw new Error('This build has no Perch deployment.');
-  const reader = perch.accountSnapshotReader({
+  // Over the compiler the account pins, which an account minted by an
+  // earlier Perch release keeps.
+  const reader = await perch.openAccountReader({
     account: args.account,
     rpcUrl: RPC_URL,
-    networkPassphrase: Networks.TESTNET,
-    docCompiler: deployment.docCompiler,
+    networkPassphrase: NETWORK_PASSPHRASE,
   });
   const signer = await resolveSignerRule(args.account, cred.publicKey);
   if (!signer) throw new Error(NOT_REGISTERED);
@@ -323,7 +323,7 @@ export async function applyDocWithPasskey(args: {
       const tx = await buildApplyDocTx(args.doc, {
         account,
         rpcUrl: RPC_URL,
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase: NETWORK_PASSPHRASE,
         approvalValidUntil,
         expectedRevision,
       });
@@ -352,33 +352,14 @@ export async function applyDocWithPasskey(args: {
     },
   };
 
-  // The account's digest dialect, read once for this apply.
-  const scheme = await perch.authDigestScheme({
-    account: args.account,
-    rpcUrl: RPC_URL,
-    networkPassphrase: Networks.TESTNET,
-  });
   const op = perch.applyDocument(
     args.doc,
     backend,
     {
       async sign(request) {
         args.onProgress?.({ phase: "sign" });
-        // perch-js computes `request.digest` from the published perch-js
-        // (<= 0.3.2), which only emits the `oz_rule_ids` layer. Recompute the
-        // digest in the account's actual scheme from the same payload and
-        // selected rule ids so an `apply_doc` (and the recovery enrollment,
-        // session-key install, and dApp delegation built on it) signs what the
-        // account's `__check_auth` verifies — `addr_oz_v1` for a redeployed
-        // account, `oz_rule_ids` for one minted before. (Collapses to
-        // `request.digest` once perch-js emits the account-bound digest.)
-        const digest = computeAuthDigest(
-          request.account,
-          request.signaturePayload,
-          request.selection.ruleIds,
-          scheme,
-        );
-        const parsed = await passkeyAssertion(digest, cred.credentialId);
+        // In the account's own digest dialect, not perch-js's `request.digest`.
+        const parsed = await passkeyAssertion(perch.signRequestDigest(reader, request), cred.credentialId);
         return [
           {
             signer: { kind: 'external', verifier: signer.verifier, key: hex2buf(cred.publicKey) },

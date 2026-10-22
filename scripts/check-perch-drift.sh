@@ -11,7 +11,10 @@
 #      (vendor/perch/deployments/$STELLAR_NETWORK.json, default testnet): the
 #      fetched stack in target/wasm32v1-none/contract/, the build-time pins
 #      the smart account compiles in (committed in Perch, read here from the
-#      submodule), and the account wasm the factory embedded;
+#      submodule; the registry its registry.path derives, by Perch's
+#      scripts/derive-id.py), and the account hash the factory pins (its
+#      committed contracts/factory/wasm/perch-account.sha256, which `just
+#      perch-infra` writes, and the built nido_factory.wasm);
 #   4. npm doesn't resolve a Perch package the root workspace list vendors
 #      (today only perch-zk, which Perch hasn't published) to the submodule,
 #      or the SDK pins another version than it carries. Published Perch
@@ -41,7 +44,9 @@ manifest="vendor/perch/deployments/$network.json"
 problems=()
 problem() { problems+=("$*"); }
 
-command -v jq >/dev/null || { echo "error: jq not found" >&2; exit 1; }
+for tool in jq python3; do
+    command -v "$tool" >/dev/null || { echo "error: $tool not found" >&2; exit 1; }
+done
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
 # 1. The checkout is the recorded commit, unedited.
@@ -100,14 +105,36 @@ for name in perch-doc-compiler perch-interpreter perch-spending-limit; do
         problem "$pins/$name.sha256 is not the manifest's $name ($(want "$name"))"
     fi
 done
-if [ "$(tr -d '[:space:]' < "$pins/stateless.id" 2>/dev/null)" != "$(jq -r .registry.id "$manifest")" ]; then
-    problem "$pins/stateless.id is not the manifest's registry ($(jq -r .registry.id "$manifest"))"
+# The registry the account derives its infra from. Perch compiles in no
+# registry id, only registry.path (the Stellar Registry root's deployer and
+# salt, then named deploys below it); Perch's derive-id.py runs the account's
+# derivation under the manifest's network passphrase, one hop per line from
+# the root. Its root and its last hop must be the manifest's. A pin from
+# before registry.path (Perch #146) committed the id itself, in stateless.id.
+registry="$(jq -r .registry.id "$manifest")"
+if [ -f "$pins/registry.path" ]; then
+    if ! chain="$(python3 vendor/perch/scripts/derive-id.py chain "$(jq -r .network_passphrase "$manifest")" "$pins/registry.path" 2>&1)"; then
+        problem "could not derive the registry from $pins/registry.path: $chain"
+    else
+        [ "$(tail -n1 <<<"$chain")" = "$registry" ] ||
+            problem "$pins/registry.path derives registry $(tail -n1 <<<"$chain") on $network, not the manifest's ($registry)"
+        root="$(jq -r '.registry.root // empty' "$manifest")"
+        [ -z "$root" ] || [ "$(head -n1 <<<"$chain")" = "$root" ] ||
+            problem "$pins/registry.path derives the Stellar Registry root $(head -n1 <<<"$chain") on $network, not the manifest's ($root)"
+    fi
+elif [ "$(tr -d '[:space:]' < "$pins/stateless.id" 2>/dev/null)" != "$registry" ]; then
+    problem "$pins has neither a registry.path deriving the manifest's registry nor a stateless.id naming it ($registry)"
 fi
-staged=(target/stellar/*/perch_account.wasm)
-if [ -e "${staged[0]}" ]; then
-    for file in "${staged[@]}"; do check "$file" perch-account; done
-else
-    problem "no factory build has staged perch_account.wasm under target/stellar/ (just build-contracts)"
+# The factory's pin, and the built factory that carries it as 32 raw bytes.
+factory_pin=contracts/factory/wasm/perch-account.sha256
+if [ "$(tr -d '[:space:]' < "$factory_pin" 2>/dev/null)" != "$(want perch-account)" ]; then
+    problem "$factory_pin is not the manifest's perch-account ($(want perch-account)); run 'just perch-infra'"
+fi
+factory=target/wasm32v1-none/contract/nido_factory.wasm
+if [ ! -f "$factory" ]; then
+    problem "$factory is missing (just build-contracts)"
+elif ! od -An -v -tx1 "$factory" | tr -d ' \n' | grep -q "$(want perch-account)"; then
+    problem "$factory does not pin the manifest's perch-account ($(want perch-account)); rebuild it (just build-contracts)"
 fi
 
 # 4. npm resolves each vendored Perch package to the submodule, at the version
@@ -154,4 +181,4 @@ if [ ${#problems[@]} -gt 0 ]; then
     printf '  - %s\n' "${problems[@]}" >&2
     exit 1
 fi
-echo "vendor/perch ${pinned:0:7} on $branch; Cargo's Perch crates at the same commit; consumed wasm, build-time pins, factory embed, and npm workspaces match $manifest"
+echo "vendor/perch ${pinned:0:7} on $branch; Cargo's Perch crates at the same commit; consumed wasm, build-time pins, factory pin, and npm workspaces match $manifest"

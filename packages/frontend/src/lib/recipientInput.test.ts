@@ -13,6 +13,9 @@ describe('normalizeRecipientInput', () => {
   it('strips a trailing .nido.fyi suffix', () => {
     expect(normalizeRecipientInput('alice.nido.fyi')).toBe('alice');
   });
+  it('strips the whole testnet suffix, not just .nido.fyi', () => {
+    expect(normalizeRecipientInput('alice.test.nido.fyi')).toBe('alice');
+  });
   it('strips a trailing .localhost suffix (dev)', () => {
     expect(normalizeRecipientInput('alice.localhost')).toBe('alice');
   });

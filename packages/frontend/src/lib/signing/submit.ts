@@ -5,7 +5,7 @@
  *   polls until confirmed. Skips enforce re-sim (Channels does it server-side).
  * - classicSubmitAndPoll: enforce re-sim + fee refit + sign + RPC send + poll.
  */
-import { rpc, TransactionBuilder, Networks, Keypair, xdr } from "@stellar/stellar-sdk";
+import { rpc, TransactionBuilder, Keypair, xdr } from "@stellar/stellar-sdk";
 import type { Transaction } from "@stellar/stellar-sdk";
 import {
   type RelayerStatus,
@@ -14,7 +14,7 @@ import {
   submitSorobanTransaction,
   waitForConfirmation,
 } from "../relayerClient";
-import { RELAYER_URL } from "../network";
+import { RELAYER_URL, NETWORK_PASSPHRASE } from "../network";
 
 export { type RelayerStatus };
 
@@ -116,7 +116,7 @@ export async function classicSubmitAndPoll(
   const refittedBuilder = TransactionBuilder.cloneFrom(assembledTx, {
     fee: (classicFee + newResourceFee).toString(),
     sorobanData: newSorobanData,
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
   });
   // cloneFrom carries operations across as-is (including the signed auth
   // entries on our InvokeHostFunction op). build() emits a new Transaction

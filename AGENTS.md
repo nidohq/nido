@@ -11,7 +11,7 @@ Nido helps users move from Stellar G-addresses to Soroban Smart Accounts (C-addr
 ```bash
 git submodule update --init   # vendor/perch, the Perch stack
 just perch-infra       # Perch's deployed wasm + pin caches, by the hashes in vendor/perch/deployments/testnet.json
-just build-contracts   # Nido's wasm (the factory embeds the fetched Perch account)
+just build-contracts   # Nido's wasm (the factory pins the manifest's Perch account hash)
 just test              # cargo test --workspace (embeds the wasm above)
 just check             # cargo fmt --check + cargo clippy -D warnings
 just gen-zk-fixtures   # re-prove the real-proof fixtures with Perch's pinned nargo/bb
@@ -26,7 +26,7 @@ and ZK adapter are Perch's (stellar-registry/perch epic #99), consumed as git
 dependencies at the `vendor/perch` submodule's commit; the root `Cargo.toml`
 comment says how the two stay in lockstep. Nido's own crates:
 
-**`contracts/factory`** — Deploys Perch accounts (embedding the Perch account wasm) with a passkey admin rule checked by Perch's immutable WebAuthn verifier (pinned via `set_registry_pins`).
+**`contracts/factory`** — Deploys Perch accounts (by the account wasm hash pinned from Perch's manifest) with a passkey admin rule checked by Perch's immutable WebAuthn verifier (pinned by the constructor).
 
 **`crates/integration-tests`** — The Perch stack as Nido deploys it (`src/world.rs`): everything from wasm, real passkey assertions, enforcing auth (`set_auths`), and real UltraHonk proofs replayed from `fixtures/zk/` (`src/zk.rs`).
 

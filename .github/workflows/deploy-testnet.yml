@@ -1,0 +1,78 @@
+name: Deploy Testnet
+
+# Auto-deploys test.nido.fyi on every push to main. Production (nido.fyi) is
+# deliberately not touched here — see deploy-production.yml, which is
+# workflow_dispatch-only so a real cutover is never a side effect of a merge.
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PAGES_PROJECT: nido
+  PUBLIC_EXAMPLE_DAPP_URL: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+  PUBLIC_GITHUB_REPOSITORY: ${{ github.repository }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # vendor/perch: the npm workspace includes its packages.
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build workspace packages
+        run: npm run build:packages
+
+      - name: Build frontend (testnet)
+        env:
+          PUBLIC_STELLAR_NETWORK: testnet
+          # Gas abstraction via the self-hosted OZ Relayer (#72). SIM_SOURCE is
+          # the relayer's public fund address (simulation-only tx source).
+          PUBLIC_RELAYER_URL: https://nido.fly.dev
+          PUBLIC_RELAYER_SIM_SOURCE: GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
+          # Overrides the Perch deployment (JSON, or `none`); unset, a testnet
+          # build uses perch.TESTNET (see lib/recovery/deployment.ts).
+          PUBLIC_PERCH_DEPLOYMENT: ${{ vars.PUBLIC_PERCH_DEPLOYMENT }}
+        run: npx astro build --root ./packages/frontend
+
+      # `--branch test` (not `main`) gives this build its own stable Pages
+      # alias (`test.nido-1am.pages.dev`) distinct from the production
+      # deployment at `nido-1am.pages.dev` — see worker-proxy-nido's
+      # `[env.testnet].vars.PAGES`, which points there.
+      - name: Deploy to Cloudflare Pages (test branch)
+        run: |
+          npx wrangler pages deploy packages/frontend/dist/ \
+            --project-name "$PAGES_PROJECT" \
+            --branch test
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Edge proxy for *.test.nido.fyi -> the testnet Pages deployment above.
+      # `--env testnet` is wrangler.toml's dedicated testnet environment (its
+      # own Worker, `nido-proxy-testnet`); its routes stay empty until the
+      # *.test.nido.fyi advanced certificate is active (see wrangler.toml's
+      # own comment) — deploying it here is harmless either way, it just has
+      # nothing to route to yet.
+      - name: Deploy test.nido.fyi proxy worker
+        run: npx wrangler deploy --config frontend/worker-proxy-nido/wrangler.toml --env testnet
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Name resolver: serves <subdomain>.test.nido.fyi/.well-known/nido.json.
+      # Same "routes empty until the cert is active" situation as the proxy.
+      - name: Deploy test.nido.fyi resolver worker
+        run: npx wrangler deploy --config infra/nido-resolver/wrangler.toml --env testnet
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

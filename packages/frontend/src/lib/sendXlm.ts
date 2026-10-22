@@ -1,9 +1,7 @@
-import { Asset, Networks, StrKey, xdr } from "@stellar/stellar-sdk";
+import { StrKey, xdr } from "@stellar/stellar-sdk";
 import { signAndSubmit } from "./primaryPasskeySigner.js";
 import { buildSendOperation } from "./transfer/buildSend.js";
-
-/** Native-XLM Stellar Asset Contract id on testnet (same derivation as balance.ts). */
-const XLM_SAC_ID = Asset.native().contractId(Networks.TESTNET);
+import { NATIVE_SAC_ID as XLM_SAC_ID } from "./network.js";
 
 /** True if `addr` is a valid Soroban contract (C…) or Stellar account (G…) address. */
 export function validateRecipient(addr: string): boolean {

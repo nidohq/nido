@@ -111,6 +111,16 @@ const { signedTxXdr } = await StellarWalletsKit.signTransaction(tx.toXDR(), {
 
 `signMessage` and `signAuthEntry` work the same way (popup + passkey).
 
+**What the wallet refuses.** Before the passkey prompt, the sign page shows
+every call the account would authorize, sub-calls included, and refuses:
+
+- a transaction or auth entry that has the account call one of its own
+  functions (`apply_doc`, `execute`, …) or deploy a contract in its name;
+- a request for a network other than the wallet's (testnet);
+- for `signAuthEntry`: anything but a Soroban authorization preimage, or one
+  whose `signatureExpirationLedger` is already past or more than 720 ledgers
+  (about an hour) ahead. Build auth entries with a short expiry.
+
 **Soroban only.** `signTransaction` expects a Soroban transaction (a single
 `InvokeHostFunction` op): it simulates to find the smart account's auth entry,
 computes the OZ auth digest, gets a WebAuthn assertion, and injects the passkey

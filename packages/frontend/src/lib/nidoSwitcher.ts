@@ -8,10 +8,11 @@ import {
   loadAccountName,
   saveAccountName,
   activateAccount,
+  loadCredential,
+  hex2buf,
   lookupName,
   fetchRegistryAddress,
 } from "@nidohq/passkey-sdk";
-import { rpc, xdr } from "@stellar/stellar-sdk";
 import { buildMyNidoModel, type MyNidoRow } from "./myNidoModel";
 import { nidoRowHref, accountShareUrl } from "./accountLinks";
 import { resolveMissingNames } from "./resolveMyNidoNames";
@@ -21,16 +22,24 @@ import { shortAddr } from "./address";
 import { formatXlm } from "./money";
 import { createNido } from "./createNido";
 import { syncNidoStorageViaBridge } from "./nidoSharedStorage";
+import { RPC_URL, NETWORK_PASSPHRASE } from "./network";
+import { allowAccountCreation } from "./allowAccountCreation";
+import { verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
 
-const RPC_URL = "https://soroban-testnet.stellar.org";
-export const NAME_NETWORK = "Test SDF Network ; September 2015";
+// Every "create a Nido" entry point this switcher offers (first-time setup
+// and "create another") shows a "Coming soon" state on hostnames
+// account creation isn't open on yet (see allowAccountCreation.ts).
+const creationOpen = allowAccountCreation(window.location.hostname);
 
 // Resolve the name-registry contract id once per page load (memoized promise),
 // shared across switcher instances. Only fetched if some row needs an on-chain
 // name.
 let nameRegistryIdPromise: Promise<string> | null = null;
 export function nameRegistryId(): Promise<string> {
-  return (nameRegistryIdPromise ??= fetchRegistryAddress("name-registry"));
+  return (nameRegistryIdPromise ??= fetchRegistryAddress("name-registry", {
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  }));
 }
 
 const esc = (s: string) =>
@@ -45,7 +54,7 @@ function rowHtml(row: MyNidoRow): string {
       <span class="mn-main"><span class="mn-name">${title}</span><span class="mn-meta">Finishing setup…</span></span>
       <span class="mn-chev">›</span></a>`;
   }
-  return `<a class="mn-row" role="menuitem" href="${href}" data-balance-for="${row.contractId}">${av}
+  return `<a class="mn-row" role="menuitem" href="${href}" data-balance-for="${esc(row.contractId)}">${av}
     <span class="mn-main"><span class="mn-name">${title}</span><span class="mn-meta">${esc(shortAddr(row.contractId, 6, 6))}</span></span>
     <span class="mn-bal"><span class="skeleton">&nbsp;</span></span>
     <span class="mn-chev">›</span></a>`;
@@ -81,21 +90,26 @@ function refreshOpenSwitchers() {
   for (const inst of instances) inst.refreshIfOpen();
 }
 
-// Promote any pending account that has since deployed.
+// Promote a pending account once it is deployed as this device's own: the
+// account create_account makes for the passkey this origin registered for it.
+// A contract at the address proves nothing by itself (anyone who has the setup
+// secret can deploy there first), and without the passkey there is nothing to check,
+// so such an account stays pending; resuming it on its own page settles it.
 async function verifyPendingAccounts(): Promise<boolean> {
   const pending = loadPendingAccounts();
   if (pending.length === 0) return false;
   const active = new Set(loadAccounts());
   let changed = false;
-  const server = new rpc.Server(RPC_URL);
   for (const { contractId } of pending) {
     if (active.has(contractId)) continue;
+    const stored = loadCredential(contractId);
+    if (!stored) continue;
     try {
-      await server.getContractData(contractId, xdr.ScVal.scvLedgerKeyContractInstance());
+      await verifyNewNidoAccount(contractId, hex2buf(stored.publicKey));
       activateAccount(contractId);
       changed = true;
     } catch {
-      /* not deployed yet */
+      /* not deployed yet, unreadable, or not this passkey's account */
     }
   }
   return changed;
@@ -185,11 +199,14 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
 
     if (model.state === "empty") {
       const pendingRows = model.rows.map(rowHtml).join("");
+      const createBtn = creationOpen
+        ? `<button class="btn acc cbtn mn-create-btn" type="button">Set up with your face</button>`
+        : `<button class="btn acc cbtn mn-create-btn" type="button" disabled aria-disabled="true">Coming to Mainnet Soon!</button>`;
       panel!.innerHTML = `<div class="mn-scroll"><div class="mn-create">
           <div style="display:grid;place-items:center;"><span class="mn-nest"></span></div>
           <div class="t">Create your Nido</div>
           <div class="s">A safe place for everything you own. Set up in seconds — just your face.</div>
-          <button class="btn acc cbtn mn-create-btn" type="button">Set up with your face</button>
+          ${createBtn}
         </div>
         ${pendingRows ? `<div class="mn-div"></div><div class="mn-body">${pendingRows}</div>` : ""}
         <div class="mn-err" style="display:none"></div></div>`;
@@ -203,11 +220,14 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
         ? `<div class="mn-head"><span class="lockchip">Only you</span><div class="hl">Welcome back</div><div class="hs">Your Nido is ready</div></div>`
         : `<div class="mn-head"><div class="hl">Your Nidos</div><div class="hs">${model.rows.length} on this device</div></div>`;
 
+    const createAnotherBtn = creationOpen
+      ? `<button class="mn-foot mn-create-btn" type="button"><span class="pl">+</span> Create another Nido</button>`
+      : `<button class="mn-foot mn-create-btn" type="button" disabled aria-disabled="true">Coming to Mainnet Soon!</button>`;
     panel!.innerHTML = `<div class="mn-scroll">${header}
       <div class="mn-body">
         ${model.rows.map(rowHtml).join("")}
         <div class="mn-div"></div>
-        <button class="mn-foot mn-create-btn" type="button"><span class="pl">+</span> Create another Nido</button>
+        ${createAnotherBtn}
       </div>
       <div class="mn-err" style="display:none"></div></div>`;
     wireCreate();
@@ -220,11 +240,11 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
   // persist the hit so later renders are instant. Mirrors loadBalances().
   async function resolveNames(rows: MyNidoRow[]) {
     const lookup = async (contractId: string) =>
-      lookupName(RPC_URL, await nameRegistryId(), contractId, NAME_NETWORK);
+      lookupName(RPC_URL, await nameRegistryId(), contractId, NETWORK_PASSPHRASE);
     const resolved = await resolveMissingNames(rows, lookup, saveAccountName);
     resolved.forEach((name, contractId) => {
       const rowEl = panel!.querySelector<HTMLAnchorElement>(
-        `.mn-row[data-balance-for="${contractId}"]`,
+        `.mn-row[data-balance-for="${CSS.escape(contractId)}"]`,
       );
       if (!rowEl) return;
       const nameEl = rowEl.querySelector(".mn-name");
@@ -235,7 +255,7 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
 
   function wireCreate() {
     const cbtn = panel!.querySelector<HTMLButtonElement>(".mn-create-btn");
-    if (!cbtn) return;
+    if (!cbtn || cbtn.disabled) return;
     cbtn.addEventListener("click", (e) => {
       e.stopPropagation();
       cbtn.disabled = true;

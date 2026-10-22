@@ -33,6 +33,7 @@ perch-ir = { workspace = true }
 # Crypto
 p256 = { version = "0.13", features = ["ecdsa"] }
 sha2 = "0.10"
+ed25519-dalek = "2"
 
 # Encoding
 base64 = { workspace = true }
