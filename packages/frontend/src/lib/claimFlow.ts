@@ -1,19 +1,24 @@
 // Pure decisions for the name-claim flow. No DOM, no network — unit-tested.
-import { accountUrl, isContractId } from "@nidohq/passkey-sdk";
+import { accountUrl, isContractId, isReservedName } from "@nidohq/passkey-sdk";
 
 /** A valid Nido name: a lowercase letter, then 0–14 more lowercase letters/digits (1–15 chars total). */
 export const VALID_NAME_RE = /^[a-z][a-z0-9]{0,14}$/;
+
+/** A name an account may claim: valid syntax and not reserved for a host (`test`, `www`, …). */
+export function isClaimableName(name: string): boolean {
+  return VALID_NAME_RE.test(name) && !isReservedName(name);
+}
 
 export type NameState = "available" | "taken" | "invalid";
 
 /**
  * Classify a name subdomain for the claim entry:
- *  - "invalid"   → fails VALID_NAME_RE (reserved/garbage)
+ *  - "invalid"   → not claimable: bad syntax or a reserved name
  *  - "taken"     → registry resolved it to a contract id
  *  - "available" → valid syntax, no registry entry
  */
 export function classifyNameState(name: string, resolved: string | null): NameState {
-  if (!VALID_NAME_RE.test(name)) return "invalid";
+  if (!isClaimableName(name)) return "invalid";
   return resolved ? "taken" : "available";
 }
 
@@ -104,7 +109,7 @@ export function parseReturnIntent(then: string | null): ReturnIntent | null {
   const m = /^claim:(.+)$/.exec(then);
   if (!m) return null;
   const name = m[1].toLowerCase();
-  return VALID_NAME_RE.test(name) ? { kind: "claim", name } : null;
+  return isClaimableName(name) ? { kind: "claim", name } : null;
 }
 
 export interface ReturnTargetParams {

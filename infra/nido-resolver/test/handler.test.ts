@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { handleResolve, type Registry } from "../src/handler.js";
+import { accountLabel, handleResolve, type Registry } from "../src/handler.js";
 
 const CONTRACT = "CDRBWQZV7EBKU53FTGWF2OCZE7Z52MFAWCG5CEMTR4HZHIFFX4RZBFMM"; // 56-char strkey
 const PATH = "/.well-known/nido.json";
@@ -116,5 +116,55 @@ describe("nido-resolver handler", () => {
   it("reflects the configured network", async () => {
     const res = await handleResolve(req("alice.nido.fyi"), reg({ resolve: async () => CONTRACT }), "public");
     expect((await body(res)).network).toBe("public");
+  });
+
+  it("resolves names below the testnet apex", async () => {
+    let asked = "";
+    const res = await handleResolve(req("alice.test.nido.fyi"), reg({ resolve: async (n) => { asked = n; return CONTRACT; } }), "testnet");
+    expect(asked).toBe("alice");
+    expect(res.status).toBe(200);
+  });
+
+  it("never reads an apex as a name", async () => {
+    let asked = false;
+    const resolve = async () => { asked = true; return CONTRACT; };
+    for (const host of ["test.nido.fyi", "nido.fyi"]) {
+      const res = await handleResolve(req(host), reg({ resolve }), "testnet");
+      expect(res.status).toBe(404);
+      expect((await body(res)).error).toBe("not a Nido account");
+    }
+    expect(asked).toBe(false);
+  });
+
+  it("never looks up a reserved name", async () => {
+    let asked = false;
+    const resolve = async () => { asked = true; return CONTRACT; };
+    for (const host of ["www.nido.fyi", "relay.nido.fyi", "nido.test.nido.fyi"]) {
+      const res = await handleResolve(req(host), reg({ resolve }), "testnet");
+      expect(res.status).toBe(404);
+    }
+    expect(asked).toBe(false);
+  });
+
+  it("rejects hosts outside the configured apexes", async () => {
+    const res = await handleResolve(req("alice.nido.fyi"), reg({ resolve: async () => CONTRACT }), "testnet", ["test.nido.fyi"]);
+    expect(res.status).toBe(404);
+    expect((await body(res)).error).toBe("not a Nido account");
+  });
+});
+
+describe("accountLabel", () => {
+  const apexes = ["test.nido.fyi", "nido.fyi"];
+  it("reads the label one below the longest matching apex", () => {
+    expect(accountLabel("alice.nido.fyi", apexes)).toBe("alice");
+    expect(accountLabel("alice.test.nido.fyi", apexes)).toBe("alice");
+    expect(accountLabel("alice--126.test.nido.fyi", apexes)).toBe("alice--126");
+    expect(accountLabel("Alice.Nido.FYI", apexes)).toBe("alice");
+  });
+  it("returns null for an apex, a deeper host, or another site", () => {
+    expect(accountLabel("test.nido.fyi", apexes)).toBe(null);
+    expect(accountLabel("nido.fyi", apexes)).toBe(null);
+    expect(accountLabel("a.alice.nido.fyi", apexes)).toBe(null);
+    expect(accountLabel("alice.example.com", apexes)).toBe(null);
   });
 });

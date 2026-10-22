@@ -2,9 +2,9 @@ import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { useIdentity } from './fixtures';
 
-/** 32 random bytes as lowercase hex — the account-creation `salt` the current
- *  reservation flow expects (`createNido()` in the app generates one the same
- *  way and puts it in `?salt=`). */
+/** 32 random bytes as lowercase hex — the setup secret (an Ed25519 seed,
+ *  still carried as `salt`) the current reservation flow expects
+ *  (`createNido()` in the app generates one the same way). */
 function randomSaltHex(): string {
   const bytes = new Uint8Array(32);
   // Node 18+/browsers both expose global crypto.getRandomValues.

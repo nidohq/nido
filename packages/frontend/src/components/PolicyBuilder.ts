@@ -30,7 +30,6 @@ import {
   parsePolicyDocJson,
   type PolicyDoc,
 } from '@nidohq/passkey-sdk';
-import { Networks } from '@stellar/stellar-sdk';
 import { esc } from '../lib/html.js';
 import { adminsOutsideRecovery } from '../lib/recovery/model.js';
 import { toast } from '../lib/toast.js';
@@ -56,8 +55,7 @@ import { diffPolicyDocs } from '../lib/policy/docDiff.js';
 import { bytesToHex, truncate } from '../lib/policy/policyView.js';
 import { summarizeDoc } from '../lib/policy/docView.js';
 import { renderDocDiffHtml, renderDocPreviewHtml } from './PolicyInspector.js';
-
-const NETWORK_PASSPHRASE = Networks.TESTNET;
+import { NETWORK_PASSPHRASE } from '../lib/network.js';
 
 interface BuilderOptions {
   account: string;

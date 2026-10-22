@@ -7,11 +7,12 @@
 #   On mainnet there is no shared registry we control. The factory both reads
 #   `verifier` FROM a registry (`Self::resolve`) and is published
 #   INTO one as `factory`. Rather than trust an external registry, we deploy our
-#   own instance whose owner key lives under the multisig. Once the factory
-#   PINS `verifier` (MAINNET_READINESS A4, `set_registry_pins`), the registry is
-#   off the account-creation critical path entirely: a repoint can neither
-#   reroute nor block new accounts. The registry then matters only for
-#   off-chain discovery (`fetch_contract_id("factory")`) and unpinned names.
+#   own instance whose owner key lives under the multisig. A factory that PINS
+#   `verifier` (MAINNET_READINESS A4; scripts/deploy-factory.sh pins it in
+#   the constructor) keeps the registry off the account-creation critical
+#   path entirely: a repoint can neither reroute nor block new accounts. The
+#   registry then matters only for off-chain discovery
+#   (`fetch_contract_id("factory")`) and unpinned names.
 #
 # WHAT (the registry contract is EXTERNAL — we do not build it)
 #   The registry is AhaLabs' smart-deploy contract, referenced elsewhere only by
@@ -161,6 +162,7 @@ cat <<EOF
     2. Set the factory REGISTRY constant (contracts/factory/src/contract.rs) and
        the SDK/frontend fallbacks (packages/passkey-sdk/src/registry.ts,
        packages/frontend/src/lib/policyChainFetch.ts) to this registry id; rebuild.
-    3. Pin the factory (MAINNET_READINESS A4): factory.set_registry_pins(<verifier>).
-       After pinning, the registry is off the account-creation critical path.
+    3. Deploy the factory with the verifier pinned (MAINNET_READINESS A4):
+       scripts/deploy-factory.sh passes it to the constructor. With the pin, the
+       registry is off the account-creation critical path.
 EOF

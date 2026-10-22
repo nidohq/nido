@@ -63,6 +63,9 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       <!-- Decoded, human-readable transaction detail (tx kind only). When this
            renders, the raw XDR row above collapses behind #toggle-raw. -->
       <div id="tx-detail" class="hidden" style="margin-bottom:16px;"></div>
+      <!-- The account's full authorization tree (dApp transactions and auth
+           entries), from authReview.renderAuthTree. -->
+      <div id="auth-tree" class="hidden" style="margin:-6px 0 16px;"></div>
       <button id="toggle-raw" type="button" class="hidden" style="background:none;border:none;color:var(--acc-ink);font-weight:700;cursor:pointer;font-size:12.5px;padding:0;margin:-2px 0 16px;">Show raw transaction</button>
 
       <!-- Editable spending-limit control (revealed only for a session-grant
@@ -218,7 +221,15 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { loadCredential, loadAccountName, lookupName, resolveName } from '@nidohq/passkey-sdk';
   import { avatarBackground } from '../../lib/avatarStyle';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
-  import { signTransactionXdr, signMessageRaw, signAuthEntryXdr } from '../../lib/walletSign.js';
+  import { signMessageRaw, signAuthEntryXdr, previewTransactionAuth } from '../../lib/walletSign.js';
+  import {
+    renderAuthTree,
+    reviewAuthEntry,
+    authEntryExpiryProblem,
+    authEntryConsequence,
+    TX_AUTH_CONSEQUENCE,
+  } from '../../lib/signing/authReview.js';
+  import { reviewGrant } from '../../lib/policy/grantReview.js';
   import { withPasskeySheet, openPasskeySheet, closePasskeySheet } from '../../lib/passkeySheet';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
   import { shortAddr } from '../../lib/address';
@@ -228,7 +239,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { probeSep41Token } from '../../lib/assets/balances.js';
   import { NATIVE_SAC_ID, RPC_URL, NETWORK_PASSPHRASE } from '../../lib/network.js';
   import { fetchRegistryAddress } from '../../lib/policyChainFetch.js';
-  import { loadSignRequest, signRequestFromParams, clearSignRequest, safeRouteUrl, validateDappReturn, type SignRequest } from '../../lib/signing/signRequest';
+  import { loadSignRequest, signRequestFromParams, clearSignRequest, safeRouteUrl, validateDappReturn, networkProblem, type SignRequest } from '../../lib/signing/signRequest';
   import { renderTechDetails } from '../../lib/transfer/techDetails.js';
   import {
     PERIOD_LEDGERS,
@@ -240,7 +251,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { runSign } from '../../lib/signing/runSign';
   import { relayerOutcomeBlocksRetry } from '../../lib/relayerClient';
   import { mountSteps } from '../../lib/progressSteps';
-  import { EXPLORER_BASE } from '../../lib/network.js';
+  import { EXPLORER_BASE, latestLedgerSequence } from '../../lib/network.js';
 
   const params = new URLSearchParams(window.location.search);
   const kind = params.get('kind') ?? 'tx';
@@ -270,6 +281,24 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   const cancel = document.getElementById('cancel') as HTMLButtonElement;
 
   function showError(msg: string) { $err.textContent = msg; $err.style.display = 'block'; }
+
+  // A request whose authorization must be reviewed before it can be signed
+  // (a dApp transaction or auth entry) starts blocked; the review either
+  // unblocks it or refuses it for good. `reviewRefusal` is set once refused.
+  let reviewPending = false;
+  let reviewRefusal: string | null = null;
+  let reviewedInvocationXdr: string | undefined;
+  function refuseReview(reason: string) {
+    reviewRefusal = reason;
+    reviewPending = false;
+    showError(reason);
+    approve.disabled = true;
+  }
+  function passReview() {
+    reviewPending = false;
+    if (!reviewRefusal && !validate()) approve.disabled = false;
+  }
+  const $authTree = document.getElementById('auth-tree')!;
 
   // Reskin copy: detected platform passkey label drives the confirm voice.
   const passkey = detectPasskeyLabel();
@@ -322,8 +351,14 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       document.getElementById('payload-label')!.textContent = 'Transaction XDR';
       document.getElementById('payload-text')!.textContent = payload || '(missing)';
       if (payload && account) {
-        const passphrase = req.networkPassphrase ?? network ?? 'Test SDF Network ; September 2015';
+        const passphrase = req.networkPassphrase ?? network ?? NETWORK_PASSPHRASE;
         void renderTxDetail(payload, account, passphrase);
+        // A request for another network is refused by validate() below; don't
+        // simulate it, or the review's own error would replace that refusal.
+        if (!networkProblem(passphrase, NETWORK_PASSPHRASE)) {
+          reviewPending = true;
+          void reviewTxAuth(payload, account, passphrase);
+        }
       }
     } else if (op.type === 'transfer') {
       // Descriptor transfer — render directly without XDR decode.
@@ -540,32 +575,36 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         } catch {
           diffHtml = '';
         }
-        const rule = doc.rules[0];
-        const signerDecl = doc.signers[0];
-        const cap = rule?.cap;
+        // The card describes the one rule this request grants, never the
+        // document's first rule (the account's own admin rule leads it).
+        const prev = op.prevDocJson !== undefined ? parsePolicyDocJson(op.prevDocJson) : null;
+        const grant = reviewGrant(prev, doc);
+        if (!grant.ok) throw new Error(grant.reason);
+        const rule = grant.rule;
+        const cap = rule.cap;
         const periodMap: Array<[number, LimitPeriod]> = [
           [17280, 'day'], [120960, 'week'], [518400, '30d'],
         ];
         docCardHtml = renderDocSessionGrant({
           origin: docOrigin,
-          ruleName: rule?.name ?? '(unnamed)',
-          target: rule?.scope.type === 'contract' ? rule.scope.address : (account ?? ''),
-          signer: signerDecl && 'address' in signerDecl ? signerDecl.address : '(passkey)',
-          functions: rule?.functions !== undefined ? [...rule.functions] : null,
+          ruleName: rule.name,
+          target: rule.scope.type === 'contract' ? rule.scope.address : (account ?? ''),
+          signers: grant.signers.map((d) => ('address' in d ? d.address : d.key)),
+          functions: rule.functions !== undefined ? [...rule.functions] : null,
           expiryLabel:
             op.expiryLabel ??
-            (rule?.['not-after-ledger'] != null ? `Ledger ${rule['not-after-ledger']}` : 'Until revoked'),
+            (rule['not-after-ledger'] != null ? `Ledger ${rule['not-after-ledger']}` : 'Until revoked'),
           capStroops: cap !== undefined ? cap.limit : null,
           capPeriod: cap !== undefined
             ? (periodMap.find(([l]) => l === cap['period-ledgers'])?.[1] ?? 'day')
             : 'day',
           docHash: docHash(doc),
         }) + (diffHtml ? `<div class="card" style="padding:14px 16px;margin-top:10px;">${diffHtml}</div>` : '');
-      } catch {
-        // Unparseable doc JSON — fall back to showing the raw payload row
-        // rather than a half-empty card (approve would fail in
-        // buildOperation with the same parse error anyway).
+      } catch (e) {
+        // Unparseable doc JSON, or not exactly one grant: refuse, showing the
+        // raw document below so the user can see what was asked.
         docCardHtml = '';
+        refuseReview(e instanceof Error ? e.message : String(e));
       }
       if (docCardHtml) {
         $detail.innerHTML = docCardHtml;
@@ -628,7 +667,69 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     // behind a toggle. Best-effort: any decode/enrich failure leaves the raw
     // payload visible, exactly as before this enhancement.
     if (kind === 'tx' && payload && account) {
-      void renderTxDetail(payload, account, network ?? 'Test SDF Network ; September 2015');
+      void renderTxDetail(payload, account, network ?? NETWORK_PASSPHRASE);
+    }
+    if (kind === 'authEntry' && payload && account) {
+      reviewPending = true;
+      void reviewAuthEntryRequest(payload, account);
+    }
+  }
+
+  // Render the account's full authorization tree for a dApp transaction (from
+  // a fresh simulation) and record it: the ceremony signs only this tree.
+  async function reviewTxAuth(txXdr: string, acct: string, passphrase: string) {
+    try {
+      const { Buffer: B } = await import('buffer');
+      if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
+      let nameRegistry: string | undefined;
+      try {
+        nameRegistry = await fetchRegistryAddress('name-registry');
+      } catch {
+        nameRegistry = undefined;
+      }
+      const preview = await previewTransactionAuth({
+        account: acct,
+        txXdr,
+        networkPassphrase: passphrase,
+        nameRegistry,
+      });
+      $authTree.innerHTML = renderAuthTree(preview.tree, TX_AUTH_CONSEQUENCE);
+      $authTree.classList.remove('hidden');
+      reviewedInvocationXdr = preview.invocationXdr;
+      passReview();
+    } catch (e) {
+      refuseReview(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // Check and render a dApp's authorization entry: a Soroban authorization
+  // for this wallet's network, with a tree a dApp may ask for, expiring soon.
+  async function reviewAuthEntryRequest(entryXdr: string, acct: string) {
+    try {
+      const { Buffer: B } = await import('buffer');
+      if (typeof globalThis.Buffer === 'undefined') (globalThis as { Buffer?: unknown }).Buffer = B;
+      // Refuse on the payload alone first; the registry only sharpens how a
+      // name registration reads in the tree.
+      const precheck = reviewAuthEntry(entryXdr, acct, NETWORK_PASSPHRASE);
+      if (!precheck.ok) return refuseReview(precheck.reason);
+      let nameRegistry: string | undefined;
+      try {
+        nameRegistry = await fetchRegistryAddress('name-registry');
+      } catch {
+        nameRegistry = undefined;
+      }
+      const checked = reviewAuthEntry(entryXdr, acct, NETWORK_PASSPHRASE, nameRegistry);
+      if (!checked.ok) return refuseReview(checked.reason);
+      $authTree.innerHTML = renderAuthTree(
+        checked.review.tree,
+        authEntryConsequence(checked.review.expirationLedger),
+      );
+      $authTree.classList.remove('hidden');
+      const expiry = authEntryExpiryProblem(checked.review.expirationLedger, await latestLedgerSequence());
+      if (expiry) return refuseReview(expiry);
+      passReview();
+    } catch (e) {
+      refuseReview(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -821,6 +922,8 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   function validate(): string | null {
     if (!account) return 'This page must be opened on an account subdomain.';
     if (!payload) return 'Missing payload to sign.';
+    const netProblem = networkProblem(req?.networkPassphrase ?? network, NETWORK_PASSPHRASE);
+    if (netProblem) return netProblem;
     // Skip the origin check for own-action requests — they have no dApp origin.
     // dApp requests and the legacy path still require a validated origin.
     if (!isOwnAction && !origin) return 'Invalid app origin / return URL.';
@@ -833,6 +936,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
 
   const err = validate();
   if (err) { showError(err); approve.disabled = true; }
+  else if (reviewPending || reviewRefusal) approve.disabled = true;
 
   // The cancel query mirrors the dApp's success contract: a session-grant
   // return uses `?delegation=ok` on success, so cancel must send the matching
@@ -970,6 +1074,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   }
 
   approve.addEventListener('click', async () => {
+    if (reviewPending || reviewRefusal) return;
     approve.disabled = true;
     $err.style.display = 'none';
 
@@ -1004,7 +1109,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       // the sheet closed for the most common dApp-tx case.
       openPasskeySheet({ title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` });
       try {
-        const result = await runSign(req!, { onProgress });
+        const result = await runSign(req!, { onProgress, reviewedInvocationXdr });
         steps.finish();
         $status.textContent = 'Done — returning…';
         // F3: drop the stashed SignRequest now that it submitted successfully,
@@ -1096,16 +1201,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       // sheet is purely visual; the promise it awaits is the genuine signature.
       const signed: string = await withPasskeySheet(
         async () => {
-          if (kind === 'tx') {
-            // onStatus surfaces multi-passkey progress ("signature 1 of 2…")
-            // for accounts whose rule 0 needs several approvals (issue #87).
-            return await signTransactionXdr({
-              account: account!,
-              txXdr: payload,
-              networkPassphrase: network,
-              onStatus: (m) => { $status.textContent = m; },
-            });
-          } else if (kind === 'message') {
+          if (kind === 'message') {
             return await signMessageRaw({ account: account!, message: payload });
           } else if (kind === 'authEntry') {
             return await signAuthEntryXdr({ account: account!, authEntryXdr: payload });

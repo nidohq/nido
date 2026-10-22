@@ -8,15 +8,19 @@
  * Does NOT call postResultToOpener — that is the route's responsibility.
  */
 
-import { TransactionBuilder, Networks } from "@stellar/stellar-sdk";
+import { TransactionBuilder } from "@stellar/stellar-sdk";
 import type { SignRequest } from "./signRequest";
 import { buildOperation } from "./operationBuilders";
 import { signAndSubmit } from "../primaryPasskeySigner";
 import { relayerSubmitAndConfirm } from "./submit";
 import { signTransactionXdr } from "../walletSign.js";
+import { NETWORK_PASSPHRASE } from "../network.js";
 
 export interface RunSignHooks {
   onProgress?: (p: { phase: string; detail?: string }) => void;
+  /** For a dApp transaction: the authorization tree the user reviewed
+   *  (`previewTransactionAuth`'s `invocationXdr`). Required on that path. */
+  reviewedInvocationXdr?: string;
 }
 
 export interface RunSignResult {
@@ -38,7 +42,10 @@ export async function runSign(req: SignRequest, hooks?: RunSignHooks): Promise<R
   // dApp raw-xdr path (submitMode: "return-to-dapp"): Nido signs and submits
   // via relayer (Model A), then returns the confirmed hash to the caller.
   // The route is responsible for postResultToOpener.
-  const networkPassphrase = req.networkPassphrase ?? Networks.TESTNET;
+  const networkPassphrase = req.networkPassphrase ?? NETWORK_PASSPHRASE;
+  if (!hooks?.reviewedInvocationXdr) {
+    throw new Error("This transaction's authorization wasn't reviewed, so it can't be signed.");
+  }
 
   const onStatus = (msg: string) => {
     hooks?.onProgress?.({ phase: "sign", detail: msg });
@@ -48,6 +55,7 @@ export async function runSign(req: SignRequest, hooks?: RunSignHooks): Promise<R
     account: req.account,
     txXdr: req.operation.xdr,
     networkPassphrase,
+    reviewedInvocationXdr: hooks.reviewedInvocationXdr,
     onStatus,
   });
 

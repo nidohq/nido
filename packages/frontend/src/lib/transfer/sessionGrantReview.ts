@@ -44,8 +44,9 @@ export interface DocSessionGrantView {
   origin: string;
   ruleName: string;
   target: string;
-  /** The delegated session signer (C… or G…). */
-  signer: string;
+  /** Who signs under the granted rule: an address (C… or G…) for a
+   *  delegated signer, a key for a passkey. */
+  signers: string[];
   /** Named functions, or null for "any function". */
   functions: string[] | null;
   expiryLabel: string;
@@ -68,7 +69,7 @@ export function renderDocSessionGrant(v: DocSessionGrantView): string {
     ${row("Action", "Grant an app a scoped session key", true)}
     ${row("App", `<span class="mono">${esc(v.origin)}</span>`)}
     ${row("Rule name", `<span class="mono">${esc(v.ruleName)}</span>`)}
-    ${row("App's key", `<span class="mono">${esc(shortAddr(v.signer))}</span>`)}
+    ${row("App's key", v.signers.map((k) => `<span class="mono" title="${esc(k)}">${esc(shortAddr(k, 6, 6))}</span>`).join(", ") || "(none)")}
     ${row("On contract", `<span class="mono">${esc(shortAddr(v.target))}</span>`)}
     ${row("Functions", fns)}
     ${row("Can spend", cap)}

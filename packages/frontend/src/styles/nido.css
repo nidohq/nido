@@ -544,6 +544,15 @@ a.link, .link { color: var(--acc-ink); font-weight: 700; text-decoration: none; 
 .hidden { display: none; }
 [hidden] { display: none; }
 
+/* Account-creation gate (index.astro's landing CTAs): a parser-blocking
+   inline script sets `creation-open` on <html> before these elements paint,
+   so the right state renders from the first frame instead of flashing one
+   then the other. !important on the closed-gate rule because one target
+   (the testnet-demo note) sets its own `display: inline-flex` inline, which
+   would otherwise win over this external rule. */
+html:not(.creation-open) [data-creation-open] { display: none !important; }
+html.creation-open [data-creation-soon] { display: none; }
+
 /* ---------- skip link (accessibility) ---------- */
 .skip-link { position: absolute; left: -9999px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 .skip-link:focus { position: fixed; top: 0; left: 0; width: auto; height: auto; padding: 0.5rem 1rem; background: var(--paper); color: var(--ink); border-radius: var(--r-sm); z-index: 10000; }

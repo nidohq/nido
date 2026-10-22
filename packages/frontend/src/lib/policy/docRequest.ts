@@ -5,13 +5,19 @@
 //
 // Params: `origin` (dApp origin), `target` (C…), `signer` (the delegated
 // session key, C… or G… — the dApp holds this key), optional `functions`
-// (comma-separated), `duration` (24h|7d|30d|none), optional `limit` (decimal
-// XLM) + `limit_period`, optional `label` (rule name), `return` (URL).
+// (comma-separated), `duration` (24h|7d|30d|none, default 30d), optional
+// `limit` (decimal XLM) + `limit_period` (day|week|30d, default day, only
+// alongside `limit`), optional `label` (rule name), `return` (URL).
+//
+// An optional param is either absent (its default applies) or valid: a
+// present-but-malformed `duration`, `limit` or `limit_period` rejects the
+// whole request, so a bad cap can never degrade into an uncapped grant.
 
 import { canonicalJson, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress } from './policyDraft.js';
 import { parseFunctionsInput, upsertSessionRule, type SessionDocDraft } from './docDraft.js';
-import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
+import { PERIOD_LABEL, PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
+import { stroopsToXlm } from '../money.js';
 import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
 
 export const DOC_DURATIONS: Record<string, number | null> = {
@@ -37,13 +43,19 @@ export interface DocDelegateRequest {
   functions: string[] | undefined;
   /** Requested duration key (validated against DOC_DURATIONS). */
   duration: keyof typeof DOC_DURATIONS;
-  /** Requested cap in stroops (from the decimal-XLM `limit` param), or null.
-   *  A malformed limit is treated as "no cap" — never block the flow on it. */
-  limitStroops: string | null;
-  limitPeriod: LimitPeriod;
+  /** The requested spending cap, or null when the request carries no
+   *  `limit` param. Null is only a suggestion: the page still makes the user
+   *  explicitly choose an uncapped grant. */
+  cap: DocDelegateCap | null;
   /** Rule name (doc rule + display), default "session". */
   label: string;
   returnUrl: string;
+}
+
+export interface DocDelegateCap {
+  /** Cap in stroops (from the decimal-XLM `limit` param). */
+  stroops: string;
+  period: LimitPeriod;
 }
 
 export type DocDelegateParse =
@@ -78,21 +90,37 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
 
   const functions = parseFunctionsInput(params.get('functions') ?? '');
 
-  const durationParam = params.get('duration') ?? '30d';
-  const duration = durationParam in DOC_DURATIONS ? durationParam : '30d';
+  const duration = params.get('duration') ?? '30d';
+  if (!Object.hasOwn(DOC_DURATIONS, duration)) {
+    return {
+      ok: false,
+      error: `Invalid duration "${duration}" (expected 24h, 7d, 30d or none).`,
+    };
+  }
 
   const limitParam = params.get('limit');
-  let limitStroops: string | null = null;
-  if (limitParam) {
-    try {
-      limitStroops = stroopsFromXlm(limitParam).toString();
-    } catch {
-      limitStroops = null;
+  const periodParam = params.get('limit_period');
+  let cap: DocDelegateCap | null = null;
+  if (limitParam === null) {
+    if (periodParam !== null) {
+      return { ok: false, error: 'limit_period was given without a limit.' };
     }
+  } else {
+    let stroops: bigint;
+    try {
+      stroops = stroopsFromXlm(limitParam);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    const period = periodParam ?? 'day';
+    if (!Object.hasOwn(PERIOD_LEDGERS, period)) {
+      return {
+        ok: false,
+        error: `Invalid limit_period "${period}" (expected day, week or 30d).`,
+      };
+    }
+    cap = { stroops: stroops.toString(), period: period as LimitPeriod };
   }
-  const periodParam = params.get('limit_period') ?? 'day';
-  const limitPeriod: LimitPeriod =
-    periodParam in PERIOD_LEDGERS ? (periodParam as LimitPeriod) : 'day';
 
   const label = (params.get('label') ?? '').trim() || 'session';
 
@@ -104,12 +132,40 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
       signer,
       functions,
       duration,
-      limitStroops,
-      limitPeriod,
+      cap,
       label,
       returnUrl,
     },
   };
+}
+
+/**
+ * The effective scope of a session grant as the user will approve it, one
+ * line per dimension, so the uncapped and never-expiring cases are stated
+ * as plainly as the bounded ones.
+ */
+export function describeSessionScope(scope: {
+  target: string;
+  functions: string[] | undefined;
+  cap: DocDelegateCap | null;
+  duration: string;
+  /** The anchored expiry ledger; null for "none" or before the ledger read. */
+  notAfterLedger: number | null;
+}): { functions: string; amount: string; expiry: string } {
+  const functions = scope.functions
+    ? `Only ${scope.functions.join(', ')} on ${scope.target}`
+    : `Any function on ${scope.target}`;
+  const amount = scope.cap
+    ? `Up to ${stroopsToXlm(BigInt(scope.cap.stroops))} XLM ${PERIOD_LABEL[scope.cap.period]}`
+    : 'No spending cap';
+  const span = DOC_DURATION_LABEL[scope.duration];
+  const expiry =
+    DOC_DURATIONS[scope.duration] == null
+      ? 'Never (until revoked)'
+      : scope.notAfterLedger == null
+        ? `After ${span}`
+        : `At ledger ${scope.notAfterLedger.toLocaleString('en-US')} (≈ ${span})`;
+  return { functions, amount, expiry };
 }
 
 /**

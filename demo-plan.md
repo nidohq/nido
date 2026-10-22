@@ -2,42 +2,49 @@
 graph TD
     Visitor
     Admin
-    Frontend["nido.fyi frontend"]
+    Frontend["nido.fyi frontend<br/>/demo/start"]
+    Stellar[("Stellar")]
 
     subgraph InviteSvc["infra/invite/ — Fly app (this repo)"]
-        Builder["Builder<br/>(issue codes)"]
-        Checker["Checker<br/>(validate + bind C-address)"]
-        Poller["Poller<br/>(watches Stellar for claimed addresses)"]
-        PendingPrint["PendingPrint API<br/>(GET /pending-print/next,<br/>POST /pending-print/:code/ack)"]
-        Store[("Store (Postgres)<br/>issued / claimed / used / expired<br/>+ deliveredAt")]
+        Builder["Builder<br/>issues codes"]
+        Checker["Checker<br/>validates code,<br/>binds predicted C-address"]
+        Poller["Poller<br/>watches Stellar: deployed AND funded?"]
+        PendingPrint["PendingPrint API<br/>GET /pending-print/next<br/>POST /pending-print/:code/ack"]
+        Store[("Store (Postgres)<br/>issued → claimed → used<br/>(+ expired, + deliveredAt)")]
         Builder --> Store
         Checker --> Store
         Poller --> Store
         PendingPrint --> Store
     end
 
-    subgraph Demo["Demo service — runs locally on Elizabeth's computer"]
+    subgraph Demo["infra/demo-service/ — runs locally on the laptop at the booth"]
         Server["Demo Server"]
-        Printer["Printer"]
-        InvitationHandler["InvitationHandler<br/>creates the QR code"]
-        ReceiptPoller["ReceiptPoller<br/>polls PendingPrint for confirmed signups"]
+        InvitationHandler["InvitationHandler<br/>builds the QR"]
+        ReceiptPoller["ReceiptPoller<br/>drains PendingPrint"]
+        Printer["Printer<br/>CUPS raw queue → ESC/POS<br/>Nido mark + Aha logo on every receipt"]
         Server -->|"create code"| Builder
         Server --> InvitationHandler
-        InvitationHandler --> Printer
-        InvitationHandler --> |"here's the QR code"| Server
-        ReceiptPoller -->|"GET /pending-print/next"| PendingPrint
-        ReceiptPoller --> Printer
+        InvitationHandler -.->|"QR shown on screen<br/>(printing it: on hold)"| Server
+        ReceiptPoller -->|"GET .../next"| PendingPrint
+        ReceiptPoller -->|"confirmation receipt"| Printer
         ReceiptPoller -->|"POST .../ack"| PendingPrint
     end
 
     Visitor -->|"Hi, can I have a Nido?"| Admin
-    Admin -->|"press button to create an invitation & QR code"| Server
-    Server -->|"Here's your QR code, scan it!</br>invitation code is embeded"| Visitor
+    Admin -->|"press button"| Server
+    Server -->|"scan this QR<br/>(invitation code embedded)"| Visitor
     Visitor -->|"/demo/start?invitationCode=xxx"| Frontend
-    Frontend -->|"check code + predicted C-address<br/>before allowing account creation"| Checker
+    Frontend -->|"predict C-address, then<br/>check code + address"| Checker
 
     Poller --> Stellar
 ```
+
+Invitation-code printing (`InvitationHandler → Printer`) is wired but paused —
+the QR still shows on the Demo Server's own screen, so the flow works without
+it. The confirmation receipt (`ReceiptPoller → Printer`) is the one in active
+use; see `infra/demo-service/README.md`'s "Printer" section for the ESC/POS
+hardware driver (CUPS, not raw USB — macOS won't allow the latter reliably)
+and the branding on every receipt.
 
 ## Why the Poller stays remote and Printer confirmation is pulled, not pushed
 
@@ -60,3 +67,7 @@ initiate a connection to the local side. Instead:
   silently dropping it — nothing durable about "what's still pending" ever
   lives only in the local process's memory, so a laptop restart can't lose a
   visitor's receipt.
+- The Poller checks the account is both **deployed and funded** before
+  marking a code `used` — deployment alone used to flip it, which fired the
+  confirmation receipt before the (separate, async) funding step had
+  finished. See `infra/invite/src/chain.ts`'s `isFunded`.

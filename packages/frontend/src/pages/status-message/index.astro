@@ -212,17 +212,17 @@ import Icon from "../../components/Icon.astro";
   } from "@nidohq/passkey-sdk";
   import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
   import { startDelegation, readDelegationReturn, consumePendingDelegation, writePendingDelegation } from "../../lib/delegationHandover.js";
-  import { Keypair, Networks, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
+  import { Keypair, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
   import { defineNidoWalletButton, WALLET_CHANGED_EVENT } from "../../components/nido-wallet-button.js";
   import { signTransaction as kitSignTransaction, isNidoWallet, type WalletSession } from "../../lib/walletConnect.js";
-
-  const RPC_URL = "https://soroban-testnet.stellar.org";
+  import { RPC_URL, NETWORK_PASSPHRASE } from "../../lib/network.js";
+  import { signTransactionUrl } from "@nidohq/stellar-wallets-kit-module";
   // Resolved by name via the on-chain registry (with a single hardcoded
   // fallback inside `fetchRegistryAddress` for registry outages). Previously
   // hardcoded here so bindings could be regenerated without --contract-id;
   // routing through the registry keeps that property while making a redeploy
   // a registry-only change.
-  const STATUS_CONTRACT = await fetchRegistryAddress("status-message");
+  const STATUS_CONTRACT = await fetchRegistryAddress("status-message", { rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
 
   // WebAuthn verifier — resolved per-account from chain when signing.
   // Was previously a deterministic derivation from FACTORY+wasm_hash,
@@ -278,7 +278,8 @@ import Icon from "../../components/Icon.astro";
 
   const params = new URLSearchParams(window.location.search);
   const contractParam = params.get("contract");
-  const txhashParam = params.get("txhash");
+  // The wallet's sign page returns the submitted hash as `nido_submitted`.
+  const txhashParam = params.get("nido_submitted");
 
   if (contractParam) {
     $contractInput.value = contractParam;
@@ -505,7 +506,7 @@ import Icon from "../../components/Icon.astro";
     const keypair = await keypairReady;
     const client = new Client({
       contractId: STATUS_CONTRACT,
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase: NETWORK_PASSPHRASE,
       rpcUrl: RPC_URL,
       publicKey: keypair.publicKey(),
     });
@@ -559,7 +560,7 @@ import Icon from "../../components/Icon.astro";
       const keypair = await keypairReady;
       const client = new Client({
         contractId: STATUS_CONTRACT,
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase: NETWORK_PASSPHRASE,
         rpcUrl: RPC_URL,
         publicKey: keypair.publicKey(),
       });
@@ -570,7 +571,7 @@ import Icon from "../../components/Icon.astro";
       // Extract auth entry and compute hash
       const authEntry = getAuthEntry(sim);
       const lastLedger = sim.latestLedger;
-      const authHash = buildAuthHash(authEntry, Networks.TESTNET, lastLedger);
+      const authHash = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger);
 
       // --- Session-passkey in-page signing path ---
       const material = loadSessionKeyMaterial(contract, STATUS_CONTRACT);
@@ -612,7 +613,7 @@ import Icon from "../../components/Icon.astro";
         const scheme = await perch.authDigestScheme({
           account: contract,
           rpcUrl: RPC_URL,
-          networkPassphrase: Networks.TESTNET,
+          networkPassphrase: NETWORK_PASSPHRASE,
         });
         const authDigest = computeAuthDigest(
           contract,
@@ -677,7 +678,7 @@ import Icon from "../../components/Icon.astro";
         // the round-trip intact.
         const reparsedAuthTxn = TransactionBuilder.fromXDR(
           authTxn.toEnvelope().toXDR('base64'),
-          Networks.TESTNET,
+          NETWORK_PASSPHRASE,
         ) as Transaction;
         const oldResourceFee = BigInt(
           (reparsedAuthTxn.toEnvelope().v1().tx().ext().value() as xdr.SorobanTransactionData | undefined)
@@ -687,7 +688,7 @@ import Icon from "../../components/Icon.astro";
         const finalTx = TransactionBuilder.cloneFrom(reparsedAuthTxn, {
           fee: (classicFee + newResourceFee).toString(),
           sorobanData: newSorobanData,
-          networkPassphrase: Networks.TESTNET,
+          networkPassphrase: NETWORK_PASSPHRASE,
         }).build();
         finalTx.sign(keypair);
 
@@ -720,20 +721,22 @@ import Icon from "../../components/Icon.astro";
         return;
       }
 
-      // --- Fallback: route to /sign/ via the canonical signing surface ---
-      // Navigate to the contract's account subdomain with the assembled tx XDR
-      // and the return URL encoded as ?sm-sign=&sm-return= params. The account
-      // page (running on the contract's subdomain) stashes a SignRequest in
-      // sessionStorage and redirects to /sign/?req=<id> on the same origin,
-      // so the passkey ceremony uses the correct WebAuthn rpId. On return,
-      // ?txhash=<hash> is appended so we can show the explorer link.
+      // --- Fallback: the wallet's dApp signing page ---
+      // This page is a dApp like any other: hand the assembled tx to the
+      // account's /sign/ page as a dApp request (`kind=tx`, this origin as
+      // `dapp`). The wallet shows this origin as the requester and the full
+      // authorization the account would give, signs on the account's own
+      // origin (so the passkey's rpId matches), submits through the relayer,
+      // and returns `?nido_submitted=<hash>` to `returnUrl`.
       const returnUrl = `${window.location.origin}/status-message/?contract=${encodeURIComponent(contract)}`;
-      const smSignUrl = accountUrl(
-        window.location.host,
-        contract,
-        `/account/?sm-sign=${encodeURIComponent(tx.built!.toXDR())}&sm-return=${encodeURIComponent(returnUrl)}`
-      );
-      window.location.href = smSignUrl;
+      window.location.href = signTransactionUrl({
+        base: `${window.location.protocol}//${stripSubdomain(window.location.host)}`,
+        account: contract,
+        xdr: tx.built!.toXDR(),
+        networkPassphrase: NETWORK_PASSPHRASE,
+        dappOrigin: window.location.origin,
+        returnUrl,
+      });
     } catch (err: any) {
       showError(`Failed to build transaction: ${err.message}`);
       $setForm.disabled = false;
@@ -746,11 +749,11 @@ import Icon from "../../components/Icon.astro";
   if (txhashParam) {
     // We returned from the canonical /sign/ surface after a successful Set-note
     // signing. Show the result section with the explorer link, then clean the
-    // txhash out of the URL so reloads don't re-show the banner.
+    // hash out of the URL so reloads don't re-show the banner.
     $resultSection.classList.remove("hidden");
     $statusValue.textContent = "Message updated successfully!";
     // Validate hash is hex-only before embedding in a URL (XSS guard: only
-    // allow known-safe characters so a crafted ?txhash= can't inject a
+    // allow known-safe characters so a crafted ?nido_submitted= can't inject a
     // javascript: URI or path traversal).
     if (/^[0-9a-f]{64}$/i.test(txhashParam)) {
       $txLink.href = `https://stellar.expert/explorer/testnet/tx/${txhashParam}`;
@@ -763,9 +766,10 @@ import Icon from "../../components/Icon.astro";
       loadMessage(returnContract).catch(() => { /* non-critical */ });
     }
 
-    // Drop ?txhash from the URL, keeping ?contract if present.
+    // Drop the result params from the URL, keeping ?contract if present.
     const cleanUrl = new URL(window.location.href);
-    cleanUrl.searchParams.delete("txhash");
+    cleanUrl.searchParams.delete("nido_submitted");
+    cleanUrl.searchParams.delete("kind");
     window.history.replaceState({}, "", cleanUrl.toString());
   }
 
@@ -791,7 +795,7 @@ import Icon from "../../components/Icon.astro";
     // connectedCallback reads it when it inits the kit.
     const apexBase = `${window.location.protocol}//${stripSubdomain(window.location.host)}`;
     $kitWallet.setAttribute("base", apexBase);
-    $kitWallet.setAttribute("network-passphrase", Networks.TESTNET);
+    $kitWallet.setAttribute("network-passphrase", NETWORK_PASSPHRASE);
 
     // Register the <nido-wallet-button> custom element. It inits the kit once
     // (Nido + standard modules) and owns connect/disconnect/session-restore.
@@ -860,7 +864,7 @@ import Icon from "../../components/Icon.astro";
         kitSetStatus("Building transaction…");
         const client = new Client({
           contractId: STATUS_CONTRACT,
-          networkPassphrase: Networks.TESTNET,
+          networkPassphrase: NETWORK_PASSPHRASE,
           rpcUrl: RPC_URL,
           publicKey: keypair.publicKey(),
         });
@@ -877,7 +881,7 @@ import Icon from "../../components/Icon.astro";
         //    `{ signedTxXdr: <tx hash>, submitted: true }`.
         kitSetStatus("Awaiting wallet signature (passkey)…");
         const result = await kitSignTransaction(unsignedXdr, {
-          networkPassphrase: Networks.TESTNET,
+          networkPassphrase: NETWORK_PASSPHRASE,
           address: kitAccount,
         });
 
@@ -906,7 +910,7 @@ import Icon from "../../components/Icon.astro";
         //    but still needs the fee-payer (tx source) signature. Add it and submit.
         kitSetStatus("Submitting signed transaction…");
         const server = new rpc.Server(RPC_URL);
-        const signedTx = TransactionBuilder.fromXDR(signedTxXdr, Networks.TESTNET) as Transaction;
+        const signedTx = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE) as Transaction;
         signedTx.sign(keypair);
 
         const sendResult = await server.sendTransaction(signedTx);

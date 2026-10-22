@@ -10,10 +10,14 @@ crate-type = ["cdylib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { workspace = true }
+soroban-sdk = { workspace = true, features = ["hazmat-address"] }
 stellar-accounts = { workspace = true }
 soroban-sdk-tools = { workspace = true }
 admin-sep = { workspace = true }
+# `registry_contract!`: pins the perch-account wasm hash from wasm/perch-account.sha256.
+perch-registry-resolve = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+ed25519-dalek = "2"
+serde_json = "1"

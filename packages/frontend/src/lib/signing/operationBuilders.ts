@@ -19,16 +19,15 @@
  * fail with guidance here rather than as Error(Contract, #19) on-chain.
  */
 
-import { Address, Operation, Networks, nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import { Address, Operation, nativeToScVal, xdr } from "@stellar/stellar-sdk";
 import { buildApplyDocTx, parsePolicyDocJson } from "@nidohq/passkey-sdk";
 import type { OperationDescriptor } from "./signRequest";
 import { buildSendOperation } from "../transfer/buildSend.js";
 import { fetchRegistryAddress } from "../policyChainFetch.js";
-import { RPC_URL } from "../network.js";
+import { RPC_URL, NETWORK_PASSPHRASE } from "../network.js";
+import { isClaimableName } from "../claimFlow.js";
 import { recoveryEditProblem } from "../policy/docDraft.js";
 import { fetchAppliedDocument, fetchDocLimits } from "../policy/docPolicyFetch.js";
-
-const NETWORK_PASSPHRASE = Networks.TESTNET;
 
 /**
  * Turn an `OperationDescriptor` (any kind except `raw-xdr`) into a concrete
@@ -45,6 +44,7 @@ export async function buildOperation(
 ): Promise<xdr.Operation> {
   switch (d.type) {
     case "register": {
+      if (!isClaimableName(d.name)) throw new Error(`"${d.name}" can't be claimed as a name.`);
       // Mirror: account/index.astro runNameClaim (~lines 1262-1278).
       // The name-registry `register(account, name)` call: the account invokes
       // the registry's `register` function directly (NOT through its own

@@ -1,6 +1,6 @@
 import { hash, xdr, rpc, Operation, StrKey } from "@stellar/stellar-sdk";
 import { derToCompact } from "./signature.js";
-import { signingDigest } from "@stellar-registry/perch";
+import { ruleIdsXdr, signingDigest } from "@stellar-registry/perch";
 import { buildAuthPayloadScVal } from "./multiSigner.js";
 import type { SignerSignature } from "./multiSigner.js";
 import type { PasskeySignature } from "./types.js";
@@ -75,13 +75,6 @@ export function buildAuthHashAt(
  *  so each account is signed in its own dialect. */
 export type AuthDigestScheme = "addr_oz_v1" | "oz_rule_ids";
 
-/** Domain tag binding a Perch account's auth digest to the account's own
- *  address — the `addr_oz_v1` scheme. MUST match `perch_smart_account`'s
- *  `AUTH_ADDR_DOMAIN` (and perch-js's copy); the Rust and perch-js suites pin
- *  the on-chain result, and `authVectors.test.ts` pins this wrapper against
- *  Perch's `auth-vectors.json`. */
-const AUTH_ADDR_DOMAIN = new TextEncoder().encode("perch/account/auth-addr-v1");
-
 /**
  * Compute the OZ v0.7+ auth digest the smart `account`'s `__check_auth` will
  * verify each signer's signature against, in the account's own `scheme`:
@@ -89,23 +82,18 @@ const AUTH_ADDR_DOMAIN = new TextEncoder().encode("perch/account/auth-addr-v1");
  * - `addr_oz_v1` (the redeployed accounts): the account folds its own address
  *   into the host payload before OZ layers the context rule ids on top, so a
  *   signature cannot be replayed on another account that shares an External key
- *   and rule ids:
+ *   and rule ids (perch-js `signingDigest`):
  *
  *       bound       = sha256(AUTH_ADDR_DOMAIN || account_id || signature_payload)
  *       auth_digest = sha256(bound || context_rule_ids.to_xdr())
  *
  * - `oz_rule_ids` (accounts minted before the redeploy): no address binding —
  *   `auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())`.
+ *   perch-js no longer produces it, so it is computed here.
  *
  * Signing in the wrong dialect makes `__check_auth` reject the signature, so a
  * caller must read the account's scheme (`authDigestScheme`) and pass it. The
  * WebAuthn challenge MUST be this digest, not the bare `signature_payload`.
- *
- * `bound` is computed here and handed to perch-js's `signingDigest` for the
- * rule-id layer. When `@stellar-registry/perch` publishes the account-bound
- * `signingDigest(account, payload, ruleIds)` (> 0.3.2), replace the local
- * binding with that one 3-arg call for the `addr_oz_v1` branch and drop
- * `AUTH_ADDR_DOMAIN`.
  *
  * `account` is the smart account's C-address (whose `__check_auth` runs).
  * `signaturePayload` is the 32-byte result from `buildAuthHash`.
@@ -122,19 +110,16 @@ export function computeAuthDigest(
   contextRuleIds: readonly number[],
   scheme: AuthDigestScheme = "addr_oz_v1",
 ): Buffer {
-  if (scheme === "oz_rule_ids") {
-    return Buffer.from(signingDigest(signaturePayload, contextRuleIds));
-  }
-  const accountId = StrKey.decodeContract(account);
-  if (accountId.length !== 32) {
+  if (!StrKey.isValidContract(account)) {
     throw new Error(`computeAuthDigest: account must be a contract address, got "${account}"`);
   }
-  const preimage = new Uint8Array(AUTH_ADDR_DOMAIN.length + 32 + 32);
-  preimage.set(AUTH_ADDR_DOMAIN, 0);
-  preimage.set(accountId, AUTH_ADDR_DOMAIN.length);
-  preimage.set(signaturePayload, AUTH_ADDR_DOMAIN.length + 32);
-  const bound = hash(Buffer.from(preimage));
-  return Buffer.from(signingDigest(bound, contextRuleIds));
+  if (scheme === "addr_oz_v1") {
+    return Buffer.from(signingDigest(account, signaturePayload, contextRuleIds));
+  }
+  if (signaturePayload.length !== 32) {
+    throw new Error("computeAuthDigest: signature payload must be 32 bytes");
+  }
+  return hash(Buffer.concat([signaturePayload, ruleIdsXdr(contextRuleIds)]));
 }
 
 /**

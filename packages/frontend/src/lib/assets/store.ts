@@ -1,10 +1,11 @@
+import { nidoKey } from "@nidohq/passkey-sdk";
 import type { AssetCandidate } from "./types.js";
 
 // Cap the persisted set so a hostile token spray can't grow localStorage (and
 // the balance probe) without bound.
 const MAX_STORED = 100;
 
-const storageKey = (account: string) => `nido:assets:known:${account}`;
+const storageKey = (account: string) => nidoKey(`assets:known:${account}`);
 
 /**
  * Tokens this browser has confirmed the account holds. Event discovery only

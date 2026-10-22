@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Account, Operation, StrKey } from "@stellar/stellar-sdk";
+import { Account, Networks, Operation, StrKey } from "@stellar/stellar-sdk";
 
 // Shared, hoisted state the module mocks read. `simSource` is a getter-backed
 // value so each test can vary PUBLIC_RELAYER_SIM_SOURCE.
@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../network.js", () => ({
   RPC_URL: "https://rpc.invalid",
+  NETWORK_PASSPHRASE: Networks.TESTNET,
   get RELAYER_SIM_SOURCE() {
     return h.simSource;
   },

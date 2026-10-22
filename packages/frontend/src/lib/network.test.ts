@@ -5,7 +5,7 @@ import {
 } from "./network.js";
 
 describe("network config", () => {
-  it("targets testnet", () => {
+  it("targets testnet by default", () => {
     expect(NETWORK_PASSPHRASE).toBe(Networks.TESTNET);
     expect(NETWORK_NAME).toBe("testnet");
     expect(RPC_URL).toBe("https://soroban-testnet.stellar.org");
@@ -13,6 +13,32 @@ describe("network config", () => {
   });
   it("derives the native SAC id", () => {
     expect(NATIVE_SAC_ID).toBe(Asset.native().contractId(Networks.TESTNET));
+  });
+});
+
+describe("network config — PUBLIC_STELLAR_NETWORK switching", () => {
+  afterEach(() => {
+    delete (import.meta.env as Record<string, string | undefined>).PUBLIC_STELLAR_NETWORK;
+  });
+
+  it("targets mainnet when PUBLIC_STELLAR_NETWORK=mainnet", async () => {
+    import.meta.env.PUBLIC_STELLAR_NETWORK = "mainnet";
+    vi.resetModules();
+    const mod = await import("./network.js");
+    expect(mod.NETWORK_NAME).toBe("mainnet");
+    expect(mod.NETWORK_PASSPHRASE).toBe(Networks.PUBLIC);
+    expect(mod.RPC_URL).toBe("https://mainnet.sorobanrpc.com");
+    expect(mod.EXPLORER_BASE).toBe("https://stellar.expert/explorer/mainnet");
+  });
+
+  it("is case-insensitive and falls back to testnet for any other value", async () => {
+    for (const value of ["MAINNET", "Mainnet", "", "staging", "testnet"]) {
+      import.meta.env.PUBLIC_STELLAR_NETWORK = value;
+      vi.resetModules();
+      const mod = await import("./network.js");
+      const expected = value.toLowerCase() === "mainnet" ? "mainnet" : "testnet";
+      expect(mod.NETWORK_NAME).toBe(expected);
+    }
   });
 });
 

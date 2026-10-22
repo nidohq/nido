@@ -41,8 +41,8 @@ jobs:
           persist-credentials: false
 
       # The workspace resolves and fetches without vendor/perch. Run on its
-      # own because Scout's step below tolerates build failures (factory's
-      # build.rs), which would hide a resolution failure too. Installs the
+      # own because Scout's step below tolerates build failures, which would
+      # hide a resolution failure too. Installs the
       # rust-toolchain.toml toolchain.
       - name: Fetch dependencies without the submodule
         run: cargo fetch --locked
@@ -63,13 +63,14 @@ jobs:
       # runs independent of code changes -- severity-gating is the
       # practical floor, not just a convenience.
       #
-      # continue-on-error: true -- separately, `factory`'s build.rs panics
-      # inside Scout's sandbox because it expects the Perch account wasm
-      # already staged at a dylint-internal target path, which nothing here
-      # ever populates (Scout analyzes `contracts/factory` in isolation, it
-      # never runs `just build-contracts` first). That's a hard cargo build
-      # failure, not a findings-based one, so fail_on_error/the severity
-      # gate below can't rescue it -- this step itself has to tolerate it.
+      # continue-on-error: true -- separately, a hard cargo build failure
+      # inside Scout's sandbox is not a findings-based one, so
+      # fail_on_error/the severity gate below can't rescue it. It was added
+      # when `factory`'s build.rs needed the Perch account wasm staged at a
+      # target path nothing here populates; the factory now compiles its
+      # account pin from the committed contracts/factory/wasm/
+      # perch-account.sha256, so this can be dropped once a run confirms the
+      # factory builds under Scout.
       - name: Run Scout
         id: scout
         continue-on-error: true

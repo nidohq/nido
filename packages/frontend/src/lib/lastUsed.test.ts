@@ -19,16 +19,16 @@ describe("lastUsed", () => {
   it("markUsed writes a numeric timestamp under the prefixed key", () => {
     const store = fakeStore();
     markUsed(C1, store, 1234);
-    expect(store.getItem(`nido:lastUsed:${C1}`)).toBe("1234");
+    expect(store.getItem(`nido:testnet:lastUsed:${C1}`)).toBe("1234");
   });
 
   it("readLastUsed collects prefixed keys into a record", () => {
-    const store = fakeStore({ [`nido:lastUsed:${C1}`]: "42", "nido:accounts": "[]" });
+    const store = fakeStore({ [`nido:testnet:lastUsed:${C1}`]: "42", "nido:testnet:accounts": "[]" });
     expect(readLastUsed(store)).toEqual({ [C1]: 42 });
   });
 
   it("readLastUsed ignores non-numeric values", () => {
-    const store = fakeStore({ [`nido:lastUsed:${C1}`]: "nope" });
+    const store = fakeStore({ [`nido:testnet:lastUsed:${C1}`]: "nope" });
     expect(readLastUsed(store)).toEqual({});
   });
 });

@@ -1,0 +1,45 @@
+name: deploy-relayer-mainnet
+
+# Manual only — unlike deploy-relayer.yml (which auto-deploys the testnet
+# relayer on every push touching infra/relayer/**), a mainnet relayer moves
+# real money, so a deploy here is never a side effect of a merge.
+#
+# The "nido-mainnet" Fly app must already exist (fly apps create nido-mainnet)
+# and have real secrets set before this can succeed — see
+# infra/relayer/fly.mainnet.toml's own comment.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-relayer-mainnet
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: superfly/flyctl-actions/setup-flyctl@v1
+
+      - name: Load Fly token from 1Password
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          FLY_API_TOKEN: op://theahaco/nido_fly_io/credential
+
+      - name: Deploy
+        # The positional dir sets the Docker build context (the Dockerfile's
+        # COPY paths are relative to infra/relayer/); --config picks the
+        # mainnet fly.toml in that same directory.
+        run: flyctl deploy infra/relayer --config infra/relayer/fly.mainnet.toml --remote-only --ha=false
+
+      - name: Smoke check
+        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://nido-mainnet.fly.dev/api/v1/health
