@@ -13,8 +13,7 @@
  * since it must stay a classic, non-module script — can pass this same data
  * in via `define:vars` instead of hardcoding its own copy of the allowlist.
  */
-// export const EXACT_HOSTNAMES = ["test.nido.fyi", "localhost", "127.0.0.1"];
-export const EXACT_HOSTNAMES = ["test.nido.fyi", "127.0.0.1"];
+export const EXACT_HOSTNAMES = ["test.nido.fyi", "localhost", "127.0.0.1"];
 export const HOSTNAME_SUFFIXES = [".test.nido.fyi"];
 
 export function allowAccountCreation(hostname: string): boolean {
