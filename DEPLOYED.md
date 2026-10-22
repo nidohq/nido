@@ -27,18 +27,18 @@ field, taking Nido's factory address from this record (SECURITY_INVARIANTS W6). 
 | Manifest field (`PerchDeployment`) | Contract | Address or value |
 | --- | --- | --- |
 | `network` | | `Test SDF Network ; September 2015` |
-| `factory` | `nido-factory` (Nido's, [below](#nidos-factory)) | `CAE33LHBXQGBI6QLDHBUOSCLPUD267NRJXANHO65PQ6PU2BMGHOKF6QV` |
-| `webauthnVerifier` | `perch-webauthn-verifier` | `CBCCINHRMS3COAV5RHTCUASZLOEC52FCOBR3HMU4FKWJTAHWZTVFTHHY` |
-| `statelessRegistry` | Perch's registry instance | `CCUC5RDRGRFFC5VGG7HCB3OMNNSYDFAQOSA7SBGYUM2GDXAJBUWI5TFQ` |
-| `docCompiler` | `perch-doc-compiler` | `CDHZT7NLQDPMWCUDNUVCYC2EAMGRFWABQO5WDSRJGDQVIDHOWQB2FANB` |
-| `interpreter` | `perch-interpreter` | `CAI6RPWAJ7Z6MP3HLGMTD3W4P4DTD6BEKPFV7XF6VANC2H7XYAQHIXHP` |
-| `spendingLimit` | `perch-spending-limit` | `CCVXXCAKMROSWAH6QKZ2PUMMH3QUUEUERJQ3CI4XMAWVOMTKKJHYSMTF` |
-| `recoveryController` | `perch-recovery` | `CDIGZVWVXJT2PVDIAUKLX62LW7DNJBC6SZUSR6SLQ6MNICGCGZ6EEXPR` |
-| `zkPool` | `perch-zk-pool` | `CB46EOGM6FSSHO2TNKFWZF5AOIDROPNE6QW75XBKETX5IS757B25WK2Y` |
-| `zkAdapter` | `perch-zk-adapter` | `CBGN355IPW63XPNOSG4O3EZD46ASBXCM5W55PQHEZXJYAFZXN23BNAWC` |
+| `factory` | `nido-factory` (Nido's, [below](#nidos-factory)) | `CDDIW3F63PB6ZKMJN7CCGJSCYXTAVAVEEYNS36K2YFEJH7GQ3ADVZSVS` |
+| `webauthnVerifier` | `perch-webauthn-verifier` | `CDEV5YPS5IITPLQPYTKJGWBNZ2YZ7FQZIJNSHUMJRBE4QWYK2IVK4EJT` |
+| `statelessRegistry` | Perch's registry instance | `CDZGU4AIND6QRCGAN72I7DCS2EKRZ76JSKYY7KKJR4CG5IR2AMFIBZTM` |
+| `docCompiler` | `perch-doc-compiler` | `CAYCPM5O6SGGAZOCCAUJ27CZZ7SMHU4VYSA25ZHDMGKILP4Z5RGF467E` |
+| `interpreter` | `perch-interpreter` | `CBOGVUQWY5G7BP7OWEJX3Z5PSZLYJXHM54A7OEMXQQ7ZO4GHHM4WCEAP` |
+| `spendingLimit` | `perch-spending-limit` | `CAG3IDO3FXE2HQVQHRGRBKWGL2IPAA2V6B3UMHES4ZUNS7OEV646HYV5` |
+| `recoveryController` | `perch-recovery` | `CBOFO5KWQKCZ7LBS4LDIYXA6LGZSUSA6JKOHHBBL64KQNZLPGDJ252FT` |
+| `zkPool` | `perch-zk-pool` | `CASXCXSBIG6ECB3LO4LCEW6SZIFHZDTJ3PFOZJK5JI56VKXLSZY6J67P` |
+| `zkAdapter` | `perch-zk-adapter` | `CDWVAUSTU2DHBBWANQKGSHCXFK5C46WMUEMWRBOV2LBVXQGK4PGIFBQS` |
 | `circuitId` | | `9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a` |
 | `treeDepth` | | `32` |
-| `accountWasmHash` | `perch-account` (installed, not deployed) | `bbb30174bbd85a2956a2f6146a156769621254011a6bdcac707cf787ce7bcd52` |
+| `accountWasmHash` | `perch-account` (installed, not deployed) | `2c976bfd98678f3b6fcf5514420a81ef5e5b9fc1c5b6c60ec6f2dd64448479d5` |
 
 The manifest also lists Perch's own factory (`perch-account-factory`), which
 Nido does not use: its addresses commit to the admin signers, but a Nido
@@ -61,25 +61,25 @@ and verifier against the manifest's `perch-account` and
 
 | Field | Value |
 | --- | --- |
-| Address | `CAE33LHBXQGBI6QLDHBUOSCLPUD267NRJXANHO65PQ6PU2BMGHOKF6QV` (`perch.TESTNET.factory`) |
-| Wasm sha256 | `218ed001b2e0db6c133f63bb2cf7ca667d4ae18250a04294c84e81261f99a2d9` |
-| Deploys | Perch account `d99d56fc2d07a14c2259f0994d97316d23ae90db26835f4c977939c2b3b593aa` (the manifest's `perch-account`, Perch `cb17149`) |
-| Verifier pin | `CDRYDB7O2JFLF7FAIIQUQK4BKQT3N6ACFFGZQ7AHKMX52RIWTHBHJY6K` (the manifest's `perch-webauthn-verifier`) |
+| Address | `CDDIW3F63PB6ZKMJN7CCGJSCYXTAVAVEEYNS36K2YFEJH7GQ3ADVZSVS` (`perch.TESTNET.factory`) |
+| Wasm sha256 | `02482b9ae2feaa25e7ec836be8dd839b0c3bc035d1d5a595585ab6582ea44995` |
+| Deploys | Perch account `2c976bfd98678f3b6fcf5514420a81ef5e5b9fc1c5b6c60ec6f2dd64448479d5` (the manifest's `perch-account`, Perch `c135aca`) |
+| Verifier pin | `CDEV5YPS5IITPLQPYTKJGWBNZ2YZ7FQZIJNSHUMJRBE4QWYK2IVK4EJT` (the manifest's `perch-webauthn-verifier`) |
 | Interface | `create_account(setup_pk, key, setup_sig)`, which checks the setup key's signature over the passkey and derives the address from the setup key; `get_c_address(setup_pk)`; `upgrade` / `pin_verifier` / `set_manager` / `set_admin`, each immediate and announced. Constructor `(admin, verifier, manager)`. |
 | Change delay | None in the factory: the delay belongs to the admin smart account (RUNBOOKS §3). |
-| Admin | `GDR4OGZX43SWPWTLFFFTCXI5ZDP64QQJ6K4BTTMIGTGWFPUY4S4TLLR4`, a single throwaway testnet key |
+| Admin | `GAWIDMB5EIWL4DLYSWG2BADMYMSXESPQC4P2FJ4VMHEHSI2ZLDP76B6K`, a single throwaway testnet key |
 | Manager | None |
-| Deployed | 2026-10-21 by `scripts/deploy-factory.sh` (Nido `51f3cba3`, Perch `603f7d5`) |
+| Deployed | 2026-10-22 by `scripts/deploy-factory.sh` (Nido `951ad2e8`, Perch `6af7622`) |
 | Registry name | None |
 
-**Previous factory.** `CBJRCUECFC2FSJBSVOVYHWC73A2SN7LIKSLWJBQUNEOWPE4PXG33M54H` (wasm `c858f314…`, deploys the 845c49a account `d3d4c28a…`, verifier pin `CAL7IEAJ…`, admin `GA2MQ7MB…`, deployed 2026-10-12) remains on chain. It has the old interface, `create_account(salt, key)` with a caller-chosen salt, which the wallet in this tree no longer calls. Accounts it minted keep working; new accounts come from the factory above.
+**Previous factories.** `CAE33LHBXQGBI6QLDHBUOSCLPUD267NRJXANHO65PQ6PU2BMGHOKF6QV` (wasm `218ed001…`, deploys the 603f7d5 account `d99d56fc…`, verifier pin `CDRYDB7O…`, admin `GDR4OGZX…`, deployed 2026-10-21) has the same interface and remains on chain; accounts it minted keep working on the earlier Perch stack. `CBJRCUECFC2FSJBSVOVYHWC73A2SN7LIKSLWJBQUNEOWPE4PXG33M54H` (wasm `c858f314…`, deploys the 845c49a account `d3d4c28a…`, verifier pin `CAL7IEAJ…`, admin `GA2MQ7MB…`, deployed 2026-10-12) remains on chain. It has the old interface, `create_account(salt, key)` with a caller-chosen salt, which the wallet in this tree no longer calls. Accounts it minted keep working; new accounts come from the factory above.
 
 ## Nido contracts in use
 
 | Name | Address | Notes |
 |---|---|---|
-| Factory | `CAE33LHBXQGBI6QLDHBUOSCLPUD267NRJXANHO65PQ6PU2BMGHOKF6QV` | **Setup-key factory (2026-10-21)**, see [Nido's factory](#nidos-factory). `create_account(setup_pk, key, setup_sig)` deploys doc-only Perch accounts by the account wasm hash pinned from the manifest (`d99d56fc…`, reported by `account_wasm_hash`), with Perch's WebAuthn verifier `CDRYDB7O…` pinned at construction and no manager. Admin `GDR4OGZX43SWPWTLFFFTCXI5ZDP64QQJ6K4BTTMIGTGWFPUY4S4TLLR4`, a throwaway testnet deploy key, NOT a human-held key (testnet only; mainnet must hand the factory to the admin smart account that enforces the change delay, MAINNET_READINESS B1). Not registry-registered: `perch.TESTNET.factory` in `packages/passkey-sdk/src/perch/deployment.ts` is the source of truth. Previous factories `CBJRCUECFC2FSJBSVOVYHWC73A2SN7LIKSLWJBQUNEOWPE4PXG33M54H` (2026-10-12, salt interface, 845c49a account) and `CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG` (pre-redeploy Perch account) remain on chain. |
-| WebAuthn verifier | `CAL7IEAJO7S3SJI4EXESMUNPOEYW6QNR3PQTO7AVHD75YGURSZ5CW27Z` | Perch's redeployed WebAuthn verifier (`perch-webauthn-verifier` in `vendor/perch/deployments/testnet.json`). Constructorless, no admin. Implements `canonicalize_key` / `batch_canonicalize_key`; the factory pins it and passkey signers name it. Previous verifier `CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY`. |
+| Factory | `CDDIW3F63PB6ZKMJN7CCGJSCYXTAVAVEEYNS36K2YFEJH7GQ3ADVZSVS` | **Setup-key factory (2026-10-22)**, see [Nido's factory](#nidos-factory). `create_account(setup_pk, key, setup_sig)` deploys doc-only Perch accounts by the account wasm hash pinned from the manifest (`2c976bfd…`, reported by `account_wasm_hash`), with Perch's WebAuthn verifier `CDEV5YPS…` pinned at construction and no manager. Admin `GAWIDMB5EIWL4DLYSWG2BADMYMSXESPQC4P2FJ4VMHEHSI2ZLDP76B6K`, a throwaway testnet deploy key, NOT a human-held key (testnet only; mainnet must hand the factory to the admin smart account that enforces the change delay, MAINNET_READINESS B1). Not registry-registered: `perch.TESTNET.factory` in `packages/passkey-sdk/src/perch/deployment.ts` is the source of truth. Previous factories `CAE33LHBXQGBI6QLDHBUOSCLPUD267NRJXANHO65PQ6PU2BMGHOKF6QV` (2026-10-21, 603f7d5 account), `CBJRCUECFC2FSJBSVOVYHWC73A2SN7LIKSLWJBQUNEOWPE4PXG33M54H` (2026-10-12, salt interface, 845c49a account) and `CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG` (pre-redeploy Perch account) remain on chain. |
+| WebAuthn verifier | `CDEV5YPS5IITPLQPYTKJGWBNZ2YZ7FQZIJNSHUMJRBE4QWYK2IVK4EJT` | Perch's redeployed WebAuthn verifier (`perch-webauthn-verifier` in `vendor/perch/deployments/testnet.json`). Constructorless, no admin. Implements `canonicalize_key` / `batch_canonicalize_key`; the factory pins it and passkey signers name it. Previous verifiers `CDRYDB7O2JFLF7FAIIQUQK4BKQT3N6ACFFGZQ7AHKMX52RIWTHBHJY6K` (Perch 603f7d5), `CAL7IEAJO7S3SJI4EXESMUNPOEYW6QNR3PQTO7AVHD75YGURSZ5CW27Z` (Perch 845c49a), and Nido's former `CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY`. |
 | Multisig policy | `CCSDKJYOFCPTCCGQZPF73RJNHFC7TPO532Q36N3M2VBYZFWQOTDB7J7G` | Registered as `unverified/multisig-policy`. Built against soroban-sdk 26 + OZ stellar-contracts main — accepts v0.7 `ContextRule` (with `signer_ids`/`policy_ids`). |
 | Spending-limit policy | `CCJMCPGADKMVKYOIZXMV7UWH62XYDAIT6GJRNJPQSZ2CHPOF4K2AU2QC` | Registered as `unverified/spending-limit-policy`. Built against soroban-sdk 26 + OZ stellar-contracts rev `637c53a` — wraps `policies::spending_limit` (rolling window, meters SAC `transfer`). |
 | Stellar Registry (unverified) | `CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S` | The registry the factory queries via `Self::resolve(env, name)`. |
