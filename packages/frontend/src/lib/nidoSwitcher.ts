@@ -22,15 +22,15 @@ import { shortAddr } from "./address";
 import { formatXlm } from "./money";
 import { createNido } from "./createNido";
 import { syncNidoStorageViaBridge } from "./nidoSharedStorage";
-import { NETWORK_NAME } from "./network";
+import { allowAccountCreation } from "./allowAccountCreation";
 import { verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
 
 const RPC_URL = "https://soroban-testnet.stellar.org";
 export const NAME_NETWORK = "Test SDF Network ; September 2015";
-// Account creation is testnet-only today; every "create a Nido" entry point
-// this switcher offers (first-time setup and "create another") shows a
-// disabled "Coming soon" state instead on any other network.
-const isTestnet = NETWORK_NAME === "testnet";
+// Every "create a Nido" entry point this switcher offers (first-time setup
+// and "create another") shows a "Coming soon" state on hostnames
+// account creation isn't open on yet (see accountCreationOpen.ts).
+const creationOpen = allowAccountCreation(window.location.hostname);
 
 // Resolve the name-registry contract id once per page load (memoized promise),
 // shared across switcher instances. Only fetched if some row needs an on-chain
@@ -197,7 +197,7 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
 
     if (model.state === "empty") {
       const pendingRows = model.rows.map(rowHtml).join("");
-      const createBtn = isTestnet
+      const createBtn = creationOpen
         ? `<button class="btn acc cbtn mn-create-btn" type="button">Set up with your face</button>`
         : `<button class="btn acc cbtn mn-create-btn" type="button" disabled aria-disabled="true">Coming to Mainnet Soon!</button>`;
       panel!.innerHTML = `<div class="mn-scroll"><div class="mn-create">
@@ -218,7 +218,7 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
         ? `<div class="mn-head"><span class="lockchip">Only you</span><div class="hl">Welcome back</div><div class="hs">Your Nido is ready</div></div>`
         : `<div class="mn-head"><div class="hl">Your Nidos</div><div class="hs">${model.rows.length} on this device</div></div>`;
 
-    const createAnotherBtn = isTestnet
+    const createAnotherBtn = creationOpen
       ? `<button class="mn-foot mn-create-btn" type="button"><span class="pl">+</span> Create another Nido</button>`
       : `<button class="mn-foot mn-create-btn" type="button" disabled aria-disabled="true">Coming to Mainnet Soon!</button>`;
     panel!.innerHTML = `<div class="mn-scroll">${header}
