@@ -28,7 +28,10 @@ CSP_NETWORK_HOSTS = "https://nido.fly.dev https://soroban-testnet.stellar.org ht
 [env.testnet]
 name = "nido-proxy-testnet"
 workers_dev = false
-routes = []
+routes = [
+  { pattern = "test.nido.fyi/*", zone_name = "nido.fyi" },
+  { pattern = "*.test.nido.fyi/*", zone_name = "nido.fyi" }
+]
 
 [env.testnet.vars]
 # The `test` branch Pages deployment (deploy-testnet.yml's

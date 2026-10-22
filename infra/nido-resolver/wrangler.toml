@@ -28,7 +28,10 @@ NIDO_APEXES = "test.nido.fyi,nido.fyi"
 [env.testnet]
 name = "nido-resolver-testnet"
 workers_dev = false
-routes = []
+routes = [
+  { pattern = "test.nido.fyi/.well-known/nido.json", zone_name = "nido.fyi" },
+  { pattern = "*.test.nido.fyi/.well-known/nido.json", zone_name = "nido.fyi" }
+]
 
 [env.testnet.vars]
 NIDO_NETWORK = "testnet"

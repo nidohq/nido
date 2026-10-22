@@ -42,6 +42,12 @@ jobs:
           # Overrides the Perch deployment (JSON, or `none`); unset, a testnet
           # build uses perch.TESTNET (see lib/recovery/deployment.ts).
           PUBLIC_PERCH_DEPLOYMENT: ${{ vars.PUBLIC_PERCH_DEPLOYMENT }}
+          # infra/invite's base URL + shared x-api-key (lib/demo/config.ts),
+          # set from the live infra/invite deployment (nido-invite.fly.dev).
+          # Empty would just disable the /demo/start invite check rather
+          # than break the build, but these repo vars/secrets are set.
+          PUBLIC_INVITE_SERVICE_URL: ${{ vars.PUBLIC_INVITE_SERVICE_URL }}
+          PUBLIC_INVITE_SERVICE_API_KEY: ${{ secrets.PUBLIC_INVITE_SERVICE_API_KEY }}
         run: npx astro build --root ./packages/frontend
 
       # `--branch test` (not `main`) gives this build its own stable Pages
@@ -57,20 +63,20 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # Edge proxy for *.test.nido.fyi -> the testnet Pages deployment above.
-      # `--env testnet` is wrangler.toml's dedicated testnet environment (its
-      # own Worker, `nido-proxy-testnet`); its routes stay empty until the
-      # *.test.nido.fyi advanced certificate is active (see wrangler.toml's
-      # own comment) — deploying it here is harmless either way, it just has
-      # nothing to route to yet.
+      # Edge proxy for test.nido.fyi (apex + every account subdomain) -> the
+      # testnet Pages deployment above. `--env testnet` is wrangler.toml's
+      # dedicated testnet environment (its own Worker, `nido-proxy-testnet`).
+      # Its wildcard route must deploy together with nido-resolver's matching
+      # wildcard route below (see wrangler.toml's own comment for why).
       - name: Deploy test.nido.fyi proxy worker
         run: npx wrangler deploy --config frontend/worker-proxy-nido/wrangler.toml --env testnet
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # Name resolver: serves <subdomain>.test.nido.fyi/.well-known/nido.json.
-      # Same "routes empty until the cert is active" situation as the proxy.
+      # Name resolver: serves test.nido.fyi and <account>.test.nido.fyi's
+      # /.well-known/nido.json. Must deploy together with the proxy worker
+      # above — see its own wrangler.toml comment.
       - name: Deploy test.nido.fyi resolver worker
         run: npx wrangler deploy --config infra/nido-resolver/wrangler.toml --env testnet
         env:
