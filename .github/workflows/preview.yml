@@ -22,7 +22,7 @@ env:
   # "Example app" link points at THIS PR's example-dApp preview (deployed by
   # example-preview.yml to the mysoroban project's example-pr-<N> branch alias),
   # not the production GitHub Pages demo — so the wallet preview and the example
-  # preview exercise each other. deploy.yml keeps the production URL.
+  # preview exercise each other. deploy-production.yml keeps the production URL.
   PUBLIC_EXAMPLE_DAPP_URL: "https://example-pr-${{ github.event.pull_request.number }}.mysoroban.pages.dev/"
   PUBLIC_GITHUB_REPOSITORY: ${{ github.repository }}
 

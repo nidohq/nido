@@ -1,0 +1,39 @@
+# Mainnet Redis for the `nido-mainnet` relayer. Sibling config to fly.toml
+# (testnet, app "nido-redis") — a separate instance, not shared, so a
+# testnet incident can't touch mainnet relayer job state. Deploy with:
+#   flyctl deploy infra/relayer-redis --config infra/relayer-redis/fly.mainnet.toml
+#
+# The app must exist before the first deploy:
+#   fly apps create nido-mainnet-redis
+#
+# NOT YET DEPLOYED. Re-examine the no-password choice before deploying this:
+# fly.toml's comment justifies it as acceptable specifically because that one
+# is "testnet dev relayer" — the same reasoning may or may not hold once this
+# instance is backing a mainnet relayer actually moving real money. The trust
+# boundary (private Fly 6PN only, no public service) stays either way; the
+# question is whether that boundary alone is still enough.
+app = "nido-mainnet-redis"
+primary_region = "iad"
+
+[build]
+  image = "redis:7-alpine"
+
+[experimental]
+  cmd = [
+    "redis-server",
+    "--dir", "/data",
+    "--appendonly", "yes",
+    "--save", "",
+    "--bind", "::",
+    "--protected-mode", "no",
+    "--maxmemory", "200mb",
+    "--maxmemory-policy", "noeviction",
+  ]
+
+[[mounts]]
+  source = "nido_mainnet_redis_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

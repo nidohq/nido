@@ -2,7 +2,7 @@ name: Deploy Example to GitHub Pages
 
 # Deploys examples/status-message-dapp/ as a live testnet demo at the GitHub
 # Pages project URL for this repository. Independent of the Cloudflare deploy of
-# the main Nido frontend (see deploy.yml / preview.yml).
+# the main Nido frontend (see deploy-testnet.yml / deploy-production.yml / preview.yml).
 
 on:
   push:

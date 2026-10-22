@@ -176,10 +176,14 @@ Not done by the script:
 
 ### 2.3 Front end
 
-A push to `main` deploys (`deploy.yml`). The build uses `perch.TESTNET` unless
-the `PUBLIC_PERCH_DEPLOYMENT` repository variable overrides it with a
-manifest JSON or `none`. An override is not checked against Perch's manifest
-(THREAT_MODEL 9).
+A push to `main` auto-deploys test.nido.fyi (`deploy-testnet.yml`); nido.fyi
+is a separate, manual `workflow_dispatch` (`deploy-production.yml`), so a
+production cutover is never a side effect of a merge. Both build with
+`perch.TESTNET` by default unless the `PUBLIC_PERCH_DEPLOYMENT` repository
+variable overrides it with a manifest JSON or `none`; mainnet builds have no
+default deployment until a `PUBLIC_PERCH_DEPLOYMENT` manifest for mainnet
+exists (`lib/recovery/deployment.ts`). An override is not checked against
+Perch's manifest (THREAT_MODEL 9).
 
 **Order matters.** The deployment a wallet build names must exist before the
 build reaches `main`. Accounts minted by an older factory are not migrated;
