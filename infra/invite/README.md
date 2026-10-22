@@ -11,13 +11,17 @@ repo root for the full flow diagram). Four roles in one process:
   `create_account` runs — see `contracts/factory`) to it in the same call, so
   two concurrent requests can't bind two different addresses to one code.
 - **Poller** — background loop, no HTTP surface: watches the chain directly
-  for each claimed code's bound address to actually exist, and marks the code
-  `used` once it does. This confirms completion independently of the
-  browser — a crashed tab or an unreported failure just leaves the code
-  `expired`, not falsely `used`. Stays remote deliberately — it's the one
-  piece that needs chain access, and the local Demo Server (on a laptop,
-  possibly behind NAT) is a worse place for that than this already-public,
-  already-deployed service.
+  for each claimed code's bound address to be both **deployed and funded**
+  (`src/chain.ts`'s `accountExists` + `isFunded`), and marks the code `used`
+  only once both are true. Deployment alone isn't enough — it goes true the
+  moment `create_account` confirms, well before the separate, sometimes-slow
+  async funding step finishes, which used to print the confirmation receipt
+  before the account was actually ready. This confirms completion
+  independently of the browser — a crashed tab or an unreported failure just
+  leaves the code `expired`, not falsely `used`. Stays remote deliberately —
+  it's the one piece that needs chain access, and the local Demo Server (on a
+  laptop, possibly behind NAT) is a worse place for that than this
+  already-public, already-deployed service.
 - **PendingPrint** — `GET /pending-print/next` + `POST /pending-print/:code/ack`:
   the local Demo Server's receipt-printing poller pulls from this instead of
   the remote service trying to reach back into the local machine (which
