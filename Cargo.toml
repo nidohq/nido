@@ -44,19 +44,19 @@ soroban-sdk-tools = "0.1.3"
 # tracked files (the smart account's build-time pins are committed in Perch),
 # so cargo needs no submodule. All Perch crates come from the one rev so their
 # types unify.
-perch-account = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-smart-account = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-recovery = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-recovery-interface = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-doc-compiler = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-interpreter = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-spending-limit = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-zk-pool = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-zk-adapter = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-zk-prover = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-zk-primitives = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-ir = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
-perch-registry-resolve = { git = "https://github.com/stellar-registry/perch", rev = "603f7d5504f2d4d9338c135771cea18ac70dbe0c" }
+perch-account = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-smart-account = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-recovery = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-recovery-interface = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-doc-compiler = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-interpreter = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-spending-limit = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-zk-pool = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-zk-adapter = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-zk-prover = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-zk-primitives = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-ir = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
+perch-registry-resolve = { git = "https://github.com/stellar-registry/perch", rev = "6af7622da80309b9c6764f1e05c8a6186ad2e0ad" }
 
 [profile.release]
 overflow-checks = true
