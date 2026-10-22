@@ -1,3 +1,4 @@
+import { nidoKey } from "@nidohq/passkey-sdk";
 import { Keypair, rpc, xdr } from "@stellar/stellar-sdk";
 import { RPC_URL } from "../network.js";
 import type { AssetHolding } from "./types.js";
@@ -55,7 +56,7 @@ export function parseTomlCurrencies(toml: string): TomlCurrency[] {
   return out;
 }
 
-const cacheKey = (contractId: string) => `nido:assets:icon:${contractId}`;
+const cacheKey = (contractId: string) => nidoKey(`assets:icon:${contractId}`);
 
 /**
  * The issuer account's on-chain home_domain. Curated lists often omit

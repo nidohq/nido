@@ -99,7 +99,9 @@ through Perch, and Soroban's native authorization model.
 - Rust and Cargo
 - [`just`](https://github.com/casey/just)
 - [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/cli/install-cli)
-  and `jq` (for `just perch-infra`)
+  with `curl` and `jq` (for `just perch-infra`; it falls back to another
+  testnet RPC while the manifest's is down, see
+  [docs/RUNBOOKS.md](./docs/RUNBOOKS.md) "RPC endpoints")
 - `stellar-scaffold` for scaffold-based contract workflows
 
 Fetch the Perch submodule and its build inputs, then install dependencies from
@@ -192,7 +194,7 @@ For deeper implementation details, read [ARCHITECTURE.md](./ARCHITECTURE.md).
   [security invariants](./docs/SECURITY_INVARIANTS.md),
   [deferred work](./docs/DEFERRED.md), [supply chain](./docs/SUPPLY_CHAIN.md),
   [runbooks](./docs/RUNBOOKS.md), [mainnet readiness](./docs/MAINNET_READINESS.md)
-- [Perch recovery specification](https://github.com/stellar-registry/perch/blob/603f7d5504f2d4d9338c135771cea18ac70dbe0c/docs/recovery/spec.md)
+- [Perch recovery specification](https://github.com/stellar-registry/perch/blob/6af7622da80309b9c6764f1e05c8a6186ad2e0ad/docs/recovery/spec.md)
   (`vendor/perch/docs/recovery/spec.md`)
 - [Status Message dApp guide](./examples/status-message-dapp/README.md)
 - [Wallets Kit module guide](./packages/stellar-wallets-kit-module/README.md)

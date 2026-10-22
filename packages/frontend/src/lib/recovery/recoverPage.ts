@@ -25,7 +25,7 @@
  * that declares exactly the replacement set it opened (`ownAttemptProblem`).
  */
 
-import { buf2hex, parseRegistration, perch, saveCredential } from '@nidohq/passkey-sdk';
+import { buf2hex, parseRegistration, perch, saveCredential, nidoKey } from '@nidohq/passkey-sdk';
 import { scValToNative } from '@stellar/stellar-sdk';
 import { esc } from '../html.js';
 import { toast } from '../toast.js';
@@ -58,7 +58,7 @@ interface Pending {
   replacements: WireReplacements;
 }
 
-const key = (account: string) => `nido:recover:${account}`;
+const key = (account: string) => nidoKey(`recover:${account}`);
 
 function loadPending(account: string): Pending | undefined {
   try {

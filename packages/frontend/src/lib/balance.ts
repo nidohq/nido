@@ -1,7 +1,6 @@
-import { Address, Asset, Networks, rpc } from "@stellar/stellar-sdk";
+import { Address, rpc } from "@stellar/stellar-sdk";
 import { simulateRead } from "./simulateRead.js";
-
-const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
+import { RPC_URL, NATIVE_SAC_ID } from "./network.js";
 
 /**
  * Read a Soroban account's native-XLM balance via a read-only simulate of the
@@ -12,10 +11,10 @@ const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
  */
 export async function fetchXlmBalance(
   contractAddress: string,
-  rpcUrl: string = DEFAULT_RPC_URL,
+  rpcUrl: string = RPC_URL,
 ): Promise<string> {
   const server = new rpc.Server(rpcUrl);
-  const xlmSacId = Asset.native().contractId(Networks.TESTNET);
+  const xlmSacId = NATIVE_SAC_ID;
   const raw = await simulateRead(server, xlmSacId, "balance", [
     Address.fromString(contractAddress).toScVal(),
   ]);

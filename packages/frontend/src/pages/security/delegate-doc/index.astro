@@ -96,8 +96,19 @@ import Icon from '../../../components/Icon.astro';
               </select>
             </div>
             <div class="mut" id="cap-note" style="font-size:12.5px;margin-top:8px;line-height:1.5;"></div>
+            <label id="uncapped-row" style="display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-top:8px;line-height:1.5;">
+              <input type="checkbox" id="uncapped-ack" style="margin-top:3px;" />
+              <span>Let this key spend without any cap</span>
+            </label>
           </div>
         </div>
+      </div>
+
+      <span class="section-label" style="display:block;margin:22px 0 10px;">You're approving</span>
+      <div class="card" style="padding:16px;display:grid;gap:6px;font-size:12.5px;line-height:1.5;">
+        <div><strong>Scope:</strong> <span id="scope-functions" style="word-break:break-all;">—</span></div>
+        <div><strong>Amount:</strong> <span id="scope-amount">—</span></div>
+        <div><strong>Expires:</strong> <span id="scope-expiry">—</span></div>
       </div>
 
       <span class="section-label" style="display:block;margin:22px 0 10px;">What changes</span>
@@ -138,6 +149,7 @@ import Icon from '../../../components/Icon.astro';
     DOC_DURATIONS,
     DOC_DURATION_LABEL,
     buildSessionGrantOperation,
+    describeSessionScope,
     parseDocDelegateParams,
   } from '../../../lib/policy/docRequest.js';
   import {
@@ -190,17 +202,22 @@ import Icon from '../../../components/Icon.astro';
   const capXlm = document.getElementById('cap-xlm') as HTMLInputElement;
   const capPeriod = document.getElementById('cap-period') as HTMLSelectElement;
   const capNote = document.getElementById('cap-note')!;
+  const uncappedRow = document.getElementById('uncapped-row')!;
+  const uncappedAck = document.getElementById('uncapped-ack') as HTMLInputElement;
+  const scopeFunctions = document.getElementById('scope-functions')!;
+  const scopeAmount = document.getElementById('scope-amount')!;
+  const scopeExpiry = document.getElementById('scope-expiry')!;
   const docHashEl = document.getElementById('doc-hash')!;
   const docPreviewEl = document.getElementById('doc-preview')!;
   const docDiffEl = document.getElementById('doc-diff')!;
 
   if (req) {
     durationSel.value = req.duration;
-    if (req.limitStroops !== null) {
+    if (req.cap !== null) {
       capOn.checked = true;
       capFields.hidden = false;
-      capXlm.value = stroopsToXlm(req.limitStroops);
-      capPeriod.value = req.limitPeriod;
+      capXlm.value = stroopsToXlm(req.cap.stroops);
+      capPeriod.value = req.cap.period;
     }
   }
 
@@ -290,21 +307,29 @@ import Icon from '../../../components/Icon.astro';
     return latestLedger == null ? null : latestLedger + off;
   }
 
+  /** The cap the controls describe: null when the cap is switched off,
+   *  `invalid` when it is on but the amount does not parse. */
+  function capFromControls(): { stroops: string; period: LimitPeriod } | 'invalid' | null {
+    if (!capOn.checked) return null;
+    const period = (Object.hasOwn(PERIOD_LEDGERS, capPeriod.value) ? capPeriod.value : 'day') as LimitPeriod;
+    try {
+      return { stroops: stroopsFromXlm(capXlm.value).toString(), period };
+    } catch {
+      return 'invalid';
+    }
+  }
+
   function draftFromControls(): SessionDocDraft | null {
     if (!req) return null;
-    let cap: SessionDocDraft['cap'] = null;
-    if (capOn.checked) {
-      // Parse the visible XLM amount; invalid input yields stroops "0",
-      // which validateSessionDocDraft rejects with a real message.
-      let stroops = '0';
-      try {
-        stroops = stroopsFromXlm(capXlm.value).toString();
-      } catch {
-        stroops = '0';
-      }
-      const period = (capPeriod.value in PERIOD_LEDGERS ? capPeriod.value : 'day') as LimitPeriod;
-      cap = { stroops, periodLedgers: PERIOD_LEDGERS[period] };
-    }
+    const controls = capFromControls();
+    // An unparseable amount yields stroops "0", which
+    // validateSessionDocDraft rejects with a real message.
+    const cap: SessionDocDraft['cap'] =
+      controls === null
+        ? null
+        : controls === 'invalid'
+          ? { stroops: '0', periodLedgers: PERIOD_LEDGERS.day }
+          : { stroops: controls.stroops, periodLedgers: PERIOD_LEDGERS[controls.period] };
     return {
       name: req.label,
       signer: { kind: 'delegated', address: req.signer },
@@ -325,10 +350,26 @@ import Icon from '../../../components/Icon.astro';
           : `At ledger ${(latestLedger + off).toLocaleString()} (≈ ${off.toLocaleString()} ledgers from now).`;
     capNote.textContent = capOn.checked
       ? 'With a cap, only token transfers are allowed under this key — other calls in the scoped contract are blocked.'
-      : 'No cap — the key can do whatever the allowed functions permit until it expires.';
+      : req?.cap === null
+        ? 'The app did not ask for a cap. Without one, the key can do whatever the allowed functions permit until it expires.'
+        : 'No cap — the key can do whatever the allowed functions permit until it expires.';
+    uncappedRow.hidden = capOn.checked;
 
     const draft = draftFromControls();
-    if (!draft) return;
+    if (!draft || !req) return;
+    const capControls = capFromControls();
+    const scope = describeSessionScope({
+      target: req.target,
+      functions: req.functions,
+      cap: capControls === 'invalid' ? null : capControls,
+      duration: durationSel.value,
+      notAfterLedger: draft.notAfterLedger,
+    });
+    scopeFunctions.textContent = scope.functions;
+    scopeAmount.textContent =
+      capControls === 'invalid' ? 'Enter a valid cap amount' : scope.amount;
+    scopeExpiry.textContent = scope.expiry;
+
     if (docLimits === null) {
       docDiffEl.textContent = docBaselineBlocked
         ? (status.textContent ?? 'Unavailable.')
@@ -405,6 +446,14 @@ import Icon from '../../../components/Icon.astro';
       // Validate the dApp return URL BEFORE any work.
       const successReturn = backToDapp('?delegation=ok');
       if (!successReturn) {
+        approveBtn.disabled = false;
+        return;
+      }
+
+      // An uncapped grant is never a default: the user must choose it.
+      if (!capOn.checked && !uncappedAck.checked) {
+        status.textContent =
+          'Set a spending cap, or confirm that this key may spend without one.';
         approveBtn.disabled = false;
         return;
       }

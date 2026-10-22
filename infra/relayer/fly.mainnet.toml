@@ -1,0 +1,72 @@
+# Mainnet relayer. Sibling config to fly.toml (testnet, app "nido"), same
+# Dockerfile/Caddyfile/plugin code — only the app identity, network, Redis
+# target, and money-handling limits differ. Deploy with:
+#   flyctl deploy infra/relayer --config infra/relayer/fly.mainnet.toml --remote-only --ha=false
+#
+# The app itself must exist before the first deploy — `fly deploy` does not
+# create one from a --config file. One-time setup:
+#   fly apps create nido-mainnet
+# (see docs/RUNBOOKS.md for the rest of the first-deploy checklist: funding
+# the fee-payer/treasury/channel accounts with real XLM, and setting a real
+# API_KEY secret — none of that is in this file).
+#
+# NOT YET DEPLOYED. FEE_LIMIT and FUNDER_TOPUP_STROOPS below are the testnet
+# values, carried over as placeholders — re-derive both for real money before
+# ever running this. The testnet FEE_LIMIT (1000 XLM/24h) is sized as "a
+# recoverable drain of free faucet money"; that reasoning does not carry over.
+app = "nido-mainnet"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  APP_PORT = "8090"
+  # Prometheus metrics on :8081 (/metrics + /debug/metrics/scrape). Scraped by
+  # Fly's managed Prometheus over 6PN via [metrics] below; NOT added to
+  # [http_service] so it stays private (only :8080 is public). Feeds the alerts
+  # in RUNBOOKS §5 (health, fee-limit ≥80%, tx error rate).
+  METRICS_ENABLED = "true"
+  REPOSITORY_STORAGE_TYPE = "redis"
+  REDIS_KEY_PREFIX = "nido-mainnet-relayer"
+  # Redis is self-hosted as a separate Fly app (infra/relayer-redis's
+  # fly.mainnet.toml, app "nido-mainnet-redis") — a distinct instance from
+  # testnet's, not a shared one, so a testnet incident can't touch mainnet job
+  # state or vice versa. Reached over private 6PN networking.
+  REDIS_URL = "redis://nido-mainnet-redis.internal:6379"
+  REDIS_POOL_MAX_SIZE = "10"
+  TRANSACTION_EXPIRATION_HOURS = "6"
+  STELLAR_NETWORK = "mainnet"
+  FUND_RELAYER_ID = "channels-fee-payer"
+  RATE_LIMIT_REQUESTS_PER_SECOND = "20"
+  RATE_LIMIT_BURST_SIZE = "60"
+  # PLACEHOLDER — carried over from testnet's FEE_LIMIT verbatim. Testnet's
+  # value is deliberately generous because the money is free faucet XLM; this
+  # is real money. Re-derive before first mainnet deploy (see the file-level
+  # comment above).
+  FEE_LIMIT = "10000000000"
+  FEE_RESET_PERIOD_SECONDS = "86400"
+  # PLACEHOLDER — same caveat as FEE_LIMIT above: real XLM per account now.
+  FUNDER_TOPUP_STROOPS = "50000000"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/api/v1/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[metrics]
+  port = 8081
+  path = "/debug/metrics/scrape"

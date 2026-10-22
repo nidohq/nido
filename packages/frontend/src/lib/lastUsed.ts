@@ -1,8 +1,10 @@
 // Per-account "last used" timestamps, used only to default the multi-account
 // claim picker. Best-effort UX nicety — local-only, never correctness-critical.
+import { nidoKey } from "@nidohq/passkey-sdk";
+
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "key" | "length">;
 
-const PREFIX = "nido:lastUsed:";
+const prefix = () => nidoKey("lastUsed:");
 
 function storageOrNull(): StorageLike | null {
   try {
@@ -20,7 +22,7 @@ export function markUsed(
 ): void {
   if (!store) return;
   try {
-    store.setItem(`${PREFIX}${contractId}`, String(now));
+    store.setItem(`${prefix()}${contractId}`, String(now));
   } catch {
     /* ignore quota / disabled storage */
   }
@@ -32,10 +34,10 @@ export function readLastUsed(store: StorageLike | null = storageOrNull()): Recor
   const out: Record<string, number> = {};
   for (let i = 0; i < store.length; i++) {
     const key = store.key(i);
-    if (!key?.startsWith(PREFIX)) continue;
+    if (!key?.startsWith(prefix())) continue;
     const raw = store.getItem(key);
     const ts = raw ? Number(raw) : NaN;
-    if (Number.isFinite(ts)) out[key.slice(PREFIX.length)] = ts;
+    if (Number.isFinite(ts)) out[key.slice(prefix().length)] = ts;
   }
   return out;
 }

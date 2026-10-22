@@ -8,6 +8,12 @@
  * `apply_doc`, so enrollment cannot half-happen. Under `protected`, the
  * currently enrolled condition records its approval of the exact new
  * configuration first (`collectCondition`).
+ *
+ * Recovery runs at the controller the account adopted. After a Perch
+ * redeploy that is an earlier one than the deployment's, and it keeps
+ * working there; `moveCard` offers the switch to the deployment's stack
+ * with every setting kept. The switch is a reconfiguration the controller
+ * being left evaluates, so under `protected` the helpers approve it there.
  */
 
 import { docHash, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
@@ -74,7 +80,75 @@ export async function mountRecoverySettings(root: HTMLElement, account: string |
   root.innerHTML = '';
   root.append(statusCard(state));
   if (state.gate?.authorized_attempt != null) root.append(attemptCard(account, state));
+  // Nothing reconfigures while an attempt is authorized (Perch spec §10).
+  else if (state.summary) {
+    const move = moveCard(account, state);
+    if (move) root.append(move);
+  }
   root.append(configureCard(account, state));
+}
+
+/** The owner's switch of recovery from an earlier controller (and pool) to
+ *  the deployment's, keeping every setting and the published baseline. */
+function moveCard(account: string, state: RecoveryState): HTMLElement | undefined {
+  const deployment = requireDeployment();
+  const current = perch.recoveryFromWire(state.doc!.recovery!);
+  const drift = perch.recoveryStackDrift(deployment, current);
+  if (!drift.controller && !drift.zk) return undefined;
+  const c = card(
+    'Move recovery to the current service',
+    `<p style="margin:0;font-size:13.5px;">Your recovery runs at an earlier recovery service ` +
+      `(<code class="mono" style="word-break:break-all;">${esc(current.controller)}</code>), and keeps working there. ` +
+      'Moving it to the one Nido sets up today keeps every setting.' +
+      (drift.zk ? ' Your recovery kit cannot move, so you make a new one and the old one stops working.' : '') +
+      (current.profile === 'protected' ? ' Your helpers approve the move first, at the service you are leaving.' : '') +
+      '</p>',
+  );
+  const body = c.querySelector('.card') as HTMLElement;
+  const status = el('div', { class: 'mut', style: 'font-size:12.5px;' });
+  const kitBox = el('div', { style: 'display:grid;gap:6px;font-size:13px;' });
+  let newKit: { kit: RecoveryKit; enrollment: perch.ZkEnrollmentSpec } | undefined;
+  let kitSaved = false;
+  if (drift.zk) {
+    const make = el('button', { class: 'btn soft sm', type: 'button' }, 'Create my new recovery kit') as HTMLButtonElement;
+    make.addEventListener('click', () =>
+      busy(make, status, 'Creating your recovery kit…', async () => {
+        newKit = await newRecoveryKit(account);
+        kitSaved = false;
+        const url = URL.createObjectURL(kitFile(newKit.kit));
+        kitBox.innerHTML =
+          `<a class="btn ghost sm" href="${url}" download="nido-recovery-kit-${esc(account.slice(0, 6))}.json">Download recovery kit</a>` +
+          '<label class="pol-check"><input type="checkbox" data-kit-saved> I saved my new recovery kit</label>';
+        (kitBox.querySelector('[data-kit-saved]') as HTMLInputElement).addEventListener('change', (e) => {
+          kitSaved = (e.target as HTMLInputElement).checked;
+        });
+        status.textContent = '';
+      }),
+    );
+    body.append(make, kitBox);
+  }
+  const go = el('button', { class: 'btn primary', type: 'button' }, 'Move my recovery') as HTMLButtonElement;
+  body.append(go, status);
+  go.addEventListener('click', () =>
+    busy(go, status, 'Preparing…', async () => {
+      if (drift.zk && !newKit) throw new Error('Create your new recovery kit first.');
+      if (newKit && !kitSaved) throw new Error('Confirm you saved your new recovery kit first.');
+      const moved = perch.movedRecovery(deployment, current, newKit?.enrollment);
+      // The restore point stays: read it at the controller being left, and
+      // publish the same bytes at the new one once the account adopts it.
+      const baseline = moved.baseline ? await recoveryClient().baseline(account) : undefined;
+      await apply(account, state, perch.withRecovery(state.doc!, moved), status);
+      if (baseline) {
+        status.textContent = 'Saving your restore point at the new service…';
+        const op = await recoveryClient().publishBaseline(account, baseline);
+        await submitOpen(op.operations[0]!);
+      }
+      status.textContent = 'Moved.';
+      toast({ msg: 'Recovery moved', icon: 'check' });
+      setTimeout(() => location.reload(), 1_500);
+    }),
+  );
+  return c;
 }
 
 function statusCard(state: RecoveryState): HTMLElement {
@@ -268,6 +342,13 @@ function configureCard(account: string, state: RecoveryState): HTMLElement {
         throw new Error('Create your recovery kit first.');
       }
       if (newKit && !kitSaved) throw new Error('Confirm you saved your recovery kit first.');
+      // A kit enrolled in an earlier pool cannot be renamed into the
+      // deployment's: the account refuses a changed factor that keeps its
+      // enrollment id.
+      if (mode !== 'guardian-only' && !newKit && state.doc?.recovery &&
+          perch.recoveryStackDrift(deployment, perch.recoveryFromWire(state.doc.recovery)).zk) {
+        throw new Error('Your recovery kit is enrolled at an earlier recovery service. Create a new recovery kit to save these settings.');
+      }
       const base = state.doc ?? (await currentOrFirstDoc(account)).doc;
       const zk =
         mode === 'guardian-only'

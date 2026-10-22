@@ -12,28 +12,34 @@ build:
     cargo build --workspace
 
 # Fetch the Perch stack Nido builds and tests against: Perch's testnet
-# deployment, by the hashes in vendor/perch/deployments/testnet.json. Puts
+# deployment, by the hashes in vendor/perch/deployments/testnet.json
+# (STELLAR_NETWORK picks another manifest). Writes the factory's account pin,
+# contracts/factory/wasm/perch-account.sha256, from that manifest first. Puts
 # every deployed contract's wasm in target/wasm32v1-none/contract/
-# (perch_*.wasm), so the tests run the deployed bytes and the factory embeds the
-# deployed account. (The Perch crates build from the pins Perch commits; cargo
+# (perch_*.wasm), so the tests run the deployed bytes, including the account
+# whose hash the factory pins. (The Perch crates build from the pins Perch commits; cargo
 # fetches them at the submodule's commit, see the root Cargo.toml.) Perch's script refuses any
 # file whose sha256 or content address differs from the manifest. Needs the
-# Stellar CLI and jq. Run once after cloning and after bumping vendor/perch.
+# Stellar CLI, curl and jq. Run once after cloning and after bumping
+# vendor/perch. Reads the chain through the manifest's rpc_url, an
+# RPC_URL/STELLAR_RPC_URL override, or a guarded fallback while the manifest's
+# endpoint is down (scripts/perch-infra.sh; docs/RUNBOOKS.md "RPC endpoints").
 perch-infra:
-    cd vendor/perch && bash scripts/fetch-infra-wasm.sh --stack ../../target/wasm32v1-none/contract
+    scripts/perch-infra.sh
 
 # Re-pin vendor/perch to a Perch commit (full 40-hex) and regenerate what the
 # pin derives: the stack by manifest hash, Nido's contracts, the Perch
-# bindings, the SDK's Perch pins, the lockfiles, and the Soroban test
-# snapshots; then the drift check and the Rust suites. Nido's factory is not
-# redeployed. The perch-repin workflow runs this when Perch announces a
+# bindings, the SDK's Perch pins, and the lockfiles; then the drift check
+# and the Rust suites. Nido's factory is not redeployed: a re-pin that moves
+# the account or verifier needs `just deploy-factory` on its branch before it
+# merges. The perch-repin workflow runs this when Perch announces a
 # deployment. See scripts/repin-perch.sh.
 repin-perch commit:
     scripts/repin-perch.sh {{commit}}
 
 # Check the vendored Perch stack hasn't drifted from what Nido builds against:
 # the submodule at its recorded commit (on its declared branch), the fetched
-# wasm, pin cache, and factory embed equal to the manifest's, and npm resolving
+# wasm, pin cache, and factory pin equal to the manifest's, and npm resolving
 # Perch's packages to the submodule. See scripts/check-perch-drift.sh. Run after
 # `just perch-infra` and `just build-contracts`.
 check-vendor-drift:
@@ -55,8 +61,9 @@ gen-zk-fixtures:
     (cd vendor/perch/circuits && "$NARGO" compile --workspace)
     NIDO_ZK_PROVE=1 cargo test -p nido-integration-tests --test it -- --test-threads=1
 
-# Build and optimize Nido's Soroban contracts. The factory's build.rs embeds
-# the Perch account wasm `just perch-infra` fetched.
+# Build and optimize Nido's Soroban contracts. The factory compiles in the
+# perch-account hash in contracts/factory/wasm/perch-account.sha256
+# (`registry_contract!`; `just perch-infra` writes it), and fails without it.
 #
 # SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2: scaffold invokes raw
 # `cargo rustc` rather than `stellar contract build`, so it does not set the
@@ -66,7 +73,6 @@ gen-zk-fixtures:
 # Scaffold does NOT run wasm-opt, so we optimize Nido's wasm in place
 # afterwards; deployed wasm must stay optimized.
 build-contracts:
-    @test -s target/wasm32v1-none/contract/perch_account.wasm || { echo "Perch stack missing: run 'git submodule update --init' and 'just perch-infra'" >&2; exit 1; }
     SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 stellar-scaffold build --profile contract
     @for wasm in target/wasm32v1-none/contract/nido_*.wasm; do \
         case "$wasm" in *.optimized.wasm) continue;; esac; \
@@ -102,9 +108,18 @@ dev: build-ts
     (cd packages/frontend; npm run dev)
 
 # Deploy Nido's factory around Perch's deployed account and pin Perch's
-# WebAuthn verifier. Registers no name. See scripts/deploy-factory.sh.
+# WebAuthn verifier, and write its record
+# (packages/passkey-sdk/src/perch/factory.<network>.json). Registers no name.
+# See scripts/deploy-factory.sh.
 deploy-factory identity network="testnet":
     ./scripts/deploy-factory.sh {{identity}} {{network}}
+
+# Check the factory record against the chain: the deployed factory's wasm,
+# the account hash it deploys (also against the manifest), its pinned
+# verifier, its admin, and its manager. Read-only.
+# See scripts/check-factory.sh.
+check-factory network="testnet":
+    ./scripts/check-factory.sh {{network}}
 
 # Deploy a Nido-owned stellar-registry instance and register factory/verifier
 # into it (plan A3). Fetches the reference registry wasm, redeploys it under our

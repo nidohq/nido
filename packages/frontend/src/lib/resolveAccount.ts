@@ -21,7 +21,7 @@ type ResolveName = (name: string) => Promise<string | null>;
 const resolveViaRegistry: ResolveName = async (name) =>
   resolveNameCached(
     RPC_URL,
-    await fetchRegistryAddress("name-registry"),
+    await fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }),
     name,
     NETWORK_PASSPHRASE,
   );

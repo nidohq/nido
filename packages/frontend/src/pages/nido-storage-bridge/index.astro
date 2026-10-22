@@ -10,30 +10,20 @@
   </head>
   <body>
     <script>
-      import {
-        NIDO_STORAGE_REQUEST,
-        NIDO_STORAGE_RESPONSE,
-        localNidoSnapshot,
-        mergeNidoSnapshot,
-        sameNidoApexOrigin,
-        type NidoStorageRequest,
-      } from "../../lib/nidoSharedStorage";
+      import { answerBridgeRequest } from "../../lib/nidoSharedStorage";
 
-      window.addEventListener("message", (event: MessageEvent<NidoStorageRequest>) => {
-        if (!sameNidoApexOrigin(event.origin, window.location.host)) return;
-        const data = event.data;
-        if (data?.type !== NIDO_STORAGE_REQUEST || typeof data.id !== "string") return;
-
-        mergeNidoSnapshot(data.snapshot);
-        const source = event.source as Window | null;
-        source?.postMessage(
+      // Served framed by account and name origins only (see the route's
+      // frame-ancestors header); a request must come from the embedding window.
+      window.addEventListener("message", (event: MessageEvent) => {
+        const response = answerBridgeRequest(
           {
-            type: NIDO_STORAGE_RESPONSE,
-            id: data.id,
-            snapshot: localNidoSnapshot(),
+            origin: event.origin,
+            data: event.data,
+            fromParent: window.parent !== window && event.source === window.parent,
           },
-          event.origin,
+          window.location.host,
         );
+        if (response) window.parent.postMessage(response, event.origin);
       });
     </script>
   </body>
