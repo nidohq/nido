@@ -23,7 +23,13 @@ import { formatXlm } from "./money";
 import { createNido } from "./createNido";
 import { syncNidoStorageViaBridge } from "./nidoSharedStorage";
 import { RPC_URL, NETWORK_PASSPHRASE } from "./network";
+import { allowAccountCreation } from "./allowAccountCreation";
 import { verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
+
+// Every "create a Nido" entry point this switcher offers (first-time setup
+// and "create another") shows a "Coming soon" state on hostnames
+// account creation isn't open on yet (see allowAccountCreation.ts).
+const creationOpen = allowAccountCreation(window.location.hostname);
 
 // Resolve the name-registry contract id once per page load (memoized promise),
 // shared across switcher instances. Only fetched if some row needs an on-chain
@@ -193,11 +199,14 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
 
     if (model.state === "empty") {
       const pendingRows = model.rows.map(rowHtml).join("");
+      const createBtn = creationOpen
+        ? `<button class="btn acc cbtn mn-create-btn" type="button">Set up with your face</button>`
+        : `<button class="btn acc cbtn mn-create-btn" type="button" disabled aria-disabled="true">Coming to Mainnet Soon!</button>`;
       panel!.innerHTML = `<div class="mn-scroll"><div class="mn-create">
           <div style="display:grid;place-items:center;"><span class="mn-nest"></span></div>
           <div class="t">Create your Nido</div>
           <div class="s">A safe place for everything you own. Set up in seconds — just your face.</div>
-          <button class="btn acc cbtn mn-create-btn" type="button">Set up with your face</button>
+          ${createBtn}
         </div>
         ${pendingRows ? `<div class="mn-div"></div><div class="mn-body">${pendingRows}</div>` : ""}
         <div class="mn-err" style="display:none"></div></div>`;
@@ -211,11 +220,14 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
         ? `<div class="mn-head"><span class="lockchip">Only you</span><div class="hl">Welcome back</div><div class="hs">Your Nido is ready</div></div>`
         : `<div class="mn-head"><div class="hl">Your Nidos</div><div class="hs">${model.rows.length} on this device</div></div>`;
 
+    const createAnotherBtn = creationOpen
+      ? `<button class="mn-foot mn-create-btn" type="button"><span class="pl">+</span> Create another Nido</button>`
+      : `<button class="mn-foot mn-create-btn" type="button" disabled aria-disabled="true">Coming to Mainnet Soon!</button>`;
     panel!.innerHTML = `<div class="mn-scroll">${header}
       <div class="mn-body">
         ${model.rows.map(rowHtml).join("")}
         <div class="mn-div"></div>
-        <button class="mn-foot mn-create-btn" type="button"><span class="pl">+</span> Create another Nido</button>
+        ${createAnotherBtn}
       </div>
       <div class="mn-err" style="display:none"></div></div>`;
     wireCreate();
@@ -243,7 +255,7 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
 
   function wireCreate() {
     const cbtn = panel!.querySelector<HTMLButtonElement>(".mn-create-btn");
-    if (!cbtn) return;
+    if (!cbtn || cbtn.disabled) return;
     cbtn.addEventListener("click", (e) => {
       e.stopPropagation();
       cbtn.disabled = true;

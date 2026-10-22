@@ -51,7 +51,13 @@ test.describe('account page — UI only (no chain) @fast', () => {
     expect(fatal).toEqual([]);
   });
 
-  test('name-claim form is revealed and validates input @fast', async ({ page }) => {
+  // The "Claim a name" entry point button (#claim-name-top-btn) was
+  // temporarily removed from the UI (naming is coming back later) — see
+  // account/index.astro. The inline form/validation it used to open is still
+  // present and still covered by the HTML-contains test above; only this
+  // interaction test, which depends on the now-removed trigger button, is
+  // skipped. Re-enable once the button returns.
+  test.skip('name-claim form is revealed and validates input @fast', async ({ page }) => {
     await page.goto(ACCOUNT_URL, { waitUntil: 'networkidle' });
     await expect(page.locator('#home-mode')).toBeVisible();
 
