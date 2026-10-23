@@ -67,7 +67,7 @@ import {
 import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
 import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
 import { NO_CAP_NO_TOKEN_FUNCTIONS, NO_SPENDING_CAP, canMoveTokens } from './tokenFunctions.js';
-import { canTransfer, capText, expiryText } from './reviewText.js';
+import { canTransfer, capText } from './reviewText.js';
 
 export const DOC_DURATIONS: Record<string, number | null> = {
   '24h': 17280,
@@ -338,8 +338,6 @@ export function describeSessionScope(scope: {
   duration: string;
   /** The anchored expiry ledger; null for "none" or before the ledger read. */
   notAfterLedger: number | null;
-  /** The ledger it was anchored at, to say the expiry as a time. */
-  latestLedger: number | null;
 }): { amount: string; warn: boolean; recipient: string | null; expiry: string } {
   const warn = scope.cap === null && canMoveTokens(scope.functions);
   const amount = scope.cap
@@ -355,12 +353,8 @@ export function describeSessionScope(scope: {
       ? 'Never (until revoked)'
       : scope.notAfterLedger == null
         ? `After ${span}`
-        : capitalize(expiryText(scope.notAfterLedger, scope.latestLedger));
+        : `At ledger ${scope.notAfterLedger.toLocaleString('en-US')} (≈ ${span})`;
   return { amount, warn, recipient, expiry };
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /**

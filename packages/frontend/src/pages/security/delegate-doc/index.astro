@@ -133,7 +133,7 @@ import Icon from '../../../components/Icon.astro';
     type DocDelegateGrant,
   } from '../../../lib/policy/docRequest.js';
   import { NO_CAP_NO_TOKEN_FUNCTIONS } from '../../../lib/policy/tokenFunctions.js';
-  import { canTransfer, expiryText } from '../../../lib/policy/reviewText.js';
+  import { canTransfer } from '../../../lib/policy/reviewText.js';
   import {
     adminBaseline,
     upsertSessionRules,
@@ -246,10 +246,6 @@ import Icon from '../../../components/Icon.astro';
       ...(sibling ? [document.createTextNode(` — the contract “${sibling.label}” calls`)] : []),
     );
     return node;
-  }
-
-  function capitalized(s: string): string {
-    return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
   function grantRow(key: string, value: HTMLElement): HTMLElement {
@@ -489,8 +485,8 @@ import Icon from '../../../components/Icon.astro';
       off == null
         ? 'Never — stays valid until you revoke it.'
         : latestLedger == null
-          ? `In ${DOC_DURATION_LABEL[durationSel.value]}.`
-          : `${capitalized(expiryText(latestLedger + off, latestLedger))}.`;
+          ? `≈ ${off.toLocaleString()} ledgers from now.`
+          : `At ledger ${(latestLedger + off).toLocaleString()} (≈ ${off.toLocaleString()} ledgers from now).`;
     for (const v of views) {
       if (v.cap === null) continue;
       v.cap.note.textContent = v.cap.on.checked
@@ -511,7 +507,6 @@ import Icon from '../../../components/Icon.astro';
         ...(v.grant.to !== undefined ? { to: v.grant.to } : {}),
         duration: durationSel.value,
         notAfterLedger,
-        latestLedger,
       });
       const line = el('div', '');
       line.dataset.scope = v.grant.label;
@@ -557,9 +552,7 @@ import Icon from '../../../components/Icon.astro';
       const tooLarge = docCapProblem(doc, docLimits);
       docHashEl.textContent = tooLarge === undefined ? hash : '—';
       if (tooLarge === undefined) {
-        docPreviewEl.innerHTML = renderDocPreviewHtml(summarizeDoc(doc, hash), canonicalJson(doc), {
-          currentLedger: latestLedger,
-        });
+        docPreviewEl.innerHTML = renderDocPreviewHtml(summarizeDoc(doc, hash), canonicalJson(doc));
       } else {
         docPreviewEl.textContent = tooLarge;
       }
@@ -669,11 +662,7 @@ import Icon from '../../../components/Icon.astro';
         isFirstApply,
         drafts,
         networkPassphrase: NETWORK_PASSPHRASE,
-        // /sign/ shows the expiry as the time it was anchored to here.
-        expiryLabel:
-          DOC_DURATIONS[durationSel.value] != null && latestLedger !== null
-            ? capitalized(expiryText(latestLedger + DOC_DURATIONS[durationSel.value]!, latestLedger))
-            : (DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked'),
+        expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
       });
       // Every grant adds a rule: refuse here, in words, a document the
       // account's compiler would refuse at /sign/.

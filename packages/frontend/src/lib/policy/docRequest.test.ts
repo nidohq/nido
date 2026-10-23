@@ -418,18 +418,22 @@ describe('sessionSignerDraft', () => {
 });
 
 describe('describeSessionScope', () => {
-  const base = { duration: '24h', notAfterLedger: null, latestLedger: null } as const;
+  const base = { duration: '24h', notAfterLedger: null } as const;
 
-  it('states a capped, expiring scope, its expiry as a time with the ledger second', () => {
-    const d = describeSessionScope({
-      cap: { stroops: '25000000', period: 'week' },
-      functions: ['transfer'],
-      duration: '24h',
-      notAfterLedger: 5145276,
-      latestLedger: 5145276 - 17280,
+  it('states a capped, expiring scope exactly', () => {
+    expect(
+      describeSessionScope({
+        cap: { stroops: '25000000', period: 'week' },
+        functions: ['transfer'],
+        duration: '24h',
+        notAfterLedger: 5145276,
+      }),
+    ).toEqual({
+      amount: 'Up to 2.5 XLM per week',
+      warn: false,
+      recipient: 'to any address',
+      expiry: 'At ledger 5,145,276 (≈ 24 hours)',
     });
-    expect(d).toMatchObject({ amount: 'Up to 2.5 XLM per week', warn: false, recipient: 'to any address' });
-    expect(d.expiry).toMatch(/^Tomorrow around \d{1,2}:\d{2} [AP]M \(ledger 5,145,276\)$/);
   });
 
   it('states an uncapped, never-expiring scope plainly', () => {

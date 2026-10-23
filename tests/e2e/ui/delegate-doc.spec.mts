@@ -146,9 +146,9 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     // Whom the stake can pay: only the game, named as the guess rule's contract.
     await expect(stake.locator('[data-field="pays-to"]')).toHaveText(`Only ${GAME} — the contract “guess” calls`);
     await expect(guess.locator('[data-field="pays-to"]')).toHaveCount(0);
-    // The expiry as a time, the ledger second (the mock chain is at ledger 1,000).
-    await expect(page.locator('#expiry-text')).toHaveText(/^Tomorrow around \d{1,2}:\d{2} [AP]M \(ledger 18,280\)\.$/);
-    await expect(page.locator('#scope-expiry')).toHaveText(/^Tomorrow around .+ \(ledger 18,280\)$/);
+    // The mock chain is at ledger 1,000.
+    await expect(page.locator('#expiry-text')).toHaveText('At ledger 18,280 (≈ 17,280 ledgers from now).');
+    await expect(page.locator('#scope-expiry')).toHaveText('At ledger 18,280 (≈ 24 hours)');
     // Both rules land in the one previewed update, over the applied admin rule.
     await expect(page.locator('#doc-diff')).toContainText('guess-xlm');
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
@@ -159,7 +159,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     const stakeCard = page.locator('#doc-preview .pol-preview-rule', { hasText: 'transfer()' }).first();
     await expect(stakeCard).toContainText('Up to 2 XLM per day');
     await expect(stakeCard).toContainText('Pays only to');
-    await expect(stakeCard).toContainText(/Stops tomorrow around .+ \(ledger 18,280\)/);
+    await expect(stakeCard).toContainText('Stops at ledger 18,280');
     await expect(page.locator('#doc-preview')).not.toContainText('stroops');
   });
 
@@ -421,7 +421,7 @@ test.describe('app approval page through /sign/ @fast', () => {
     );
     await expect(cards.nth(1)).toContainText('Can pay');
     await expect(cards.nth(1)).toContainText('the contract “guess” calls');
-    await expect(cards.nth(1)).toContainText(/Tomorrow around .+ \(ledger 18,280\)/);
+    await expect(cards.nth(1)).toContainText('24 hours');
     await expect(cards.nth(0)).not.toContainText('Can pay');
     // The call-only rule allows no token function; /sign/ says so rather than "any amount".
     await expect(cards.nth(0)).toContainText('No cap — allows no token functions');

@@ -136,35 +136,6 @@ describe("relayerSubmitAndConfirm — post-send failures leave the outcome uncer
     assertBlocksRetry(err);
   });
 
-  it("the relayer refusing the submit is SUBMIT_REFUSED: its message kept, retry still blocked", async () => {
-    const err = await run(
-      () =>
-        new Response(
-          JSON.stringify({
-            success: false,
-            data: { code: "PLUGIN_ERROR" },
-            error: "Relayer error: Signer error: Turnkey error: HTTP 401 Unauthorized",
-          }),
-          { status: 500 },
-        ),
-    );
-    expect(err).toMatchObject({
-      code: "SUBMIT_REFUSED",
-      message: "Relayer error: Signer error: Turnkey error: HTTP 401 Unauthorized",
-      details: { relayerCode: "PLUGIN_ERROR" },
-    });
-    assertBlocksRetry(err);
-  });
-
-  it("a lost connection or non-JSON body stays SUBMIT_UNKNOWN, not refused", async () => {
-    const lost = await run(() => {
-      throw new TypeError("Failed to fetch");
-    });
-    expect((lost as RelayerError).code).toBe("SUBMIT_UNKNOWN");
-    const nonJson = await run(() => new Response("<html>502 Bad Gateway</html>", { status: 502 }));
-    expect((nonJson as RelayerError).code).toBe("SUBMIT_UNKNOWN");
-  });
-
   it("a trusted-reconcile caller may still proceed past the same failure", async () => {
     // Name claims re-check the registry themselves, so they are allowed to tell
     // a real failure from a false one and retry.

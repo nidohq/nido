@@ -13,7 +13,7 @@ import type { DocJsonSource } from '../lib/policy/docPolicyFetch.js';
 import type { DocDiff } from '../lib/policy/docDiff.js';
 import { describeDocRule } from '../lib/policy/docView.js';
 import { NO_CAP_NO_TOKEN_FUNCTIONS, NO_SPENDING_CAP, canMoveTokens } from '../lib/policy/tokenFunctions.js';
-import { canTransfer, capText, expiryText } from '../lib/policy/reviewText.js';
+import { canTransfer, capText } from '../lib/policy/reviewText.js';
 import { shortAddr } from '../lib/address.js';
 
 export interface InspectorContext {
@@ -294,12 +294,7 @@ export function renderDocPolicy(
  * facts), and the canonical JSON tucked behind a details toggle rather than
  * dumped raw. Pure string builder, no DOM.
  */
-export function renderDocPreviewHtml(
-  model: DocViewModel,
-  canonical: string,
-  /** The current ledger, to say when a rule stops as a time. */
-  ctx: { currentLedger?: number | null } = {},
-): string {
+export function renderDocPreviewHtml(model: DocViewModel, canonical: string): string {
   const signerChips = model.signers
     .map(
       (s) =>
@@ -332,7 +327,7 @@ export function renderDocPreviewHtml(
       );
     }
     facts.push(
-      `<span class="pol-preview-fact">${r.notAfterLedger === null ? 'No expiry' : `Stops ${esc(expiryText(r.notAfterLedger, ctx.currentLedger ?? null))}`}</span>`,
+      `<span class="pol-preview-fact">${r.notAfterLedger === null ? 'No expiry' : `Stops at ledger ${r.notAfterLedger.toLocaleString()}`}</span>`,
     );
     return `<article class="pol-preview-rule">
       <div class="pol-preview-rule-head">

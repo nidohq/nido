@@ -21,11 +21,6 @@ export class RelayerError extends Error {
     message: string,
     readonly code?: string,
     readonly details?: unknown,
-    /** True when the relayer itself answered with an error (`success:false`,
-     *  or a non-2xx carrying `error`): `message` is the relayer's own. False
-     *  for a lost connection, a non-JSON or empty body. Either way the
-     *  relayer is untrusted: a refusal is its word, not proof of a non-event. */
-    readonly refused = false,
   ) {
     super(message);
   }
@@ -51,7 +46,7 @@ async function call(params: Record<string, unknown>, baseUrl: string): Promise<R
   }
   if (body.success === false || (!resp.ok && body.error)) {
     const data = body.data as { code?: string; details?: unknown } | undefined;
-    throw new RelayerError(body.error ?? `Relayer HTTP ${resp.status}`, data?.code, data?.details, true);
+    throw new RelayerError(body.error ?? `Relayer HTTP ${resp.status}`, data?.code, data?.details);
   }
   if (!resp.ok) throw new RelayerError(`Relayer HTTP ${resp.status}`);
   const data = body.data as ({ result?: RelayerTxResponse } & RelayerTxResponse) | undefined;

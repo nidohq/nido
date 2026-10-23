@@ -251,8 +251,6 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { stroopsToXlm } from '../../lib/money.js';
   import { runSign } from '../../lib/signing/runSign';
   import { relayerOutcomeBlocksRetry } from '../../lib/relayerClient';
-  import { checkRefusedApply } from '../../lib/signing/refusedApply.js';
-  import { esc } from '../../lib/html.js';
   import { mountSteps } from '../../lib/progressSteps';
   import { EXPLORER_BASE, latestLedgerSequence } from '../../lib/network.js';
 
@@ -1125,10 +1123,8 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       // multi-passkey ceremonies, so waiting for 'sign' in onProgress would leave
       // the sheet closed for the most common dApp-tx case.
       openPasskeySheet({ title: "Confirm it's you", sub: `Confirm with ${passkey.label}.` });
-      /** `s` ending in a full stop, to sit inside a sentence. */
-      const asSentence = (s: string) => s.trim().replace(/[^.!?]$/, '$&.');
-      /** The request landed (`hash`, when known): return to whoever asked. */
-      const returnSubmitted = (hash: string | null) => {
+      try {
+        const result = await runSign(req!, { onProgress, reviewedInvocationXdr });
         steps.finish();
         $status.textContent = 'Done — returning…';
         // F3: drop the stashed SignRequest now that it submitted successfully,
@@ -1142,7 +1138,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           // re-broadcast, so we return the hash only.
           const successQuery =
             req.returnTarget.successQuery ??
-            '?nido_submitted=' + encodeURIComponent(hash ?? '') + '&kind=tx';
+            '?nido_submitted=' + encodeURIComponent(result.hash) + '&kind=tx';
           setTimeout(() => finish(successQuery), 300);
         } else {
           // own-action (route): navigate internally, appending txhash so the
@@ -1153,32 +1149,11 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           // navigate to an attacker-controlled `javascript:`/cross-origin URL.
           const base = safeRouteUrl(req.returnTarget.url, window.location.origin) ?? '/account/';
           const sep = base.includes('?') ? '&' : '?';
-          window.location.href = hash === null ? base : base + sep + 'txhash=' + encodeURIComponent(hash);
+          window.location.href = base + sep + 'txhash=' + encodeURIComponent(result.hash);
         }
-      };
-      try {
-        const result = await runSign(req!, { onProgress, reviewedInvocationXdr });
-        returnSubmitted(result.hash);
       } catch (err) {
         const e = err as { name?: string; message?: string; code?: string; details?: { hash?: string | null } };
         const msg = e?.message ?? String(err);
-        // The relayer refused a policy-document apply: the account says
-        // whether it holds the document (a retry can never apply twice — the
-        // apply names its revision), so this need not stay uncertain.
-        if (e?.name === 'RelayerError' && e?.code === 'SUBMIT_REFUSED' && req.operation.type === 'apply-policy-doc' && account) {
-          const outcome = await checkRefusedApply(account, req.operation.docJson);
-          if (outcome === 'applied') {
-            returnSubmitted(null);
-            return;
-          }
-          if (outcome === 'not-applied') {
-            exitProgressView();
-            showError(`Not submitted — the relayer refused it: ${asSentence(msg)} Nothing changed on your account; you can try again.`);
-            $status.textContent = '';
-            approve.disabled = false;
-            return;
-          }
-        }
         // A relayer-reported terminal failure is NOT trusted chain evidence, so
         // for a payment it leaves the outcome uncertain and must not re-enable a
         // fresh-payment retry (a lying/faulty relayer could induce a duplicate
@@ -1197,10 +1172,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
             : '';
           $err.innerHTML = e?.code === 'WAIT_TIMEOUT'
             ? `Still waiting for the network — this transaction may yet go through. Check the result before trying again.${explorerLink}`
-            : e?.code === 'SUBMIT_REFUSED'
-              // The relayer's own words (escaped: it is untrusted text).
-              ? `The relayer reported an error: ${esc(asSentence(msg))} It most likely wasn't submitted, but check whether it went through before trying again — retrying could pay twice.${explorerLink}`
-              : `We couldn't confirm what happened to this transaction on-chain. Check whether it went through before trying again — retrying could pay twice.${explorerLink}`;
+            : `We couldn't confirm what happened to this transaction on-chain. Check whether it went through before trying again — retrying could pay twice.${explorerLink}`;
           $err.style.display = 'block';
           $status.textContent = '';
           // approve stays disabled intentionally; footer/review stay hidden.

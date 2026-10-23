@@ -88,22 +88,6 @@ describe("submitSorobanTransaction", () => {
     });
   });
 
-  it("marks the relayer's own error answer as refused, with its message", async () => {
-    const body = { success: false, data: { code: "PLUGIN_ERROR" }, error: "Relayer error: Signer error" };
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status: 500 })));
-    const err = await submitSorobanTransaction({ func: "AAAA", auth: [] }, BASE).catch((e) => e as RelayerError);
-    expect(err).toMatchObject({ name: "RelayerError", message: "Relayer error: Signer error", code: "PLUGIN_ERROR", refused: true });
-  });
-
-  it("does not mark a non-JSON or bare HTTP failure as refused", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>502</html>", { status: 502 })));
-    const nonJson = await submitSorobanTransaction({ func: "AAAA", auth: [] }, BASE).catch((e) => e as RelayerError);
-    expect(nonJson).toMatchObject({ name: "RelayerError", refused: false });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({}), { status: 503 })));
-    const bare = await submitSorobanTransaction({ func: "AAAA", auth: [] }, BASE).catch((e) => e as RelayerError);
-    expect(bare).toMatchObject({ name: "RelayerError", message: "Relayer HTTP 503", refused: false });
-  });
-
   it("throws 'Relayer not configured' on an empty baseUrl without fetching", async () => {
     const fn = vi.fn();
     vi.stubGlobal("fetch", fn);

@@ -63,11 +63,8 @@ export const waitForConfirmation = (
  * - `ONCHAIN_FAILED` — the relayer merely REPORTING "failed"/"expired".
  * - `SUBMIT_UNKNOWN` — the signed authorization was already sent and then the
  *   submission failed in a way we cannot classify (connection loss, non-JSON,
- *   acceptance without a transaction handle). The relayer may already hold a
- *   usable authorization.
- * - `SUBMIT_REFUSED` — the relayer answered the submit with an error of its own
- *   (its message is the error's). Still only its word: it holds the signed
- *   authorization all the same.
+ *   acceptance without a transaction handle, or a relayer-reported failure
+ *   carrying any code). The relayer may already hold a usable authorization.
  * Authorizing a fresh payment on any of these would double-spend if the relayer
  * lied or erred, so all are uncertain — EXCEPT where the caller has its own
  * trusted on-chain reconciliation for the outcome (`hasTrustedReconcile` — e.g.
@@ -82,6 +79,6 @@ export function relayerOutcomeBlocksRetry(
   hasTrustedReconcile = false,
 ): boolean {
   if (code === "WAIT_TIMEOUT") return true;
-  if (code === "ONCHAIN_FAILED" || code === "SUBMIT_UNKNOWN" || code === "SUBMIT_REFUSED") return !hasTrustedReconcile;
+  if (code === "ONCHAIN_FAILED" || code === "SUBMIT_UNKNOWN") return !hasTrustedReconcile;
   return false;
 }
