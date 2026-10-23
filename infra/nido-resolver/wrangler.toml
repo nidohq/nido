@@ -19,16 +19,22 @@ NIDO_NETWORK_PASSPHRASE = "Test SDF Network ; September 2015"
 NIDO_APEXES = "test.nido.fyi,nido.fyi"
 
 # Testnet on test.nido.fyi (`wrangler deploy --env testnet`, deployed
-# automatically by deploy-testnet.yml on every push to main). Not reachable
-# yet: add its `*.test.nido.fyi/.well-known/nido.json` route only together
-# with nido-proxy's testnet route, once an advanced certificate covering
-# *.test.nido.fyi is active (see frontend/worker-proxy-nido/wrangler.toml).
-# Until then the production route above answers for *.test.nido.fyi (the
-# Worker deploys fine either way; it just has no route).
+# automatically by deploy-testnet.yml on every push to main). The Advanced
+# Certificate for *.test.nido.fyi is active, so both the
+# bare apex and every account's own name/address lookup under test.nido.fyi
+# have valid TLS. MUST deploy together with nido-proxy's matching
+# `*.test.nido.fyi/*` route: without this wildcard here, nido-proxy's wins
+# the route-specificity contest for *.test.nido.fyi/.well-known/nido.json
+# (hostname specificity beats path), sending account lookups to the proxy
+# instead of here and breaking name resolution for every test.nido.fyi
+# account.
 [env.testnet]
 name = "nido-resolver-testnet"
 workers_dev = false
-routes = []
+routes = [
+  { pattern = "test.nido.fyi/.well-known/nido.json", zone_name = "nido.fyi" },
+  { pattern = "*.test.nido.fyi/.well-known/nido.json", zone_name = "nido.fyi" }
+]
 
 [env.testnet.vars]
 NIDO_NETWORK = "testnet"

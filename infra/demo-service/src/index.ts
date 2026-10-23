@@ -369,15 +369,18 @@ app.post("/invitations", (_req, res) => {
     // receipt (receiptPoller.ts) is the one in active use. The admin page
     // below still shows the QR on screen so staff can hand it off either way.
 
-    res.type("html").send(`<!doctype html>
-<html>
-  <body style="font-family: sans-serif; text-align: center; padding: 3rem;">
-    <h1>Scan this to create your Nido!</h1>
-    <img src="${invitation.qrDataUrl}" alt="QR code" width="300" height="300" />
-    <p><code>${invitation.url}</code></p>
-    <p><a href="/">Create another</a></p>
-  </body>
-</html>`);
+    res.type("html").send(
+      page(`
+      ${NEST_MARK}
+      <h1>Welcome to <em>Nido</em>!</h1>
+      <div class="qr-box">
+        <img class="qr" src="${invitation.qrDataUrl}" alt="QR code" width="260" height="260" />
+        <h3>Scan to create your Nido</h3>
+      </div>
+      <code>${invitation.url}</code>
+      <a class="admin-link" href="/">Create another</a>
+    `),
+    );
   })().catch((err) => {
     console.error("invitation creation failed:", err);
     res.status(500).send("Something went wrong creating the invitation — check the server logs.");
@@ -387,5 +390,5 @@ app.post("/invitations", (_req, res) => {
 startReceiptPolling(client, printer, RECEIPT_POLL_INTERVAL_MS);
 
 app.listen(PORT, () => {
-  console.log(`nido-demo-service listening on :${PORT} (invite API: ${INVITE_API_URL})`);
+  console.log(`nido-demo-service listening on http://localhost:${PORT} (invite API: ${INVITE_API_URL})`);
 });
