@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  MAX_DOC_GRANTS,
   buildSessionGrantOperation,
   describeSessionScope,
   parseDocDelegateParams,
+  sessionSignerDraft,
 } from './docRequest.js';
 
 const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
@@ -30,21 +32,19 @@ describe('parseDocDelegateParams', () => {
     const r = parseDocDelegateParams(params());
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.req).toMatchObject({
+    expect(r.req).toEqual({
       origin: 'https://dapp.example',
-      target: TARGET,
-      signer: SIGNER,
-      functions: ['udpate_message'],
+      signer: { kind: 'delegated', address: SIGNER },
       duration: '24h',
-      label: 'status-note-session',
-      cap: null,
+      grants: [{ target: TARGET, functions: ['udpate_message'], label: 'status-note-session', cap: null }],
+      returnUrl: 'https://dapp.example/page?x=1',
     });
   });
 
   it('defaults an absent duration to 30d and label to "session"', () => {
     const r = parseDocDelegateParams(params({ duration: null, label: null }));
     expect(r.ok && r.req.duration).toBe('30d');
-    expect(r.ok && r.req.label).toBe('session');
+    expect(r.ok && r.req.grants[0]!.label).toBe('session');
   });
 
   it.each(['24h', '7d', '30d', 'none'])('accepts duration %s', (duration) => {
@@ -63,12 +63,12 @@ describe('parseDocDelegateParams', () => {
 
   it('treats absent functions as any-function', () => {
     const r = parseDocDelegateParams(params({ functions: null }));
-    expect(r.ok && r.req.functions).toBeUndefined();
+    expect(r.ok && r.req.grants[0]!.functions).toBeUndefined();
   });
 
   it('requests no cap only when limit and limit_period are both absent', () => {
     const r = parseDocDelegateParams(params());
-    expect(r.ok && r.req.cap).toBeNull();
+    expect(r.ok && r.req.grants[0]!.cap).toBeNull();
   });
 
   it.each([
@@ -79,7 +79,7 @@ describe('parseDocDelegateParams', () => {
   ] as const)('parses limit %j / limit_period %j', (limit, limit_period, cap) => {
     const r = parseDocDelegateParams(params({ limit, limit_period }));
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.req.cap).toEqual(cap);
+    if (r.ok) expect(r.req.grants[0]!.cap).toEqual(cap);
   });
 
   it.each([
@@ -114,6 +114,23 @@ describe('parseDocDelegateParams', () => {
     if (!r.ok) expect(r.error).toContain('without a limit');
   });
 
+  it('takes limit=none as the app declaring the rule uncapped', () => {
+    const r = parseDocDelegateParams(params({ limit: 'none' }));
+    expect(r.ok && r.req.grants[0]!.cap).toBe('none');
+  });
+
+  it.each(['None', 'NONE', ' none'])('rejects %j as a limit (only the exact marker is none)', (limit) => {
+    const r = parseDocDelegateParams(params({ limit }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('Invalid limit amount');
+  });
+
+  it('rejects limit=none with a limit_period', () => {
+    const r = parseDocDelegateParams(params({ limit: 'none', limit_period: 'day' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('with limit=none');
+  });
+
   it.each([
     ['origin', 'Missing origin'],
     ['target', 'Invalid target'],
@@ -143,6 +160,221 @@ describe('parseDocDelegateParams', () => {
   it('rejects a cross-origin return URL', () => {
     const r = parseDocDelegateParams(params({ return: 'https://evil.example/cb' }));
     expect(r.ok).toBe(false);
+  });
+});
+
+const PUBKEY = '04' + 'Ab'.repeat(64);
+const XLM = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
+
+describe('parseDocDelegateParams — passkey signer (pubkey=)', () => {
+  it('accepts pubkey= in place of signer=, lowercased', () => {
+    const r = parseDocDelegateParams(params({ signer: null, pubkey: PUBKEY }));
+    expect(r.ok && r.req.signer).toEqual({ kind: 'passkey', publicKeyHex: PUBKEY.toLowerCase() });
+  });
+
+  it('carries an optional base64url credential id', () => {
+    const r = parseDocDelegateParams(params({ signer: null, pubkey: PUBKEY, credential_id: 'q83vEjRW' }));
+    expect(r.ok && r.req.signer).toEqual({
+      kind: 'passkey',
+      publicKeyHex: PUBKEY.toLowerCase(),
+      credentialId: 'q83vEjRW',
+    });
+  });
+
+  it('rejects signer= and pubkey= together', () => {
+    const r = parseDocDelegateParams(params({ pubkey: PUBKEY }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('not both');
+  });
+
+  it('rejects a request naming no signer', () => {
+    const r = parseDocDelegateParams(params({ signer: null }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('Invalid session signer');
+  });
+
+  it.each([
+    ['compressed', '02' + 'ab'.repeat(32)],
+    ['short', '04' + 'ab'.repeat(63)],
+    ['long', '04' + 'ab'.repeat(65)],
+    ['non-hex', '04' + 'zz'.repeat(64)],
+    ['0x-prefixed', '0x04' + 'ab'.repeat(64)],
+    ['empty', ''],
+  ])('rejects a %s public key', (_case, pubkey) => {
+    const r = parseDocDelegateParams(params({ signer: null, pubkey }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('Invalid session public key');
+  });
+
+  it.each([
+    ['empty', ''],
+    ['standard base64', 'q83v+jRW'],
+    ['padded', 'q83vEjRW=='],
+    ['not decodable', 'A'],
+    ['over the key_data room', 'A'.repeat(256)],
+  ])('rejects a %s credential_id', (_case, credential_id) => {
+    const r = parseDocDelegateParams(params({ signer: null, pubkey: PUBKEY, credential_id }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('Invalid credential_id');
+  });
+
+  it('rejects a credential_id without a passkey signer', () => {
+    const r = parseDocDelegateParams(params({ credential_id: 'q83vEjRW' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('credential_id belongs with a pubkey=');
+  });
+});
+
+/** A two-grant request: the Guess the Number game's `guess` (call-only)
+ *  and the XLM transfer that moves the stake (capped). */
+function multi(overrides: Record<string, string | null> = {}): URLSearchParams {
+  const base: Record<string, string> = {
+    origin: 'https://game.example',
+    return: 'https://game.example/play',
+    pubkey: PUBKEY,
+    duration: '24h',
+    'grant.0.label': 'guess',
+    'grant.0.target': TARGET,
+    'grant.0.functions': 'guess',
+    'grant.0.limit': 'none',
+    'grant.1.label': 'guess-xlm',
+    'grant.1.target': XLM,
+    'grant.1.functions': 'transfer',
+    'grant.1.limit': '2',
+    'grant.1.limit_period': 'day',
+  };
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries({ ...base, ...overrides })) {
+    if (v !== null) p.set(k, v);
+  }
+  return p;
+}
+
+describe('parseDocDelegateParams — several grants (grant.<i>.*)', () => {
+  it('parses every grant, in index order, for one signer and one duration', () => {
+    const r = parseDocDelegateParams(multi());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.req).toEqual({
+      origin: 'https://game.example',
+      signer: { kind: 'passkey', publicKeyHex: PUBKEY.toLowerCase() },
+      duration: '24h',
+      grants: [
+        { label: 'guess', target: TARGET, functions: ['guess'], cap: 'none' },
+        { label: 'guess-xlm', target: XLM, functions: ['transfer'], cap: { stroops: '20000000', period: 'day' } },
+      ],
+      returnUrl: 'https://game.example/play',
+    });
+  });
+
+  it('orders grants by index, not by param order', () => {
+    const p = new URLSearchParams();
+    for (const [k, v] of [...multi().entries()].reverse()) p.append(k, v);
+    const r = parseDocDelegateParams(p);
+    expect(r.ok && r.req.grants.map((g) => g.label)).toEqual(['guess', 'guess-xlm']);
+  });
+
+  it('takes a delegated signer too, and leaves an absent limit to the user', () => {
+    const r = parseDocDelegateParams(
+      multi({ pubkey: null, signer: SIGNER, 'grant.1.limit': null, 'grant.1.limit_period': null }),
+    );
+    expect(r.ok && r.req.signer).toEqual({ kind: 'delegated', address: SIGNER });
+    expect(r.ok && r.req.grants[1]!.cap).toBeNull();
+  });
+
+  it('accepts a single grant in the indexed format', () => {
+    const p = multi();
+    for (const k of [...p.keys()]) if (k.startsWith('grant.1.')) p.delete(k);
+    const r = parseDocDelegateParams(p);
+    expect(r.ok && r.req.grants.map((g) => g.label)).toEqual(['guess']);
+  });
+
+  it(`accepts ${MAX_DOC_GRANTS} grants and refuses more`, () => {
+    const p = multi();
+    for (let i = 2; i < MAX_DOC_GRANTS; i++) {
+      p.set(`grant.${i}.label`, `rule-${i}`);
+      p.set(`grant.${i}.target`, TARGET);
+      p.set(`grant.${i}.limit`, 'none');
+    }
+    const ok = parseDocDelegateParams(p);
+    expect(ok.ok && ok.req.grants).toHaveLength(MAX_DOC_GRANTS);
+    p.set(`grant.${MAX_DOC_GRANTS}.label`, 'one-too-many');
+    p.set(`grant.${MAX_DOC_GRANTS}.target`, TARGET);
+    const over = parseDocDelegateParams(p);
+    expect(over.ok).toBe(false);
+    if (!over.ok) expect(over.error).toContain(`at most ${MAX_DOC_GRANTS} grants`);
+  });
+
+  it.each([
+    ['a missing label', { 'grant.1.label': null }, 'grant.1: A label is required'],
+    ['a blank label', { 'grant.1.label': '  ' }, 'grant.1: A label is required'],
+    ['a repeated label', { 'grant.1.label': 'guess' }, 'Two grants name the rule "guess"'],
+    ['a missing target', { 'grant.1.target': null }, 'grant.1: Invalid target'],
+    ['a bad target', { 'grant.0.target': SIGNER }, 'grant.0: Invalid target'],
+    ['a malformed limit', { 'grant.1.limit': '2 XLM' }, 'grant.1: Invalid limit amount'],
+    ['a zero limit', { 'grant.1.limit': '0' }, 'grant.1: Limit must be greater than zero'],
+    ['a bad limit_period', { 'grant.1.limit_period': 'month' }, 'grant.1: Invalid limit_period'],
+    ['a limit_period without a limit', { 'grant.1.limit': null }, 'grant.1: limit_period was given without a limit'],
+    ['a limit_period with limit=none', { 'grant.0.limit_period': 'day' }, 'grant.0: limit_period was given with limit=none'],
+    ['an unknown field (a typo must not drop a cap)', { 'grant.1.limt': '2' }, 'Unknown grant parameter "grant.1.limt"'],
+    ['a zero-padded index', { 'grant.01.label': 'x' }, 'Unknown grant parameter "grant.01.label"'],
+    ['a field-less key', { 'grant.2': 'x' }, 'Unknown grant parameter "grant.2"'],
+    ['a gap in the indexes', { 'grant.3.label': 'late', 'grant.3.target': TARGET }, 'grant.2 is missing'],
+    ['a grant with no index 0', { 'grant.0.label': null, 'grant.0.target': null, 'grant.0.functions': null, 'grant.0.limit': null }, 'grant.0 is missing'],
+    ['single-grant params alongside', { target: TARGET }, 'not both (found target)'],
+    ['a stray single-grant limit alongside', { limit: '5' }, 'not both (found limit)'],
+  ] as const)('rejects %s', (_case, overrides, msg) => {
+    const r = parseDocDelegateParams(multi(overrides as Record<string, string | null>));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain(msg);
+  });
+
+  it('rejects a grant field given twice', () => {
+    const p = multi();
+    p.append('grant.1.limit', '100');
+    const r = parseDocDelegateParams(p);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('grant.1.limit is given more than once');
+  });
+
+  it('still validates the common params', () => {
+    for (const [overrides, msg] of [
+      [{ origin: null }, 'Missing origin'],
+      [{ pubkey: null }, 'Invalid session signer'],
+      [{ return: 'https://evil.example/cb' }, 'Return URL origin'],
+      [{ duration: '1y' }, 'Invalid duration'],
+    ] as const) {
+      const r = parseDocDelegateParams(multi(overrides));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain(msg);
+    }
+  });
+});
+
+describe('sessionSignerDraft', () => {
+  const VERIFIER = 'CD4IF75DNQJKCT35PAJAQDPW3K337EK6SJZDMQEVLXAH65K7ZVZMLXYN';
+
+  it('passes a delegated key through, verifier or not', () => {
+    expect(sessionSignerDraft({ kind: 'delegated', address: SIGNER }, null)).toEqual({
+      kind: 'delegated',
+      address: SIGNER,
+    });
+  });
+
+  it('waits for the verifier before declaring a passkey', () => {
+    expect(sessionSignerDraft({ kind: 'passkey', publicKeyHex: PUBKEY }, null)).toBeNull();
+  });
+
+  it("declares a passkey against the account's verifier, its credential id after the key", () => {
+    expect(sessionSignerDraft({ kind: 'passkey', publicKeyHex: PUBKEY }, VERIFIER)).toEqual({
+      kind: 'passkey',
+      verifier: VERIFIER,
+      publicKeyHex: PUBKEY,
+    });
+    // q83vEjRW is base64url for ab cd ef 12 34 56.
+    expect(
+      sessionSignerDraft({ kind: 'passkey', publicKeyHex: PUBKEY, credentialId: 'q83vEjRW' }, VERIFIER),
+    ).toEqual({ kind: 'passkey', verifier: VERIFIER, publicKeyHex: `${PUBKEY}abcdef123456` });
   });
 });
 
@@ -208,14 +440,16 @@ describe('buildSessionGrantOperation (doc-only regression)', () => {
       baseline,
       baselineRevision: 0n,
       isFirstApply: true,
-      draft: {
-        name: 'session-key',
-        signer: { kind: 'passkey', verifier: VERIFIER, publicKeyHex: SESSION_KEY },
-        targetContract: TARGET,
-        functionsInput: '',
-        notAfterLedger: 5145276,
-        cap: null,
-      },
+      drafts: [
+        {
+          name: 'session-key',
+          signer: { kind: 'passkey', verifier: VERIFIER, publicKeyHex: SESSION_KEY },
+          targetContract: TARGET,
+          functionsInput: '',
+          notAfterLedger: 5145276,
+          cap: null,
+        },
+      ],
       networkPassphrase: Networks.TESTNET,
       expiryLabel: '24 hours',
     });
@@ -259,7 +493,7 @@ describe('buildSessionGrantOperation (doc-only regression)', () => {
       baseline: applied,
       baselineRevision: 3n,
       isFirstApply: false,
-      draft: draft(NEW_KEY),
+      drafts: [draft(NEW_KEY)],
       networkPassphrase: Networks.TESTNET,
       expiryLabel: 'Until revoked',
     });
@@ -272,5 +506,45 @@ describe('buildSessionGrantOperation (doc-only regression)', () => {
     expect(doc.rules.filter((r) => r.name === 'session-key')).toHaveLength(1);
     const d = diffPolicyDocs(parsePolicyDocJson(op.prevDocJson!), doc);
     expect(d.rulesModified.map((m) => m.name)).toEqual(['session-key']);
+  });
+  it('installs several grants as ONE document update sharing one signer', async () => {
+    const { Networks } = await import('@stellar/stellar-sdk');
+    const { parsePolicyDocJson } = await import('@nidohq/passkey-sdk');
+    const { adminBaseline } = await import('./docDraft.js');
+    const { diffPolicyDocs } = await import('./docDiff.js');
+    const baseline = adminBaseline({ verifier: VERIFIER, publicKeyHex: OWNER_KEY }, Networks.TESTNET);
+    const signer = { kind: 'passkey' as const, verifier: VERIFIER, publicKeyHex: SESSION_KEY };
+    const op = buildSessionGrantOperation({
+      baseline,
+      baselineRevision: 4n,
+      isFirstApply: false,
+      drafts: [
+        { name: 'guess', signer, targetContract: TARGET, functionsInput: 'guess', notAfterLedger: 900, cap: null },
+        {
+          name: 'guess-xlm',
+          signer,
+          targetContract: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
+          functionsInput: 'transfer',
+          notAfterLedger: 900,
+          cap: { stroops: '20000000', periodLedgers: 17280 },
+        },
+      ],
+      networkPassphrase: Networks.TESTNET,
+      expiryLabel: '24 hours',
+    });
+    expect(op.type).toBe('apply-policy-doc');
+    expect(op.expectedRevision).toBe('4');
+    const doc = parsePolicyDocJson(op.docJson);
+    expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'guess', 'guess-xlm']);
+    // One declaration for the app's key, referenced by both rules.
+    expect(doc.signers.filter((s) => 'key' in s && s.key === SESSION_KEY)).toHaveLength(1);
+    const guess = doc.rules.find((r) => r.name === 'guess')!;
+    const xlm = doc.rules.find((r) => r.name === 'guess-xlm')!;
+    expect(guess.functions).toEqual(['guess']);
+    expect(guess.cap).toBeUndefined();
+    expect(xlm.functions).toEqual(['transfer']);
+    expect(xlm.cap).toBeDefined();
+    const d = diffPolicyDocs(parsePolicyDocJson(op.prevDocJson!), doc);
+    expect(d.rulesAdded.map((r) => r.name)).toEqual(['guess', 'guess-xlm']);
   });
 });

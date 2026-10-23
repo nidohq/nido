@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
-import type { Page, Route } from '@playwright/test';
+import type { BrowserContext, Page, Route } from '@playwright/test';
 import { Address, contract, Networks, scValToNative, SorobanDataBuilder, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
 import { Client as AccountClient } from '@nidohq/perch-account';
 import { Client as CompilerClient } from '@nidohq/perch-doc-compiler';
@@ -89,9 +89,10 @@ function invocationOf(txXdr: string): Invocation {
 /**
  * Route `page`: its origin from the `dist-perch` build, Soroban RPC from
  * `views`, and nothing else. Every simulated invocation is pushed onto the
- * returned list, answered or not.
+ * returned list, answered or not. Pass the browser context instead to route
+ * the popups a page opens as well.
  */
-export async function mockPerchChain(page: Page, views: Views): Promise<Invocation[]> {
+export async function mockPerchChain(page: Page | BrowserContext, views: Views): Promise<Invocation[]> {
   const seen: Invocation[] = [];
   const ledger = 1_000;
   await page.route('**/*', async (route: Route) => {

@@ -3,19 +3,55 @@
 // /security/delegate/). Kept pure so the param contract is unit-tested
 // without a browser; the page does the RPC + handoff.
 //
-// Params: `origin` (dApp origin), `target` (C…), `signer` (the delegated
-// session key, C… or G… — the dApp holds this key), optional `functions`
-// (comma-separated), `duration` (24h|7d|30d|none, default 30d), optional
-// `limit` (decimal XLM) + `limit_period` (day|week|30d, default day, only
-// alongside `limit`), optional `label` (rule name), `return` (URL).
+// Every request names one app key, one duration and one return trip:
+//
+//   origin         the dApp origin (http(s))
+//   return         where to send the user back; same origin as `origin`
+//   duration       24h|7d|30d|none, default 30d; every grant shares it
+//   signer         the app's delegated key, C… or G…        ┐ exactly
+//   pubkey         the app's passkey: the 65-byte SEC1       │ one of
+//                  uncompressed P-256 key, hex (04…)         ┘ the two
+//   credential_id  optional, only with `pubkey`: the passkey's WebAuthn
+//                  credential id (base64url). It follows the public key in
+//                  the signer's key_data; the verifier strips it.
+//
+// and asks for one or more grants. A grant is one rule: the app key may
+// call `target` (C…), only `functions` (comma-separated; absent = any),
+// optionally spend-capped. `limit` is a decimal XLM cap with `limit_period`
+// (day|week|30d, default day), or `none`: the app declares the rule
+// uncapped, as a rule that only makes calls must be (a cap allows token
+// transfers only, so it would block every other call). Without `limit` the
+// user chooses between a cap and an explicit uncapped grant.
+//
+// One grant (the original format): `target`, `functions`, `limit`,
+// `limit_period`, and `label` (the rule name, default "session").
+//
+// Several grants, installed by one approval as one document update: the
+// same fields per grant as `grant.<i>.<field>`, for i = 0…n-1 (at most
+// MAX_DOC_GRANTS). Each grant needs its own `label`, and the single-grant
+// params may not appear alongside. For a game whose `guess` moves a 1 XLM
+// stake from the player:
+//
+//   ?origin=https://game.example&return=https://game.example/play
+//   &pubkey=04…&duration=24h
+//   &grant.0.label=guess&grant.0.target=CGAME…&grant.0.functions=guess
+//   &grant.0.limit=none
+//   &grant.1.label=guess-xlm&grant.1.target=CXLM…&grant.1.functions=transfer
+//   &grant.1.limit=2&grant.1.limit_period=day
 //
 // An optional param is either absent (its default applies) or valid: a
-// present-but-malformed `duration`, `limit` or `limit_period` rejects the
-// whole request, so a bad cap can never degrade into an uncapped grant.
+// present-but-malformed `duration`, `limit`, `limit_period` or unknown
+// `grant.*` field rejects the whole request, so a bad cap can never degrade
+// into an uncapped grant.
 
-import { canonicalJson, type PolicyDoc } from '@nidohq/passkey-sdk';
+import { base64url2buf, buf2hex, canonicalJson, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress } from './policyDraft.js';
-import { parseFunctionsInput, upsertSessionRule, type SessionDocDraft } from './docDraft.js';
+import {
+  parseFunctionsInput,
+  upsertSessionRules,
+  type SessionDocDraft,
+  type SessionSignerDraft,
+} from './docDraft.js';
 import { PERIOD_LABEL, PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
 import { stroopsToXlm } from '../money.js';
 import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
@@ -34,21 +70,41 @@ export const DOC_DURATION_LABEL: Record<string, string> = {
   none: 'Until revoked',
 };
 
-export interface DocDelegateRequest {
-  origin: string;
+/** The most grants one request may carry. */
+export const MAX_DOC_GRANTS = 8;
+
+/** Perch's signer key_data cap (perch-ir MAX_SIGNER_KEY_LEN), less the
+ *  65-byte public key: the longest credential id a passkey signer holds. */
+const MAX_CREDENTIAL_ID_BYTES = 256 - 65;
+
+/** The app's session key, as the request names it. */
+export type DocDelegateSigner =
+  /** A delegated key the dApp holds (C… or G…). */
+  | { kind: 'delegated'; address: string }
+  /** A passkey: its SEC1 public key (hex, lowercased), plus the WebAuthn
+   *  credential id (base64url) when the request carries one. */
+  | { kind: 'passkey'; publicKeyHex: string; credentialId?: string };
+
+export interface DocDelegateGrant {
   target: string;
-  /** The delegated session signer the dApp holds (C… or G…). */
-  signer: string;
   /** Allowed function names; undefined = any function. */
   functions: string[] | undefined;
+  /** The requested spending cap; `'none'` when the app declared the rule
+   *  uncapped (`limit=none`); null when the request carries no `limit`. Null
+   *  is only a suggestion: the page still makes the user explicitly choose
+   *  an uncapped grant. */
+  cap: DocDelegateCap | 'none' | null;
+  /** Rule name (doc rule + display). */
+  label: string;
+}
+
+export interface DocDelegateRequest {
+  origin: string;
+  signer: DocDelegateSigner;
   /** Requested duration key (validated against DOC_DURATIONS). */
   duration: keyof typeof DOC_DURATIONS;
-  /** The requested spending cap, or null when the request carries no
-   *  `limit` param. Null is only a suggestion: the page still makes the user
-   *  explicitly choose an uncapped grant. */
-  cap: DocDelegateCap | null;
-  /** Rule name (doc rule + display), default "session". */
-  label: string;
+  /** One or more grants, each its own rule; their labels are distinct. */
+  grants: DocDelegateGrant[];
   returnUrl: string;
 }
 
@@ -62,10 +118,11 @@ export type DocDelegateParse =
   | { ok: true; req: DocDelegateRequest }
   | { ok: false; error: string };
 
+const GRANT_FIELDS = ['target', 'functions', 'label', 'limit', 'limit_period'] as const;
+type GrantField = (typeof GRANT_FIELDS)[number];
+
 export function parseDocDelegateParams(params: URLSearchParams): DocDelegateParse {
   const origin = params.get('origin') ?? '';
-  const target = params.get('target') ?? '';
-  const signer = params.get('signer') ?? '';
   const returnUrl = params.get('return') ?? '';
 
   if (!origin) return { ok: false, error: 'Missing origin parameter.' };
@@ -74,12 +131,19 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
   // param in the page's backToDapp sink).
   const normalizedOrigin = httpOrigin(origin);
   if (!normalizedOrigin) return { ok: false, error: 'Malformed origin parameter.' };
-  if (!target || !isContractAddress(target)) {
-    return { ok: false, error: 'Invalid target contract address.' };
+
+  const multi = [...params.keys()].some((k) => k.startsWith('grant.'));
+  // The single-grant format checks its target first, as it always has.
+  if (!multi) {
+    const target = params.get('target') ?? '';
+    if (!target || !isContractAddress(target)) {
+      return { ok: false, error: 'Invalid target contract address.' };
+    }
   }
-  if (!signer || !isStellarAddress(signer)) {
-    return { ok: false, error: 'Invalid session signer (expected a C… or G… address).' };
-  }
+
+  const signer = parseSigner(params);
+  if ('error' in signer) return { ok: false, error: signer.error };
+
   if (!returnUrl) return { ok: false, error: 'Missing return URL.' };
   // Return URL must be a same-origin http(s) URL of the (normalized) request
   // origin — never a javascript:/data: callback.
@@ -87,8 +151,6 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
   if ('error' in check) {
     return { ok: false, error: 'Return URL origin does not match request origin.' };
   }
-
-  const functions = parseFunctionsInput(params.get('functions') ?? '');
 
   const duration = params.get('duration') ?? '30d';
   if (!Object.hasOwn(DOC_DURATIONS, duration)) {
@@ -98,45 +160,155 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
     };
   }
 
-  const limitParam = params.get('limit');
-  const periodParam = params.get('limit_period');
-  let cap: DocDelegateCap | null = null;
-  if (limitParam === null) {
-    if (periodParam !== null) {
-      return { ok: false, error: 'limit_period was given without a limit.' };
-    }
-  } else {
-    let stroops: bigint;
-    try {
-      stroops = stroopsFromXlm(limitParam);
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
-    const period = periodParam ?? 'day';
-    if (!Object.hasOwn(PERIOD_LEDGERS, period)) {
-      return {
-        ok: false,
-        error: `Invalid limit_period "${period}" (expected day, week or 30d).`,
-      };
-    }
-    cap = { stroops: stroops.toString(), period: period as LimitPeriod };
-  }
-
-  const label = (params.get('label') ?? '').trim() || 'session';
+  const grants = multi ? parseGrantList(params) : parseGrant((f) => params.get(f), '', 'session');
+  if ('error' in grants) return { ok: false, error: grants.error };
 
   return {
     ok: true,
     req: {
       origin: normalizedOrigin,
-      target,
-      signer,
-      functions,
+      signer: signer.signer,
       duration,
-      cap,
-      label,
+      grants: Array.isArray(grants) ? grants : [grants.grant],
       returnUrl,
     },
   };
+}
+
+function parseSigner(params: URLSearchParams): { signer: DocDelegateSigner } | { error: string } {
+  const signer = params.get('signer');
+  const pubkey = params.get('pubkey');
+  const credentialId = params.get('credential_id');
+  if (signer !== null && pubkey !== null) {
+    return { error: 'Name the session signer once: signer= or pubkey=, not both.' };
+  }
+  if (pubkey !== null) {
+    if (!/^04[0-9a-fA-F]{128}$/.test(pubkey)) {
+      return {
+        error:
+          'Invalid session public key (expected 65-byte SEC1 uncompressed P-256, hex-encoded with 0x04 prefix).',
+      };
+    }
+    if (credentialId === null) return { signer: { kind: 'passkey', publicKeyHex: pubkey.toLowerCase() } };
+    const bytes = base64urlLength(credentialId);
+    if (bytes === null || bytes === 0 || bytes > MAX_CREDENTIAL_ID_BYTES) {
+      return {
+        error: `Invalid credential_id (expected base64url, 1 to ${MAX_CREDENTIAL_ID_BYTES} bytes).`,
+      };
+    }
+    return { signer: { kind: 'passkey', publicKeyHex: pubkey.toLowerCase(), credentialId } };
+  }
+  if (credentialId !== null) {
+    return { error: 'credential_id belongs with a pubkey= passkey signer.' };
+  }
+  if (!signer || !isStellarAddress(signer)) {
+    return {
+      error: 'Invalid session signer (expected a C… or G… address as signer=, or a passkey as pubkey=).',
+    };
+  }
+  return { signer: { kind: 'delegated', address: signer } };
+}
+
+/** The decoded length of a base64url string, or null when it is not one. */
+function base64urlLength(s: string): number | null {
+  if (!/^[A-Za-z0-9_-]+$/.test(s)) return null;
+  try {
+    return base64url2buf(s).length;
+  } catch {
+    return null;
+  }
+}
+
+/** The `grant.<i>.<field>` params as grants, in index order. */
+function parseGrantList(params: URLSearchParams): DocDelegateGrant[] | { error: string } {
+  const stray = GRANT_FIELDS.filter((f) => params.has(f));
+  if (stray.length > 0) {
+    return {
+      error: `Pass grants either as grant.<i>.* or as one target/functions/label/limit, not both (found ${stray.join(', ')}).`,
+    };
+  }
+  const indexes = new Set<number>();
+  for (const key of new Set(params.keys())) {
+    if (!key.startsWith('grant.')) continue;
+    const m = /^grant\.(0|[1-9][0-9]*)\.([a-z_]+)$/.exec(key);
+    if (!m || !(GRANT_FIELDS as readonly string[]).includes(m[2]!)) {
+      return { error: `Unknown grant parameter "${key}".` };
+    }
+    if (params.getAll(key).length > 1) return { error: `${key} is given more than once.` };
+    indexes.add(Number(m[1]));
+  }
+  if (Math.max(...indexes) >= MAX_DOC_GRANTS) {
+    return { error: `A request carries at most ${MAX_DOC_GRANTS} grants.` };
+  }
+  const grants: DocDelegateGrant[] = [];
+  for (let i = 0; i < indexes.size; i++) {
+    if (!indexes.has(i)) return { error: `grant.${i} is missing: number grants 0, 1, 2, … with no gaps.` };
+    const parsed = parseGrant((f) => params.get(`grant.${i}.${f}`), `grant.${i}: `, null);
+    if ('error' in parsed) return parsed;
+    if (grants.some((g) => g.label === parsed.grant.label)) {
+      return { error: `Two grants name the rule "${parsed.grant.label}": each grant needs its own label.` };
+    }
+    grants.push(parsed.grant);
+  }
+  return grants;
+}
+
+/** One grant's fields. `where` prefixes each error; `defaultLabel` names an
+ *  unlabelled grant, or null when the label is required. */
+function parseGrant(
+  get: (field: GrantField) => string | null,
+  where: string,
+  defaultLabel: string | null,
+): { grant: DocDelegateGrant } | { error: string } {
+  const target = get('target') ?? '';
+  if (!target || !isContractAddress(target)) {
+    return { error: `${where}Invalid target contract address.` };
+  }
+
+  const functions = parseFunctionsInput(get('functions') ?? '');
+
+  const limitParam = get('limit');
+  const periodParam = get('limit_period');
+  let cap: DocDelegateGrant['cap'] = null;
+  if (limitParam === null) {
+    if (periodParam !== null) return { error: `${where}limit_period was given without a limit.` };
+  } else if (limitParam === 'none') {
+    if (periodParam !== null) return { error: `${where}limit_period was given with limit=none.` };
+    cap = 'none';
+  } else {
+    let stroops: bigint;
+    try {
+      stroops = stroopsFromXlm(limitParam);
+    } catch (e) {
+      return { error: `${where}${e instanceof Error ? e.message : String(e)}` };
+    }
+    const period = periodParam ?? 'day';
+    if (!Object.hasOwn(PERIOD_LEDGERS, period)) {
+      return { error: `${where}Invalid limit_period "${period}" (expected day, week or 30d).` };
+    }
+    cap = { stroops: stroops.toString(), period: period as LimitPeriod };
+  }
+
+  const label = (get('label') ?? '').trim() || defaultLabel;
+  if (label === null) return { error: `${where}A label is required (each grant is its own rule).` };
+
+  return { grant: { target, functions, cap, label } };
+}
+
+/**
+ * The request's signer as a doc-draft signer. A passkey is declared against
+ * `verifier` (the WebAuthn verifier the account trusts), its key_data the
+ * public key followed by the credential id when the request carries one;
+ * null until that verifier is known.
+ */
+export function sessionSignerDraft(
+  signer: DocDelegateSigner,
+  verifier: string | null,
+): SessionSignerDraft | null {
+  if (signer.kind === 'delegated') return { kind: 'delegated', address: signer.address };
+  if (verifier === null) return null;
+  const credential = signer.credentialId === undefined ? '' : buf2hex(base64url2buf(signer.credentialId));
+  return { kind: 'passkey', verifier, publicKeyHex: signer.publicKeyHex + credential };
 }
 
 /**
@@ -170,15 +342,17 @@ export function describeSessionScope(scope: {
 
 /**
  * The ONE way a session grant becomes a signable operation: upsert the
- * session rule into the loaded baseline and wrap the merged document in an
+ * session rules into the loaded baseline and wrap the merged document in an
  * `apply-policy-doc` descriptor. Every policy write is an `apply_doc` — a
  * grant flow must never emit `add_context_rule` (the doc-only contract
  * hard-refuses it outside the recovery-completion window). Both delegate
  * pages (passkey and delegated-key requests) build their /sign/ handoff
- * through this helper, so the invariant is testable in one place.
+ * through this helper, so the invariant is testable in one place. Several
+ * grants are one document update, so one approval installs them all.
  *
- * Precondition: `validateSessionDocDraft(draft, limits).ok` and a loaded baseline
- * (the applied doc, or the owner-admin baseline on a first apply).
+ * Precondition: `validateSessionDocDraft(draft, limits).ok` for each draft,
+ * distinct draft names, and a loaded baseline (the applied doc, or the
+ * owner-admin baseline on a first apply).
  */
 export function buildSessionGrantOperation(args: {
   baseline: PolicyDoc;
@@ -186,12 +360,12 @@ export function buildSessionGrantOperation(args: {
   baselineRevision: bigint;
   /** True when nothing is applied yet — no prevDocJson (all-new diff). */
   isFirstApply: boolean;
-  draft: SessionDocDraft;
+  drafts: readonly SessionDocDraft[];
   networkPassphrase: string;
   /** Human-readable expiry label (e.g. "24 hours"). */
   expiryLabel: string;
 }): Extract<OperationDescriptor, { type: 'apply-policy-doc' }> {
-  const { doc } = upsertSessionRule(args.baseline, args.draft, args.networkPassphrase);
+  const doc = upsertSessionRules(args.baseline, args.drafts, args.networkPassphrase);
   return {
     type: 'apply-policy-doc',
     docJson: canonicalJson(doc),

@@ -152,7 +152,10 @@ test.describe('delegate-doc page — UI only (no chain) @fast', () => {
     );
     await expect(page.locator('#origin-text')).toHaveText('https://dapp.example');
     await expect(page.locator('#signer-text')).toHaveText(SIGNER_G);
-    await expect(page.locator('#functions-text')).toContainText('udpate_message');
+    // The original one-grant params still read as one grant.
+    await expect(page.locator('[data-grant]')).toHaveCount(1);
+    await expect(page.locator('[data-grant="0"] .dd-rule')).toHaveText('status-note-session');
+    await expect(page.locator('[data-grant="0"] [data-field="functions"]')).toContainText('udpate_message');
     // Doc-only writes need the applied-document baseline; with no reachable
     // doc surface the page must refuse rather than build a blind update.
     await expect(page.locator('#status')).toContainText('cannot accept this request');

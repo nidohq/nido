@@ -289,6 +289,27 @@ export function upsertSessionRule(
   return { doc, signerId: signerId === 'owner' && !doc.signers.some((s) => s.id === 'owner') ? 'admin' : signerId };
 }
 
+/**
+ * {@link upsertSessionRule} for each draft in order: one document carrying
+ * every rule, so one `apply_doc` installs them all. Drafts naming the same
+ * key share its signer declaration. Throws when two drafts name the same
+ * rule (the later would silently replace the earlier).
+ *
+ * Precondition: `validateSessionDocDraft(draft, limits).ok` for each draft.
+ */
+export function upsertSessionRules(
+  current: PolicyDoc,
+  drafts: readonly SessionDocDraft[],
+  networkPassphrase: string,
+): PolicyDoc {
+  const names = drafts.map((d) => d.name.trim());
+  const repeated = names.find((n, i) => names.indexOf(n) !== i);
+  if (repeated !== undefined) {
+    throw new Error(`policy doc: two session grants name the rule "${repeated}"`);
+  }
+  return drafts.reduce((doc, draft) => upsertSessionRule(doc, draft, networkPassphrase).doc, current);
+}
+
 // --- Shared doc-merge helpers ----------------------------------------------
 
 type WireSigner = PolicyDoc['signers'][number];
