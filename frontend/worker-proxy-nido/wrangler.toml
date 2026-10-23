@@ -11,6 +11,12 @@ routes = [
 # The Pages production origin for nido (Cloudflare appended "-1am" because the
 # bare `nido` project subdomain was taken).
 PAGES = "nido-1am.pages.dev"
+# The bare Pages PROJECT root PR previews anchor to (pr-<N>.<this>) —
+# identical across every environment. See index.js's own doc comment: this
+# must stay the project root, never an aliased branch subdomain like
+# [env.testnet]'s own PAGES, or preview rewriting builds a hostname that
+# doesn't exist.
+PAGES_PROJECT_ROOT = "nido-1am.pages.dev"
 CSP_SITE_HOSTS = "https://*.nido.fyi"
 CSP_NETWORK_HOSTS = "https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org"
 
@@ -39,5 +45,8 @@ routes = [
 # — this is what actually makes test.nido.fyi serve a different build than
 # nido.fyi, rather than the same one.
 PAGES = "test.nido-1am.pages.dev"
+# Same bare project root as [vars] above — PR previews must anchor here, not
+# to PAGES (which is itself an aliased branch subdomain in this environment).
+PAGES_PROJECT_ROOT = "nido-1am.pages.dev"
 CSP_SITE_HOSTS = "https://*.nido.fyi"
 CSP_NETWORK_HOSTS = "https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org"

@@ -5,7 +5,20 @@
  *
  * What differs per deployment comes from wrangler.toml `[vars]` (one set per
  * wrangler environment):
- *   PAGES              the Pages production origin, e.g. `nido-1am.pages.dev`
+ *   PAGES              this environment's Pages origin for a NON-preview
+ *                      request, e.g. `nido-1am.pages.dev` (production) or
+ *                      `test.nido-1am.pages.dev` (testnet's own `test`
+ *                      branch alias).
+ *   PAGES_PROJECT_ROOT the bare Pages PROJECT root, e.g. `nido-1am.pages.dev`
+ *                      — same value in every environment. PR preview
+ *                      deployments are always `pr-<N>.<project-root>.pages.dev`
+ *                      regardless of which hostname/environment a preview
+ *                      link uses, so preview rewriting must anchor to this,
+ *                      not to PAGES: testnet's PAGES is itself already a
+ *                      branch alias, and `pr-<N>.test.nido-1am.pages.dev`
+ *                      isn't a real deployment (confirmed by hand: that
+ *                      hostname 404s "Deployment Not Found", while
+ *                      `pr-<N>.nido-1am.pages.dev` serves the real preview).
  *   CSP_SITE_HOSTS     the wallet's own hosts, e.g. `https://*.nido.fyi`
  *                      (CSP wildcards match every depth, so this covers
  *                      `*.test.nido.fyi` too)
@@ -32,7 +45,7 @@ function previewRoot(sub) {
 
 export default {
   async fetch(request, env) {
-    const { PAGES, CSP_SITE_HOSTS, CSP_NETWORK_HOSTS } = env;
+    const { PAGES, PAGES_PROJECT_ROOT, CSP_SITE_HOSTS, CSP_NETWORK_HOSTS } = env;
     const url = new URL(request.url);
     const parts = url.hostname.split(".");
     const sub = parts[0];
@@ -46,11 +59,11 @@ export default {
 
     if (preview.pr) {
       const prBranch = "pr-" + preview.pr;
-      url.hostname = `${prBranch}.${PAGES}`;
+      url.hostname = `${prBranch}.${PAGES_PROJECT_ROOT}`;
     } else {
       const pr = previewRoot(sub);
       if (pr) {
-        url.hostname = `pr-${pr}.${PAGES}`;
+        url.hostname = `pr-${pr}.${PAGES_PROJECT_ROOT}`;
       } else {
         url.hostname = PAGES;
       }

@@ -19,6 +19,19 @@ Two roles in one process:
   (not a bulk code listing — see that service's README for why) and prints a
   receipt once a visitor's wallet is confirmed on chain.
 
+`GET /relayer-accounts` shows the XLM balance (from Horizon testnet and
+mainnet) and a stellar.expert link for each of the relayer's Turnkey-backed
+signers (`src/relayerKeys.ts` — hardcoded from `infra/relayer/config/config.json`;
+mainnet entries are placeholder keys, not real ones, until those signers are
+provisioned), so staff can check at a glance whether the relayer is at risk
+of running dry mid-demo.
+
+`GET /debug/codes` (an "invite codes" link on the home page) shows
+`infra/invite`'s own `/codes` listing — every code's status, address, and
+issued/claimed/used/delivered timestamps — so a code stuck mid-flow (e.g.
+`claimed` but never reaching `used`, or `used` with no `deliveredAt`) is
+visible without a separate `curl` + the API key.
+
 ## Printer
 
 `src/printer.ts` defines a `Printer` interface with one method, `print(job)`.
@@ -76,6 +89,14 @@ macOS ("Raw queues are no longer supported on macOS") even though
 `lpinfo -m` still lists it as a model — the script works around this with a
 minimal custom PPD whose only filter is a null passthrough. To remove the
 queue later: `lpadmin -x nido-receipt-printer`.
+
+### Testing the printer
+
+`POST /test-print` (a "Test printer" link on the home page) sends a one-line
+test receipt through whichever `Printer` the running server is actually
+configured with (`PRINTER_DRIVER`) — unlike `scripts/test-printer.ts`, which
+only exercises `EscposUsbPrinter` directly and needs no server running at
+all.
 
 ## Env vars
 

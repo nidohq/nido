@@ -7,6 +7,20 @@ export interface PendingPrintRecord {
   usedAt?: number;
 }
 
+/** Mirrors infra/invite's own `CodeRecord` (src/types.ts) — again kept as a
+ *  separate copy rather than a shared import, same reasoning as above. Used
+ *  only for the debug page, so it's fine if the two drift slightly. */
+export interface CodeRecord {
+  code: string;
+  status: "issued" | "claimed" | "used" | "expired";
+  address?: string;
+  issuedAt: number;
+  claimedAt?: number;
+  usedAt?: number;
+  deliveredAt?: number;
+  expiresAt: number;
+}
+
 /** What the ReceiptPoller needs, pulled out as an interface so tests can
  *  fake it without having to structurally match InviteClient's private
  *  fields. */
@@ -51,5 +65,14 @@ export class InviteClient implements InvitePrintQueue {
       headers: this.headers(),
     });
     if (!res.ok) throw new Error(`ackPendingPrint failed: ${res.status} ${await res.text()}`);
+  }
+
+  /** Every code infra/invite has ever issued, newest first — for the debug
+   *  page only (not used by the invitation/receipt flow itself). */
+  async listCodes(): Promise<CodeRecord[]> {
+    const res = await fetch(`${this.baseUrl}/codes`, { headers: this.headers() });
+    if (!res.ok) throw new Error(`listCodes failed: ${res.status} ${await res.text()}`);
+    const records: CodeRecord[] = await res.json();
+    return records.sort((a, b) => b.issuedAt - a.issuedAt);
   }
 }
