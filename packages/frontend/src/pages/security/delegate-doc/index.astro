@@ -132,6 +132,7 @@ import Icon from '../../../components/Icon.astro';
     sessionSignerDraft,
     type DocDelegateGrant,
   } from '../../../lib/policy/docRequest.js';
+  import { CANT_MOVE_TOKENS } from '../../../lib/policy/tokenFunctions.js';
   import {
     adminBaseline,
     upsertSessionRules,
@@ -250,11 +251,8 @@ import Icon from '../../../components/Icon.astro';
     card.append(grantRow('Functions', functions));
 
     if (limitNoneHonoured(grant)) {
-      const none = el(
-        'span',
-        'dd-v',
-        'None — the app asked for no cap. The key can do whatever the allowed functions permit until it expires.',
-      );
+      // A call-only rule: say what no cap means here, not "no cap".
+      const none = el('span', 'dd-v', CANT_MOVE_TOKENS);
       none.dataset.field = 'cap';
       card.append(grantRow('Cap', none));
       grants.append(card);
@@ -483,6 +481,7 @@ import Icon from '../../../components/Icon.astro';
       const capControls = capFromControls(v);
       const scope = describeSessionScope({
         cap: capControls === 'invalid' ? null : capControls,
+        functions: v.grant.functions,
         duration: durationSel.value,
         notAfterLedger,
       });
@@ -492,7 +491,9 @@ import Icon from '../../../components/Icon.astro';
         el('strong', '', `${v.grant.label}: `),
         ...functionNodes(v.grant.functions),
         el('span', 'dd-addr', ` on ${v.grant.target}. `),
-        el('span', '', capControls === 'invalid' ? 'Enter a valid cap amount.' : `${scope.amount}.`),
+        capControls === 'invalid'
+          ? el('span', '', 'Enter a valid cap amount.')
+          : el('span', scope.warn ? 'tone-warn' : '', `${scope.amount}.`),
       );
       return { line, expiry: scope.expiry };
     });

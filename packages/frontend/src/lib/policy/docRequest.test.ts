@@ -396,11 +396,13 @@ describe('describeSessionScope', () => {
     expect(
       describeSessionScope({
         cap: { stroops: '25000000', period: 'week' },
+        functions: ['transfer'],
         duration: '24h',
         notAfterLedger: 5145276,
       }),
     ).toEqual({
       amount: 'Up to 2.5 XLM per week',
+      warn: false,
       expiry: 'At ledger 5,145,276 (≈ 24 hours)',
     });
   });
@@ -409,18 +411,34 @@ describe('describeSessionScope', () => {
     expect(
       describeSessionScope({
         cap: null,
+        functions: undefined,
         duration: 'none',
         notAfterLedger: null,
       }),
     ).toEqual({
       amount: 'No spending cap',
+      warn: true,
       expiry: 'Never (until revoked)',
     });
   });
 
+  it("says an uncapped rule that can't move tokens needs no cap, without a warning", () => {
+    const d = describeSessionScope({ cap: null, functions: ['guess'], duration: '24h', notAfterLedger: null });
+    expect(d).toMatchObject({ amount: "Can't move tokens — no cap needed", warn: false });
+  });
+
+  it.each([[['transfer']], [['guess', 'approve']], [undefined]])(
+    'warns "No spending cap" on an uncapped rule that can move tokens (%j)',
+    (functions) => {
+      const d = describeSessionScope({ cap: null, functions, duration: '24h', notAfterLedger: null });
+      expect(d).toMatchObject({ amount: 'No spending cap', warn: true });
+    },
+  );
+
   it('falls back to the span before the ledger is read', () => {
     const d = describeSessionScope({
       cap: null,
+      functions: undefined,
       duration: '7d',
       notAfterLedger: null,
     });

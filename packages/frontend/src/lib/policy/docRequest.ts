@@ -61,6 +61,7 @@ import {
 import { PERIOD_LABEL, PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
 import { stroopsToXlm } from '../money.js';
 import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
+import { CANT_MOVE_TOKENS, NO_SPENDING_CAP, canMoveTokens } from './tokenFunctions.js';
 
 export const DOC_DURATIONS: Record<string, number | null> = {
   '24h': 17280,
@@ -99,29 +100,12 @@ export interface DocDelegateGrant {
   label: string;
 }
 
-/** SEP-41 / Stellar Asset Contract functions that move or authorise a
- *  balance. A rule allowing any of them can move tokens. */
-export const TOKEN_MOVING_FUNCTIONS: readonly string[] = [
-  'transfer',
-  'transfer_from',
-  'approve',
-  'burn',
-  'burn_from',
-  'mint',
-  'clawback',
-  'set_authorized',
-  'set_admin',
-];
+export { TOKEN_MOVING_FUNCTIONS } from './tokenFunctions.js';
 
 /** Whether the grant's `limit=none` skips the user's uncapped confirmation:
  *  only for a rule limited to functions none of which moves tokens. */
 export function limitNoneHonoured(grant: Pick<DocDelegateGrant, 'cap' | 'functions'>): boolean {
-  return (
-    grant.cap === 'none' &&
-    grant.functions !== undefined &&
-    grant.functions.length > 0 &&
-    !grant.functions.some((f) => TOKEN_MOVING_FUNCTIONS.includes(f))
-  );
+  return grant.cap === 'none' && !canMoveTokens(grant.functions);
 }
 
 export interface DocDelegateRequest {
@@ -324,18 +308,24 @@ export function sessionSignerDraft(
 /**
  * The effective spend and lifetime of a session grant as the user will
  * approve it, one line per dimension, so the uncapped and never-expiring
- * cases are stated as plainly as the bounded ones. (The page lists the
- * functions itself, each shown as a method.)
+ * cases are stated as plainly as the bounded ones. An uncapped rule that
+ * can move tokens is `warn`; one that cannot says so rather than "no cap".
+ * (The page lists the functions itself, each shown as a method.)
  */
 export function describeSessionScope(scope: {
   cap: DocDelegateCap | null;
+  /** The rule's functions (undefined = any): whether it can move tokens. */
+  functions: string[] | undefined;
   duration: string;
   /** The anchored expiry ledger; null for "none" or before the ledger read. */
   notAfterLedger: number | null;
-}): { amount: string; expiry: string } {
+}): { amount: string; warn: boolean; expiry: string } {
+  const warn = scope.cap === null && canMoveTokens(scope.functions);
   const amount = scope.cap
     ? `Up to ${stroopsToXlm(BigInt(scope.cap.stroops))} XLM ${PERIOD_LABEL[scope.cap.period]}`
-    : 'No spending cap';
+    : warn
+      ? NO_SPENDING_CAP
+      : CANT_MOVE_TOKENS;
   const span = DOC_DURATION_LABEL[scope.duration];
   const expiry =
     DOC_DURATIONS[scope.duration] == null
@@ -343,7 +333,7 @@ export function describeSessionScope(scope: {
       : scope.notAfterLedger == null
         ? `After ${span}`
         : `At ledger ${scope.notAfterLedger.toLocaleString('en-US')} (≈ ${span})`;
-  return { amount, expiry };
+  return { amount, warn, expiry };
 }
 
 /**

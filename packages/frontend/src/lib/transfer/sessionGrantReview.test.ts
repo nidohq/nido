@@ -42,6 +42,21 @@ describe("renderDocSessionGrant", () => {
     expect(renderDocSessionGrant({ ...view, functions: ["<b>x"] })).toContain("&lt;b&gt;x()");
   });
 
+  it("says a rule that can't move tokens needs no cap, not that it can spend any amount", () => {
+    const html = renderDocSessionGrant({ ...view, functions: ["guess"], capStroops: null });
+    expect(html).toContain("Can&#39;t move tokens — no cap needed");
+    expect(html).not.toContain("Any amount");
+  });
+
+  it.each([[["transfer"]], [["guess", "approve"]], [null]])(
+    "keeps \"Any amount (no cap)\" for an uncapped rule that can move tokens (%j)",
+    (functions) => {
+      const html = renderDocSessionGrant({ ...view, functions, capStroops: null });
+      expect(html).toContain("Any amount");
+      expect(html).not.toContain("move tokens");
+    },
+  );
+
   it("names the rule and says which of several it is", () => {
     const html = renderDocSessionGrant({ ...view, position: { index: 1, count: 2 } });
     expect(html).toContain('data-grant-rule="guess-xlm"');

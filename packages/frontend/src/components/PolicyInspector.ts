@@ -12,6 +12,7 @@ import type { DocRuleView, DocSignerView, DocViewModel, PermissionPart } from '.
 import type { DocJsonSource } from '../lib/policy/docPolicyFetch.js';
 import type { DocDiff } from '../lib/policy/docDiff.js';
 import { describeDocRule } from '../lib/policy/docView.js';
+import { CANT_MOVE_TOKENS, NO_SPENDING_CAP, canMoveTokens } from '../lib/policy/tokenFunctions.js';
 
 export interface InspectorContext {
   /** policy contract address → registry label. */
@@ -322,6 +323,13 @@ export function renderDocPreviewHtml(model: DocViewModel, canonical: string): st
     if (r.cap !== null) {
       facts.push(
         `<span class="pol-preview-fact">Cap: ${esc(r.cap.limit)} stroops / ${r.cap.periodLedgers.toLocaleString()} ledgers</span>`,
+      );
+    } else if (r.contract !== null) {
+      // An uncapped contract rule: a warning only where it can move tokens.
+      facts.push(
+        canMoveTokens(r.functions)
+          ? `<span class="pol-preview-fact tone-warn">${NO_SPENDING_CAP}</span>`
+          : `<span class="pol-preview-fact">${esc(CANT_MOVE_TOKENS)}</span>`,
       );
     }
     facts.push(
