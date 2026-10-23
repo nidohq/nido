@@ -16,19 +16,22 @@ CSP_NETWORK_HOSTS = "https://nido.fly.dev https://soroban-testnet.stellar.org ht
 
 # Testnet on test.nido.fyi (`wrangler deploy --env testnet`, deployed
 # automatically by deploy-testnet.yml on every push to main), its own `test`
-# branch Pages build — not the production origin above. Not reachable yet:
-# until an advanced certificate covering *.test.nido.fyi is active those hosts
-# have no TLS, and the production route above already answers for them. Add
-# its routes, together with nido-resolver's testnet route, only once that
-# certificate is active: a `*.test.nido.fyi/*` proxy route outranks the
-# production resolver route for `*.test.nido.fyi/.well-known/nido.json`
-# (hostname specificity beats path), so deploying one without the other
-# breaks testnet name resolution. Until then nothing serves this environment
-# (the Worker deploys fine either way; it just has no route).
+# branch Pages build — not the production origin above. The Advanced
+# Certificate for *.test.nido.fyi is active, so both the bare apex and every account's own subdomain
+# (<cAddress>.test.nido.fyi) have valid TLS. The wildcard
+# route MUST deploy together with nido-resolver's matching
+# `*.test.nido.fyi/.well-known/nido.json` route:
+# without it, this route's hostname specificity (*.test.nido.fyi) outranks
+# the production resolver's *.nido.fyi/.well-known/nido.json for any
+# <cAddress>.test.nido.fyi lookup, routing it here instead and breaking name
+# resolution for every test.nido.fyi account.
 [env.testnet]
 name = "nido-proxy-testnet"
 workers_dev = false
-routes = []
+routes = [
+  { pattern = "test.nido.fyi/*", zone_name = "nido.fyi" },
+  { pattern = "*.test.nido.fyi/*", zone_name = "nido.fyi" }
+]
 
 [env.testnet.vars]
 # The `test` branch Pages deployment (deploy-testnet.yml's
