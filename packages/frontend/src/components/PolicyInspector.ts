@@ -6,9 +6,9 @@
 // models in lib/policy/{policyView,docView}; the page fetches the data.
 
 import type { ChainRule } from '@nidohq/passkey-sdk';
-import { esc } from '../lib/html.js';
+import { esc, fnCallHtml } from '../lib/html.js';
 import { summarizeRule, type RuleView, type SignerView, type PolicyView } from '../lib/policy/policyView.js';
-import type { DocRuleView, DocSignerView, DocViewModel } from '../lib/policy/docView.js';
+import type { DocRuleView, DocSignerView, DocViewModel, PermissionPart } from '../lib/policy/docView.js';
 import type { DocJsonSource } from '../lib/policy/docPolicyFetch.js';
 import type { DocDiff } from '../lib/policy/docDiff.js';
 import { describeDocRule } from '../lib/policy/docView.js';
@@ -133,7 +133,7 @@ function docRuleCard(rule: DocRuleView, currentLedger: number | null): string {
       </div>
       <div class="pol-badges">${argsBadge}${docExpiryBadge(rule, currentLedger)}</div>
     </header>
-    <p class="pol-perm">${esc(rule.permission)}</p>
+    <p class="pol-perm">${permissionHtml(rule.permissionParts)}</p>
     <div class="pol-grid">
       ${
         rule.contract
@@ -316,7 +316,7 @@ export function renderDocPreviewHtml(model: DocViewModel, canonical: string): st
     const facts: string[] = [];
     if (r.functions !== null) {
       facts.push(
-        `<span class="pol-preview-fact">Functions: ${r.functions.map((f) => `<code class="pol-mono">${esc(f)}</code>`).join(', ')}</span>`,
+        `<span class="pol-preview-fact">Functions: ${r.functions.map(fnCallHtml).join(', ')}</span>`,
       );
     }
     if (r.cap !== null) {
@@ -332,7 +332,7 @@ export function renderDocPreviewHtml(model: DocViewModel, canonical: string): st
         <strong>${esc(r.name)}</strong>
         <span class="pol-badge">${esc(r.scopeLabel)}</span>
       </div>
-      <p class="pol-preview-perm">${esc(r.permission)}</p>
+      <p class="pol-preview-perm">${permissionHtml(r.permissionParts)}</p>
       <div class="pol-preview-facts">${facts.join('')}</div>
     </article>`;
   };
@@ -345,6 +345,11 @@ export function renderDocPreviewHtml(model: DocViewModel, canonical: string): st
       <pre class="pol-mono">${esc(canonical)}</pre>
     </details>
   </div>`;
+}
+
+/** A rule's permission sentence, its function names shown as methods. */
+function permissionHtml(parts: readonly PermissionPart[]): string {
+  return parts.map((p) => (typeof p === 'string' ? esc(p) : fnCallHtml(p.fn))).join('');
 }
 
 // --- Document-update diff --------------------------------------------------
@@ -375,14 +380,14 @@ export function renderDocDiffHtml(diff: DocDiff): string {
     const v = describeDocRule(r);
     parts.push(`<div class="pol-diff-row">
       <span class="pol-badge primary">+ added</span>
-      <div><strong>${esc(r.name)}</strong><div class="mut" style="font-size:12px;">${esc(v.permission)}</div></div>
+      <div><strong>${esc(r.name)}</strong><div class="mut" style="font-size:12px;">${permissionHtml(v.permissionParts)}</div></div>
     </div>`);
   }
   for (const r of diff.rulesRemoved) {
     const v = describeDocRule(r);
     parts.push(`<div class="pol-diff-row">
       <span class="pol-badge danger">− removed</span>
-      <div><strong>${esc(r.name)}</strong><div class="mut" style="font-size:12px;">${esc(v.permission)}</div></div>
+      <div><strong>${esc(r.name)}</strong><div class="mut" style="font-size:12px;">${permissionHtml(v.permissionParts)}</div></div>
     </div>`);
   }
   for (const m of diff.rulesModified) {

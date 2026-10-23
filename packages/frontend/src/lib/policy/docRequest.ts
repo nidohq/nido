@@ -11,9 +11,12 @@
 //   signer         the app's delegated key, C… or G…        ┐ exactly
 //   pubkey         the app's passkey: the 65-byte SEC1       │ one of
 //                  uncompressed P-256 key, hex (04…)         ┘ the two
-//   credential_id  optional, only with `pubkey`: the passkey's WebAuthn
-//                  credential id (base64url). It follows the public key in
-//                  the signer's key_data; the verifier strips it.
+//
+// A passkey is named by its public key alone. Perch's doc compiler accepts
+// a signer key only in its verifier-canonical form, and the WebAuthn
+// verifier's is the bare 65-byte key: a credential-id suffix is refused
+// (KeyNotCanonicalizable), so a request carrying `credential_id` is
+// rejected. The app keeps its credential id for its own WebAuthn calls.
 //
 // and asks for one or more grants. A grant is one rule: the app key may
 // call `target` (C…), only `functions` (comma-separated; absent = any),
@@ -47,7 +50,7 @@
 // `grant.*` field rejects the whole request, so a bad cap can never degrade
 // into an uncapped grant.
 
-import { base64url2buf, buf2hex, canonicalJson, type PolicyDoc } from '@nidohq/passkey-sdk';
+import { canonicalJson, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress } from './policyDraft.js';
 import {
   parseFunctionsInput,
@@ -76,17 +79,12 @@ export const DOC_DURATION_LABEL: Record<string, string> = {
 /** The most grants one request may carry. */
 export const MAX_DOC_GRANTS = 8;
 
-/** Perch's signer key_data cap (perch-ir MAX_SIGNER_KEY_LEN), less the
- *  65-byte public key: the longest credential id a passkey signer holds. */
-const MAX_CREDENTIAL_ID_BYTES = 256 - 65;
-
 /** The app's session key, as the request names it. */
 export type DocDelegateSigner =
   /** A delegated key the dApp holds (C… or G…). */
   | { kind: 'delegated'; address: string }
-  /** A passkey: its SEC1 public key (hex, lowercased), plus the WebAuthn
-   *  credential id (base64url) when the request carries one. */
-  | { kind: 'passkey'; publicKeyHex: string; credentialId?: string };
+  /** A passkey: its 65-byte SEC1 public key (hex, lowercased). */
+  | { kind: 'passkey'; publicKeyHex: string };
 
 export interface DocDelegateGrant {
   target: string;
@@ -206,7 +204,12 @@ export function parseDocDelegateParams(params: URLSearchParams): DocDelegatePars
 function parseSigner(params: URLSearchParams): { signer: DocDelegateSigner } | { error: string } {
   const signer = params.get('signer');
   const pubkey = params.get('pubkey');
-  const credentialId = params.get('credential_id');
+  if (params.has('credential_id')) {
+    return {
+      error:
+        'credential_id is not part of the request: a passkey signer is its 65-byte public key alone (Perch refuses a key with a credential id appended). Keep the credential id in the app.',
+    };
+  }
   if (signer !== null && pubkey !== null) {
     return { error: 'Name the session signer once: signer= or pubkey=, not both.' };
   }
@@ -217,17 +220,7 @@ function parseSigner(params: URLSearchParams): { signer: DocDelegateSigner } | {
           'Invalid session public key (expected 65-byte SEC1 uncompressed P-256, hex-encoded with 0x04 prefix).',
       };
     }
-    if (credentialId === null) return { signer: { kind: 'passkey', publicKeyHex: pubkey.toLowerCase() } };
-    const bytes = base64urlLength(credentialId);
-    if (bytes === null || bytes === 0 || bytes > MAX_CREDENTIAL_ID_BYTES) {
-      return {
-        error: `Invalid credential_id (expected base64url, 1 to ${MAX_CREDENTIAL_ID_BYTES} bytes).`,
-      };
-    }
-    return { signer: { kind: 'passkey', publicKeyHex: pubkey.toLowerCase(), credentialId } };
-  }
-  if (credentialId !== null) {
-    return { error: 'credential_id belongs with a pubkey= passkey signer.' };
+    return { signer: { kind: 'passkey', publicKeyHex: pubkey.toLowerCase() } };
   }
   if (!signer || !isStellarAddress(signer)) {
     return {
@@ -235,16 +228,6 @@ function parseSigner(params: URLSearchParams): { signer: DocDelegateSigner } | {
     };
   }
   return { signer: { kind: 'delegated', address: signer } };
-}
-
-/** The decoded length of a base64url string, or null when it is not one. */
-function base64urlLength(s: string): number | null {
-  if (!/^[A-Za-z0-9_-]+$/.test(s)) return null;
-  try {
-    return base64url2buf(s).length;
-  } catch {
-    return null;
-  }
 }
 
 /** The `grant.<i>.<field>` params as grants, in index order. */
@@ -325,9 +308,9 @@ function parseGrant(
 
 /**
  * The request's signer as a doc-draft signer. A passkey is declared against
- * `verifier` (the WebAuthn verifier the account trusts), its key_data the
- * public key followed by the credential id when the request carries one;
- * null until that verifier is known.
+ * `verifier` (the WebAuthn verifier the account trusts), its key the bare
+ * public key (the verifier-canonical form Perch's compiler requires); null
+ * until that verifier is known.
  */
 export function sessionSignerDraft(
   signer: DocDelegateSigner,
@@ -335,26 +318,21 @@ export function sessionSignerDraft(
 ): SessionSignerDraft | null {
   if (signer.kind === 'delegated') return { kind: 'delegated', address: signer.address };
   if (verifier === null) return null;
-  const credential = signer.credentialId === undefined ? '' : buf2hex(base64url2buf(signer.credentialId));
-  return { kind: 'passkey', verifier, publicKeyHex: signer.publicKeyHex + credential };
+  return { kind: 'passkey', verifier, publicKeyHex: signer.publicKeyHex };
 }
 
 /**
- * The effective scope of a session grant as the user will approve it, one
- * line per dimension, so the uncapped and never-expiring cases are stated
- * as plainly as the bounded ones.
+ * The effective spend and lifetime of a session grant as the user will
+ * approve it, one line per dimension, so the uncapped and never-expiring
+ * cases are stated as plainly as the bounded ones. (The page lists the
+ * functions itself, each shown as a method.)
  */
 export function describeSessionScope(scope: {
-  target: string;
-  functions: string[] | undefined;
   cap: DocDelegateCap | null;
   duration: string;
   /** The anchored expiry ledger; null for "none" or before the ledger read. */
   notAfterLedger: number | null;
-}): { functions: string; amount: string; expiry: string } {
-  const functions = scope.functions
-    ? `Only ${scope.functions.join(', ')} on ${scope.target}`
-    : `Any function on ${scope.target}`;
+}): { amount: string; expiry: string } {
   const amount = scope.cap
     ? `Up to ${stroopsToXlm(BigInt(scope.cap.stroops))} XLM ${PERIOD_LABEL[scope.cap.period]}`
     : 'No spending cap';
@@ -365,7 +343,7 @@ export function describeSessionScope(scope: {
       : scope.notAfterLedger == null
         ? `After ${span}`
         : `At ledger ${scope.notAfterLedger.toLocaleString('en-US')} (≈ ${span})`;
-  return { functions, amount, expiry };
+  return { amount, expiry };
 }
 
 /**

@@ -56,7 +56,7 @@ describe('diffPolicyDocs', () => {
     expect(d.rulesRemoved.map((r) => r.name)).toEqual(['ops']);
     expect(d.rulesModified).toHaveLength(1);
     expect(d.rulesModified[0].name).toBe('pay');
-    expect(d.rulesModified[0].changes.join('\n')).toContain('functions: transfer → transfer, approve');
+    expect(d.rulesModified[0].changes.join('\n')).toContain('functions: transfer() → transfer(), approve()');
     expect(d.rulesModified[0].changes.join('\n')).toContain('expiry: ledger 9000 → ledger 12000');
     // Signer churn: 'session' added, 'ops' removed.
     expect(d.signers).toEqual([

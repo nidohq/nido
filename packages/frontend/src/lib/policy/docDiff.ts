@@ -75,7 +75,8 @@ export function diffRuleFields(before: Rule, after: Rule): string[] {
   }
 
   if (!sameStringArray(before.functions, after.functions)) {
-    const show = (f: readonly string[] | undefined) => (f === undefined ? 'any function' : f.join(', '));
+    const show = (f: readonly string[] | undefined) =>
+      f === undefined ? 'any function' : f.map((fn) => `${fn}()`).join(', ');
     changes.push(`functions: ${show(before.functions)} → ${show(after.functions)}`);
   }
 

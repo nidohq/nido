@@ -57,7 +57,6 @@ import Icon from '../../../components/Icon.astro';
             <div style="font-weight:700;font-size:13.5px;">App's key</div>
             <div class="mut" id="signer-kind" style="font-size:12px;margin-top:2px;"></div>
             <div class="mut mono" style="font-size:11.5px;word-break:break-all;"><code id="signer-text" class="wrap"></code></div>
-            <div class="mut mono" id="signer-credential" style="font-size:11px;word-break:break-all;margin-top:2px;" hidden></div>
           </div>
         </div>
         <div class="navrow" style="cursor:default;border-bottom:none;">
@@ -178,11 +177,6 @@ import Icon from '../../../components/Icon.astro';
   if (req?.signer.kind === 'passkey') {
     signerKind.textContent = 'A passkey the app holds (P-256 public key)';
     signerText.textContent = req.signer.publicKeyHex;
-    if (req.signer.credentialId !== undefined) {
-      const cred = document.getElementById('signer-credential')!;
-      cred.textContent = `Credential ${req.signer.credentialId}`;
-      cred.hidden = false;
-    }
   } else {
     signerKind.textContent = req ? 'An address the app controls' : '';
     signerText.textContent = req?.signer.address ?? '(missing)';
@@ -223,6 +217,16 @@ import Icon from '../../../components/Icon.astro';
     return e;
   }
 
+  /** The functions a grant allows, each shown as a method (`guess()`), as
+   *  `.fn-call` renders them in the document preview and on /sign/. */
+  function functionNodes(functions: string[] | undefined): Node[] {
+    if (functions === undefined) return [document.createTextNode('Any function')];
+    return functions.flatMap((fn, i) => [
+      document.createTextNode(i === 0 ? 'Only ' : ', '),
+      el('code', 'fn-call', `${fn}()`),
+    ]);
+  }
+
   function grantRow(key: string, value: HTMLElement): HTMLElement {
     const row = el('div', 'dd-row');
     row.append(el('span', 'dd-k', key), value);
@@ -240,7 +244,8 @@ import Icon from '../../../components/Icon.astro';
     const target = el('code', 'dd-v mono dd-addr', grant.target);
     target.dataset.field = 'target';
     card.append(grantRow('Contract', target));
-    const functions = el('span', 'dd-v', grant.functions ? `Only ${grant.functions.join(', ')}` : 'Any function');
+    const functions = el('span', 'dd-v');
+    functions.append(...functionNodes(grant.functions));
     functions.dataset.field = 'functions';
     card.append(grantRow('Functions', functions));
 
@@ -477,8 +482,6 @@ import Icon from '../../../components/Icon.astro';
     const scopes = views.map((v) => {
       const capControls = capFromControls(v);
       const scope = describeSessionScope({
-        target: v.grant.target,
-        functions: v.grant.functions,
         cap: capControls === 'invalid' ? null : capControls,
         duration: durationSel.value,
         notAfterLedger,
@@ -487,7 +490,8 @@ import Icon from '../../../components/Icon.astro';
       line.dataset.scope = v.grant.label;
       line.append(
         el('strong', '', `${v.grant.label}: `),
-        el('span', 'dd-addr', `${scope.functions}. `),
+        ...functionNodes(v.grant.functions),
+        el('span', 'dd-addr', ` on ${v.grant.target}. `),
         el('span', '', capControls === 'invalid' ? 'Enter a valid cap amount.' : `${scope.amount}.`),
       );
       return { line, expiry: scope.expiry };

@@ -124,7 +124,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     const guess = page.locator('[data-grant="0"]');
     await expect(guess.locator('.dd-rule')).toHaveText('guess');
     await expect(guess.locator('[data-field="target"]')).toHaveText(GAME);
-    await expect(guess.locator('[data-field="functions"]')).toHaveText('Only guess');
+    await expect(guess.locator('[data-field="functions"]')).toHaveText('Only guess()');
     // Declared uncapped: no cap inputs at all, and nothing to confirm.
     await expect(guess.locator('[data-field="cap"]')).toContainText('the app asked for no cap');
     await expect(guess.locator('input, select')).toHaveCount(0);
@@ -143,9 +143,30 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
   });
 
+  test('shows every function as a method: bold monospace with call parens', async ({ page }) => {
+    await mockChain(page);
+    await page.goto(grantUrl());
+    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
+    // The grant's Functions row, the summary, and the document preview.
+    for (const where of [
+      page.locator('[data-grant="0"] [data-field="functions"]'),
+      page.locator('[data-scope="guess"]'),
+      page.locator('#doc-preview'),
+      page.locator('#doc-diff'),
+    ]) {
+      await expect(where.locator('code.fn-call', { hasText: 'guess()' }).first()).toBeVisible();
+    }
+    await expect(page.locator('[data-grant="1"] [data-field="functions"] code.fn-call')).toHaveText(['transfer()']);
+    const style = await page
+      .locator('[data-grant="0"] code.fn-call')
+      .evaluate((el) => ({ weight: Number(getComputedStyle(el).fontWeight), family: getComputedStyle(el).fontFamily }));
+    expect(style.weight).toBeGreaterThanOrEqual(700);
+    expect(style.family.toLowerCase()).toMatch(/mono/);
+  });
+
   test('approving hands /sign/ ONE document holding both rules', async ({ page }) => {
     await mockChain(page);
-    await page.goto(grantUrl({ credential_id: 'q83vEjRW' }));
+    await page.goto(grantUrl());
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
     await page.locator('#approve').click();
 
@@ -160,10 +181,10 @@ test.describe('app approval page: several grants, one approval @fast', () => {
       successQuery: '?delegation=ok',
     });
     expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'guess', 'guess-xlm']);
-    // One declaration for the app's passkey — against the account's
-    // verifier, the credential id after the key — shared by both rules.
+    // One declaration for the app's passkey — its bare key, against the
+    // account's verifier — shared by both rules.
     const session = doc.signers.filter((s) => s.id !== 'admin');
-    expect(session).toEqual([{ id: 'session', verifier: deployment.webauthnVerifier, key: `${APP_KEY}abcdef123456` }]);
+    expect(session).toEqual([{ id: 'session', verifier: deployment.webauthnVerifier, key: APP_KEY }]);
     const [, guess, stake] = doc.rules;
     expect(guess!.scope).toEqual({ type: 'contract', address: GAME });
     expect(guess!.functions).toEqual(['guess']);
@@ -352,6 +373,8 @@ test.describe('app approval page through /sign/ @fast', () => {
     await expect(cards.nth(0)).toHaveAttribute('data-grant-rule', 'guess');
     await expect(cards.nth(0)).toContainText('rule 1 of 2');
     await expect(cards.nth(0)).toContainText('Any amount');
+    await expect(cards.nth(0).locator('code.fn-call')).toHaveText(['guess()']);
+    await expect(cards.nth(1).locator('code.fn-call')).toHaveText(['transfer()']);
     await expect(cards.nth(1)).toHaveAttribute('data-grant-rule', 'guess-xlm');
     await expect(cards.nth(1)).toContainText('Up to 2 XLM');
     await expect(page.locator('#approve')).toBeEnabled();

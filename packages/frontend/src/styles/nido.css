@@ -62,6 +62,11 @@ button { font-family: inherit; }
 
 .disp { font-family: var(--disp); letter-spacing: -0.01em; }
 .mono { font-family: var(--mono); }
+/* A contract function name, shown as a method call: `guess()`. */
+.fn-call {
+  font-family: var(--mono); font-weight: 700; font-size: .92em; color: var(--ink);
+  background: var(--chip); border-radius: 6px; padding: 1px 5px; white-space: nowrap;
+}
 .acc { color: var(--acc); }
 .mut { color: var(--mut); }
 .ink-soft { color: var(--ink-soft); }

@@ -1,4 +1,5 @@
 mod account;
+mod app_grant_doc;
 mod auth_digest_dialects;
 mod config_hash_vectors;
 mod contract_verifier;

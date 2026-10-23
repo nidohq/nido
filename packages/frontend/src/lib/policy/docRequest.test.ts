@@ -204,15 +204,6 @@ describe('parseDocDelegateParams — passkey signer (pubkey=)', () => {
     expect(r.ok && r.req.signer).toEqual({ kind: 'passkey', publicKeyHex: PUBKEY.toLowerCase() });
   });
 
-  it('carries an optional base64url credential id', () => {
-    const r = parseDocDelegateParams(params({ signer: null, pubkey: PUBKEY, credential_id: 'q83vEjRW' }));
-    expect(r.ok && r.req.signer).toEqual({
-      kind: 'passkey',
-      publicKeyHex: PUBKEY.toLowerCase(),
-      credentialId: 'q83vEjRW',
-    });
-  });
-
   it('rejects signer= and pubkey= together', () => {
     const r = parseDocDelegateParams(params({ pubkey: PUBKEY }));
     expect(r.ok).toBe(false);
@@ -238,22 +229,16 @@ describe('parseDocDelegateParams — passkey signer (pubkey=)', () => {
     if (!r.ok) expect(r.error).toContain('Invalid session public key');
   });
 
+  // Perch's compiler refuses a WebAuthn key with a credential id appended
+  // (KeyNotCanonicalizable), so the request never carries one.
   it.each([
-    ['empty', ''],
-    ['standard base64', 'q83v+jRW'],
-    ['padded', 'q83vEjRW=='],
-    ['not decodable', 'A'],
-    ['over the key_data room', 'A'.repeat(256)],
-  ])('rejects a %s credential_id', (_case, credential_id) => {
-    const r = parseDocDelegateParams(params({ signer: null, pubkey: PUBKEY, credential_id }));
+    ['with pubkey=', { signer: null, pubkey: PUBKEY, credential_id: 'q83vEjRW' }],
+    ['with signer=', { credential_id: 'q83vEjRW' }],
+    ['even empty', { signer: null, pubkey: PUBKEY, credential_id: '' }],
+  ] as const)('rejects a credential_id %s', (_case, overrides) => {
+    const r = parseDocDelegateParams(params(overrides as Record<string, string | null>));
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain('Invalid credential_id');
-  });
-
-  it('rejects a credential_id without a passkey signer', () => {
-    const r = parseDocDelegateParams(params({ credential_id: 'q83vEjRW' }));
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain('credential_id belongs with a pubkey=');
+    if (!r.ok) expect(r.error).toContain('credential_id is not part of the request');
   });
 });
 
@@ -397,16 +382,12 @@ describe('sessionSignerDraft', () => {
     expect(sessionSignerDraft({ kind: 'passkey', publicKeyHex: PUBKEY }, null)).toBeNull();
   });
 
-  it("declares a passkey against the account's verifier, its credential id after the key", () => {
+  it("declares a passkey against the account's verifier by its bare public key", () => {
     expect(sessionSignerDraft({ kind: 'passkey', publicKeyHex: PUBKEY }, VERIFIER)).toEqual({
       kind: 'passkey',
       verifier: VERIFIER,
       publicKeyHex: PUBKEY,
     });
-    // q83vEjRW is base64url for ab cd ef 12 34 56.
-    expect(
-      sessionSignerDraft({ kind: 'passkey', publicKeyHex: PUBKEY, credentialId: 'q83vEjRW' }, VERIFIER),
-    ).toEqual({ kind: 'passkey', verifier: VERIFIER, publicKeyHex: `${PUBKEY}abcdef123456` });
   });
 });
 
@@ -414,14 +395,11 @@ describe('describeSessionScope', () => {
   it('states a capped, expiring scope exactly', () => {
     expect(
       describeSessionScope({
-        target: TARGET,
-        functions: ['tip', 'transfer'],
         cap: { stroops: '25000000', period: 'week' },
         duration: '24h',
         notAfterLedger: 5145276,
       }),
     ).toEqual({
-      functions: `Only tip, transfer on ${TARGET}`,
       amount: 'Up to 2.5 XLM per week',
       expiry: 'At ledger 5,145,276 (≈ 24 hours)',
     });
@@ -430,14 +408,11 @@ describe('describeSessionScope', () => {
   it('states an uncapped, never-expiring scope plainly', () => {
     expect(
       describeSessionScope({
-        target: TARGET,
-        functions: undefined,
         cap: null,
         duration: 'none',
         notAfterLedger: null,
       }),
     ).toEqual({
-      functions: `Any function on ${TARGET}`,
       amount: 'No spending cap',
       expiry: 'Never (until revoked)',
     });
@@ -445,8 +420,6 @@ describe('describeSessionScope', () => {
 
   it('falls back to the span before the ledger is read', () => {
     const d = describeSessionScope({
-      target: TARGET,
-      functions: undefined,
       cap: null,
       duration: '7d',
       notAfterLedger: null,

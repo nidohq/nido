@@ -44,10 +44,17 @@ describe('describeDocRule', () => {
     expect(v.signerIds).toEqual(['session']);
   });
 
-  it('writes the permission sentence with the doc names', () => {
+  it('writes the permission sentence with the doc names, functions as calls', () => {
     const v = describeDocRule(doc.rules[0]);
     expect(v.permission).toContain('"session"');
-    expect(v.permission).toContain('update_message');
+    expect(v.permission).toContain('call update_message() on');
+  });
+
+  it('keeps each function its own sentence part, for a renderer to style', () => {
+    const two = scopedSessionKeyDoc({ sessionAddress: SESSION_G, targetContract: TARGET, functions: ['guess', 'reveal'] });
+    const v = describeDocRule(two.rules[0]);
+    expect(v.permissionParts.filter((p) => typeof p !== 'string')).toEqual([{ fn: 'guess' }, { fn: 'reveal' }]);
+    expect(v.permission).toContain('call guess(), reveal() on');
   });
 
   it('treats absent functions as any-function and absent expiry as none', () => {

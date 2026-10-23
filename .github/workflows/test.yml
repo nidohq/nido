@@ -140,6 +140,11 @@ jobs:
       # for a signature.
       - name: Frontend recovery pages
         run: npx vitest run --root packages/frontend src/lib/recovery
+      # The document an app grant with a passkey key applies, kept identical to
+      # the fixture the Contracts job compiles with Perch's doc compiler
+      # (crates/integration-tests/tests/it/app_grant_doc.rs).
+      - name: Frontend app-grant document fixture
+        run: npx vitest run --root packages/frontend src/lib/policy/appGrantDoc.test.ts
 
   e2e:
     name: E2E (fast UI + CDP)

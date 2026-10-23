@@ -1,4 +1,4 @@
-import { esc } from "../html.js";
+import { esc, fnCallHtml } from "../html.js";
 import { shortAddr } from "../address.js";
 import { stroopsToXlm } from "../money.js";
 import { PERIOD_LABEL, type LimitPeriod } from "../spendingLimitParams.js";
@@ -66,7 +66,7 @@ export function renderDocSessionGrant(v: DocSessionGrantView): string {
   const fns =
     v.functions == null
       ? `Any function`
-      : v.functions.map((f) => `<span class="mono">${esc(f)}</span>`).join(", ");
+      : v.functions.map(fnCallHtml).join(", ");
   const action =
     v.position && v.position.count > 1
       ? `Grant an app a scoped session key <span class="mut" style="font-weight:500;">(rule ${v.position.index + 1} of ${v.position.count})</span>`

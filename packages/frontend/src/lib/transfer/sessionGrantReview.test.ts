@@ -36,6 +36,12 @@ describe("renderDocSessionGrant", () => {
     docHash: "ab".repeat(32),
   };
 
+  it("shows each function as a method", () => {
+    const html = renderDocSessionGrant({ ...view, functions: ["transfer", "approve"] });
+    expect(html).toContain('<code class="fn-call">transfer()</code>, <code class="fn-call">approve()</code>');
+    expect(renderDocSessionGrant({ ...view, functions: ["<b>x"] })).toContain("&lt;b&gt;x()");
+  });
+
   it("names the rule and says which of several it is", () => {
     const html = renderDocSessionGrant({ ...view, position: { index: 1, count: 2 } });
     expect(html).toContain('data-grant-rule="guess-xlm"');
