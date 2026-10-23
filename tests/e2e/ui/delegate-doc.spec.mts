@@ -98,6 +98,21 @@ async function openPopup(page: Page): Promise<Page> {
   return popup;
 }
 
+/** Clicks a control that closes its own page, and waits for the close.
+ *  The page can close before the click action reports back (Firefox), so a
+ *  rejection is tolerated once the page is closed. */
+async function clickAndClose(page: Page, selector: string): Promise<void> {
+  await Promise.all([
+    page.waitForEvent('close'),
+    page
+      .locator(selector)
+      .click()
+      .catch((e: unknown) => {
+        if (!page.isClosed()) throw e;
+      }),
+  ]);
+}
+
 const messages = (page: Page) =>
   page.evaluate(() => (window as unknown as { msgs: { origin: string; data: unknown }[] }).msgs);
 
@@ -317,7 +332,7 @@ test.describe('app approval page: back to the app @fast', () => {
     await routeDapp(context);
     const popup = await openPopup(page);
 
-    await Promise.all([popup.waitForEvent('close'), popup.locator('#deny').click()]);
+    await clickAndClose(popup, '#deny');
     await expect.poll(() => messages(page)).toEqual([
       { origin: WALLET, data: { source: 'nido-wallet', search: '?delegation=cancelled' } },
     ]);
@@ -337,7 +352,7 @@ test.describe('app approval page: back to the app @fast', () => {
 
     // /sign/ returns to the opener the same way (its cancel here: the
     // success return needs a passkey ceremony and a relayer).
-    await Promise.all([popup.waitForEvent('close'), popup.locator('#cancel').click()]);
+    await clickAndClose(popup, '#cancel');
     await expect.poll(() => messages(page)).toEqual([
       { origin: WALLET, data: { source: 'nido-wallet', search: '?delegation=cancelled' } },
     ]);
