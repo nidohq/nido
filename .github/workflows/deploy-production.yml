@@ -45,6 +45,11 @@ jobs:
           PUBLIC_RELAYER_URL: https://nido.fly.dev
           PUBLIC_RELAYER_SIM_SOURCE: GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
           PUBLIC_PERCH_DEPLOYMENT: ${{ vars.PUBLIC_PERCH_DEPLOYMENT }}
+          # infra/invite's base URL + shared x-api-key (lib/demo/config.ts).
+          # Empty disables the /demo/start invite check, it doesn't break the
+          # build.
+          PUBLIC_INVITE_SERVICE_URL: ${{ vars.PUBLIC_INVITE_SERVICE_URL }}
+          PUBLIC_INVITE_SERVICE_API_KEY: ${{ secrets.PUBLIC_INVITE_SERVICE_API_KEY }}
         run: npx astro build --root ./packages/frontend
 
       # `--branch main` is Cloudflare Pages' production deployment for this
