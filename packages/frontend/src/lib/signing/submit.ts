@@ -23,16 +23,21 @@ export { type RelayerStatus };
  * RelayerError whose code marks the payment's outcome uncertain (so the retry
  * guard blocks a fresh-payment retry). WAIT_TIMEOUT / ONCHAIN_FAILED already
  * carry that meaning (and their attached last-poll details), so they pass
- * through unchanged; everything else — a bare connection-loss error, a non-JSON
- * body, acceptance without a transaction handle, or a relayer-reported failure
- * carrying any server-supplied code — collapses to SUBMIT_UNKNOWN. The
- * server-supplied code is deliberately discarded here: once we have sent the
- * authorization, only trusted on-chain reconciliation (handled by the caller)
- * may re-open a retry, never the relayer's own word.
+ * through unchanged. The relayer refusing the submit (answering with an error
+ * of its own) becomes SUBMIT_REFUSED, keeping its message for the user;
+ * everything else — a bare connection-loss error, a non-JSON body, acceptance
+ * without a transaction handle — collapses to SUBMIT_UNKNOWN. Both stay
+ * uncertain: the server-supplied code is discarded (kept only in `details`),
+ * and once we have sent the authorization only trusted on-chain
+ * reconciliation (handled by the caller) may re-open a retry, never the
+ * relayer's own word.
  */
 function uncertainSubmitError(err: unknown): RelayerError {
   if (err instanceof RelayerError && (err.code === "WAIT_TIMEOUT" || err.code === "ONCHAIN_FAILED")) {
     return err;
+  }
+  if (err instanceof RelayerError && err.refused) {
+    return new RelayerError(err.message, "SUBMIT_REFUSED", { relayerCode: err.code, details: err.details });
   }
   const message = err instanceof Error ? err.message : String(err);
   const details = err instanceof RelayerError ? err.details : undefined;

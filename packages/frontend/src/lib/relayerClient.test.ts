@@ -59,4 +59,9 @@ describe("relayerOutcomeBlocksRetry (duplicate-payment guard)", () => {
   it("lets a trusted-reconcile caller proceed past an unknown submission outcome", () => {
     expect(relayerOutcomeBlocksRetry("SUBMIT_UNKNOWN", true)).toBe(false);
   });
+
+  it("treats a relayer refusal as its word only: blocked unless reconciled on chain", () => {
+    expect(relayerOutcomeBlocksRetry("SUBMIT_REFUSED")).toBe(true);
+    expect(relayerOutcomeBlocksRetry("SUBMIT_REFUSED", true)).toBe(false);
+  });
 });
