@@ -226,5 +226,5 @@ app.post("/invitations", (_req, res) => {
 startReceiptPolling(client, printer, RECEIPT_POLL_INTERVAL_MS);
 
 app.listen(PORT, () => {
-  console.log(`nido-demo-service listening on :${PORT} (invite API: ${INVITE_API_URL})`);
+  console.log(`nido-demo-service listening on http://localhost:${PORT} (invite API: ${INVITE_API_URL})`);
 });
