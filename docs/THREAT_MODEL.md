@@ -214,9 +214,12 @@ and infrastructure bring.
       rules; the page shows the tree and says what the signature allows and
       until when.
     - **Network.** A request naming any other network passphrase is refused.
-    - **Grants.** The grant card describes the one contract-scoped rule the
-      request adds or changes; a request that changes an account-scoped rule
-      after the first apply, removes a rule, or grants several is refused.
+    - **Grants.** The grant card describes each contract-scoped rule the
+      request adds or changes, one card per rule; a request that changes an
+      account-scoped rule after the first apply, removes a rule, changes
+      nothing, grants more rules than one request carries, or grants rules
+      for different keys or with different expiries is refused
+      (`packages/frontend/src/lib/policy/grantReview.ts`).
 
     Every signing page is unframeable (`X-Frame-Options: DENY`). What
     remains is the user's judgement: a tree of calls on other contracts (a
