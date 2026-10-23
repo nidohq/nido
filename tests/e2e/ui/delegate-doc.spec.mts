@@ -225,7 +225,10 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     ['a phone', { width: 390, height: 844 }],
     ['the popup the app opens', { width: 460, height: 720 }],
   ] as const) {
-    test(`on ${name}, the cap and the decision show without scrolling`, async ({ page }) => {
+    test(`on ${name}, the cap and the decision show without scrolling`, async ({ context, page }) => {
+      // A browser that can do passkeys: without WebAuthn (Linux WebKit) the
+      // layout shows its "open in your real browser" banner above the page.
+      await installPasskeyShim(context);
       await page.setViewportSize(viewport);
       await mockChain(page);
       await page.goto(grantUrl());
