@@ -422,9 +422,9 @@ describe('describeSessionScope', () => {
     });
   });
 
-  it("says an uncapped rule that can't move tokens needs no cap, without a warning", () => {
+  it("says an uncapped rule allowing no token functions has no cap, without a warning", () => {
     const d = describeSessionScope({ cap: null, functions: ['guess'], duration: '24h', notAfterLedger: null });
-    expect(d).toMatchObject({ amount: "Can't move tokens — no cap needed", warn: false });
+    expect(d).toMatchObject({ amount: 'No cap applies — allows no token functions', warn: false });
   });
 
   it.each([[['transfer']], [['guess', 'approve']], [undefined]])(

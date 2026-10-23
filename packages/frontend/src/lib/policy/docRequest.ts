@@ -25,8 +25,8 @@
 // uncapped, as a rule that only makes calls must be (a cap allows token
 // transfers only, so it would block every other call). Without `limit` the
 // user chooses between a cap and an explicit uncapped grant. `limit=none`
-// spares the user that choice only when the rule cannot move tokens: its
-// `functions` list is given and names none of TOKEN_MOVING_FUNCTIONS
+// spares the user that choice only when the rule allows no token function:
+// its `functions` list is given and names none of TOKEN_MOVING_FUNCTIONS
 // (limitNoneHonoured). Otherwise the grant is shown as one without `limit`.
 //
 // One grant (the original format): `target`, `functions`, `limit`,
@@ -61,7 +61,7 @@ import {
 import { PERIOD_LABEL, PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
 import { stroopsToXlm } from '../money.js';
 import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
-import { CANT_MOVE_TOKENS, NO_SPENDING_CAP, canMoveTokens } from './tokenFunctions.js';
+import { NO_CAP_NO_TOKEN_FUNCTIONS, NO_SPENDING_CAP, canMoveTokens } from './tokenFunctions.js';
 
 export const DOC_DURATIONS: Record<string, number | null> = {
   '24h': 17280,
@@ -309,12 +309,12 @@ export function sessionSignerDraft(
  * The effective spend and lifetime of a session grant as the user will
  * approve it, one line per dimension, so the uncapped and never-expiring
  * cases are stated as plainly as the bounded ones. An uncapped rule that
- * can move tokens is `warn`; one that cannot says so rather than "no cap".
+ * allows a token function is `warn`; one that allows none says so.
  * (The page lists the functions itself, each shown as a method.)
  */
 export function describeSessionScope(scope: {
   cap: DocDelegateCap | null;
-  /** The rule's functions (undefined = any): whether it can move tokens. */
+  /** The rule's functions (undefined = any): whether it allows a token function. */
   functions: string[] | undefined;
   duration: string;
   /** The anchored expiry ledger; null for "none" or before the ledger read. */
@@ -325,7 +325,7 @@ export function describeSessionScope(scope: {
     ? `Up to ${stroopsToXlm(BigInt(scope.cap.stroops))} XLM ${PERIOD_LABEL[scope.cap.period]}`
     : warn
       ? NO_SPENDING_CAP
-      : CANT_MOVE_TOKENS;
+      : NO_CAP_NO_TOKEN_FUNCTIONS;
   const span = DOC_DURATION_LABEL[scope.duration];
   const expiry =
     DOC_DURATIONS[scope.duration] == null

@@ -42,9 +42,9 @@ describe("renderDocSessionGrant", () => {
     expect(renderDocSessionGrant({ ...view, functions: ["<b>x"] })).toContain("&lt;b&gt;x()");
   });
 
-  it("says a rule that can't move tokens needs no cap, not that it can spend any amount", () => {
+  it("says a rule allowing no token functions has no cap, not that it can spend any amount", () => {
     const html = renderDocSessionGrant({ ...view, functions: ["guess"], capStroops: null });
-    expect(html).toContain("Can&#39;t move tokens — no cap needed");
+    expect(html).toContain("No cap — no token functions allowed");
     expect(html).not.toContain("Any amount");
   });
 

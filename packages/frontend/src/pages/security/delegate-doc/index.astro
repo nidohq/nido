@@ -132,7 +132,7 @@ import Icon from '../../../components/Icon.astro';
     sessionSignerDraft,
     type DocDelegateGrant,
   } from '../../../lib/policy/docRequest.js';
-  import { CANT_MOVE_TOKENS } from '../../../lib/policy/tokenFunctions.js';
+  import { NO_CAP_NO_TOKEN_FUNCTIONS } from '../../../lib/policy/tokenFunctions.js';
   import {
     adminBaseline,
     upsertSessionRules,
@@ -252,7 +252,7 @@ import Icon from '../../../components/Icon.astro';
 
     if (limitNoneHonoured(grant)) {
       // A call-only rule: say what no cap means here, not "no cap".
-      const none = el('span', 'dd-v', CANT_MOVE_TOKENS);
+      const none = el('span', 'dd-v', NO_CAP_NO_TOKEN_FUNCTIONS);
       none.dataset.field = 'cap';
       card.append(grantRow('Cap', none));
       grants.append(card);

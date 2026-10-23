@@ -2,7 +2,7 @@ import { esc, fnCallHtml } from "../html.js";
 import { shortAddr } from "../address.js";
 import { stroopsToXlm } from "../money.js";
 import { PERIOD_LABEL, type LimitPeriod } from "../spendingLimitParams.js";
-import { CANT_MOVE_TOKENS, canMoveTokens } from "../policy/tokenFunctions.js";
+import { NO_CAP_NO_TOKEN_FUNCTIONS_SHORT, canMoveTokens } from "../policy/tokenFunctions.js";
 import type { OpSummary } from "./txSummary.js";
 
 export interface SessionGrantScope {
@@ -60,13 +60,13 @@ export interface DocSessionGrantView {
 }
 
 export function renderDocSessionGrant(v: DocSessionGrantView): string {
-  // Uncapped: "any amount" only where the rule can move tokens; a rule that
-  // cannot says so, as the approval page does.
+  // Uncapped: "any amount" only where the rule allows a token function; a
+  // rule that allows none says so, as the approval page does.
   const cap =
     v.capStroops == null
       ? canMoveTokens(v.functions)
         ? `Any amount <span class="mut" style="font-weight:500;">(no cap)</span>`
-        : esc(CANT_MOVE_TOKENS)
+        : esc(NO_CAP_NO_TOKEN_FUNCTIONS_SHORT)
       : `Up to ${esc(stroopsToXlm(BigInt(v.capStroops)))} XLM <span class="mut" style="font-weight:500;">${esc(PERIOD_LABEL[v.capPeriod])}</span>`;
   const fns =
     v.functions == null

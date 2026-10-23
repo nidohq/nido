@@ -125,9 +125,9 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(guess.locator('.dd-rule')).toHaveText('guess');
     await expect(guess.locator('[data-field="target"]')).toHaveText(GAME);
     await expect(guess.locator('[data-field="functions"]')).toHaveText('Only guess()');
-    // Declared uncapped, and it can't move tokens: no cap inputs, nothing to
-    // confirm, and no "no cap" wording that would read as if it could spend.
-    await expect(guess.locator('[data-field="cap"]')).toHaveText("Can't move tokens — no cap needed");
+    // Declared uncapped, and it allows no token function: no cap inputs,
+    // nothing to confirm, and no "no spending cap" warning.
+    await expect(guess.locator('[data-field="cap"]')).toHaveText('No cap applies — allows no token functions');
     await expect(guess.locator('input, select')).toHaveCount(0);
 
     const stake = page.locator('[data-grant="1"]');
@@ -137,7 +137,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(stake.locator('select')).toHaveValue('day');
     await expect(stake.locator('[data-uncapped-ack]')).toBeHidden();
 
-    await expect(page.locator('[data-scope="guess"]')).toContainText("Can't move tokens — no cap needed");
+    await expect(page.locator('[data-scope="guess"]')).toContainText('No cap applies — allows no token functions');
     await expect(page.locator('[data-scope="guess"]')).not.toContainText('No spending cap');
     await expect(page.locator('[data-scope="guess"] .tone-warn')).toHaveCount(0);
     await expect(page.locator('[data-scope="guess-xlm"]')).toContainText('Up to 2 XLM per day');
@@ -146,7 +146,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
     // The document card says the same of the call-only rule.
     await expect(page.locator('#doc-preview .pol-preview-rule', { hasText: 'guess()' }).first()).toContainText(
-      "Can't move tokens — no cap needed",
+      'No cap — no token functions allowed',
     );
   });
 
@@ -231,7 +231,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
       await mockChain(page);
       await page.goto(grantUrl({ 'grant.1.functions': functions, 'grant.1.limit': 'none', 'grant.1.limit_period': null }));
       const stake = page.locator('[data-grant="1"]');
-      await expect(stake.locator('[data-field="cap"]')).not.toContainText("Can't move tokens");
+      await expect(stake.locator('[data-field="cap"]')).not.toContainText('token functions');
       await expect(stake.locator('[data-cap-on]')).not.toBeChecked();
       await expect(stake.locator('[data-cap-xlm]')).toBeHidden();
       await expect(stake.locator('[data-uncapped-ack]')).toBeVisible();
@@ -382,8 +382,8 @@ test.describe('app approval page through /sign/ @fast', () => {
     await expect(cards).toHaveCount(2);
     await expect(cards.nth(0)).toHaveAttribute('data-grant-rule', 'guess');
     await expect(cards.nth(0)).toContainText('rule 1 of 2');
-    // The call-only rule can't spend; /sign/ says so rather than "any amount".
-    await expect(cards.nth(0)).toContainText("Can't move tokens — no cap needed");
+    // The call-only rule allows no token function; /sign/ says so rather than "any amount".
+    await expect(cards.nth(0)).toContainText('No cap — no token functions allowed');
     await expect(cards.nth(0)).not.toContainText('Any amount');
     await expect(cards.nth(0).locator('code.fn-call')).toHaveText(['guess()']);
     await expect(cards.nth(1).locator('code.fn-call')).toHaveText(['transfer()']);
