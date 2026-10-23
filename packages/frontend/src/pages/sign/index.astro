@@ -230,6 +230,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     TX_AUTH_CONSEQUENCE,
   } from '../../lib/signing/authReview.js';
   import { reviewGrant } from '../../lib/policy/grantReview.js';
+  import { ruleRecipient } from '../../lib/policy/reviewText.js';
   import { withPasskeySheet, openPasskeySheet, closePasskeySheet } from '../../lib/passkeySheet';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
   import { shortAddr } from '../../lib/address';
@@ -601,6 +602,15 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
               : 'day',
             docHash: hash,
             position: { index, count: review.grants.length },
+            // Whom its transfer may pay; when that is the contract another
+            // rule of this request calls, say which.
+            recipient: (() => {
+              const to = ruleRecipient(rule);
+              const sibling = review.grants.find(
+                (g) => g.rule !== rule && g.rule.scope.type === 'contract' && g.rule.scope.address === to,
+              );
+              return { address: to, ...(sibling ? { ruleName: sibling.rule.name } : {}) };
+            })(),
           });
         }).join('<div style="height:10px;"></div>') +
           (diffHtml ? `<div class="card" style="padding:14px 16px;margin-top:10px;">${diffHtml}</div>` : '');

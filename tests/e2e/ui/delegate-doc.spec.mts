@@ -41,7 +41,8 @@ const adminDoc = (key: string): PolicyDoc =>
 const applied = adminDoc(ADMIN_KEY);
 
 /** Guess the Number's session: `guess` on the game (no cap: a cap allows
- *  transfers only) and the XLM transfer that moves the stake (2 XLM/day). */
+ *  transfers only) and the XLM transfer that moves the stake (2 XLM/day),
+ *  payable only to the game. */
 function grantUrl(extra: Record<string, string | null> = {}): string {
   const fields: Record<string, string | null> = {
     origin: DAPP,
@@ -57,6 +58,7 @@ function grantUrl(extra: Record<string, string | null> = {}): string {
     'grant.1.functions': 'transfer',
     'grant.1.limit': '2',
     'grant.1.limit_period': 'day',
+    'grant.1.to': GAME,
     ...extra,
   };
   const p = new URLSearchParams();
@@ -127,7 +129,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(guess.locator('[data-field="functions"]')).toHaveText('Only guess()');
     // Declared uncapped, and it allows no token function: no cap inputs,
     // nothing to confirm, and no "no spending cap" warning.
-    await expect(guess.locator('[data-field="cap"]')).toHaveText('No cap applies — allows no token functions');
+    await expect(guess.locator('[data-field="cap"]')).toHaveText('No cap — allows no token functions');
     await expect(guess.locator('input, select')).toHaveCount(0);
 
     const stake = page.locator('[data-grant="1"]');
@@ -137,17 +139,28 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(stake.locator('select')).toHaveValue('day');
     await expect(stake.locator('[data-uncapped-ack]')).toBeHidden();
 
-    await expect(page.locator('[data-scope="guess"]')).toContainText('No cap applies — allows no token functions');
+    await expect(page.locator('[data-scope="guess"]')).toContainText('No cap — allows no token functions');
     await expect(page.locator('[data-scope="guess"]')).not.toContainText('No spending cap');
     await expect(page.locator('[data-scope="guess"] .tone-warn')).toHaveCount(0);
-    await expect(page.locator('[data-scope="guess-xlm"]')).toContainText('Up to 2 XLM per day');
+    await expect(page.locator('[data-scope="guess-xlm"]')).toContainText(`Up to 2 XLM per day, only to ${GAME}.`);
+    // Whom the stake can pay: only the game, named as the guess rule's contract.
+    await expect(stake.locator('[data-field="pays-to"]')).toHaveText(`Only ${GAME} — the contract “guess” calls`);
+    await expect(guess.locator('[data-field="pays-to"]')).toHaveCount(0);
+    // The expiry as a time, the ledger second (the mock chain is at ledger 1,000).
+    await expect(page.locator('#expiry-text')).toHaveText(/^Tomorrow around \d{1,2}:\d{2} [AP]M \(ledger 18,280\)\.$/);
+    await expect(page.locator('#scope-expiry')).toHaveText(/^Tomorrow around .+ \(ledger 18,280\)$/);
     // Both rules land in the one previewed update, over the applied admin rule.
     await expect(page.locator('#doc-diff')).toContainText('guess-xlm');
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
-    // The document card says the same of the call-only rule.
+    // The document card says the same of each rule, the cap in XLM.
     await expect(page.locator('#doc-preview .pol-preview-rule', { hasText: 'guess()' }).first()).toContainText(
-      'No cap — no token functions allowed',
+      'No cap — allows no token functions',
     );
+    const stakeCard = page.locator('#doc-preview .pol-preview-rule', { hasText: 'transfer()' }).first();
+    await expect(stakeCard).toContainText('Up to 2 XLM per day');
+    await expect(stakeCard).toContainText('Pays only to');
+    await expect(stakeCard).toContainText(/Stops tomorrow around .+ \(ledger 18,280\)/);
+    await expect(page.locator('#doc-preview')).not.toContainText('stroops');
   });
 
   test('shows every function as a method: bold monospace with call parens', async ({ page }) => {
@@ -199,7 +212,24 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     expect(stake!.scope).toEqual({ type: 'contract', address: XLM });
     expect(stake!.functions).toEqual(['transfer']);
     expect(stake!.cap).toBeDefined();
+    // to= lowers to an address-eq on transfer's `to` (argument 1).
+    expect(stake!.args).toEqual([{ index: 1, pred: { type: 'address-eq', address: GAME } }]);
+    expect(guess!.args).toBeUndefined();
     for (const r of [guess!, stake!]) expect(r['not-after-ledger']).toBe(1_000 + 17_280);
+  });
+
+  test('a capped transfer grant without to= says plainly it can pay any address', async ({ page }) => {
+    await mockChain(page);
+    await page.goto(grantUrl({ 'grant.1.to': null }));
+    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
+    await expect(page.locator('[data-grant="1"] [data-field="pays-to"]')).toHaveText('Any address');
+    await expect(page.locator('[data-scope="guess-xlm"]')).toContainText('Up to 2 XLM per day, to any address.');
+    await expect(page.locator('#doc-preview .pol-preview-rule', { hasText: 'transfer()' }).first()).toContainText(
+      'Pays any address',
+    );
+    await page.locator('#approve').click();
+    const { doc } = await stashedDoc(page);
+    expect(doc.rules.find((r) => r.name === 'guess-xlm')!.args).toBeUndefined();
   });
 
   test('a grant with no limit hides the cap inputs and asks the user to choose', async ({ page }) => {
@@ -229,7 +259,9 @@ test.describe('app approval page: several grants, one approval @fast', () => {
   ] as const) {
     test(`limit=none on ${name} still asks the user to choose a cap`, async ({ page }) => {
       await mockChain(page);
-      await page.goto(grantUrl({ 'grant.1.functions': functions, 'grant.1.limit': 'none', 'grant.1.limit_period': null }));
+      await page.goto(
+        grantUrl({ 'grant.1.functions': functions, 'grant.1.limit': 'none', 'grant.1.limit_period': null, 'grant.1.to': null }),
+      );
       const stake = page.locator('[data-grant="1"]');
       await expect(stake.locator('[data-field="cap"]')).not.toContainText('token functions');
       await expect(stake.locator('[data-cap-on]')).not.toBeChecked();
@@ -244,7 +276,8 @@ test.describe('app approval page: several grants, one approval @fast', () => {
       await stake.locator('[data-uncapped-ack]').check();
       // A rule that can move tokens, left uncapped by the player's choice:
       // the summary warns.
-      await expect(page.locator('[data-scope="guess-xlm"] .tone-warn')).toHaveText('No spending cap.');
+      await expect(page.locator('[data-scope="guess-xlm"] .tone-warn')).toHaveText('No spending cap');
+      await expect(page.locator('[data-scope="guess-xlm"]')).toContainText('No spending cap, to any address.');
       await page.locator('#approve').click();
       const { doc } = await stashedDoc(page);
       expect(doc.rules.find((r) => r.name === 'guess-xlm')!.cap).toBeUndefined();
@@ -382,8 +415,16 @@ test.describe('app approval page through /sign/ @fast', () => {
     await expect(cards).toHaveCount(2);
     await expect(cards.nth(0)).toHaveAttribute('data-grant-rule', 'guess');
     await expect(cards.nth(0)).toContainText('rule 1 of 2');
+    // A noun phrase in the lead, not a second sentence inside it.
+    await expect(page.locator('#lead')).toHaveText(
+      `${DAPP} wants this account to sign a session key grant for 2 rules.`,
+    );
+    await expect(cards.nth(1)).toContainText('Can pay');
+    await expect(cards.nth(1)).toContainText('the contract “guess” calls');
+    await expect(cards.nth(1)).toContainText(/Tomorrow around .+ \(ledger 18,280\)/);
+    await expect(cards.nth(0)).not.toContainText('Can pay');
     // The call-only rule allows no token function; /sign/ says so rather than "any amount".
-    await expect(cards.nth(0)).toContainText('No cap — no token functions allowed');
+    await expect(cards.nth(0)).toContainText('No cap — allows no token functions');
     await expect(cards.nth(0)).not.toContainText('Any amount');
     await expect(cards.nth(0).locator('code.fn-call')).toHaveText(['guess()']);
     await expect(cards.nth(1).locator('code.fn-call')).toHaveText(['transfer()']);

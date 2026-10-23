@@ -12,7 +12,9 @@ import type { DocRuleView, DocSignerView, DocViewModel, PermissionPart } from '.
 import type { DocJsonSource } from '../lib/policy/docPolicyFetch.js';
 import type { DocDiff } from '../lib/policy/docDiff.js';
 import { describeDocRule } from '../lib/policy/docView.js';
-import { NO_CAP_NO_TOKEN_FUNCTIONS_SHORT, NO_SPENDING_CAP, canMoveTokens } from '../lib/policy/tokenFunctions.js';
+import { NO_CAP_NO_TOKEN_FUNCTIONS, NO_SPENDING_CAP, canMoveTokens } from '../lib/policy/tokenFunctions.js';
+import { canTransfer, capText, expiryText } from '../lib/policy/reviewText.js';
+import { shortAddr } from '../lib/address.js';
 
 export interface InspectorContext {
   /** policy contract address → registry label. */
@@ -119,7 +121,7 @@ function docRuleCard(rule: DocRuleView, currentLedger: number | null): string {
   const capRow = rule.cap
     ? `<div class="pol-field">
         <span class="pol-field-label">Spending cap</span>
-        <span class="pol-field-val">${esc(formatStroops(rule.cap.limit))} XLM per ${rule.cap.periodLedgers.toLocaleString()} ledgers (rolling)</span>
+        <span class="pol-field-val">${esc(capText(rule.cap.limit, rule.cap.periodLedgers))} (rolling)</span>
       </div>`
     : '';
   const argsBadge = rule.hasArgConstraints
@@ -155,19 +157,6 @@ function docRuleCard(rule: DocRuleView, currentLedger: number | null): string {
       ${capRow}
     </div>
   </article>`;
-}
-
-/** Render `limit` stroops as a short XLM amount (display only). */
-function formatStroops(stroops: string): string {
-  try {
-    const v = BigInt(stroops);
-    const whole = v / 10_000_000n;
-    const frac = v % 10_000_000n;
-    if (frac === 0n) return whole.toString();
-    return `${whole}.${frac.toString().padStart(7, '0').replace(/0+$/, '')}`;
-  } catch {
-    return stroops;
-  }
 }
 
 export interface DocRenderContext {
@@ -305,7 +294,12 @@ export function renderDocPolicy(
  * facts), and the canonical JSON tucked behind a details toggle rather than
  * dumped raw. Pure string builder, no DOM.
  */
-export function renderDocPreviewHtml(model: DocViewModel, canonical: string): string {
+export function renderDocPreviewHtml(
+  model: DocViewModel,
+  canonical: string,
+  /** The current ledger, to say when a rule stops as a time. */
+  ctx: { currentLedger?: number | null } = {},
+): string {
   const signerChips = model.signers
     .map(
       (s) =>
@@ -321,19 +315,24 @@ export function renderDocPreviewHtml(model: DocViewModel, canonical: string): st
       );
     }
     if (r.cap !== null) {
-      facts.push(
-        `<span class="pol-preview-fact">Cap: ${esc(r.cap.limit)} stroops / ${r.cap.periodLedgers.toLocaleString()} ledgers</span>`,
-      );
+      facts.push(`<span class="pol-preview-fact">${esc(capText(r.cap.limit, r.cap.periodLedgers))}</span>`);
     } else if (r.contract !== null) {
       // An uncapped contract rule: a warning only where it allows a token function.
       facts.push(
         canMoveTokens(r.functions)
           ? `<span class="pol-preview-fact tone-warn">${NO_SPENDING_CAP}</span>`
-          : `<span class="pol-preview-fact">${esc(NO_CAP_NO_TOKEN_FUNCTIONS_SHORT)}</span>`,
+          : `<span class="pol-preview-fact">${esc(NO_CAP_NO_TOKEN_FUNCTIONS)}</span>`,
+      );
+    }
+    if (r.contract !== null && canTransfer(r.functions)) {
+      facts.push(
+        r.recipient !== null
+          ? `<span class="pol-preview-fact" title="${esc(r.recipient)}">Pays only to <code class="pol-mono">${esc(shortAddr(r.recipient))}</code></span>`
+          : `<span class="pol-preview-fact">Pays any address</span>`,
       );
     }
     facts.push(
-      `<span class="pol-preview-fact">${r.notAfterLedger === null ? 'No expiry' : `Stops at ledger ${r.notAfterLedger.toLocaleString()}`}</span>`,
+      `<span class="pol-preview-fact">${r.notAfterLedger === null ? 'No expiry' : `Stops ${esc(expiryText(r.notAfterLedger, ctx.currentLedger ?? null))}`}</span>`,
     );
     return `<article class="pol-preview-rule">
       <div class="pol-preview-rule-head">

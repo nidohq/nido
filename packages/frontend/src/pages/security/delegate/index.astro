@@ -483,7 +483,8 @@ import Icon from '../../../components/Icon.astro';
           expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
         }),
         title: 'Grant a session key',
-        subtitle: `${dappOrigin} wants to act on your behalf.`,
+        // /sign/ reads "<origin> wants this account to sign a <subtitle>.".
+        subtitle: 'session key grant',
         submitMode: 'relayer',
         returnTarget: {
           type: 'dapp',

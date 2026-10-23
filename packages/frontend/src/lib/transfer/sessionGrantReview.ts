@@ -2,7 +2,8 @@ import { esc, fnCallHtml } from "../html.js";
 import { shortAddr } from "../address.js";
 import { stroopsToXlm } from "../money.js";
 import { PERIOD_LABEL, type LimitPeriod } from "../spendingLimitParams.js";
-import { NO_CAP_NO_TOKEN_FUNCTIONS_SHORT, canMoveTokens } from "../policy/tokenFunctions.js";
+import { NO_CAP_NO_TOKEN_FUNCTIONS, canMoveTokens } from "../policy/tokenFunctions.js";
+import { canTransfer } from "../policy/reviewText.js";
 import type { OpSummary } from "./txSummary.js";
 
 export interface SessionGrantScope {
@@ -57,6 +58,20 @@ export interface DocSessionGrantView {
   docHash: string;
   /** This rule's place when one request grants several. */
   position?: { index: number; count: number };
+  /** The only address its `transfer` may pay (null = any), and, when that
+   *  is a contract another rule of the request calls, that rule's name. */
+  recipient?: { address: string | null; ruleName?: string };
+}
+
+/** Whom the rule's `transfer` may pay, for a rule that may call it. */
+function payRow(v: DocSessionGrantView): string {
+  if (!canTransfer(v.functions)) return "";
+  const to = v.recipient?.address ?? null;
+  if (to === null) return row("Can pay", "Any address");
+  const note = v.recipient?.ruleName
+    ? ` <span class="mut" style="font-weight:500;">(the contract “${esc(v.recipient.ruleName)}” calls)</span>`
+    : "";
+  return row("Can pay", `Only <span class="mono" title="${esc(to)}">${esc(shortAddr(to))}</span>${note}`);
 }
 
 export function renderDocSessionGrant(v: DocSessionGrantView): string {
@@ -66,7 +81,7 @@ export function renderDocSessionGrant(v: DocSessionGrantView): string {
     v.capStroops == null
       ? canMoveTokens(v.functions)
         ? `Any amount <span class="mut" style="font-weight:500;">(no cap)</span>`
-        : esc(NO_CAP_NO_TOKEN_FUNCTIONS_SHORT)
+        : esc(NO_CAP_NO_TOKEN_FUNCTIONS)
       : `Up to ${esc(stroopsToXlm(BigInt(v.capStroops)))} XLM <span class="mut" style="font-weight:500;">${esc(PERIOD_LABEL[v.capPeriod])}</span>`;
   const fns =
     v.functions == null
@@ -84,6 +99,7 @@ export function renderDocSessionGrant(v: DocSessionGrantView): string {
     ${row("On contract", `<span class="mono">${esc(shortAddr(v.target))}</span>`)}
     ${row("Functions", fns)}
     ${row("Can spend", cap)}
+    ${payRow(v)}
     ${row("Expires", esc(v.expiryLabel))}
     ${row("Document hash", `<span class="mono" title="${esc(v.docHash)}">${esc(v.docHash.slice(0, 8))}…${esc(v.docHash.slice(-8))}</span>`)}
   </div>`;

@@ -29,8 +29,14 @@
 // its `functions` list is given and names none of TOKEN_MOVING_FUNCTIONS
 // (limitNoneHonoured). Otherwise the grant is shown as one without `limit`.
 //
+// `to` (a G… or C… address) restricts whom a grant's `transfer` may pay:
+// the rule carries an `address-eq` on transfer's argument 1, so the key can
+// pay only that address (a muxed M… recipient fails closed on chain). It is
+// accepted only on a grant whose functions are exactly `transfer`. A
+// transfer grant without `to` can pay any address, up to its cap.
+//
 // One grant (the original format): `target`, `functions`, `limit`,
-// `limit_period`, and `label` (the rule name, default "session").
+// `limit_period`, `to`, and `label` (the rule name, default "session").
 //
 // Several grants, installed by one approval as one document update: the
 // same fields per grant as `grant.<i>.<field>`, for i = 0…n-1 (at most
@@ -43,7 +49,7 @@
 //   &grant.0.label=guess&grant.0.target=CGAME…&grant.0.functions=guess
 //   &grant.0.limit=none
 //   &grant.1.label=guess-xlm&grant.1.target=CXLM…&grant.1.functions=transfer
-//   &grant.1.limit=2&grant.1.limit_period=day
+//   &grant.1.limit=2&grant.1.limit_period=day&grant.1.to=CGAME…
 //
 // An optional param is either absent (its default applies) or valid: a
 // present-but-malformed `duration`, `limit`, `limit_period` or unknown
@@ -58,10 +64,10 @@ import {
   type SessionDocDraft,
   type SessionSignerDraft,
 } from './docDraft.js';
-import { PERIOD_LABEL, PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
-import { stroopsToXlm } from '../money.js';
+import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
 import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
 import { NO_CAP_NO_TOKEN_FUNCTIONS, NO_SPENDING_CAP, canMoveTokens } from './tokenFunctions.js';
+import { canTransfer, capText, expiryText } from './reviewText.js';
 
 export const DOC_DURATIONS: Record<string, number | null> = {
   '24h': 17280,
@@ -98,6 +104,8 @@ export interface DocDelegateGrant {
   cap: DocDelegateCap | 'none' | null;
   /** Rule name (doc rule + display). */
   label: string;
+  /** The only address the grant's `transfer` may pay; absent = any. */
+  to?: string;
 }
 
 export { TOKEN_MOVING_FUNCTIONS } from './tokenFunctions.js';
@@ -128,7 +136,7 @@ export type DocDelegateParse =
   | { ok: true; req: DocDelegateRequest }
   | { ok: false; error: string };
 
-const GRANT_FIELDS = ['target', 'functions', 'label', 'limit', 'limit_period'] as const;
+const GRANT_FIELDS = ['target', 'functions', 'label', 'limit', 'limit_period', 'to'] as const;
 type GrantField = (typeof GRANT_FIELDS)[number];
 
 export function parseDocDelegateParams(params: URLSearchParams): DocDelegateParse {
@@ -284,10 +292,18 @@ function parseGrant(
     cap = { stroops: stroops.toString(), period: period as LimitPeriod };
   }
 
+  const to = get('to');
+  if (to !== null) {
+    if (!isStellarAddress(to)) return { error: `${where}Invalid to address (expected a C… or G… address).` };
+    if (functions?.length !== 1 || functions[0] !== 'transfer') {
+      return { error: `${where}to= restricts whom transfer pays, so the grant's functions must be exactly transfer.` };
+    }
+  }
+
   const label = (get('label') ?? '').trim() || defaultLabel;
   if (label === null) return { error: `${where}A label is required (each grant is its own rule).` };
 
-  return { grant: { target, functions, cap, label } };
+  return { grant: { target, functions, cap, label, ...(to !== null ? { to } : {}) } };
 }
 
 /**
@@ -306,34 +322,45 @@ export function sessionSignerDraft(
 }
 
 /**
- * The effective spend and lifetime of a session grant as the user will
- * approve it, one line per dimension, so the uncapped and never-expiring
- * cases are stated as plainly as the bounded ones. An uncapped rule that
- * allows a token function is `warn`; one that allows none says so.
- * (The page lists the functions itself, each shown as a method.)
+ * The effective spend, payee and lifetime of a session grant as the user
+ * will approve it, so the uncapped, pay-anyone and never-expiring cases are
+ * stated as plainly as the bounded ones. An uncapped rule that allows a
+ * token function is `warn`; one that allows none says no cap applies.
+ * `recipient` says whom a rule that may call `transfer` can pay (null when
+ * it cannot). (The page lists the functions itself, each shown as a method.)
  */
 export function describeSessionScope(scope: {
   cap: DocDelegateCap | null;
-  /** The rule's functions (undefined = any): whether it allows a token function. */
+  /** The rule's functions (undefined = any). */
   functions: string[] | undefined;
+  /** The only address its `transfer` may pay (the request's `to`). */
+  to?: string;
   duration: string;
   /** The anchored expiry ledger; null for "none" or before the ledger read. */
   notAfterLedger: number | null;
-}): { amount: string; warn: boolean; expiry: string } {
+  /** The ledger it was anchored at, to say the expiry as a time. */
+  latestLedger: number | null;
+}): { amount: string; warn: boolean; recipient: string | null; expiry: string } {
   const warn = scope.cap === null && canMoveTokens(scope.functions);
   const amount = scope.cap
-    ? `Up to ${stroopsToXlm(BigInt(scope.cap.stroops))} XLM ${PERIOD_LABEL[scope.cap.period]}`
+    ? capText(scope.cap.stroops, PERIOD_LEDGERS[scope.cap.period])
     : warn
       ? NO_SPENDING_CAP
       : NO_CAP_NO_TOKEN_FUNCTIONS;
+  const recipient =
+    scope.to !== undefined ? `only to ${scope.to}` : canTransfer(scope.functions) ? 'to any address' : null;
   const span = DOC_DURATION_LABEL[scope.duration];
   const expiry =
     DOC_DURATIONS[scope.duration] == null
       ? 'Never (until revoked)'
       : scope.notAfterLedger == null
         ? `After ${span}`
-        : `At ledger ${scope.notAfterLedger.toLocaleString('en-US')} (≈ ${span})`;
-  return { amount, warn, expiry };
+        : capitalize(expiryText(scope.notAfterLedger, scope.latestLedger));
+  return { amount, warn, recipient, expiry };
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /**

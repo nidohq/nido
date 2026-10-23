@@ -12,7 +12,6 @@ import {
   buildPolicyDoc,
   parsePolicyDoc,
   perch,
-  scopedSessionKeyDoc,
   type FlatDocLimits,
   type PolicyDoc,
 } from '@nidohq/passkey-sdk';
@@ -57,6 +56,9 @@ export interface SessionDocDraft {
   notAfterLedger: number | null;
   /** Cumulative cap, or null for none. */
   cap: { stroops: string; periodLedgers: number } | null;
+  /** The only address `transfer` may pay (an `address-eq` on its argument
+   *  1); only with functions exactly `transfer`. Absent = any address. */
+  recipient?: string;
 }
 
 /** Parse the functions input to a doc function list. Empty input means the
@@ -134,6 +136,16 @@ export function validateSessionDocDraft(
     }
   }
 
+  if (draft.recipient !== undefined) {
+    if (!isStellarAddress(draft.recipient.trim())) {
+      errors.push('Recipient is not a valid C- or G-address.');
+    }
+    const fns = parseFunctionsInput(draft.functionsInput);
+    if (fns?.length !== 1 || fns[0] !== 'transfer') {
+      errors.push('A recipient restriction needs the functions to be exactly transfer.');
+    }
+  }
+
   if (draft.notAfterLedger !== null) {
     if (!Number.isInteger(draft.notAfterLedger) || draft.notAfterLedger <= 0) {
       errors.push('Expiry ledger must be a positive integer.');
@@ -156,41 +168,23 @@ export function validateSessionDocDraft(
   return { ok: errors.length === 0, errors };
 }
 
-/** Build the template document from a validated draft. Delegated signers
- *  route through the SDK's canned scopedSessionKeyDoc; passkey signers (the
- *  legacy delegate flow's dApp-origin session passkey) compose the same
- *  one-rule shape via buildPolicyDoc with an external signer declaration.
+/** Build the template document from a validated draft: one rule for the
+ *  session signer (a delegated address, or a passkey declared as an
+ *  external signer), with its functions, expiry, cap and recipient.
  *  Precondition: `validateSessionDocDraft(draft, limits).ok`. */
 export function draftToDoc(draft: SessionDocDraft, networkPassphrase: string): PolicyDoc {
   const functions = parseFunctionsInput(draft.functionsInput);
-  if (draft.signer.kind === 'delegated') {
-    return scopedSessionKeyDoc({
-      sessionAddress: draft.signer.address.trim(),
-      targetContract: draft.targetContract.trim(),
-      ...(functions !== undefined ? { functions } : {}),
-      ...(draft.notAfterLedger !== null ? { notAfterLedger: draft.notAfterLedger } : {}),
-      ...(draft.cap !== null
-        ? {
-            cap: {
-              limitStroops: BigInt(draft.cap.stroops),
-              periodLedgers: draft.cap.periodLedgers,
-            },
-          }
-        : {}),
-      network: networkPassphrase,
-      name: draft.name.trim(),
-      signerId: 'session',
-    });
-  }
   return buildPolicyDoc({
     network: networkPassphrase,
     signers: [
-      {
-        id: 'session',
-        kind: 'passkey',
-        verifier: draft.signer.verifier.trim(),
-        publicKey: draft.signer.publicKeyHex.trim().toLowerCase(),
-      },
+      draft.signer.kind === 'delegated'
+        ? { id: 'session', kind: 'delegated', address: draft.signer.address.trim() }
+        : {
+            id: 'session',
+            kind: 'passkey',
+            verifier: draft.signer.verifier.trim(),
+            publicKey: draft.signer.publicKeyHex.trim().toLowerCase(),
+          },
     ],
     permissions: [
       {
@@ -198,6 +192,10 @@ export function draftToDoc(draft: SessionDocDraft, networkPassphrase: string): P
         on: { contract: draft.targetContract.trim() },
         by: ['session'],
         ...(functions !== undefined ? { functions } : {}),
+        // SEP-41 transfer(from, to, amount): `to` is argument 1.
+        ...(draft.recipient !== undefined
+          ? { args: [{ index: 1, pred: { type: 'address-eq' as const, address: draft.recipient.trim() } }] }
+          : {}),
         ...(draft.notAfterLedger !== null ? { until: draft.notAfterLedger } : {}),
         ...(draft.cap !== null
           ? { cap: { limit: draft.cap.stroops, 'period-ledgers': draft.cap.periodLedgers } }

@@ -10,6 +10,7 @@
 import type { PolicyDoc, Rule, SignerDecl } from '@nidohq/passkey-sdk';
 import { renameLegacyOwner } from './docDraft.js';
 import { truncate } from './policyView.js';
+import { ruleRecipient } from './reviewText.js';
 
 /** One declared signer, displayed with the doc's own id as the label. */
 export interface DocSignerView {
@@ -61,6 +62,9 @@ export interface DocRuleView {
   /** True when the rule constrains args (rendered as a badge only — arg
    *  predicates have no compact prose form yet). */
   hasArgConstraints: boolean;
+  /** The one address the rule's `transfer` may pay (an `address-eq` on
+   *  argument 1), or null. */
+  recipient: string | null;
   /** True for the ADMIN shape: policy-free cap-free self-admin authority
    *  (bare `all` principals, no functions/args/cap/expiry). The inspector
    *  folds these into one "Admin keys" list — any admin may act. */
@@ -112,6 +116,7 @@ export function describeDocRule(rule: Rule): DocRuleView {
     notAfterLedger,
     cap,
     hasArgConstraints: rule.args !== undefined,
+    recipient: ruleRecipient(rule),
     isAdmin,
     permission: parts.map((p) => (typeof p === 'string' ? p : `${p.fn}()`)).join(''),
     permissionParts: parts,

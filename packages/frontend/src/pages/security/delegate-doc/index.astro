@@ -133,6 +133,7 @@ import Icon from '../../../components/Icon.astro';
     type DocDelegateGrant,
   } from '../../../lib/policy/docRequest.js';
   import { NO_CAP_NO_TOKEN_FUNCTIONS } from '../../../lib/policy/tokenFunctions.js';
+  import { canTransfer, expiryText } from '../../../lib/policy/reviewText.js';
   import {
     adminBaseline,
     upsertSessionRules,
@@ -184,7 +185,7 @@ import Icon from '../../../components/Icon.astro';
   }
 
   const durationSel = document.getElementById('duration-sel') as HTMLSelectElement;
-  const expiryText = document.getElementById('expiry-text')!;
+  const expiryEl = document.getElementById('expiry-text')!;
   const scopeGrants = document.getElementById('scope-grants')!;
   const scopeExpiry = document.getElementById('scope-expiry')!;
   const docHashEl = document.getElementById('doc-hash')!;
@@ -228,6 +229,29 @@ import Icon from '../../../components/Icon.astro';
     ]);
   }
 
+  /** Whom a grant's `transfer` may pay: its `to` (and, when that is the
+   *  contract another grant of the request calls, which one), or anyone. */
+  function payeeNode(grant: DocDelegateGrant): HTMLElement {
+    const node = el('span', 'dd-v');
+    node.dataset.field = 'pays-to';
+    if (grant.to === undefined) {
+      // The cap row below bounds it; the summary says both together.
+      node.textContent = 'Any address';
+      return node;
+    }
+    const sibling = req?.grants.find((g) => g !== grant && g.target === grant.to);
+    node.append(
+      document.createTextNode('Only '),
+      el('code', 'mono dd-addr', grant.to),
+      ...(sibling ? [document.createTextNode(` — the contract “${sibling.label}” calls`)] : []),
+    );
+    return node;
+  }
+
+  function capitalized(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
   function grantRow(key: string, value: HTMLElement): HTMLElement {
     const row = el('div', 'dd-row');
     row.append(el('span', 'dd-k', key), value);
@@ -249,6 +273,7 @@ import Icon from '../../../components/Icon.astro';
     functions.append(...functionNodes(grant.functions));
     functions.dataset.field = 'functions';
     card.append(grantRow('Functions', functions));
+    if (canTransfer(grant.functions)) card.append(grantRow('Pays to', payeeNode(grant)));
 
     if (limitNoneHonoured(grant)) {
       // A call-only rule: say what no cap means here, not "no cap".
@@ -443,6 +468,7 @@ import Icon from '../../../components/Icon.astro';
         signer,
         targetContract: v.grant.target,
         functionsInput: v.grant.functions?.join(', ') ?? '',
+        ...(v.grant.to !== undefined ? { recipient: v.grant.to } : {}),
         notAfterLedger,
         cap,
       };
@@ -459,12 +485,12 @@ import Icon from '../../../components/Icon.astro';
 
   function syncPreview(): void {
     const off = req ? DOC_DURATIONS[durationSel.value] : null;
-    expiryText.textContent =
+    expiryEl.textContent =
       off == null
         ? 'Never — stays valid until you revoke it.'
         : latestLedger == null
-          ? `≈ ${off.toLocaleString()} ledgers from now.`
-          : `At ledger ${(latestLedger + off).toLocaleString()} (≈ ${off.toLocaleString()} ledgers from now).`;
+          ? `In ${DOC_DURATION_LABEL[durationSel.value]}.`
+          : `${capitalized(expiryText(latestLedger + off, latestLedger))}.`;
     for (const v of views) {
       if (v.cap === null) continue;
       v.cap.note.textContent = v.cap.on.checked
@@ -482,8 +508,10 @@ import Icon from '../../../components/Icon.astro';
       const scope = describeSessionScope({
         cap: capControls === 'invalid' ? null : capControls,
         functions: v.grant.functions,
+        ...(v.grant.to !== undefined ? { to: v.grant.to } : {}),
         duration: durationSel.value,
         notAfterLedger,
+        latestLedger,
       });
       const line = el('div', '');
       line.dataset.scope = v.grant.label;
@@ -493,7 +521,8 @@ import Icon from '../../../components/Icon.astro';
         el('span', 'dd-addr', ` on ${v.grant.target}. `),
         capControls === 'invalid'
           ? el('span', '', 'Enter a valid cap amount.')
-          : el('span', scope.warn ? 'tone-warn' : '', `${scope.amount}.`),
+          : el('span', scope.warn ? 'tone-warn' : '', scope.amount),
+        el('span', 'dd-addr', scope.recipient === null ? '.' : `, ${scope.recipient}.`),
       );
       return { line, expiry: scope.expiry };
     });
@@ -528,7 +557,9 @@ import Icon from '../../../components/Icon.astro';
       const tooLarge = docCapProblem(doc, docLimits);
       docHashEl.textContent = tooLarge === undefined ? hash : '—';
       if (tooLarge === undefined) {
-        docPreviewEl.innerHTML = renderDocPreviewHtml(summarizeDoc(doc, hash), canonicalJson(doc));
+        docPreviewEl.innerHTML = renderDocPreviewHtml(summarizeDoc(doc, hash), canonicalJson(doc), {
+          currentLedger: latestLedger,
+        });
       } else {
         docPreviewEl.textContent = tooLarge;
       }
@@ -638,7 +669,11 @@ import Icon from '../../../components/Icon.astro';
         isFirstApply,
         drafts,
         networkPassphrase: NETWORK_PASSPHRASE,
-        expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
+        // /sign/ shows the expiry as the time it was anchored to here.
+        expiryLabel:
+          DOC_DURATIONS[durationSel.value] != null && latestLedger !== null
+            ? capitalized(expiryText(latestLedger + DOC_DURATIONS[durationSel.value]!, latestLedger))
+            : (DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked'),
       });
       // Every grant adds a rule: refuse here, in words, a document the
       // account's compiler would refuse at /sign/.
@@ -654,10 +689,9 @@ import Icon from '../../../components/Icon.astro';
         account,
         operation,
         title: 'Grant a session key',
-        subtitle:
-          req.grants.length > 1
-            ? `${req.origin} wants a scoped session key for ${req.grants.length} rules.`
-            : `${req.origin} wants a scoped session key.`,
+        // /sign/ reads "<origin> wants this account to sign a <subtitle>.":
+        // a noun phrase, never a sentence of its own.
+        subtitle: req.grants.length > 1 ? `session key grant for ${req.grants.length} rules` : 'session key grant',
         submitMode: 'relayer',
         returnTarget: {
           type: 'dapp',

@@ -346,6 +346,32 @@ describe('parseDocDelegateParams — several grants (grant.<i>.*)', () => {
     if (!r.ok) expect(r.error).toContain(msg);
   });
 
+  it('takes to= on a transfer grant, single-grant and grant.<i> forms alike', () => {
+    const multiReq = parseDocDelegateParams(multi({ 'grant.1.to': TARGET }));
+    expect(multiReq.ok && multiReq.req.grants[1]).toMatchObject({ functions: ['transfer'], to: TARGET });
+    expect(multiReq.ok && 'to' in multiReq.req.grants[0]!).toBe(false);
+    const single = parseDocDelegateParams(params({ functions: 'transfer', to: SIGNER }));
+    expect(single.ok && single.req.grants[0]!.to).toBe(SIGNER);
+  });
+
+  it.each([
+    ['a non-transfer grant', { 'grant.0.to': TARGET }, 'grant.0: to= restricts whom transfer pays'],
+    ['transfer among other functions', { 'grant.1.functions': 'transfer,approve', 'grant.1.to': TARGET }, 'exactly transfer'],
+    ['a malformed address', { 'grant.1.to': 'CGAME' }, 'grant.1: Invalid to address'],
+    ['a muxed address', { 'grant.1.to': 'MA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJUAAAAAAAAAAAAAGZFQ' }, 'grant.1: Invalid to address'],
+    ['a top-level to alongside grants', { to: TARGET }, 'not both (found to)'],
+  ] as const)('rejects to= on %s', (_case, overrides, msg) => {
+    const r = parseDocDelegateParams(multi(overrides as Record<string, string | null>));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain(msg);
+  });
+
+  it('rejects a single-grant to= without functions=transfer', () => {
+    const r = parseDocDelegateParams(params({ to: SIGNER }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('exactly transfer');
+  });
+
   it('rejects a grant field given twice', () => {
     const p = multi();
     p.append('grant.1.limit', '100');
@@ -392,56 +418,55 @@ describe('sessionSignerDraft', () => {
 });
 
 describe('describeSessionScope', () => {
-  it('states a capped, expiring scope exactly', () => {
-    expect(
-      describeSessionScope({
-        cap: { stroops: '25000000', period: 'week' },
-        functions: ['transfer'],
-        duration: '24h',
-        notAfterLedger: 5145276,
-      }),
-    ).toEqual({
-      amount: 'Up to 2.5 XLM per week',
-      warn: false,
-      expiry: 'At ledger 5,145,276 (≈ 24 hours)',
+  const base = { duration: '24h', notAfterLedger: null, latestLedger: null } as const;
+
+  it('states a capped, expiring scope, its expiry as a time with the ledger second', () => {
+    const d = describeSessionScope({
+      cap: { stroops: '25000000', period: 'week' },
+      functions: ['transfer'],
+      duration: '24h',
+      notAfterLedger: 5145276,
+      latestLedger: 5145276 - 17280,
     });
+    expect(d).toMatchObject({ amount: 'Up to 2.5 XLM per week', warn: false, recipient: 'to any address' });
+    expect(d.expiry).toMatch(/^Tomorrow around \d{1,2}:\d{2} [AP]M \(ledger 5,145,276\)$/);
   });
 
   it('states an uncapped, never-expiring scope plainly', () => {
-    expect(
-      describeSessionScope({
-        cap: null,
-        functions: undefined,
-        duration: 'none',
-        notAfterLedger: null,
-      }),
-    ).toEqual({
+    expect(describeSessionScope({ ...base, cap: null, functions: undefined, duration: 'none' })).toEqual({
       amount: 'No spending cap',
       warn: true,
+      recipient: 'to any address',
       expiry: 'Never (until revoked)',
     });
   });
 
   it("says an uncapped rule allowing no token functions has no cap, without a warning", () => {
-    const d = describeSessionScope({ cap: null, functions: ['guess'], duration: '24h', notAfterLedger: null });
-    expect(d).toMatchObject({ amount: 'No cap applies — allows no token functions', warn: false });
+    const d = describeSessionScope({ ...base, cap: null, functions: ['guess'] });
+    expect(d).toMatchObject({ amount: 'No cap — allows no token functions', warn: false, recipient: null });
   });
 
   it.each([[['transfer']], [['guess', 'approve']], [undefined]])(
     'warns "No spending cap" on an uncapped rule that can move tokens (%j)',
     (functions) => {
-      const d = describeSessionScope({ cap: null, functions, duration: '24h', notAfterLedger: null });
+      const d = describeSessionScope({ ...base, cap: null, functions });
       expect(d).toMatchObject({ amount: 'No spending cap', warn: true });
     },
   );
 
-  it('falls back to the span before the ledger is read', () => {
-    const d = describeSessionScope({
-      cap: null,
-      functions: undefined,
-      duration: '7d',
-      notAfterLedger: null,
+  it('says whom a transfer may pay: only its to, or any address', () => {
+    const cap = { stroops: '20000000', period: 'day' } as const;
+    expect(describeSessionScope({ ...base, cap, functions: ['transfer'], to: TARGET }).recipient).toBe(
+      `only to ${TARGET}`,
+    );
+    expect(describeSessionScope({ ...base, cap, functions: ['transfer'] })).toMatchObject({
+      amount: 'Up to 2 XLM per day',
+      recipient: 'to any address',
     });
+  });
+
+  it('falls back to the span before the ledger is read', () => {
+    const d = describeSessionScope({ ...base, cap: null, functions: undefined, duration: '7d' });
     expect(d.expiry).toBe('After 7 days');
   });
 });

@@ -458,3 +458,29 @@ describe('upsertSessionRules — several grants, one document', () => {
     ).toThrow(/core account rule named "admin"/);
   });
 });
+
+describe('a session grant restricted to one recipient', () => {
+  const GAME = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
+  const pay = (overrides: Partial<SessionDocDraft> = {}) =>
+    draft({ name: 'guess-xlm', functionsInput: 'transfer', recipient: GAME, ...overrides });
+
+  it("writes an address-eq on transfer's argument 1", () => {
+    const rule = draftToDoc(pay(), Networks.TESTNET).rules[0]!;
+    expect(rule.functions).toEqual(['transfer']);
+    expect(rule.args).toEqual([{ index: 1, pred: { type: 'address-eq', address: GAME } }]);
+  });
+
+  it('leaves a grant without a recipient unrestricted, as before', () => {
+    expect(draftToDoc(draft(), Networks.TESTNET).rules[0]!.args).toBeUndefined();
+  });
+
+  it('accepts it only on a transfer-only grant, to a valid address', () => {
+    expect(validateSessionDocDraft(pay(), LIMITS).ok).toBe(true);
+    expect(validateSessionDocDraft(pay({ functionsInput: 'transfer, approve' }), LIMITS).errors).toContain(
+      'A recipient restriction needs the functions to be exactly transfer.',
+    );
+    expect(validateSessionDocDraft(pay({ recipient: 'nope' }), LIMITS).errors).toContain(
+      'Recipient is not a valid C- or G-address.',
+    );
+  });
+});

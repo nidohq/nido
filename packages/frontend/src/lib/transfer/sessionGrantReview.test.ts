@@ -44,7 +44,7 @@ describe("renderDocSessionGrant", () => {
 
   it("says a rule allowing no token functions has no cap, not that it can spend any amount", () => {
     const html = renderDocSessionGrant({ ...view, functions: ["guess"], capStroops: null });
-    expect(html).toContain("No cap — no token functions allowed");
+    expect(html).toContain("No cap — allows no token functions");
     expect(html).not.toContain("Any amount");
   });
 
@@ -56,6 +56,18 @@ describe("renderDocSessionGrant", () => {
       expect(html).not.toContain("move tokens");
     },
   );
+
+  it("says whom a transfer rule can pay: only its recipient, naming the rule whose contract it is", () => {
+    const only = renderDocSessionGrant({ ...view, recipient: { address: "CBY4S4Z2TI5HXUKSHFV35PKHSIN4YIXU7MYS44UKY23ONSV7QUECYGUW", ruleName: "guess" } });
+    expect(only).toContain("Can pay");
+    expect(only).toContain("Only <span");
+    expect(only).toContain("CBY4…YGUW");
+    expect(only).toContain("the contract “guess” calls");
+    const any = renderDocSessionGrant({ ...view, recipient: { address: null } });
+    expect(any).toContain("Any address");
+    // A rule that cannot call transfer has no Can pay row.
+    expect(renderDocSessionGrant({ ...view, functions: ["guess"], capStroops: null })).not.toContain("Can pay");
+  });
 
   it("names the rule and says which of several it is", () => {
     const html = renderDocSessionGrant({ ...view, position: { index: 1, count: 2 } });

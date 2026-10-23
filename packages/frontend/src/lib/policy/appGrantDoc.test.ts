@@ -22,7 +22,8 @@ const APP_KEY = '04' + 'cd'.repeat(64);
 
 describe('a passkey request compiles (testdata/app-grant-doc.json)', () => {
   it('is the document the request builds, byte for byte', () => {
-    // Guess the Number's session: `guess` (call-only) and the capped stake.
+    // Guess the Number's session: `guess` (call-only) and the capped stake,
+    // payable only to the game.
     const parsed = parseDocDelegateParams(
       new URLSearchParams({
         origin: 'https://game.example',
@@ -38,6 +39,7 @@ describe('a passkey request compiles (testdata/app-grant-doc.json)', () => {
         'grant.1.functions': 'transfer',
         'grant.1.limit': '2',
         'grant.1.limit_period': 'day',
+        'grant.1.to': 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL',
       }),
     );
     expect(parsed.ok).toBe(true);
@@ -53,6 +55,7 @@ describe('a passkey request compiles (testdata/app-grant-doc.json)', () => {
         targetContract: g.target,
         functionsInput: g.functions?.join(', ') ?? '',
         notAfterLedger: 5000,
+        ...(g.to !== undefined ? { recipient: g.to } : {}),
         cap:
           g.cap === null || g.cap === 'none'
             ? null

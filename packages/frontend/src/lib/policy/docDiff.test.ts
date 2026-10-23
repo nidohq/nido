@@ -121,7 +121,7 @@ describe('diffRuleFields', () => {
     };
     const changes = diffRuleFields(a, b);
     expect(changes.join('\n')).toContain('scope:');
-    expect(changes.join('\n')).toContain('cap: no cap → 50000000 stroops per 17280 ledgers');
+    expect(changes.join('\n')).toContain('cap: no cap → up to 5 XLM per day');
   });
 });
 
@@ -250,5 +250,20 @@ describe('legacy owner→admin migration', () => {
     };
     const { doc } = upsertSessionRule(mixed, draft, Networks.TESTNET);
     expect(doc.signers.map((s) => s.id)).toEqual(['owner', 'admin', 'session']);
+  });
+});
+
+describe('diffRuleFields — transfer recipient', () => {
+  const rule = (args?: { index: number; pred: { type: 'address-eq'; address: string } }[]) =>
+    buildPolicyDoc({
+      signers: [{ id: 'admin', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY }],
+      permissions: [{ name: 'pay', on: { contract: TARGET }, by: ['admin'], functions: ['transfer'], ...(args ? { args } : {}) }],
+    }).rules[0]!;
+  const only = (address: string) => [{ index: 1, pred: { type: 'address-eq' as const, address } }];
+
+  it('says a recipient restriction in words', () => {
+    expect(diffRuleFields(rule(), rule(only(TARGET2)))).toEqual(['pays: any address → only CDVVRZ…RF6POX']);
+    expect(diffRuleFields(rule(only(TARGET2)), rule(only(G1)))).toEqual(['pays: only CDVVRZ…RF6POX → only GA7QYN…UJVSGZ']);
+    expect(diffRuleFields(rule(only(TARGET2)), rule())).toEqual(['pays: only CDVVRZ…RF6POX → any address']);
   });
 });

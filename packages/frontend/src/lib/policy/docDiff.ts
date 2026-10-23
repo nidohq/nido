@@ -10,6 +10,7 @@
 // identity is the declaration id.
 
 import type { PolicyDoc, Rule, SignerDecl } from '@nidohq/passkey-sdk';
+import { capText, ruleRecipient } from './reviewText.js';
 import { truncate } from './policyView.js';
 
 export interface RuleModification {
@@ -88,14 +89,25 @@ export function diffRuleFields(before: Rule, after: Rule): string[] {
   }
 
   const capOf = (r: Rule) =>
-    r.cap === undefined ? 'no cap' : `${r.cap.limit} stroops per ${r.cap['period-ledgers']} ledgers`;
+    r.cap === undefined ? 'no cap' : capText(r.cap.limit, r.cap['period-ledgers']).replace(/^Up to/, 'up to');
   if (capOf(before) !== capOf(after)) {
     changes.push(`cap: ${capOf(before)} → ${capOf(after)}`);
   }
 
   const argsOf = (r: Rule) => JSON.stringify(r.args ?? null);
   if (argsOf(before) !== argsOf(after)) {
-    changes.push('argument conditions changed');
+    // A transfer recipient, in words; any other argument condition generically.
+    const payee = (r: Rule) => {
+      const to = ruleRecipient(r);
+      return to !== null ? `only ${truncate(to)}` : r.args === undefined ? 'any address' : null;
+    };
+    const [pb2, pa2] = [payee(before), payee(after)];
+    const otherArgs = (r: Rule) => JSON.stringify((r.args ?? []).filter((a) => a.index !== 1));
+    if (pb2 !== null && pa2 !== null && otherArgs(before) === otherArgs(after)) {
+      changes.push(`pays: ${pb2} → ${pa2}`);
+    } else {
+      changes.push('argument conditions changed');
+    }
   }
 
   return changes;

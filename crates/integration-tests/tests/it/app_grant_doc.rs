@@ -4,7 +4,8 @@
 //!
 //! The fixture is what /security/delegate-doc/ builds for a two-grant
 //! `pubkey=` request on a first apply (the account's admin rule, `guess`
-//! uncapped, and the capped XLM `transfer`); the frontend's
+//! uncapped, and the capped XLM `transfer` payable only to the game: its
+//! `to=` lowers to an `address-eq` on transfer's argument 1); the frontend's
 //! `appGrantDoc.test.ts` keeps it byte-identical to that output and names
 //! this world's verifier. The app's key is the bare 65-byte public key: the
 //! compiler refuses a `WebAuthn` key with a credential id appended

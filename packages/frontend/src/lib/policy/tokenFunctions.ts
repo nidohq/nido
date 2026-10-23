@@ -32,8 +32,7 @@ export function canMoveTokens(functions: readonly string[] | null | undefined): 
 
 /** An uncapped rule that can move tokens. */
 export const NO_SPENDING_CAP = 'No spending cap';
-/** An uncapped rule allowing none of TOKEN_MOVING_FUNCTIONS: what was
- *  checked, not a claim that it cannot move value. */
-export const NO_CAP_NO_TOKEN_FUNCTIONS = 'No cap applies — allows no token functions';
-/** NO_CAP_NO_TOKEN_FUNCTIONS, for the compact /sign/ and document cards. */
-export const NO_CAP_NO_TOKEN_FUNCTIONS_SHORT = 'No cap — no token functions allowed';
+/** An uncapped rule allowing none of TOKEN_MOVING_FUNCTIONS, the same
+ *  words on every review screen: what was checked, not a claim that it
+ *  cannot move value. */
+export const NO_CAP_NO_TOKEN_FUNCTIONS = 'No cap — allows no token functions';
