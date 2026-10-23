@@ -2,9 +2,10 @@
 // (sibling of policyDraft.ts, which backs the raw add_context_rule mode).
 //
 // Doc mode emits a perch PolicyDoc — for the showcase, the canned v1
-// template: one scoped session key (a delegated signer restricted to one
-// contract's named functions, with an expiry) optionally composed with a
-// cumulative spending cap. The pure layer validates the form draft, builds
+// template: one scoped session key (a delegated or passkey signer restricted
+// to one contract's named functions, with an expiry) optionally composed with
+// a cumulative spending cap and, for a transfer-only rule, the one address it
+// may pay. The pure layer validates the form draft, builds
 // the document via the SDK, and decides which apply route the transaction
 // takes; the component does the RPC + signing.
 
