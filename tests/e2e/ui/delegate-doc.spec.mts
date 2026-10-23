@@ -185,6 +185,31 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     expect(doc.rules.find((r) => r.name === 'guess-xlm')!.cap).toBeUndefined();
   });
 
+  for (const [name, functions] of [
+    ['transfer', 'transfer'],
+    ['any function', null],
+  ] as const) {
+    test(`limit=none on ${name} still asks the user to choose a cap`, async ({ page }) => {
+      await mockChain(page);
+      await page.goto(grantUrl({ 'grant.1.functions': functions, 'grant.1.limit': 'none', 'grant.1.limit_period': null }));
+      const stake = page.locator('[data-grant="1"]');
+      await expect(stake.locator('[data-field="cap"]')).not.toContainText('the app asked for no cap');
+      await expect(stake.locator('[data-cap-on]')).not.toBeChecked();
+      await expect(stake.locator('[data-cap-xlm]')).toBeHidden();
+      await expect(stake.locator('[data-uncapped-ack]')).toBeVisible();
+
+      await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
+      await page.locator('#approve').click();
+      await expect(page.locator('#status')).toContainText('Set a spending cap on "guess-xlm"');
+      await expect(page).toHaveURL(/delegate-doc/);
+
+      await stake.locator('[data-uncapped-ack]').check();
+      await page.locator('#approve').click();
+      const { doc } = await stashedDoc(page);
+      expect(doc.rules.find((r) => r.name === 'guess-xlm')!.cap).toBeUndefined();
+    });
+  }
+
   for (const [name, viewport] of [
     ['a 1280×720 desktop', { width: 1280, height: 720 }],
     ['a phone', { width: 390, height: 844 }],

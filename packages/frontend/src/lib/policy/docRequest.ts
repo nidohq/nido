@@ -21,7 +21,10 @@
 // (day|week|30d, default day), or `none`: the app declares the rule
 // uncapped, as a rule that only makes calls must be (a cap allows token
 // transfers only, so it would block every other call). Without `limit` the
-// user chooses between a cap and an explicit uncapped grant.
+// user chooses between a cap and an explicit uncapped grant. `limit=none`
+// spares the user that choice only when the rule cannot move tokens: its
+// `functions` list is given and names none of TOKEN_MOVING_FUNCTIONS
+// (limitNoneHonoured). Otherwise the grant is shown as one without `limit`.
 //
 // One grant (the original format): `target`, `functions`, `limit`,
 // `limit_period`, and `label` (the rule name, default "session").
@@ -90,12 +93,37 @@ export interface DocDelegateGrant {
   /** Allowed function names; undefined = any function. */
   functions: string[] | undefined;
   /** The requested spending cap; `'none'` when the app declared the rule
-   *  uncapped (`limit=none`); null when the request carries no `limit`. Null
-   *  is only a suggestion: the page still makes the user explicitly choose
-   *  an uncapped grant. */
+   *  uncapped (`limit=none`); null when the request carries no `limit`. Null,
+   *  and `'none'` unless limitNoneHonoured, is only a suggestion: the page
+   *  still makes the user explicitly choose an uncapped grant. */
   cap: DocDelegateCap | 'none' | null;
   /** Rule name (doc rule + display). */
   label: string;
+}
+
+/** SEP-41 / Stellar Asset Contract functions that move or authorise a
+ *  balance. A rule allowing any of them can move tokens. */
+export const TOKEN_MOVING_FUNCTIONS: readonly string[] = [
+  'transfer',
+  'transfer_from',
+  'approve',
+  'burn',
+  'burn_from',
+  'mint',
+  'clawback',
+  'set_authorized',
+  'set_admin',
+];
+
+/** Whether the grant's `limit=none` skips the user's uncapped confirmation:
+ *  only for a rule limited to functions none of which moves tokens. */
+export function limitNoneHonoured(grant: Pick<DocDelegateGrant, 'cap' | 'functions'>): boolean {
+  return (
+    grant.cap === 'none' &&
+    grant.functions !== undefined &&
+    grant.functions.length > 0 &&
+    !grant.functions.some((f) => TOKEN_MOVING_FUNCTIONS.includes(f))
+  );
 }
 
 export interface DocDelegateRequest {

@@ -3,6 +3,7 @@ import {
   MAX_DOC_GRANTS,
   buildSessionGrantOperation,
   describeSessionScope,
+  limitNoneHonoured,
   parseDocDelegateParams,
   sessionSignerDraft,
 } from './docRequest.js';
@@ -117,6 +118,37 @@ describe('parseDocDelegateParams', () => {
   it('takes limit=none as the app declaring the rule uncapped', () => {
     const r = parseDocDelegateParams(params({ limit: 'none' }));
     expect(r.ok && r.req.grants[0]!.cap).toBe('none');
+  });
+
+  describe('limitNoneHonoured', () => {
+    const grantOf = (overrides: Record<string, string | null>) => {
+      const r = parseDocDelegateParams(params({ limit: 'none', ...overrides }));
+      if (!r.ok) throw new Error(r.error);
+      return r.req.grants[0]!;
+    };
+
+    it('honours limit=none on a rule limited to calls that move no tokens', () => {
+      expect(limitNoneHonoured(grantOf({ functions: 'guess' }))).toBe(true);
+      expect(limitNoneHonoured(grantOf({ functions: 'guess,reveal' }))).toBe(true);
+    });
+
+    it.each(['transfer', 'approve', 'transfer_from', 'burn', 'clawback', 'guess,transfer', 'approve,guess'])(
+      'does not honour limit=none on functions %j (token-moving)',
+      (functions) => {
+        expect(limitNoneHonoured(grantOf({ functions }))).toBe(false);
+      },
+    );
+
+    it('does not honour limit=none on a rule allowing any function', () => {
+      const grant = grantOf({ functions: null });
+      expect(grant.functions).toBeUndefined();
+      expect(limitNoneHonoured(grant)).toBe(false);
+    });
+
+    it('is false for a grant without limit=none', () => {
+      expect(limitNoneHonoured(grantOf({ functions: 'guess', limit: null }))).toBe(false);
+      expect(limitNoneHonoured(grantOf({ functions: 'guess', limit: '1' }))).toBe(false);
+    });
   });
 
   it.each(['None', 'NONE', ' none'])('rejects %j as a limit (only the exact marker is none)', (limit) => {

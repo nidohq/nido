@@ -128,6 +128,7 @@ import Icon from '../../../components/Icon.astro';
     DOC_DURATION_LABEL,
     buildSessionGrantOperation,
     describeSessionScope,
+    limitNoneHonoured,
     parseDocDelegateParams,
     sessionSignerDraft,
     type DocDelegateGrant,
@@ -195,9 +196,9 @@ import Icon from '../../../components/Icon.astro';
   const docPreviewEl = document.getElementById('doc-preview')!;
   const docDiffEl = document.getElementById('doc-diff')!;
 
-  /** One grant's card and its cap controls. A grant the app declared
-   *  uncapped (`limit=none`) has no cap controls at all: a cap allows token
-   *  transfers only, so it would block a rule that makes calls. */
+  /** One grant's card and its cap controls. A call-only grant the app
+   *  declared uncapped (limitNoneHonoured) has no cap controls at all: a cap
+   *  allows token transfers only, so it would block a rule that makes calls. */
   interface GrantView {
     grant: DocDelegateGrant;
     cap: {
@@ -243,7 +244,7 @@ import Icon from '../../../components/Icon.astro';
     functions.dataset.field = 'functions';
     card.append(grantRow('Functions', functions));
 
-    if (grant.cap === 'none') {
+    if (limitNoneHonoured(grant)) {
       const none = el(
         'span',
         'dd-v',
@@ -285,7 +286,7 @@ import Icon from '../../../components/Icon.astro';
     box.append(toggle, fields, note, uncappedRow);
     card.append(grantRow('Cap', box));
 
-    if (grant.cap !== null) {
+    if (grant.cap !== null && grant.cap !== 'none') {
       on.checked = true;
       xlm.value = stroopsToXlm(grant.cap.stroops);
       period.value = grant.cap.period;
@@ -465,7 +466,7 @@ import Icon from '../../../components/Icon.astro';
       if (v.cap === null) continue;
       v.cap.note.textContent = v.cap.on.checked
         ? 'With a cap, this rule allows token transfers only — other calls on the contract are blocked.'
-        : v.grant.cap === null
+        : v.grant.cap === null || v.grant.cap === 'none'
           ? 'The app did not ask for a cap. Without one, the key can do whatever the allowed functions permit until it expires.'
           : 'No cap — the key can do whatever the allowed functions permit until it expires.';
       v.cap.uncappedRow.hidden = v.cap.on.checked;
@@ -567,9 +568,7 @@ import Icon from '../../../components/Icon.astro';
     if (!back || !req) return;
     // A popup hands the result to the app that opened it and closes, as
     // /sign/ does; a page opened by redirect goes back the same way.
-    const opener = window.opener as Window | null;
-    if (opener && !opener.closed) postResultToOpener('?delegation=cancelled', req.origin);
-    else window.location.href = back;
+    postResultToOpener('?delegation=cancelled', req.origin, back);
   });
 
   approveBtn.addEventListener('click', async () => {
@@ -584,7 +583,7 @@ import Icon from '../../../components/Icon.astro';
       }
 
       // An uncapped grant is never a default: the user must choose it,
-      // unless the app declared the rule uncapped (a call-only rule).
+      // unless the app declared a call-only rule uncapped (limitNoneHonoured).
       const unchosen = views.find((v) => v.cap !== null && !v.cap.on.checked && !v.cap.uncappedAck.checked);
       if (unchosen) {
         status.textContent =
