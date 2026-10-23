@@ -75,4 +75,17 @@ export class InviteClient implements InvitePrintQueue {
     const records: CodeRecord[] = await res.json();
     return records.sort((a, b) => b.issuedAt - a.issuedAt);
   }
+
+  /** Admin backdoor for the debug page: puts an already-delivered code
+   *  back into the print queue (see infra/invite's own doc comment on
+   *  this route for why — a receipt can fail physically after the
+   *  printer driver already reported success). The next ReceiptPoller
+   *  tick reprints it through the normal flow; nothing else to do here. */
+  async requeuePrint(code: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/codes/${encodeURIComponent(code)}/requeue-print`, {
+      method: "POST",
+      headers: this.headers(),
+    });
+    if (!res.ok) throw new Error(`requeuePrint failed: ${res.status} ${await res.text()}`);
+  }
 }

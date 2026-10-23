@@ -125,6 +125,34 @@ async function main() {
     }),
   );
 
+  // Admin backdoor: put an already-delivered code BACK into the print
+  // queue by clearing deliveredAt, so the next /pending-print/next poll
+  // picks it up and reprints through the normal flow (the receipt's
+  // content is derived fresh from the record's address every time, so
+  // nothing else needs to change). For when a receipt began printing and
+  // then failed physically (e.g. ran out of paper) but the driver still
+  // reported success — `lp` exits 0 once CUPS accepts the job, not once
+  // paper actually comes out, so ack already fired before the failure
+  // was visible. Refuses anything that was never `used` in the first
+  // place (a code stuck at `claimed`/`issued` was never printed to begin
+  // with — this isn't the tool to force that).
+  app.post(
+    "/codes/:code/requeue-print",
+    asyncHandler(async (req, res) => {
+      const record = await store.get(req.params.code);
+      if (!record) {
+        res.status(404).json({ ok: false, reason: "not_found" });
+        return;
+      }
+      if (record.status !== "used") {
+        res.status(409).json({ ok: false, reason: "not_used" });
+        return;
+      }
+      await store.put({ ...record, deliveredAt: undefined });
+      res.json({ ok: true });
+    }),
+  );
+
   startPolling(store, POLL_INTERVAL_MS);
 
   app.listen(PORT, () => {

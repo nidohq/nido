@@ -310,6 +310,13 @@ app.get("/debug/codes", (_req, res) => {
         <td style="padding: 0.4rem; white-space: nowrap;">${fmt(c.claimedAt)}</td>
         <td style="padding: 0.4rem; white-space: nowrap;">${fmt(c.usedAt)}</td>
         <td style="padding: 0.4rem; white-space: nowrap;">${fmt(c.deliveredAt)}</td>
+        <td style="padding: 0.4rem;">${
+          c.status === "used"
+            ? `<form method="POST" action="/debug/reprint/${encodeURIComponent(c.code)}" style="margin:0;">
+                <button type="submit">Reprint</button>
+              </form>`
+            : ""
+        }</td>
       </tr>`,
       )
       .join("\n");
@@ -328,6 +335,7 @@ app.get("/debug/codes", (_req, res) => {
         <th style="text-align: left; padding: 0.4rem;">Claimed</th>
         <th style="text-align: left; padding: 0.4rem;">Used</th>
         <th style="text-align: left; padding: 0.4rem;">Delivered</th>
+        <th style="text-align: left; padding: 0.4rem;"></th>
       </tr>
       ${rows}
     </table>
@@ -336,6 +344,21 @@ app.get("/debug/codes", (_req, res) => {
   })().catch((err) => {
     console.error("listing codes failed:", err);
     res.status(500).send("Something went wrong loading codes — check the server logs.");
+  });
+});
+
+// Admin backdoor, for a receipt that began printing and then failed
+// physically (e.g. ran out of paper) after the driver already reported
+// success to infra/invite — see requeuePrint's own doc comment. Just
+// kicks off the requeue and bounces back to /debug/codes; the existing
+// ReceiptPoller tick (already running) picks it up and reprints normally.
+app.post("/debug/reprint/:code", (req, res) => {
+  (async () => {
+    await client.requeuePrint(req.params.code);
+    res.redirect("/debug/codes");
+  })().catch((err) => {
+    console.error("requeue print failed:", err);
+    res.status(500).send("Something went wrong requeuing the print — check the server logs.");
   });
 });
 
