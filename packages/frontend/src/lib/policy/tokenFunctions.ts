@@ -1,8 +1,9 @@
-// Which app-grant rules can move tokens. A spending cap allows token
-// transfers only, so it means something only on a rule that can move
-// tokens: such a rule left uncapped reads "No spending cap" (a warning, as
-// the user chose it), and one that cannot says so instead of "no cap",
-// which would read as if it could spend.
+// Which app-grant rules allow a token function. A spending cap allows token
+// transfers only, so it means something only on a rule that allows one:
+// such a rule left uncapped reads "No spending cap" (a warning, as the user
+// chose it), and one allowing none of TOKEN_MOVING_FUNCTIONS says no cap
+// applies because it allows no token functions. That is a name check, not
+// a claim that the rule cannot move value.
 
 /** SEP-41 / Stellar Asset Contract functions that move or authorise a
  *  balance. A rule allowing any of them can move tokens. */
