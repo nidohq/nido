@@ -505,7 +505,7 @@ import Icon from '../../../components/Icon.astro';
       docDiffEl.textContent = docBaselineBlocked
         ? (status.textContent ?? 'Unavailable.')
         : verifierFailed
-          ? "Could not resolve the account's passkey verifier — reload to try again."
+          ? "Could not resolve the account's passkey verifier — approve to try again."
           : 'Reading the applied document…';
       return;
     }
@@ -610,9 +610,15 @@ import Icon from '../../../components/Icon.astro';
       }
       await verifierReady;
       if (req.signer.kind === 'passkey' && verifierAddress === null) {
-        status.textContent = "Could not resolve the account's passkey verifier — try again.";
-        approveBtn.disabled = false;
-        return;
+        try {
+          verifierAddress = await fetchVerifierAddress(account);
+          verifierFailed = false;
+          syncPreview();
+        } catch {
+          status.textContent = "Could not resolve the account's passkey verifier — try again.";
+          approveBtn.disabled = false;
+          return;
+        }
       }
       status.textContent = 'Reading the applied document…';
       await baselineReady;
