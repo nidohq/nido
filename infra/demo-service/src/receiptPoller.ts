@@ -1,7 +1,7 @@
 import type { InvitePrintQueue } from "./inviteClient.js";
 import type { Printer } from "./printer.js";
 import { buildQrCode } from "./qrCode.js";
-
+import { FRONTEND_BASE_URL } from "./index.js";
 /** Drains the whole `/pending-print` queue on each tick rather than one
  *  record at a time, so a burst of confirmations doesn't lag behind the
  *  poll interval. */
@@ -9,10 +9,9 @@ export async function pollReceiptsOnce(client: InvitePrintQueue, printer: Printe
   for (;;) {
     const record = await client.nextPendingPrint();
     if (!record) return;
-
-    // fix this url
-    const walletUrl = `http://${record.address}.localhost:4321/account/`;
-    const qrCode = await buildQrCode(walletUrl);
+    const walletUrl = new URL(FRONTEND_BASE_URL);
+    walletUrl.hostname  = `${record.address}.${walletUrl.hostname}`
+    const qrCode = await buildQrCode(walletUrl.toString());
     await printer.print({
       title: "",
       lines: [`Your Nido account is ready:\n${record.address ?? "(unknown)"}`],
