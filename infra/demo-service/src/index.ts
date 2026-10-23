@@ -1,9 +1,16 @@
 import express from "express";
+import { fetchXlmBalance } from "./horizonBalance.js";
 import { InviteClient } from "./inviteClient.js";
 import { buildInvitation } from "./invitationHandler.js";
 import { createPrinter } from "./printerFactory.js";
+import { RELAYER_KEYS, type StellarNetwork } from "./relayerKeys.js";
 import { startReceiptPolling } from "./receiptPoller.js";
 import { requestLogger } from "./requestLogger.js";
+
+const STELLAR_EXPERT_ACCOUNT_URL: Record<StellarNetwork, string> = {
+  testnet: "https://stellar.expert/explorer/testnet/account",
+  mainnet: "https://stellar.expert/explorer/public/account",
+};
 
 const PORT = Number(process.env.PORT ?? 4000);
 const INVITE_API_URL = (process.env.INVITE_API_URL ?? "http://localhost:8080").replace(/\/+$/, "");
@@ -26,8 +33,56 @@ app.get("/", (_req, res) => {
     <form method="POST" action="/invitations">
       <button type="submit" style="font-size: 1.5rem; padding: 1rem 2rem;">Create Invitation</button>
     </form>
+    <p><a href="/relayer-accounts">Relayer account balances</a></p>
   </body>
 </html>`);
+});
+
+function relayerKeysTable(rows: Array<{ name: string; address: string; network: StellarNetwork; balance: string | null }>): string {
+  return `<table style="border-collapse: collapse;">
+      <tr>
+        <th style="text-align: left; padding: 0.5rem;">Name</th>
+        <th style="text-align: left; padding: 0.5rem;">Address</th>
+        <th style="text-align: left; padding: 0.5rem;">XLM Balance</th>
+        <th style="text-align: left; padding: 0.5rem;"></th>
+      </tr>
+      ${rows
+        .map(
+          (row) => `<tr>
+        <td style="padding: 0.5rem;">${row.name}</td>
+        <td style="padding: 0.5rem; font-family: monospace;">${row.address}</td>
+        <td style="padding: 0.5rem;">${row.balance ?? "not funded"}</td>
+        <td style="padding: 0.5rem;"><a href="${STELLAR_EXPERT_ACCOUNT_URL[row.network]}/${row.address}" target="_blank" rel="noopener">stellar.expert</a></td>
+      </tr>`,
+        )
+        .join("\n")}
+    </table>`;
+}
+
+app.get("/relayer-accounts", (_req, res) => {
+  (async () => {
+    const rows = await Promise.all(
+      RELAYER_KEYS.map(async (key) => ({
+        ...key,
+        balance: await fetchXlmBalance(key.address, key.network).catch(() => "error fetching balance"),
+      })),
+    );
+    res.type("html").send(`<!doctype html>
+<html>
+  <body style="font-family: sans-serif; padding: 3rem;">
+    <h1>Relayer Key Balances</h1>
+    <h2>Testnet</h2>
+    ${relayerKeysTable(rows.filter((r) => r.network === "testnet"))}
+    <h2>Mainnet</h2>
+    <p><em>Mainnet signers aren't provisioned yet — addresses below are placeholders, not real relayer keys.</em></p>
+    ${relayerKeysTable(rows.filter((r) => r.network === "mainnet"))}
+    <p><a href="/">Back</a></p>
+  </body>
+</html>`);
+  })().catch((err) => {
+    console.error("relayer key balances failed:", err);
+    res.status(500).send("Something went wrong loading balances — check the server logs.");
+  });
 });
 
 app.post("/invitations", (_req, res) => {

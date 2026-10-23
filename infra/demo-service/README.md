@@ -19,6 +19,12 @@ Two roles in one process:
   (not a bulk code listing — see that service's README for why) and prints a
   receipt once a visitor's wallet is confirmed on chain.
 
+`GET /relayer-accounts` shows the XLM balance (from Horizon testnet) and a
+stellar.expert link for each of the relayer's Turnkey-backed signers
+(`src/relayerKeys.ts` — hardcoded from `infra/relayer/config/config.json`,
+testnet only), so staff can check at a glance whether the relayer is at risk
+of running dry mid-demo.
+
 ## Printer
 
 `src/printer.ts` defines a `Printer` interface with one method, `print(job)`.
