@@ -1,6 +1,6 @@
 // packages/frontend/src/lib/transfer/sessionGrantReview.test.ts
 import { describe, it, expect } from "vitest";
-import { renderSessionGrant, type SessionGrantScope } from "./sessionGrantReview";
+import { renderDocSessionGrant, renderSessionGrant, type DocSessionGrantView, type SessionGrantScope } from "./sessionGrantReview";
 
 const op = { kind: "session-grant" as const, contract: "CAAA…", name: "session-key", target: "CTARGET", validUntil: 123 };
 
@@ -20,5 +20,35 @@ describe("renderSessionGrant", () => {
   it("escapes a hostile origin", () => {
     const scope: SessionGrantScope = { origin: "https://x\"><img>", limitStroops: null, period: "day", expiryLabel: "x" };
     expect(renderSessionGrant(op, scope)).not.toContain("<img>");
+  });
+});
+
+describe("renderDocSessionGrant", () => {
+  const view: DocSessionGrantView = {
+    origin: "https://game.example",
+    ruleName: "guess-xlm",
+    target: "CTARGET",
+    signers: ["04" + "cd".repeat(64)],
+    functions: ["transfer"],
+    expiryLabel: "24 hours",
+    capStroops: "20000000",
+    capPeriod: "day",
+    docHash: "ab".repeat(32),
+  };
+
+  it("names the rule and says which of several it is", () => {
+    const html = renderDocSessionGrant({ ...view, position: { index: 1, count: 2 } });
+    expect(html).toContain('data-grant-rule="guess-xlm"');
+    expect(html).toContain("rule 2 of 2");
+    expect(html).toContain("Up to 2 XLM");
+  });
+
+  it("reads as before for a request's only rule", () => {
+    expect(renderDocSessionGrant({ ...view, position: { index: 0, count: 1 } })).not.toContain("rule 1 of 1");
+    expect(renderDocSessionGrant(view)).not.toContain(" of ");
+  });
+
+  it("escapes a hostile rule name", () => {
+    expect(renderDocSessionGrant({ ...view, ruleName: '"><img src=x>' })).not.toContain("<img");
   });
 });

@@ -54,6 +54,8 @@ export interface DocSessionGrantView {
   capPeriod: LimitPeriod;
   /** Lowercase-hex canonical doc_hash. */
   docHash: string;
+  /** This rule's place when one request grants several. */
+  position?: { index: number; count: number };
 }
 
 export function renderDocSessionGrant(v: DocSessionGrantView): string {
@@ -65,8 +67,12 @@ export function renderDocSessionGrant(v: DocSessionGrantView): string {
     v.functions == null
       ? `Any function`
       : v.functions.map((f) => `<span class="mono">${esc(f)}</span>`).join(", ");
-  return `<div class="card" style="padding:2px 16px;">
-    ${row("Action", "Grant an app a scoped session key", true)}
+  const action =
+    v.position && v.position.count > 1
+      ? `Grant an app a scoped session key <span class="mut" style="font-weight:500;">(rule ${v.position.index + 1} of ${v.position.count})</span>`
+      : "Grant an app a scoped session key";
+  return `<div class="card" data-grant-rule="${esc(v.ruleName)}" style="padding:2px 16px;">
+    ${row("Action", action, true)}
     ${row("App", `<span class="mono">${esc(v.origin)}</span>`)}
     ${row("Rule name", `<span class="mono">${esc(v.ruleName)}</span>`)}
     ${row("App's key", v.signers.map((k) => `<span class="mono" title="${esc(k)}">${esc(shortAddr(k, 6, 6))}</span>`).join(", ") || "(none)")}

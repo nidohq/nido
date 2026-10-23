@@ -1,14 +1,22 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { StrKey } from '@stellar/stellar-sdk';
-import { buildPolicyDoc, canonicalJson, docHash, parsePolicyDocJson } from '@nidohq/passkey-sdk';
-import { accountViews, deployment, deploymentViews, mockPerchChain } from '../../support/perchRpcMock.mts';
+import { Keypair, StrKey } from '@stellar/stellar-sdk';
+import { buildPolicyDoc, canonicalJson, docHash, parsePolicyDocJson, type PolicyDoc } from '@nidohq/passkey-sdk';
+import {
+  accountViews,
+  deployment,
+  deploymentViews,
+  mockPerchChain,
+  type Invocation,
+} from '../../support/perchRpcMock.mts';
+import { createShimPasskey, installPasskeyShim } from '../../support/passkeyShim.mts';
 
 // The app-approval page (/security/delegate-doc/) in a browser, against a
 // build with a Perch deployment and a mocked chain
 // (tests/support/perchRpcMock.mts): several grants reviewed and approved
 // as one document update, a passkey as the app's key, the caps a request
-// declares (or doesn't), the decision in view without scrolling, and the
-// way back to the app as a popup or a page.
+// declares (or doesn't), the decision in view without scrolling, the way
+// back to the app as a popup or a page, and the whole approval through
+// /sign/ to the one apply_doc it submits.
 //
 // Needs `packages/frontend/dist-perch`:
 //   PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.json)" \
@@ -23,12 +31,14 @@ const APP_KEY = '04' + 'cd'.repeat(64);
 const WALLET = `http://${ACCOUNT.toLowerCase()}.localhost:4397`;
 const DAPP = 'http://dapp.localhost:4397';
 
-/** The account's applied document: its admin passkey only. */
-const applied = buildPolicyDoc({
-  network: deployment.network,
-  signers: [{ id: 'admin', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: ADMIN_KEY }],
-  permissions: [{ name: 'admin', on: 'self-admin', by: ['admin'] }],
-});
+/** An account's applied document: its admin passkey only. */
+const adminDoc = (key: string): PolicyDoc =>
+  buildPolicyDoc({
+    network: deployment.network,
+    signers: [{ id: 'admin', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: key }],
+    permissions: [{ name: 'admin', on: 'self-admin', by: ['admin'] }],
+  });
+const applied = adminDoc(ADMIN_KEY);
 
 /** Guess the Number's session: `guess` on the game (no cap: a cap allows
  *  transfers only) and the XLM transfer that moves the stake (2 XLM/day). */
@@ -273,5 +283,88 @@ test.describe('app approval page: back to the app @fast', () => {
     await expect(page.locator('[data-grant="1"]')).toBeVisible();
     await page.locator('#deny').click();
     await expect(page).toHaveURL(`${DAPP}/play?delegation=cancelled`);
+  });
+});
+
+// The whole approval, as a player would make it: the two grants reviewed on
+// the approval page, then each rule on /sign/, one passkey confirmation (the
+// test authenticator), and one apply_doc submitted with both rules.
+test.describe('app approval page through /sign/ @fast', () => {
+  test('two grants are confirmed once and applied as one document', async ({ context, page }) => {
+    await installPasskeyShim(context);
+    // This device's passkey, which the account's admin rule names.
+    await page.route(`${WALLET}/blank`, (route) => route.fulfill({ contentType: 'text/html', body: '' }));
+    await page.goto(`${WALLET}/blank`);
+    const { publicKeyHex, credentialIdB64u } = await createShimPasskey(page);
+    await page.unroute(`${WALLET}/blank`);
+    const owner = adminDoc(publicKeyHex);
+    const submitter = Keypair.random();
+    const submitted: Invocation[] = [];
+    await mockPerchChain(
+      page,
+      {
+        ...deploymentViews(),
+        ...accountViews(ACCOUNT, {
+          canonical: canonicalJson(owner),
+          // The live admin rule the device's passkey signs under.
+          rules: [
+            {
+              context_type: { tag: 'CallContract', values: [ACCOUNT] },
+              id: 0,
+              name: 'admin',
+              policies: [],
+              recovery: false,
+              signers: [{ tag: 'External', values: [deployment.webauthnVerifier, Buffer.from(publicKeyHex, 'hex')] }],
+              valid_until: undefined,
+            },
+          ],
+        }),
+        [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(owner), 'hex'),
+        [`${ACCOUNT}:apply_doc`]: ([json]: unknown[]) =>
+          Buffer.from(docHash(parsePolicyDocJson(Buffer.from(json as Uint8Array).toString('utf8'))), 'hex'),
+      },
+      { selfAuthorizing: [ACCOUNT], classicAccounts: [submitter.publicKey()], submitted },
+    );
+    await page.route(`${DAPP}/**`, (route) => route.fulfill({ contentType: 'text/html', body: '<title>Guess the Number</title>' }));
+
+    // This device holds the account's passkey and a funded submitter.
+    await page.goto(`${WALLET}/security/`);
+    await page.evaluate(
+      ([acc, cid, pk, secret]) => {
+        localStorage.setItem(`passkey:${acc}:credentialId`, cid!);
+        localStorage.setItem(`passkey:${acc}:publicKey`, pk!);
+        localStorage.setItem('nido:testnet:name-keypair', secret!);
+      },
+      [ACCOUNT, credentialIdB64u, publicKeyHex, submitter.secret()],
+    );
+
+    await page.goto(grantUrl());
+    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
+    await page.locator('#approve').click();
+
+    // /sign/ shows each rule the request grants, and lets the user confirm.
+    await page.waitForURL(/\/sign\/\?req=/);
+    const cards = page.locator('[data-grant-rule]');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toHaveAttribute('data-grant-rule', 'guess');
+    await expect(cards.nth(0)).toContainText('rule 1 of 2');
+    await expect(cards.nth(0)).toContainText('Any amount');
+    await expect(cards.nth(1)).toHaveAttribute('data-grant-rule', 'guess-xlm');
+    await expect(cards.nth(1)).toContainText('Up to 2 XLM');
+    await expect(page.locator('#approve')).toBeEnabled();
+    await page.locator('#approve').click();
+
+    await page.waitForURL(`${DAPP}/play?delegation=ok`, { timeout: 20_000 });
+    expect(submitted.map((c) => [c.contract, c.fn])).toEqual([[ACCOUNT, 'apply_doc']]);
+    const doc = parsePolicyDocJson(Buffer.from(submitted[0]!.args[0] as Uint8Array).toString('utf8'));
+    expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'guess', 'guess-xlm']);
+    expect(doc.rules.map((r) => r.scope)).toEqual([
+      { type: 'self-admin' },
+      { type: 'contract', address: GAME },
+      { type: 'contract', address: XLM },
+    ]);
+    expect(doc.signers.filter((sg) => sg.id !== 'admin')).toEqual([
+      { id: 'session', verifier: deployment.webauthnVerifier, key: APP_KEY },
+    ]);
   });
 });

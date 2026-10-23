@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import type { BrowserContext, Page, Route } from '@playwright/test';
-import { Address, contract, Networks, scValToNative, SorobanDataBuilder, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
+import { Address, contract, Keypair, Networks, scValToNative, SorobanDataBuilder, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
 import { Client as AccountClient } from '@nidohq/perch-account';
 import { Client as CompilerClient } from '@nidohq/perch-doc-compiler';
 import { Client as RecoveryClient } from '@nidohq/perch-recovery';
@@ -73,11 +73,15 @@ function encodeResult(spec: contract.Spec, fn: string, value: unknown): xdr.ScVa
   return spec.nativeToScVal(value, out);
 }
 
-function invocationOf(txXdr: string): Invocation {
+function callOf(txXdr: string): xdr.InvokeContractArgs {
   const tx = TransactionBuilder.fromXDR(txXdr, Networks.TESTNET) as unknown as {
     operations: { func: xdr.HostFunction }[];
   };
-  const call = tx.operations[0]!.func.invokeContract();
+  return tx.operations[0]!.func.invokeContract();
+}
+
+function invocationOf(txXdr: string): Invocation {
+  const call = callOf(txXdr);
   const id = Address.fromScAddress(call.contractAddress()).toString();
   return {
     contract: id,
@@ -86,14 +90,73 @@ function invocationOf(txXdr: string): Invocation {
   };
 }
 
+/** The recording-mode auth entry for `call` by the contract it calls, as a
+ *  smart account's `require_auth` on itself produces. */
+function selfAuthEntry(call: xdr.InvokeContractArgs): string {
+  return new xdr.SorobanAuthorizationEntry({
+    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
+      new xdr.SorobanAddressCredentials({
+        address: call.contractAddress(),
+        nonce: xdr.Int64.fromString('1'),
+        signatureExpirationLedger: 0,
+        signature: xdr.ScVal.scvVoid(),
+      }),
+    ),
+    rootInvocation: new xdr.SorobanAuthorizedInvocation({
+      function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(call),
+      subInvocations: [],
+    }),
+  }).toXDR('base64');
+}
+
+/** A funded classic account entry, as `getLedgerEntries` returns it. */
+function classicAccountEntry(g: string): { key: string; xdr: string; lastModifiedLedgerSeq: number } {
+  const accountId = Keypair.fromPublicKey(g).xdrAccountId();
+  return {
+    key: xdr.LedgerKey.account(new xdr.LedgerKeyAccount({ accountId })).toXDR('base64'),
+    xdr: xdr.LedgerEntryData.account(
+      new xdr.AccountEntry({
+        accountId,
+        balance: xdr.Int64.fromString('100000000000'),
+        seqNum: xdr.Int64.fromString('1'),
+        numSubEntries: 0,
+        inflationDest: null,
+        flags: 0,
+        homeDomain: '',
+        thresholds: Buffer.from([1, 0, 0, 0]),
+        signers: [],
+        ext: new xdr.AccountEntryExt(0),
+      }),
+    ).toXDR('base64'),
+    lastModifiedLedgerSeq: 1,
+  };
+}
+
+/** What the mocked chain does beyond answering views, for a page that
+ *  signs and submits a transaction. */
+export interface ChainOptions {
+  /** Accounts that authorize calls on themselves: a simulated call on one
+   *  carries its auth entry. */
+  selfAuthorizing?: string[];
+  /** Classic accounts `getAccount` finds (a transaction's submitter). */
+  classicAccounts?: string[];
+  /** Filled with the invocation of every transaction sent; each lands. */
+  submitted?: Invocation[];
+}
+
 /**
  * Route `page`: its origin from the `dist-perch` build, Soroban RPC from
- * `views`, and nothing else. Every simulated invocation is pushed onto the
- * returned list, answered or not. Pass the browser context instead to route
- * the popups a page opens as well.
+ * `views` (and `chain`), and nothing else. Every simulated invocation is
+ * pushed onto the returned list, answered or not. Pass the browser context
+ * instead to route the popups a page opens as well.
  */
-export async function mockPerchChain(page: Page | BrowserContext, views: Views): Promise<Invocation[]> {
+export async function mockPerchChain(
+  page: Page | BrowserContext,
+  views: Views,
+  chain: ChainOptions = {},
+): Promise<Invocation[]> {
   const seen: Invocation[] = [];
+  const sent = new Map<string, string>();
   const ledger = 1_000;
   await page.route('**/*', async (route: Route) => {
     const url = new URL(route.request().url());
@@ -103,17 +166,72 @@ export async function mockPerchChain(page: Page | BrowserContext, views: Views):
       const fail = (message: string) =>
         route.fulfill({ json: { jsonrpc: '2.0', id: body.id, error: { code: -32600, message } } });
       if (body.method === 'getLatestLedger') return reply({ id: 'mock', protocolVersion: 23, sequence: ledger });
+      if (body.method === 'getLedgerEntries') {
+        const keys = body.params.keys as string[];
+        const entries = (chain.classicAccounts ?? []).map(classicAccountEntry).filter((e) => keys.includes(e.key));
+        return reply({ entries, latestLedger: ledger });
+      }
+      if (body.method === 'sendTransaction') {
+        const envelope = body.params.transaction as string;
+        const hash = TransactionBuilder.fromXDR(envelope, Networks.TESTNET).hash().toString('hex');
+        sent.set(hash, envelope);
+        chain.submitted?.push(invocationOf(envelope));
+        return reply({ status: 'PENDING', hash, latestLedger: ledger, latestLedgerCloseTime: '0' });
+      }
+      if (body.method === 'getTransaction') {
+        const hash = body.params.hash as string;
+        const envelope = sent.get(hash);
+        if (envelope === undefined) return reply({ status: 'NOT_FOUND', latestLedger: ledger, latestLedgerCloseTime: '0', oldestLedger: 1, oldestLedgerCloseTime: '0' });
+        const result = new xdr.TransactionResult({
+          feeCharged: xdr.Int64.fromString('100'),
+          result: xdr.TransactionResultResult.txSuccess([
+            xdr.OperationResult.opInner(
+              xdr.OperationResultTr.invokeHostFunction(
+                xdr.InvokeHostFunctionResult.invokeHostFunctionSuccess(Buffer.alloc(32)),
+              ),
+            ),
+          ]),
+          ext: new xdr.TransactionResultExt(0),
+        });
+        const meta = new xdr.TransactionMeta(
+          3,
+          new xdr.TransactionMetaV3({
+            ext: new xdr.ExtensionPoint(0),
+            txChangesBefore: [],
+            operations: [],
+            txChangesAfter: [],
+            sorobanMeta: null,
+          }),
+        );
+        return reply({
+          status: 'SUCCESS',
+          txHash: hash,
+          latestLedger: ledger,
+          latestLedgerCloseTime: '0',
+          oldestLedger: 1,
+          oldestLedgerCloseTime: '0',
+          ledger,
+          createdAt: '0',
+          applicationOrder: 1,
+          feeBump: false,
+          envelopeXdr: envelope,
+          resultXdr: result.toXDR('base64'),
+          resultMetaXdr: meta.toXDR('base64'),
+        });
+      }
       if (body.method !== 'simulateTransaction') return fail(`unmocked ${body.method}`);
       const call = invocationOf(body.params.transaction as string);
       seen.push(call);
       const view = views[`${call.contract}:${call.fn}`];
       const value = typeof view === 'function' ? (view as (a: unknown[]) => unknown)(call.args) : view;
       if (value === undefined) return fail(`unmocked ${call.fn} at ${call.contract}`);
+      const raw = callOf(body.params.transaction as string);
+      const auth = (chain.selfAuthorizing ?? []).includes(call.contract) ? [selfAuthEntry(raw)] : [];
       return reply({
         latestLedger: ledger,
         minResourceFee: '100',
         transactionData: new SorobanDataBuilder().build().toXDR('base64'),
-        results: [{ auth: [], xdr: encodeResult(specOf(call.contract), call.fn, value).toXDR('base64') }],
+        results: [{ auth, xdr: encodeResult(specOf(call.contract), call.fn, value).toXDR('base64') }],
         cost: { cpuInsns: '0', memBytes: '0' },
       });
     }

@@ -575,34 +575,39 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         } catch {
           diffHtml = '';
         }
-        // The card describes the one rule this request grants, never the
-        // document's first rule (the account's own admin rule leads it).
+        // One card per rule this request grants, never the document's
+        // first rule (the account's own admin rule leads it).
         const prev = op.prevDocJson !== undefined ? parsePolicyDocJson(op.prevDocJson) : null;
-        const grant = reviewGrant(prev, doc);
-        if (!grant.ok) throw new Error(grant.reason);
-        const rule = grant.rule;
-        const cap = rule.cap;
+        const review = reviewGrant(prev, doc);
+        if (!review.ok) throw new Error(review.reason);
         const periodMap: Array<[number, LimitPeriod]> = [
           [17280, 'day'], [120960, 'week'], [518400, '30d'],
         ];
-        docCardHtml = renderDocSessionGrant({
-          origin: docOrigin,
-          ruleName: rule.name,
-          target: rule.scope.type === 'contract' ? rule.scope.address : (account ?? ''),
-          signers: grant.signers.map((d) => ('address' in d ? d.address : d.key)),
-          functions: rule.functions !== undefined ? [...rule.functions] : null,
-          expiryLabel:
-            op.expiryLabel ??
-            (rule['not-after-ledger'] != null ? `Ledger ${rule['not-after-ledger']}` : 'Until revoked'),
-          capStroops: cap !== undefined ? cap.limit : null,
-          capPeriod: cap !== undefined
-            ? (periodMap.find(([l]) => l === cap['period-ledgers'])?.[1] ?? 'day')
-            : 'day',
-          docHash: docHash(doc),
-        }) + (diffHtml ? `<div class="card" style="padding:14px 16px;margin-top:10px;">${diffHtml}</div>` : '');
+        const hash = docHash(doc);
+        docCardHtml = review.grants.map(({ rule, signers }, index) => {
+          const cap = rule.cap;
+          return renderDocSessionGrant({
+            origin: docOrigin,
+            ruleName: rule.name,
+            target: rule.scope.type === 'contract' ? rule.scope.address : (account ?? ''),
+            signers: signers.map((d) => ('address' in d ? d.address : d.key)),
+            functions: rule.functions !== undefined ? [...rule.functions] : null,
+            expiryLabel:
+              op.expiryLabel ??
+              (rule['not-after-ledger'] != null ? `Ledger ${rule['not-after-ledger']}` : 'Until revoked'),
+            capStroops: cap !== undefined ? cap.limit : null,
+            capPeriod: cap !== undefined
+              ? (periodMap.find(([l]) => l === cap['period-ledgers'])?.[1] ?? 'day')
+              : 'day',
+            docHash: hash,
+            position: { index, count: review.grants.length },
+          });
+        }).join('<div style="height:10px;"></div>') +
+          (diffHtml ? `<div class="card" style="padding:14px 16px;margin-top:10px;">${diffHtml}</div>` : '');
       } catch (e) {
-        // Unparseable doc JSON, or not exactly one grant: refuse, showing the
-        // raw document below so the user can see what was asked.
+        // Unparseable doc JSON, or not what an app request grants (see
+        // reviewGrant): refuse, showing the raw document below so the user
+        // can see what was asked.
         docCardHtml = '';
         refuseReview(e instanceof Error ? e.message : String(e));
       }
