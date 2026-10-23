@@ -9,9 +9,7 @@ export async function pollReceiptsOnce(client: InvitePrintQueue, printer: Printe
   for (;;) {
     const record = await client.nextPendingPrint();
     if (!record) return;
-    const walletUrl = new URL(FRONTEND_BASE_URL);
-    walletUrl.hostname  = `${record.address}.${walletUrl.hostname}`
-    const qrCode = await buildQrCode(walletUrl.toString());
+    const qrCode = await createQrCode(record.address);
     await printer.print({
       title: "",
       lines: [`Your Nido account is ready:\n${record.address ?? "(unknown)"}`],
@@ -22,6 +20,18 @@ export async function pollReceiptsOnce(client: InvitePrintQueue, printer: Printe
     // infra/invite's README for why `next` and `ack` are separate calls.
     await client.ackPendingPrint(record.code);
   }
+}
+export const PR_PREVIEW = process.env.PR_PREVIEW ?? false;
+async function createQrCode(address: string | undefined) {
+  const walletUrl = new URL(FRONTEND_BASE_URL);
+  if (PR_PREVIEW) {
+    walletUrl.hostname  = `${address}--${walletUrl.hostname}`
+  } else {
+    walletUrl.hostname  = `${address}.${walletUrl.hostname}`
+  }
+  console.log("the url : ", walletUrl.toString())
+  const qrCode = await buildQrCode(walletUrl.toString());
+  return qrCode
 }
 
 export function startReceiptPolling(client: InvitePrintQueue, printer: Printer, intervalMs: number): NodeJS.Timeout {
