@@ -7,6 +7,12 @@ name: deploy-relayer-mainnet
 # The "nido-mainnet" Fly app must already exist (fly apps create nido-mainnet)
 # and have real secrets set before this can succeed — see
 # infra/relayer/fly.mainnet.toml's own comment.
+#
+# Uses its own dedicated Fly deploy token (op://theahaco/nido_mainnet_fly_io),
+# NOT testnet's (op://theahaco/nido_fly_io) — Fly deploy tokens are scoped to
+# a single app, so testnet's token has no authority over nido-mainnet at all
+# and fails with a plain "unauthorized" (confirmed directly). Create with
+# `fly tokens create deploy -a nido-mainnet` if this token ever needs rotating.
 
 on:
   workflow_dispatch: {}
@@ -33,7 +39,7 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          FLY_API_TOKEN: op://theahaco/nido_fly_io/credential
+          FLY_API_TOKEN: op://theahaco/nido_mainnet_fly_io/credential
 
       - name: Deploy
         # The positional dir sets the Docker build context (the Dockerfile's
