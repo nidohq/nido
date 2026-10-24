@@ -567,7 +567,7 @@ import Icon from '../../../components/Icon.astro';
       const diff = diffPolicyDocs(isFirstApply ? null : baselineDoc, doc);
       docDiffEl.innerHTML = renderDocDiffHtml(diff);
       const changed = new Set([...diff.rulesAdded.map((r) => r.name), ...diff.rulesModified.map((m) => m.name)]);
-      labelGrants(doc.rules.map((r) => r.name).filter((n) => changed.has(n)));
+      labelGrants(doc.rules.filter((r) => r.scope.type === 'contract' && changed.has(r.name)).map((r) => r.name));
     } catch (e) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = `Cannot build the update: ${e instanceof Error ? e.message : String(e)}`;

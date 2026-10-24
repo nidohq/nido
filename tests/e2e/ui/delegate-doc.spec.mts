@@ -303,6 +303,33 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(cards.nth(1)).toContainText('rule 2 of 2');
   });
 
+  test('on a first apply, only the grants are numbered, not the admin rule the document must carry', async ({ page }) => {
+    // No applied document: the page anchors the admin rule on the live passkey.
+    await mockPerchChain(page, {
+      ...deploymentViews(),
+      ...accountViews(ACCOUNT, {
+        rules: [
+          {
+            context_type: { tag: 'CallContract', values: [ACCOUNT] },
+            id: 0,
+            name: 'admin',
+            policies: [],
+            recovery: false,
+            signers: [{ tag: 'External', values: [deployment.webauthnVerifier, Buffer.from(ADMIN_KEY, 'hex')] }],
+            valid_until: undefined,
+          },
+        ],
+      }),
+      // None: an `undefined` view answers with an RPC error.
+      [`${ACCOUNT}:applied_doc_hash`]: null,
+    });
+    await page.goto(grantUrl());
+    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
+    await expect(page.locator('[data-grant="0"] .dd-count')).toHaveText('Rule 1 of 2');
+    await expect(page.locator('[data-grant="1"] .dd-count')).toHaveText('Rule 2 of 2');
+    await expect(page.locator('#request-title')).toHaveText('App requests a scoped session key for 2 rules');
+  });
+
   test('limit=none on a token-function rule explains why the cap choice is still asked', async ({ page }) => {
     await mockChain(page);
     await page.goto(grantUrl({ 'grant.1.limit': 'none', 'grant.1.limit_period': null }));
