@@ -2,11 +2,17 @@ name: Deploy Production
 
 # nido.fyi. Manual only (workflow_dispatch) — unlike deploy-testnet.yml, this
 # is never a side effect of merging to main, since it's the domain real
-# visitors land on. Today nido.fyi still serves a testnet-configured build
-# (account creation is "coming soon" there regardless, via
-# allowAccountCreation.ts) — that's deliberate until a mainnet Perch
-# deployment and mainnet relayer exist. When they do, this workflow's env
-# vars below are the only things that need to change for the real cutover.
+# visitors land on.
+#
+# WARNING — the env vars below are the literal string "<PLACEHOLDER>",
+# deliberately: this makes the build fail loud (astro build chokes on an
+# invalid network name / contract id) instead of silently shipping a
+# testnet-configured build believing it's mainnet, which is worse than not
+# building at all once this is live. That means running this workflow
+# UNEDITED BREAKS nido.fyi's current, working testnet-configured production
+# build. Do not merge this version of the file to main until the mainnet
+# infra below actually exists and every <PLACEHOLDER> is filled in with the
+# real values — see docs/TODO_mainnet_switchover.md Phase 5.
 
 on:
   workflow_dispatch: {}
@@ -37,13 +43,16 @@ jobs:
 
       - name: Build frontend (production)
         env:
-          # Still testnet today (see the note above) — flip to
-          # PUBLIC_STELLAR_NETWORK: mainnet, a mainnet PUBLIC_RELAYER_URL/
-          # PUBLIC_RELAYER_SIM_SOURCE, and a real PUBLIC_PERCH_DEPLOYMENT
-          # manifest once that infra exists.
-          PUBLIC_STELLAR_NETWORK: testnet
-          PUBLIC_RELAYER_URL: https://nido.fly.dev
-          PUBLIC_RELAYER_SIM_SOURCE: GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
+          # See the file-level WARNING above before touching any of these.
+          PUBLIC_STELLAR_NETWORK: <PLACEHOLDER>
+          PUBLIC_RELAYER_URL: <PLACEHOLDER>
+          PUBLIC_RELAYER_SIM_SOURCE: <PLACEHOLDER>
+          # The full PerchDeployment JSON (perch.fromPerchManifest(manifest,
+          # factory) — see lib/recovery/deployment.ts), built from Perch's
+          # vendor/perch/deployments/mainnet.json plus Nido's
+          # factory.mainnet.json. Set as the vars.PUBLIC_PERCH_DEPLOYMENT
+          # repo variable, not inline here — there's no mainnet default to
+          # fall back to if it's left unset (unlike testnet's perch.TESTNET).
           PUBLIC_PERCH_DEPLOYMENT: ${{ vars.PUBLIC_PERCH_DEPLOYMENT }}
           # infra/invite's base URL + shared x-api-key (lib/demo/config.ts).
           # Empty disables the /demo/start invite check, it doesn't break the
