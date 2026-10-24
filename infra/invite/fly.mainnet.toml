@@ -1,0 +1,49 @@
+# Mainnet invitation code service. Sibling config to fly.toml (testnet, app
+# "nido-invite") — same Dockerfile/code, only the app identity and network
+# target differ. Deploy with:
+#   fly deploy infra/invite --config infra/invite/fly.mainnet.toml --remote-only
+#
+# The app itself must exist before the first deploy — `fly deploy` does not
+# create one from a --config file. One-time setup:
+#   fly apps create nido-invite-mainnet
+#
+# NOT YET DEPLOYED. Still needs, same as testnet's original setup (see
+# README's "Deploy" section):
+#   - a Postgres app attached (`fly postgres create` + `fly postgres attach
+#     -a nido-invite-mainnet`), which injects DATABASE_URL as a secret
+#   - a real API_KEY secret (`fly secrets set API_KEY=... -a nido-invite-mainnet`
+#     — generate into a variable first, then set, so the value isn't lost;
+#     Fly secrets are write-only)
+app = "nido-invite-mainnet"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  RPC_URL = "https://mainnet.sorobanrpc.com"
+  NETWORK_PASSPHRASE = "Public Global Stellar Network ; September 2015"
+  CODE_TTL_MS = "604800000"
+  POLL_INTERVAL_MS = "5000"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Only runs during demo events — let it scale to zero between them instead
+  # of the relayer's always-on config. Deploying this ahead of the event
+  # (per the plan) doesn't change that: scaling to zero is about idle cost,
+  # not availability — auto_start_machines brings it up on the first request.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
