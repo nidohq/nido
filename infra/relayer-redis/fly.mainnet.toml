@@ -6,12 +6,15 @@
 # The app must exist before the first deploy:
 #   fly apps create nido-mainnet-redis
 #
-# NOT YET DEPLOYED. Re-examine the no-password choice before deploying this:
-# fly.toml's comment justifies it as acceptable specifically because that one
-# is "testnet dev relayer" — the same reasoning may or may not hold once this
-# instance is backing a mainnet relayer actually moving real money. The trust
-# boundary (private Fly 6PN only, no public service) stays either way; the
-# question is whether that boundary alone is still enough.
+# Unlike testnet's fly.toml, this one requires a password (`REDIS_PASSWORD`
+# Fly secret) on top of the private-6PN-only trust boundary — decided
+# deliberately for mainnet since 6PN is shared across the whole Fly org
+# (other unrelated projects live there too), and this instance holds a
+# mainnet relayer's signer/transaction state. `[experimental].cmd` has no
+# shell substitution on its own, so it's wrapped in `sh -c` to read
+# $REDIS_PASSWORD at container start. The matching relayer side must pass
+# the same password in its own `REDIS_URL` secret (see fly.mainnet.toml's
+# own comment in infra/relayer/).
 app = "nido-mainnet-redis"
 primary_region = "iad"
 
@@ -20,14 +23,8 @@ primary_region = "iad"
 
 [experimental]
   cmd = [
-    "redis-server",
-    "--dir", "/data",
-    "--appendonly", "yes",
-    "--save", "",
-    "--bind", "::",
-    "--protected-mode", "no",
-    "--maxmemory", "200mb",
-    "--maxmemory-policy", "noeviction",
+    "sh", "-c",
+    "exec redis-server --dir /data --appendonly yes --save '' --bind :: --protected-mode no --maxmemory 200mb --maxmemory-policy noeviction --requirepass \"$REDIS_PASSWORD\""
   ]
 
 [[mounts]]
