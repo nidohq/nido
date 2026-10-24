@@ -359,8 +359,16 @@ Important invariants:
   dispatch.
 - Workflow loads the Fly token via 1Password.
 - Workflow uses `flyctl deploy infra/relayer --remote-only --ha=false`.
-- Do not deploy with `--config infra/relayer/fly.toml` from repo root; Docker
-  `COPY` paths rely on `infra/relayer` being the build context.
+- Testnet relies on flyctl's default (`infra/relayer/fly.toml`, found
+  automatically from the positional working-directory arg) — no `--config`
+  flag needed. For mainnet's non-default file, `--config` must be the bare
+  filename (`fly.mainnet.toml`), not prefixed with `infra/relayer/` again:
+  `--config` resolves relative to that same positional arg, so the prefixed
+  form double-resolves to `infra/relayer/infra/relayer/fly.mainnet.toml` and
+  fails with "config file not found" (confirmed directly — this isn't about
+  Docker's build context, which is set by the positional arg regardless of
+  `--config`). See `fly.mainnet.toml`'s own header comment and
+  `deploy-relayer-mainnet.yml`.
 
 Frontend builds must set:
 

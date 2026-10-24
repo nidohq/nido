@@ -1,7 +1,12 @@
 # Mainnet Redis for the `nido-mainnet` relayer. Sibling config to fly.toml
 # (testnet, app "nido-redis") — a separate instance, not shared, so a
 # testnet incident can't touch mainnet relayer job state. Deploy with:
-#   flyctl deploy infra/relayer-redis --config infra/relayer-redis/fly.mainnet.toml
+#   flyctl deploy infra/relayer-redis --config fly.mainnet.toml
+# --config resolves relative to the positional working-directory arg
+# (infra/relayer-redis), so it must be the bare filename here, NOT prefixed
+# with infra/relayer-redis/ again — that form fails with "config file not
+# found" (confirmed directly). Equivalently, run from inside
+# infra/relayer-redis/ with `fly deploy . --config fly.mainnet.toml`.
 #
 # The app must exist before the first deploy:
 #   fly apps create nido-mainnet-redis

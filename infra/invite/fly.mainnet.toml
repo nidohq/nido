@@ -1,14 +1,19 @@
 # Mainnet invitation code service. Sibling config to fly.toml (testnet, app
 # "nido-invite") — same Dockerfile/code, only the app identity and network
 # target differ. Deploy with:
-#   fly deploy infra/invite --config infra/invite/fly.mainnet.toml --remote-only
+#   fly deploy infra/invite --config fly.mainnet.toml --remote-only
+# --config resolves relative to the positional working-directory arg
+# (infra/invite), so it must be the bare filename here, NOT prefixed with
+# infra/invite/ again — that form fails with "config file not found"
+# (confirmed directly). Equivalently, run from inside infra/invite/ with
+# `fly deploy . --config fly.mainnet.toml --remote-only`.
 #
 # The app itself must exist before the first deploy — `fly deploy` does not
 # create one from a --config file. One-time setup:
 #   fly apps create nido-invite-mainnet
 #
-# NOT YET DEPLOYED. Still needs, same as testnet's original setup (see
-# README's "Deploy" section):
+# Deployed and healthy (nido-invite-mainnet.fly.dev/health). Original
+# one-time setup, same as testnet's (see README's "Deploy" section):
 #   - a Postgres app attached (`fly postgres create` + `fly postgres attach
 #     -a nido-invite-mainnet`), which injects DATABASE_URL as a secret
 #   - a real API_KEY secret (`fly secrets set API_KEY=... -a nido-invite-mainnet`

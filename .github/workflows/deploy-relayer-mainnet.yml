@@ -37,9 +37,13 @@ jobs:
 
       - name: Deploy
         # The positional dir sets the Docker build context (the Dockerfile's
-        # COPY paths are relative to infra/relayer/); --config picks the
-        # mainnet fly.toml in that same directory.
-        run: flyctl deploy infra/relayer --config infra/relayer/fly.mainnet.toml --remote-only --ha=false
+        # COPY paths are relative to infra/relayer/) AND is the base --config
+        # resolves against — so --config must be the bare filename, NOT
+        # prefixed with infra/relayer/ again, or flyctl looks for
+        # infra/relayer/infra/relayer/fly.mainnet.toml and fails with
+        # "config file not found" (confirmed directly: that double-prefixed
+        # form fails, the bare-filename form here builds successfully).
+        run: flyctl deploy infra/relayer --config fly.mainnet.toml --remote-only --ha=false
 
       - name: Smoke check
         run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://nido-mainnet.fly.dev/api/v1/health

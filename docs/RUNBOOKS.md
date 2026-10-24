@@ -201,9 +201,12 @@ automatically. Do these in order:
    fly apps create nido-mainnet
    fly apps create nido-mainnet-redis
    ```
-2. Deploy Redis first — the relayer needs it to already exist:
+2. Deploy Redis first — the relayer needs it to already exist. `--config`
+   resolves relative to the positional working-directory arg, so it must be
+   the bare filename, not prefixed with `infra/relayer-redis/` again (that
+   form fails with "config file not found" — confirmed directly):
    ```
-   fly deploy infra/relayer-redis --config infra/relayer-redis/fly.mainnet.toml
+   fly deploy infra/relayer-redis --config fly.mainnet.toml
    ```
 3. Set up Turnkey for mainnet, then generate and set the relayer's secrets
    (these are Fly secrets, not `fly.toml` values — see
@@ -220,9 +223,10 @@ automatically. Do these in order:
    `infra/relayer/fly.mainnet.toml` — the committed values are testnet's,
    carried over only as placeholders (real money needs its own numbers).
 5. Deploy the relayer (or trigger `deploy-relayer-mainnet.yml` in GitHub
-   Actions instead):
+   Actions instead). Same `--config`-resolves-relative-to-the-working-directory
+   gotcha as Redis above — bare filename, not prefixed:
    ```
-   fly deploy infra/relayer --config infra/relayer/fly.mainnet.toml
+   fly deploy infra/relayer --config fly.mainnet.toml
    ```
 6. Fund and activate the channel accounts, same process as testnet's (see
    `infra/relayer/README.md`'s channel-activation section). A deployed but
