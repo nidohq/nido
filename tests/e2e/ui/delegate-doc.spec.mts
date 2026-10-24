@@ -233,6 +233,50 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     for (const r of [guess!, stake!]) expect(r['not-after-ledger']).toBe(1_000 + 17_280);
   });
 
+  test('a grant already applied as asked reads "Already in place", counted as /sign/ counts', async ({ page }) => {
+    // The account already holds `guess` exactly as this request builds it.
+    const withGuess = buildPolicyDoc({
+      network: deployment.network,
+      signers: [
+        { id: 'admin', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: ADMIN_KEY },
+        { id: 'session', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: APP_KEY },
+      ],
+      permissions: [
+        { name: 'admin', on: 'self-admin', by: ['admin'] },
+        { name: 'guess', on: { contract: GAME }, by: ['session'], functions: ['guess'], until: 1_000 + 17_280 },
+      ],
+    });
+    await mockPerchChain(page, {
+      ...deploymentViews(),
+      ...accountViews(ACCOUNT, { canonical: canonicalJson(withGuess) }),
+      [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(withGuess), 'hex'),
+    });
+    await page.goto(grantUrl());
+    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
+    await expect(page.locator('[data-grant="0"] .dd-count')).toHaveText('Already in place');
+    // The one rule this approval changes carries no "Rule k of K".
+    await expect(page.locator('[data-grant="1"] .dd-count')).toHaveText('');
+    await expect(page.locator('#request-title')).toHaveText(
+      'App requests a scoped session key for 2 rules (1 already in place)',
+    );
+
+    // /sign/ reviews the same single change.
+    await page.locator('#approve').click();
+    await page.waitForURL(/\/sign\/\?req=/);
+    const cards = page.locator('[data-grant-rule]');
+    await expect(cards).toHaveCount(1);
+    await expect(cards).toHaveAttribute('data-grant-rule', 'guess-xlm');
+    await expect(cards).not.toContainText('rule 1 of');
+  });
+
+  test('limit=none on a token-function rule explains why the cap choice is still asked', async ({ page }) => {
+    await mockChain(page);
+    await page.goto(grantUrl({ 'grant.1.limit': 'none', 'grant.1.limit_period': null }));
+    await expect(page.locator('[data-grant="1"] .dd-note')).toHaveText(
+      'The app asked for no cap, but this rule allows a token function, so the choice is yours: set a cap, or confirm the key may spend without one.',
+    );
+  });
+
   test('a capped transfer grant without to= says plainly it can pay any address', async ({ page }) => {
     await mockChain(page);
     await page.goto(grantUrl({ 'grant.1.to': null }));

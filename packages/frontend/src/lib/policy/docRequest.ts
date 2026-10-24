@@ -209,7 +209,7 @@ function parseSigner(params: URLSearchParams): { signer: DocDelegateSigner } | {
     if (!/^04[0-9a-fA-F]{128}$/.test(pubkey)) {
       return {
         error:
-          'Invalid session public key (expected 65-byte SEC1 uncompressed P-256, hex-encoded with 0x04 prefix).',
+          'Invalid session public key (expected the 65-byte SEC1 uncompressed P-256 key as 130 hex characters starting 04, with no 0x).',
       };
     }
     return { signer: { kind: 'passkey', publicKeyHex: pubkey.toLowerCase() } };

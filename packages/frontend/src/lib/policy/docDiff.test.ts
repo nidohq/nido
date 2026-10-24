@@ -266,4 +266,13 @@ describe('diffRuleFields — transfer recipient', () => {
     expect(diffRuleFields(rule(only(TARGET2)), rule(only(G1)))).toEqual(['pays: only CDVVRZ…RF6POX → only GA7QYN…UJVSGZ']);
     expect(diffRuleFields(rule(only(TARGET2)), rule())).toEqual(['pays: only CDVVRZ…RF6POX → any address']);
   });
+
+  it("does not read approve's spender (argument 1) as a recipient", () => {
+    const approve = (args?: ReturnType<typeof only>) =>
+      buildPolicyDoc({
+        signers: [{ id: 'admin', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY }],
+        permissions: [{ name: 'pay', on: { contract: TARGET }, by: ['admin'], functions: ['approve'], ...(args ? { args } : {}) }],
+      }).rules[0]!;
+    expect(diffRuleFields(approve(), approve(only(TARGET2)))).toEqual(['argument conditions changed']);
+  });
 });

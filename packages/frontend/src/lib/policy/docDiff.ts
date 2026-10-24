@@ -10,7 +10,7 @@
 // identity is the declaration id.
 
 import type { PolicyDoc, Rule, SignerDecl } from '@nidohq/passkey-sdk';
-import { capText, ruleRecipient } from './reviewText.js';
+import { canTransfer, capText, ruleRecipient } from './reviewText.js';
 import { truncate } from './policyView.js';
 
 export interface RuleModification {
@@ -96,8 +96,10 @@ export function diffRuleFields(before: Rule, after: Rule): string[] {
 
   const argsOf = (r: Rule) => JSON.stringify(r.args ?? null);
   if (argsOf(before) !== argsOf(after)) {
-    // A transfer recipient, in words; any other argument condition generically.
+    // A transfer recipient, in words, on a rule that may call transfer; any
+    // other argument condition (e.g. approve's spender) generically.
     const payee = (r: Rule) => {
+      if (!canTransfer(r.functions)) return null;
       const to = ruleRecipient(r);
       return to !== null ? `only ${truncate(to)}` : r.args === undefined ? 'any address' : null;
     };

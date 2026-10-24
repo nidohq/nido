@@ -439,6 +439,31 @@ describe('upsertSessionRules — several grants, one document', () => {
     expect(doc.signers.map((s) => s.id)).toEqual(['admin', 'session']);
   });
 
+  // One rebuild for all the grants gives the same document as rebuilding
+  // after each one (signer reuse, pruning and the owner → admin rename).
+  it.each([
+    ['a first grant pair', () => baseline()],
+    [
+      'a re-delegation to a new key, the old one pruned',
+      () => upsertSessionRules(baseline(), [draft({ name: 'guess', signer })], Networks.TESTNET),
+    ],
+    [
+      'a legacy owner document',
+      () =>
+        buildPolicyDoc({
+          network: Networks.TESTNET,
+          signers: [{ id: 'owner', kind: 'passkey', verifier: VERIFIER, publicKey: OWNER_KEY }],
+          permissions: [{ name: 'admin', on: 'self-admin', by: ['owner'] }],
+        }),
+    ],
+  ])('matches upsertSessionRule draft by draft on %s', (_case, base) => {
+    const NEW_KEY = '04' + 'c1'.repeat(64);
+    const newSigner = { kind: 'passkey' as const, verifier: VERIFIER, publicKeyHex: NEW_KEY };
+    const drafts = [draft({ name: 'guess', signer: newSigner, cap: null }), draft({ name: 'guess-xlm', signer: newSigner })];
+    const stepwise = drafts.reduce((doc, d) => upsertSessionRule(doc, d, Networks.TESTNET).doc, base());
+    expect(upsertSessionRules(base(), drafts, Networks.TESTNET)).toEqual(stepwise);
+  });
+
   it('is upsertSessionRule for one draft', () => {
     const one = draft({ signer });
     expect(upsertSessionRules(baseline(), [one], Networks.TESTNET)).toEqual(

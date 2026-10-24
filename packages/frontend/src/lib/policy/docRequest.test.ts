@@ -227,6 +227,8 @@ describe('parseDocDelegateParams — passkey signer (pubkey=)', () => {
     const r = parseDocDelegateParams(params({ signer: null, pubkey }));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain('Invalid session public key');
+    // The message describes the format the check accepts: a bare 04 prefix.
+    if (!r.ok) expect(r.error).toContain('starting 04, with no 0x');
   });
 
   // Perch's compiler refuses a WebAuthn key with a credential id appended

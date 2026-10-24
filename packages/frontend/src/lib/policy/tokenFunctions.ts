@@ -6,7 +6,11 @@
 // a claim that the rule cannot move value.
 
 /** SEP-41 / Stellar Asset Contract functions that move or authorise a
- *  balance. A rule allowing any of them can move tokens. */
+ *  balance. A rule allowing any of them can move tokens. Kept identical, in
+ *  order, to Perch's `TOKEN_MOVING_FUNCTIONS` (crates/perch-ir/src/validate.rs,
+ *  stellar-registry/perch#160), which refuses the same functions on a rule
+ *  left uncapped by cross-token lowering; change both together
+ *  (tokenFunctions.test.ts pins this copy). */
 export const TOKEN_MOVING_FUNCTIONS: readonly string[] = [
   'transfer',
   'transfer_from',

@@ -258,10 +258,23 @@ export function upsertSessionRule(
   draft: SessionDocDraft,
   networkPassphrase: string,
 ): { doc: PolicyDoc; signerId: string } {
-  const template = draftToDoc(draft, networkPassphrase);
   assertSameNetwork(current, networkPassphrase);
+  const { signers, rules, signerId } = mergeSessionRule(current.signers, current.rules, draft, networkPassphrase);
+  const doc = rebuildDoc(current, signers, rules, networkPassphrase);
+  // rebuildDoc may have applied the legacy owner→admin rename under us.
+  return { doc, signerId: signerId === 'owner' && !doc.signers.some((s) => s.id === 'owner') ? 'admin' : signerId };
+}
 
-  const { signers: merged, signerId } = mergeSignerDecl(current.signers, template.signers[0]);
+/** Merge `draft`'s session rule and its signer into a signer and rule list,
+ *  without rebuilding the document (see {@link upsertSessionRule}). */
+function mergeSessionRule(
+  signers: readonly WireSigner[],
+  rules: readonly WireRule[],
+  draft: SessionDocDraft,
+  networkPassphrase: string,
+): { signers: WireSigner[]; rules: WireRule[]; signerId: string } {
+  const template = draftToDoc(draft, networkPassphrase);
+  const { signers: merged, signerId } = mergeSignerDecl(signers, template.signers[0]);
   const rule = {
     ...template.rules[0],
     principals: { type: 'all' as const, signers: [signerId] },
@@ -272,27 +285,27 @@ export function upsertSessionRule(
   // (the account's `admin`/anti-brick rule, or any other non-session rule) by
   // reusing its name. The new session rule is always contract-scoped; refuse
   // when an existing rule with the same name is NOT.
-  const existing = current.rules.find((r) => r.name === rule.name);
+  const existing = rules.find((r) => r.name === rule.name);
   if (existing && existing.scope.type !== 'contract') {
     throw new Error(
       `A core account rule named "${rule.name}" already exists; a session grant ` +
         `cannot replace it. Choose a different label.`,
     );
   }
-  const rules = existing
-    ? current.rules.map((r) => (r.name === rule.name ? rule : r))
-    : [...current.rules, rule];
-
-  const doc = rebuildDoc(current, merged, rules, networkPassphrase);
-  // rebuildDoc may have applied the legacy owner→admin rename under us.
-  return { doc, signerId: signerId === 'owner' && !doc.signers.some((s) => s.id === 'owner') ? 'admin' : signerId };
+  return {
+    signers: merged,
+    rules: existing ? rules.map((r) => (r.name === rule.name ? rule : r)) : [...rules, rule],
+    signerId,
+  };
 }
 
 /**
  * {@link upsertSessionRule} for each draft in order: one document carrying
  * every rule, so one `apply_doc` installs them all. Drafts naming the same
- * key share its signer declaration. Throws when two drafts name the same
- * rule (the later would silently replace the earlier).
+ * key share its signer declaration. The rules and signers are merged first
+ * and the document rebuilt (pruned, migrated, validated) once. Throws when
+ * two drafts name the same rule (the later would silently replace the
+ * earlier).
  *
  * Precondition: `validateSessionDocDraft(draft, limits).ok` for each draft.
  */
@@ -306,7 +319,13 @@ export function upsertSessionRules(
   if (repeated !== undefined) {
     throw new Error(`policy doc: two session grants name the rule "${repeated}"`);
   }
-  return drafts.reduce((doc, draft) => upsertSessionRule(doc, draft, networkPassphrase).doc, current);
+  assertSameNetwork(current, networkPassphrase);
+  let signers: WireSigner[] = [...current.signers];
+  let rules: WireRule[] = [...current.rules];
+  for (const draft of drafts) {
+    ({ signers, rules } = mergeSessionRule(signers, rules, draft, networkPassphrase));
+  }
+  return rebuildDoc(current, signers, rules, networkPassphrase);
 }
 
 // --- Shared doc-merge helpers ----------------------------------------------

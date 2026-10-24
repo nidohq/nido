@@ -170,9 +170,9 @@ import Icon from '../../../components/Icon.astro';
   // Surface the request. Every dApp-supplied string reaches the DOM as
   // textContent, never markup.
   document.getElementById('origin-text')!.textContent = req?.origin ?? '(missing)';
+  const requestTitle = document.getElementById('request-title')!;
   if (req && req.grants.length > 1) {
-    document.getElementById('request-title')!.textContent =
-      `App requests a scoped session key for ${req.grants.length} rules`;
+    requestTitle.textContent = `App requests a scoped session key for ${req.grants.length} rules`;
   }
   const signerText = document.getElementById('signer-text')!;
   const signerKind = document.getElementById('signer-kind')!;
@@ -197,6 +197,8 @@ import Icon from '../../../components/Icon.astro';
    *  allows token transfers only, so it would block a rule that makes calls. */
   interface GrantView {
     grant: DocDelegateGrant;
+    /** "Rule k of K", or "Already in place" (see labelGrants). */
+    count: HTMLElement;
     cap: {
       on: HTMLInputElement;
       fields: HTMLElement;
@@ -258,8 +260,8 @@ import Icon from '../../../components/Icon.astro';
     const card = el('div', 'card dd-grant');
     card.dataset.grant = String(i);
     const head = el('div', 'dd-grant-head');
-    head.append(el('span', 'dd-rule mono', grant.label));
-    if (n > 1) head.append(el('span', 'mut dd-count', `Rule ${i + 1} of ${n}`));
+    const count = el('span', 'mut dd-count', n > 1 ? `Rule ${i + 1} of ${n}` : '');
+    head.append(el('span', 'dd-rule mono', grant.label), count);
     card.append(head);
 
     const target = el('code', 'dd-v mono dd-addr', grant.target);
@@ -277,7 +279,7 @@ import Icon from '../../../components/Icon.astro';
       none.dataset.field = 'cap';
       card.append(grantRow('Cap', none));
       grants.append(card);
-      return { grant, cap: null };
+      return { grant, count, cap: null };
     }
 
     const box = el('div', 'dd-v dd-cap');
@@ -320,11 +322,13 @@ import Icon from '../../../components/Icon.astro';
       fields.hidden = !on.checked;
       syncPreview();
     });
-    xlm.addEventListener('input', syncPreview);
+    // Typing an amount refreshes the preview once the typing pauses; Approve
+    // reads the controls afresh, so it never acts on a stale preview.
+    xlm.addEventListener('input', syncPreviewSoon);
     period.addEventListener('change', syncPreview);
     uncappedAck.addEventListener('change', syncPreview);
     grants.append(card);
-    return { grant, cap: { on, fields, xlm, period, note, uncappedRow, uncappedAck } };
+    return { grant, count, cap: { on, fields, xlm, period, note, uncappedRow, uncappedAck } };
   }
 
   const grants = document.getElementById('grants')!;
@@ -491,9 +495,11 @@ import Icon from '../../../components/Icon.astro';
       if (v.cap === null) continue;
       v.cap.note.textContent = v.cap.on.checked
         ? 'With a cap, this rule allows token transfers only — other calls on the contract are blocked.'
-        : v.grant.cap === null || v.grant.cap === 'none'
+        : v.grant.cap === null
           ? 'The app did not ask for a cap. Without one, the key can do whatever the allowed functions permit until it expires.'
-          : 'No cap — the key can do whatever the allowed functions permit until it expires.';
+          : v.grant.cap === 'none'
+            ? 'The app asked for no cap, but this rule allows a token function, so the choice is yours: set a cap, or confirm the key may spend without one.'
+            : 'No cap — the key can do whatever the allowed functions permit until it expires.';
       v.cap.uncappedRow.hidden = v.cap.on.checked;
     }
 
@@ -558,11 +564,40 @@ import Icon from '../../../components/Icon.astro';
       }
       // First apply: nothing was applied before, so everything — the
       // anti-brick admin rule included — renders as newly granted.
-      docDiffEl.innerHTML = renderDocDiffHtml(diffPolicyDocs(isFirstApply ? null : baselineDoc, doc));
+      const diff = diffPolicyDocs(isFirstApply ? null : baselineDoc, doc);
+      docDiffEl.innerHTML = renderDocDiffHtml(diff);
+      labelGrants(new Set([...diff.rulesAdded.map((r) => r.name), ...diff.rulesModified.map((m) => m.name)]));
     } catch (e) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = `Cannot build the update: ${e instanceof Error ? e.message : String(e)}`;
     }
+  }
+
+  /**
+   * Number the grants as /sign/ will: by the rules this approval adds or
+   * changes. A grant whose rule is already applied exactly as asked reads
+   * "Already in place", and the title says how many are.
+   */
+  function labelGrants(changed: Set<string>): void {
+    if (!req) return;
+    const changing = views.filter((v) => changed.has(v.grant.label));
+    for (const v of views) {
+      const k = changing.indexOf(v);
+      v.count.textContent = k < 0 ? 'Already in place' : changing.length > 1 ? `Rule ${k + 1} of ${changing.length}` : '';
+    }
+    const inPlace = views.length - changing.length;
+    if (views.length > 1) {
+      requestTitle.textContent =
+        `App requests a scoped session key for ${views.length} rules` +
+        (inPlace > 0 ? ` (${inPlace} already in place)` : '');
+    }
+  }
+
+  let syncTimer: ReturnType<typeof setTimeout> | undefined;
+  /** syncPreview, 150 ms after the last call: for keystrokes. */
+  function syncPreviewSoon(): void {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncPreview, 150);
   }
 
   durationSel.addEventListener('change', syncPreview);
