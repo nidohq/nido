@@ -1,0 +1,241 @@
+---
+// Layout for the Docs section (src/pages/docs/*.md). A landing-style
+// (shell="bleed") page in the Warm Nest design system: the site nav, a
+// sidebar of the docs pages (src/lib/docs/nav.ts), the article, an
+// "On this page" list built from the page's h2s, and previous/next links.
+// The page's Markdown starts at h2; the h1 comes from its `title`.
+import NidoLayout from "./NidoLayout.astro";
+import Logo from "../components/Logo.astro";
+import { DOCS, docHref } from "../lib/docs/nav";
+
+interface Props {
+  frontmatter: { title: string; description: string };
+  headings: { depth: number; slug: string; text: string }[];
+}
+
+const { frontmatter, headings } = Astro.props;
+const path = Astro.url.pathname.endsWith("/") ? Astro.url.pathname : `${Astro.url.pathname}/`;
+const index = DOCS.findIndex((d) => docHref(d.slug) === path);
+const current = DOCS[index];
+const prev = index > 0 ? DOCS[index - 1] : undefined;
+const next = index >= 0 && index < DOCS.length - 1 ? DOCS[index + 1] : undefined;
+const onThisPage = headings.filter((h) => h.depth === 2);
+
+const githubRepository = import.meta.env.PUBLIC_GITHUB_REPOSITORY as string | undefined;
+const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : undefined;
+const sourceUrl =
+  githubUrl && current
+    ? `${githubUrl}/blob/main/packages/frontend/src/pages/docs/${current.slug}.md`
+    : undefined;
+const pageTitle = current?.slug === "index" ? "Docs" : `${frontmatter.title} · Docs`;
+---
+
+<NidoLayout title={pageTitle} description={frontmatter.description} shell="bleed">
+  <div class="lp docs">
+    <div class="halo" style="width: 420px; height: 420px; top: -200px; right: -160px;"></div>
+
+    <nav class="lp-nav" aria-label="Site">
+      <a href="/" style="text-decoration:none;" aria-label="Nido home"><Logo size={22} mark markSize={28} /></a>
+      <a href="/docs/" class="docs-badge">Docs</a>
+      <div class="lp-navlinks">
+        <a class="lp-navlink" href="/how-recovery-works/">How recovery works</a>
+        <a class="lp-navlink" href="https://github.com/nidohq/scaffold-template" target="_blank" rel="noopener">App template ↗</a>
+      </div>
+      {githubUrl && (
+        <a class="lp-navlink docs-gh" href={githubUrl} target="_blank" rel="noopener" title="View on GitHub" aria-label="Nido on GitHub">
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        </a>
+      )}
+    </nav>
+
+    <div class="docs-grid">
+      <aside class="docs-side">
+        <nav aria-label="Docs">
+          <span class="section-label docs-side-label">Docs</span>
+          <ul class="docs-side-list">
+            {DOCS.map((d) => (
+              <li>
+                <a
+                  class:list={["docs-side-link", { "is-active": d === current }]}
+                  href={docHref(d.slug)}
+                  aria-current={d === current ? "page" : undefined}
+                >
+                  {d.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p class="docs-side-note mut">
+            Plain text for agents:
+            <a class="link" href="/docs/llms.txt">llms.txt</a> ·
+            <a class="link" href="/docs/llms-full.txt">llms-full.txt</a>
+          </p>
+        </nav>
+      </aside>
+
+      <article class="docs-article">
+        <header class="docs-head">
+          <span class="chip acc">Testnet</span>
+          <h1 class="disp docs-h1">{frontmatter.title}</h1>
+          <p class="docs-lede">{frontmatter.description}</p>
+        </header>
+
+        <div class="docs-prose">
+          <slot />
+        </div>
+
+        {(prev || next) && (
+          <nav class="docs-pager" aria-label="Previous and next page">
+            {prev ? (
+              <a class="docs-pager-link" href={docHref(prev.slug)} rel="prev">
+                <span class="mut">Previous</span>
+                <span class="docs-pager-title">{prev.label}</span>
+              </a>
+            ) : <span></span>}
+            {next && (
+              <a class="docs-pager-link docs-pager-next" href={docHref(next.slug)} rel="next">
+                <span class="mut">Next</span>
+                <span class="docs-pager-title">{next.label}</span>
+              </a>
+            )}
+          </nav>
+        )}
+        {sourceUrl && (
+          <p class="docs-source mut">
+            <a class="link" href={sourceUrl} target="_blank" rel="noopener">Edit this page on GitHub ↗</a>
+          </p>
+        )}
+      </article>
+
+      {onThisPage.length > 1 && (
+        <aside class="docs-toc">
+          <nav aria-label="On this page">
+            <span class="section-label">On this page</span>
+            <ul>
+              {onThisPage.map((h) => (
+                <li><a href={`#${h.slug}`}>{h.text}</a></li>
+              ))}
+            </ul>
+          </nav>
+        </aside>
+      )}
+    </div>
+
+    <footer class="lp-foot docs-foot">
+      <a href="/" style="text-decoration:none;" aria-label="Nido home"><Logo size={18} mark markSize={22} /></a>
+      <span class="mut" style="font-size: 13px;">Nido runs on Stellar testnet. Use throwaway test keys only.</span>
+    </footer>
+  </div>
+</NidoLayout>
+
+<style is:global>
+  /* NidoLayout's .stage clips with overflow:hidden, which also stops
+     position:sticky; clip keeps the clipping without making a scroll box. */
+  .stage:has(.docs) { overflow: clip; }
+
+  .docs { padding-bottom: 24px; }
+  .docs .docs-badge {
+    margin-left: 10px; padding: 4px 11px; border-radius: var(--r-pill);
+    background: var(--acc-soft); color: var(--acc-ink);
+    font-size: 13px; font-weight: 800; text-decoration: none;
+  }
+  .docs .docs-gh { display: inline-flex; align-items: center; }
+  @media (max-width: 760px) { .docs .docs-gh { margin-left: auto; } }
+
+  .docs-grid {
+    display: grid; grid-template-columns: 220px minmax(0, 1fr) 200px;
+    gap: 44px; align-items: start; padding: 18px 0 40px;
+  }
+  .docs-grid:not(:has(.docs-toc)) { grid-template-columns: 220px minmax(0, 1fr); }
+
+  .docs-side, .docs-toc { position: sticky; top: 24px; }
+  .docs-side-label { display: block; margin: 6px 0 12px; }
+  .docs-side-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .docs-side-link {
+    display: block; padding: 8px 12px; border-radius: var(--r-sm);
+    color: var(--ink-soft); font-weight: 600; font-size: 14.5px; text-decoration: none;
+  }
+  .docs-side-link:hover { background: var(--paper-3); color: var(--ink); }
+  .docs-side-link.is-active { background: var(--acc-soft); color: var(--acc-ink); font-weight: 800; }
+  .docs-side-note { font-size: 12.5px; line-height: 1.6; margin: 18px 12px 0; }
+
+  .docs-toc span { display: block; margin: 6px 0 10px; }
+  .docs-toc ul { list-style: none; margin: 0; padding: 0 0 0 12px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+  .docs-toc a { color: var(--ink-soft); font-size: 13px; line-height: 1.4; text-decoration: none; }
+  .docs-toc a:hover { color: var(--acc-ink); }
+
+  .docs-article { min-width: 0; max-width: 760px; }
+  .docs-head { padding: 8px 0 8px; }
+  .docs-h1 { font-weight: 800; font-size: clamp(34px, 4.6vw, 52px); line-height: 1.04; letter-spacing: -.02em; margin: 16px 0 0; }
+  .docs-lede { font-size: clamp(16px, 1.5vw, 18.5px); line-height: 1.6; color: var(--ink-soft); margin: 16px 0 0; max-width: 62ch; }
+
+  /* ---- article prose (rendered Markdown) ---- */
+  .docs-prose { font-size: 16px; line-height: 1.68; color: var(--ink); }
+  .docs-prose > :first-child { margin-top: 28px; }
+  .docs-prose h2 {
+    font-family: var(--disp); font-weight: 800; font-size: clamp(23px, 2.4vw, 28px);
+    letter-spacing: -.015em; line-height: 1.15; margin: 48px 0 0; padding-top: 28px;
+    border-top: 1px solid var(--line); scroll-margin-top: 20px;
+  }
+  .docs-prose h3 { font-family: var(--disp); font-weight: 800; font-size: 19px; letter-spacing: -.01em; margin: 30px 0 0; scroll-margin-top: 20px; }
+  .docs-prose p, .docs-prose ul, .docs-prose ol { margin: 14px 0 0; }
+  .docs-prose ul, .docs-prose ol { padding-left: 22px; }
+  .docs-prose li + li { margin-top: 6px; }
+  .docs-prose li > p { margin-top: 6px; }
+  .docs-prose strong { font-weight: 800; }
+  .docs-prose a { color: var(--acc-ink); font-weight: 700; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .docs-prose a:hover { text-decoration-thickness: 2px; }
+  .docs-prose :not(pre) > code {
+    font-family: var(--mono); font-size: .86em; background: var(--chip);
+    padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere;
+  }
+  .docs-prose pre {
+    margin: 16px 0 0; padding: 16px 18px; border-radius: var(--r-md);
+    border: 1px solid var(--line); background-color: var(--paper-2) !important;
+    overflow-x: auto; font-size: 13px; line-height: 1.6;
+  }
+  .docs-prose pre code { font-family: var(--mono); }
+  /* Code is copied: show `=>` and `!=` as typed, not as ligatures. */
+  .docs-prose code { font-variant-ligatures: none; }
+  .docs-prose blockquote {
+    margin: 18px 0 0; padding: 12px 16px; border-radius: var(--r-md);
+    background: var(--warn-soft); border: 1px solid #ecdcb8; color: var(--ink);
+  }
+  .docs-prose blockquote > :first-child { margin-top: 0; }
+  .docs-prose table {
+    display: block; overflow-x: auto; margin: 18px 0 0;
+    border-collapse: collapse; font-size: 14px; line-height: 1.5;
+  }
+  .docs-prose th, .docs-prose td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .docs-prose th { font-weight: 800; font-size: 12.5px; letter-spacing: .03em; text-transform: uppercase; color: var(--mut); border-bottom-color: var(--ink-soft); }
+  .docs-prose hr { border: none; height: 1px; background: var(--line); margin: 32px 0 0; }
+  .docs-tag {
+    display: inline-block; padding: 1px 9px; border-radius: var(--r-pill);
+    background: var(--warn-soft); color: var(--warn); font-size: 12px; font-weight: 800;
+    vertical-align: 2px; white-space: nowrap;
+  }
+
+  .docs-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 56px; }
+  .docs-pager-link {
+    display: flex; flex-direction: column; gap: 3px; padding: 16px 18px;
+    border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--paper-2);
+    text-decoration: none; color: var(--ink); font-size: 13px;
+  }
+  .docs-pager-link:hover { border-color: var(--acc); }
+  .docs-pager-next { text-align: right; grid-column: 2; }
+  .docs-pager-title { font-family: var(--disp); font-weight: 800; font-size: 17px; }
+  .docs-source { font-size: 13px; margin: 18px 0 0; }
+  .docs-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+
+  @media (max-width: 1100px) {
+    .docs-grid, .docs-grid:not(:has(.docs-toc)) { grid-template-columns: 200px minmax(0, 1fr); gap: 36px; }
+    .docs-toc { display: none; }
+  }
+  @media (max-width: 760px) {
+    .docs-grid, .docs-grid:not(:has(.docs-toc)) { grid-template-columns: minmax(0, 1fr); gap: 8px; padding-top: 4px; }
+    .docs-side { position: static; }
+    .docs-side-list { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    .docs-side-link { padding: 6px 12px; background: var(--chip); border-radius: var(--r-pill); font-size: 13.5px; }
+    .docs-side-note { margin: 12px 0 0; }
+  }
+</style>
