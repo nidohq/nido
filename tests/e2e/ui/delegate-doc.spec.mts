@@ -269,6 +269,40 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(cards).not.toContainText('rule 1 of');
   });
 
+  test('changing grants are numbered in document order, as /sign/ numbers them', async ({ page }) => {
+    // An earlier request left `guess-xlm` (another expiry), so the built
+    // document updates it in place and appends `guess`: [admin, guess-xlm, guess].
+    const withXlm = buildPolicyDoc({
+      network: deployment.network,
+      signers: [
+        { id: 'admin', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: ADMIN_KEY },
+        { id: 'session', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: APP_KEY },
+      ],
+      permissions: [
+        { name: 'admin', on: 'self-admin', by: ['admin'] },
+        { name: 'guess-xlm', on: { contract: XLM }, by: ['session'], functions: ['transfer'], until: 500 },
+      ],
+    });
+    await mockPerchChain(page, {
+      ...deploymentViews(),
+      ...accountViews(ACCOUNT, { canonical: canonicalJson(withXlm) }),
+      [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(withXlm), 'hex'),
+    });
+    await page.goto(grantUrl());
+    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
+    await expect(page.locator('[data-grant="1"] .dd-count')).toHaveText('Rule 1 of 2');
+    await expect(page.locator('[data-grant="0"] .dd-count')).toHaveText('Rule 2 of 2');
+
+    await page.locator('#approve').click();
+    await page.waitForURL(/\/sign\/\?req=/);
+    const cards = page.locator('[data-grant-rule]');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toHaveAttribute('data-grant-rule', 'guess-xlm');
+    await expect(cards.nth(0)).toContainText('rule 1 of 2');
+    await expect(cards.nth(1)).toHaveAttribute('data-grant-rule', 'guess');
+    await expect(cards.nth(1)).toContainText('rule 2 of 2');
+  });
+
   test('limit=none on a token-function rule explains why the cap choice is still asked', async ({ page }) => {
     await mockChain(page);
     await page.goto(grantUrl({ 'grant.1.limit': 'none', 'grant.1.limit_period': null }));

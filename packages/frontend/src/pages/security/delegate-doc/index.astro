@@ -566,7 +566,8 @@ import Icon from '../../../components/Icon.astro';
       // anti-brick admin rule included — renders as newly granted.
       const diff = diffPolicyDocs(isFirstApply ? null : baselineDoc, doc);
       docDiffEl.innerHTML = renderDocDiffHtml(diff);
-      labelGrants(new Set([...diff.rulesAdded.map((r) => r.name), ...diff.rulesModified.map((m) => m.name)]));
+      const changed = new Set([...diff.rulesAdded.map((r) => r.name), ...diff.rulesModified.map((m) => m.name)]);
+      labelGrants(doc.rules.map((r) => r.name).filter((n) => changed.has(n)));
     } catch (e) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = `Cannot build the update: ${e instanceof Error ? e.message : String(e)}`;
@@ -575,17 +576,17 @@ import Icon from '../../../components/Icon.astro';
 
   /**
    * Number the grants as /sign/ will: by the rules this approval adds or
-   * changes. A grant whose rule is already applied exactly as asked reads
-   * "Already in place", and the title says how many are.
+   * changes, in the order the built document holds them. A grant whose rule
+   * is already applied exactly as asked reads "Already in place", and the
+   * title says how many are.
    */
-  function labelGrants(changed: Set<string>): void {
+  function labelGrants(changing: string[]): void {
     if (!req) return;
-    const changing = views.filter((v) => changed.has(v.grant.label));
     for (const v of views) {
-      const k = changing.indexOf(v);
+      const k = changing.indexOf(v.grant.label);
       v.count.textContent = k < 0 ? 'Already in place' : changing.length > 1 ? `Rule ${k + 1} of ${changing.length}` : '';
     }
-    const inPlace = views.length - changing.length;
+    const inPlace = views.filter((v) => !changing.includes(v.grant.label)).length;
     if (views.length > 1) {
       requestTitle.textContent =
         `App requests a scoped session key for ${views.length} rules` +
