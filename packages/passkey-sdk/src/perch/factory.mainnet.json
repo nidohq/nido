@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "network": "mainnet",
+  "network_passphrase": "Public Global Stellar Network ; September 2015",
+  "factory": "CBHERM3IKL2QLLJWNPBTATIHVFNT3FLFZKPFG4L2X7CHUPRLJHGC3FAC",
+  "wasm_hash": "02482b9ae2feaa25e7ec836be8dd839b0c3bc035d1d5a595585ab6582ea44995",
+  "account_wasm_hash": "2c976bfd98678f3b6fcf5514420a81ef5e5b9fc1c5b6c60ec6f2dd64448479d5",
+  "pinned_verifier": "CCTFLCCC5DK4BM5DVUK3RYF2YVPB4QTGRKFGGOGN2WKG5IJMWEH3LTGJ",
+  "manager": null,
+  "admin": "GAMPJROHOAW662FINQ4XQOY2ULX5IEGYXCI4SMZYE75EHQBR6PSTJG3M",
+  "source": {
+    "commit": "389cfe12925e3fba1630f66fc9cc4ddfe3ee409b",
+    "dirty": false,
+    "perch_commit": "2258433aa340428d65676cd269c8e4240674deb1"
+  },
+  "toolchain": {
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "stellar": "stellar 27.1.0 (8e402ea28202950b272fbabc34caad4d2f64fe87)",
+    "scaffold": "stellar-scaffold 0.0.27 (6f1f06c3e8d2cf82573ec214b20d1550e9ce326b)"
+  },
+  "deployed_at": "2026-10-26T13:30:01Z"
+}
