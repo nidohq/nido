@@ -1198,7 +1198,7 @@ dependencies = [
 [[package]]
 name = "perch-account"
 version = "0.5.1"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-smart-account",
  "soroban-sdk",
@@ -1208,7 +1208,7 @@ dependencies = [
 [[package]]
 name = "perch-compile"
 version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-ir",
  "perch-program",
@@ -1218,7 +1218,7 @@ dependencies = [
 [[package]]
 name = "perch-doc-compiler"
 version = "0.3.5"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "hex",
  "perch-compile",
@@ -1233,7 +1233,7 @@ dependencies = [
 [[package]]
 name = "perch-interpreter"
 version = "0.1.6"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-program",
  "soroban-sdk",
@@ -1243,7 +1243,7 @@ dependencies = [
 [[package]]
 name = "perch-ir"
 version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "hex",
  "hifijson",
@@ -1253,7 +1253,7 @@ dependencies = [
 [[package]]
 name = "perch-program"
 version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "soroban-flux",
  "soroban-sdk",
@@ -1262,7 +1262,7 @@ dependencies = [
 [[package]]
 name = "perch-recovery"
 version = "0.1.5"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-doc-compiler",
  "perch-recovery-interface",
@@ -1274,7 +1274,7 @@ dependencies = [
 [[package]]
 name = "perch-recovery-interface"
 version = "0.1.0"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "soroban-sdk",
  "soroban-sdk-tools",
@@ -1283,7 +1283,7 @@ dependencies = [
 [[package]]
 name = "perch-registry-resolve"
 version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-registry-resolve-macro",
  "soroban-sdk",
@@ -1292,7 +1292,7 @@ dependencies = [
 [[package]]
 name = "perch-registry-resolve-macro"
 version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1304,7 +1304,7 @@ dependencies = [
 [[package]]
 name = "perch-smart-account"
 version = "0.1.1"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-doc-compiler",
  "perch-recovery-interface",
@@ -1317,7 +1317,7 @@ dependencies = [
 [[package]]
 name = "perch-zk-pool"
 version = "0.1.4"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-zk-primitives",
  "soroban-sdk",
@@ -1327,7 +1327,7 @@ dependencies = [
 [[package]]
 name = "perch-zk-primitives"
 version = "0.1.0"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-recovery-interface",
  "soroban-poseidon",
@@ -1337,7 +1337,7 @@ dependencies = [
 [[package]]
 name = "perch-zk-prover"
 version = "0.1.0"
-source = "git+https://github.com/stellar-registry/perch?rev=6af7622da80309b9c6764f1e05c8a6186ad2e0ad#6af7622da80309b9c6764f1e05c8a6186ad2e0ad"
+source = "git+https://github.com/stellar-registry/perch?rev=2258433aa340428d65676cd269c8e4240674deb1#2258433aa340428d65676cd269c8e4240674deb1"
 dependencies = [
  "perch-recovery-interface",
  "perch-zk-primitives",
