@@ -59,6 +59,28 @@ export const TESTNET: PerchDeployment = {
   accountWasmHash: '2c976bfd98678f3b6fcf5514420a81ef5e5b9fc1c5b6c60ec6f2dd64448479d5',
 };
 
+/** Perch's mainnet release (`vendor/perch/deployments/mainnet.json`, at the
+ *  submodule's pin) and Nido's factory, as its record (`factory.mainnet.json`,
+ *  written by `scripts/deploy-factory.sh`) names it. Built from the same
+ *  source commit as `TESTNET` (`c135aca2`), so every pinned address differs
+ *  only where mainnet's deploy is necessarily distinct (the factory and the
+ *  stateless registry). */
+export const MAINNET: PerchDeployment = {
+  network: 'Public Global Stellar Network ; September 2015',
+  factory: 'CBHERM3IKL2QLLJWNPBTATIHVFNT3FLFZKPFG4L2X7CHUPRLJHGC3FAC',
+  webauthnVerifier: 'CCTFLCCC5DK4BM5DVUK3RYF2YVPB4QTGRKFGGOGN2WKG5IJMWEH3LTGJ',
+  statelessRegistry: 'CC236AK2RX7MUO7BV7JYDDW5KHZ3X7YYJOJKCVDC543BQBNNSUCZB7NN',
+  docCompiler: 'CB65ACZRA777XHGEKVX46LEU2ZSUAL2UQY2PKMVDL7KJTDHRTX5MTBQD',
+  interpreter: 'CCLU4UY5D7JLAQJCHBHEFN7ACFZXDPHCQXA7L6MT5ALIHRPQ7BGIVMTC',
+  spendingLimit: 'CAD75KDQREQCGN3HIKMAVYKZWRGOFQYDZSXB4ILFSR6OHKTJ5UDNSOKU',
+  recoveryController: 'CD67NUU74YA5UTPD2DDBDGKTMWHBYZVLO2K3PUEC362A6WN2OKJ5I7ZN',
+  zkPool: 'CB762AC3OEH7AYDMU3YH6SCUKKWUXNXI6WLVKK4MC2NGJBX2DJSWEFHJ',
+  zkAdapter: 'CB3KP2O7E6IDNNO23F7GVCAPZGFA6XGERYY633PIGQMASYPY2XRRLXS3',
+  circuitId: '9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a',
+  treeDepth: 32,
+  accountWasmHash: '2c976bfd98678f3b6fcf5514420a81ef5e5b9fc1c5b6c60ec6f2dd64448479d5',
+};
+
 /** A Perch deployment manifest (`deployments/<network>.json`), the fields
  *  this SDK reads. */
 export interface PerchManifest {
