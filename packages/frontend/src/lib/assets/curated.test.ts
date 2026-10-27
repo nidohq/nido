@@ -39,6 +39,23 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe("CURATED_LIST_URL", () => {
+  afterEach(() => {
+    delete (import.meta.env as Record<string, string | undefined>).PUBLIC_STELLAR_NETWORK;
+  });
+
+  it("uses Stellar Expert's testnet segment by default", () => {
+    expect(CURATED_LIST_URL).toBe("https://api.stellar.expert/explorer/testnet/asset-list/top50");
+  });
+
+  it("uses Stellar Expert's `public` segment on a mainnet build", async () => {
+    import.meta.env.PUBLIC_STELLAR_NETWORK = "mainnet";
+    vi.resetModules();
+    const mod = await import("./curated.js");
+    expect(mod.CURATED_LIST_URL).toBe("https://api.stellar.expert/explorer/public/asset-list/top50");
+  });
+});
+
 describe("parseAssetList", () => {
   it("keeps valid entries (including native, for icon backfill) and flags SAC by issuer presence", () => {
     const parsed = parseAssetList({

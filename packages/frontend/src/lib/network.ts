@@ -31,9 +31,12 @@ export async function latestLedgerSequence(server = new rpc.Server(RPC_URL)): Pr
   return (await server._getLatestLedger()).sequence;
 }
 
-/** Stellar Expert human-explorer base (used to link each row to its tx).
- *  Stellar Expert names mainnet `public`, not `mainnet`. */
-export const EXPLORER_BASE = `https://stellar.expert/explorer/${NETWORK_NAME === "mainnet" ? "public" : "testnet"}`;
+/** Stellar Expert's path segment for this network: it names mainnet
+ *  `public`, not `mainnet`. Every Stellar Expert URL builds from this. */
+export const EXPLORER_NETWORK: "public" | "testnet" = NETWORK_NAME === "mainnet" ? "public" : "testnet";
+
+/** Stellar Expert human-explorer base (used to link each row to its tx). */
+export const EXPLORER_BASE = `https://stellar.expert/explorer/${EXPLORER_NETWORK}`;
 
 /** Native-XLM Stellar Asset Contract id for this network. */
 export const NATIVE_SAC_ID = Asset.native().contractId(NETWORK_PASSPHRASE);

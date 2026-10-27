@@ -1,5 +1,5 @@
 import { nidoKey } from "@nidohq/passkey-sdk";
-import { NATIVE_SAC_ID, NETWORK_NAME } from "../network.js";
+import { EXPLORER_NETWORK, NATIVE_SAC_ID, NETWORK_NAME } from "../network.js";
 import { sanitizeDecimals } from "./balances.js";
 import { sanitizeIconUrl } from "./icons.js";
 import type { AssetCandidate } from "./types.js";
@@ -17,7 +17,7 @@ import type { AssetCandidate } from "./types.js";
  * probe needs (issue #71).
  */
 export const CURATED_LIST_URL =
-  `https://api.stellar.expert/explorer/${NETWORK_NAME}/asset-list/top50`;
+  `https://api.stellar.expert/explorer/${EXPLORER_NETWORK}/asset-list/top50`;
 export const SOROSWAP_LIST_URL = "https://api.soroswap.finance/api/tokens";
 
 const isContractId = (s: unknown): s is string =>
