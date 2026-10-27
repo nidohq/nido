@@ -165,6 +165,10 @@ jobs:
       # so the static webServer serves a real dist for the e2e tiers.
       - name: Build passkey-sdk
         run: npx tsc -p ./packages/passkey-sdk/tsconfig.json
+      # Onboarding and the account page label the network each build targets
+      # (the test builds the frontend for mainnet and for testnet itself).
+      - name: Frontend network label (mainnet and testnet builds)
+        run: npx vitest run --root packages/frontend src/lib/networkLabelBuild.test.ts
       # The fast tiers never reach a chain, so the build has no Perch
       # deployment and the recovery pages say so (recovery-pages.spec.ts).
       - name: Build frontend

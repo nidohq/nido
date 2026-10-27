@@ -23,6 +23,7 @@ import Icon from "../../components/Icon.astro";
 import Qr from "../../components/Qr.astro";
 import Logo from "../../components/Logo.astro";
 import Nest from "../../components/Nest.astro";
+import { NETWORK_LABEL } from "../../lib/network";
 import RecentActivityCard from "../../components/RecentActivityCard.astro";
 import AssetsCard from "../../components/AssetsCard.astro";
 import MyNidoMenu from "../../components/MyNidoMenu.astro";
@@ -131,7 +132,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           <div class="mut home-greeting-eyebrow">Welcome back</div>
           <h1 class="disp home-hello js-account-name">Your Nido</h1>
         </div>
-        <span class="chip acc"><span class="dot"></span> Testnet</span>
+        <span class="chip acc"><span class="dot"></span> {NETWORK_LABEL}</span>
       </div>
 
       <!-- balance — primary hero. Mobile/tablet: centered balance + the circular
@@ -576,7 +577,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
     const $explorerLink = document.getElementById("explorer-link") as HTMLAnchorElement;
     if (contractId) {
-      $explorerLink.href = `https://stellar.expert/explorer/testnet/contract/${contractId}`;
+      $explorerLink.href = `${EXPLORER_BASE}/contract/${contractId}`;
       $explorerLink.style.display = "inline";
     }
 
