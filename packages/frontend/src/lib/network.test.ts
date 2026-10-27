@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { Asset, Networks, rpc } from "@stellar/stellar-sdk";
 import {
-  RPC_URL, NETWORK_PASSPHRASE, NETWORK_NAME, EXPLORER_BASE, NATIVE_SAC_ID, latestLedgerSequence,
+  RPC_URL, NETWORK_PASSPHRASE, NETWORK_NAME, NETWORK_LABEL, EXPLORER_BASE, NATIVE_SAC_ID, latestLedgerSequence,
 } from "./network.js";
 
 describe("network config", () => {
   it("targets testnet by default", () => {
     expect(NETWORK_PASSPHRASE).toBe(Networks.TESTNET);
     expect(NETWORK_NAME).toBe("testnet");
+    expect(NETWORK_LABEL).toBe("Testnet");
     expect(RPC_URL).toBe("https://soroban-testnet.stellar.org");
     expect(EXPLORER_BASE).toBe("https://stellar.expert/explorer/testnet");
   });
@@ -26,9 +27,10 @@ describe("network config — PUBLIC_STELLAR_NETWORK switching", () => {
     vi.resetModules();
     const mod = await import("./network.js");
     expect(mod.NETWORK_NAME).toBe("mainnet");
+    expect(mod.NETWORK_LABEL).toBe("Mainnet");
     expect(mod.NETWORK_PASSPHRASE).toBe(Networks.PUBLIC);
     expect(mod.RPC_URL).toBe("https://mainnet.sorobanrpc.com");
-    expect(mod.EXPLORER_BASE).toBe("https://stellar.expert/explorer/mainnet");
+    expect(mod.EXPLORER_BASE).toBe("https://stellar.expert/explorer/public");
   });
 
   it("is case-insensitive and falls back to testnet for any other value", async () => {

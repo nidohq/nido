@@ -7,6 +7,10 @@ import { setStorageNetwork } from "@nidohq/passkey-sdk";
 const rawNetwork = (import.meta.env.PUBLIC_STELLAR_NETWORK ?? "testnet").toLowerCase();
 export const NETWORK_NAME: "testnet" | "mainnet" = rawNetwork === "mainnet" ? "mainnet" : "testnet";
 
+/** The network as the wallet shows it (the header chips). Pages render this,
+ *  never a literal, so a mainnet build never labels itself testnet. */
+export const NETWORK_LABEL = NETWORK_NAME === "mainnet" ? "Mainnet" : "Testnet";
+
 // Wallet state in localStorage lives under `nido:<network>:*` (passkey-sdk
 // `nidoKey`), so a build for one network never reads another's.
 setStorageNetwork(NETWORK_NAME);
@@ -27,8 +31,9 @@ export async function latestLedgerSequence(server = new rpc.Server(RPC_URL)): Pr
   return (await server._getLatestLedger()).sequence;
 }
 
-/** Stellar Expert human-explorer base (used to link each row to its tx). */
-export const EXPLORER_BASE = `https://stellar.expert/explorer/${NETWORK_NAME}`;
+/** Stellar Expert human-explorer base (used to link each row to its tx).
+ *  Stellar Expert names mainnet `public`, not `mainnet`. */
+export const EXPLORER_BASE = `https://stellar.expert/explorer/${NETWORK_NAME === "mainnet" ? "public" : "testnet"}`;
 
 /** Native-XLM Stellar Asset Contract id for this network. */
 export const NATIVE_SAC_ID = Asset.native().contractId(NETWORK_PASSPHRASE);

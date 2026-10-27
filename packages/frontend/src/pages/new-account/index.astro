@@ -5,6 +5,7 @@ import Nest from "../../components/Nest.astro";
 import Icon from "../../components/Icon.astro";
 import Toast from "../../components/Toast.astro";
 import PasskeySheet from "../../components/PasskeySheet.astro";
+import { NETWORK_LABEL } from "../../lib/network";
 ---
 
 <NidoLayout title="Nido — Set up your account" shell="focused">
@@ -13,7 +14,7 @@ import PasskeySheet from "../../components/PasskeySheet.astro";
     <div style="padding: 6px 4px 22px;">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
         <Logo size={19} mark markSize={24} />
-        <span class="chip" style="font-size:11px;"><span class="dot acc"></span>Testnet</span>
+        <span class="chip" style="font-size:11px;"><span class="dot acc"></span>{NETWORK_LABEL}</span>
       </div>
       <div class="steps">
         <i id="step-1"></i>
