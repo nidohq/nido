@@ -11,6 +11,10 @@ export const NETWORK_NAME: "testnet" | "mainnet" = rawNetwork === "mainnet" ? "m
  *  never a literal, so a mainnet build never labels itself testnet. */
 export const NETWORK_LABEL = NETWORK_NAME === "mainnet" ? "Mainnet" : "Testnet";
 
+/** The installed app's name on a home screen (manifest + iOS title). Testnet
+ *  says so, so a testnet install can't pass for the mainnet wallet. */
+export const APP_NAME = NETWORK_NAME === "mainnet" ? "Nido" : "Nido Testnet";
+
 // Wallet state in localStorage lives under `nido:<network>:*` (passkey-sdk
 // `nidoKey`), so a build for one network never reads another's.
 setStorageNetwork(NETWORK_NAME);

@@ -60,3 +60,15 @@ export function checkPasskeySupport(
   }
   return { ok: false, reason: "unsupported", message: UNSUPPORTED_MESSAGE };
 }
+
+/** Whether this page runs in an app's embedded WebView (Twitter, Instagram,
+ *  …), where passkeys can't run and the fix is opening the real browser. Real
+ *  Safari and SFSafariViewController carry both "Safari" and "Version/";
+ *  WKWebViews omit "Version/". So does Nido installed to the iOS home screen,
+ *  which is Safari's own engine with passkeys intact: `standalone` (iOS's
+ *  `navigator.standalone`) tells it apart. */
+export function isInAppBrowser(ua: string, standalone: boolean): boolean {
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  return (isIOS && !standalone && (!/Safari/.test(ua) || !/Version\//.test(ua)))
+    || /Twitter|Instagram|FBAN|FBAV|Line\//.test(ua);
+}
