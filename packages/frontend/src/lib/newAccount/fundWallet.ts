@@ -2,13 +2,13 @@
  * The new-account page's "Finalizing your wallet" step: get the relayer's
  * one-time top-up into the new account, resumably.
  *
- * A retry picks up where the last attempt stopped. It first waits on the
- * top-up already sent (`progress.hash`), and asks the relayer at all only
- * when the account still holds no XLM. The relayer's funder answers a repeat
- * request `alreadyFunded` with the same hash while that top-up can still
- * land, and sends a fresh one only once it provably can't
- * (infra/relayer/plugins/funder/fundOnce.ts), so asking again never pays
- * twice and a dropped top-up doesn't strand the step.
+ * A retry picks up where the last attempt stopped: it waits on the top-up
+ * already sent (`progress.hash`) and then, if the account still holds no
+ * XLM, re-asks the relayer. The funder's once-per-destination record
+ * (infra/relayer/plugins/funder/fundOnce.ts) is what stops a second payment:
+ * it hands back the same hash while that top-up can still land, and sends a
+ * fresh one only once it provably can't, so a dropped top-up doesn't strand
+ * the step.
  */
 
 /** The relayer's /fund answer (the funder plugin's FundResult). */
@@ -68,6 +68,7 @@ export async function fundWallet(
     throw new Error("Funding succeeded but returned no transaction hash");
   }
   progress.hash = resp.hash;
+  if (resp.status === "SUCCESS") return resp.alreadyFunded ? "already-funded" : "funded";
   if (resp.hash === pending) throw new FundingStillConfirming();
 
   const status = await waitForTopUp(resp.hash, deps);

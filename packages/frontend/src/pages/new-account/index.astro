@@ -984,7 +984,8 @@ import { NETWORK_LABEL } from "../../lib/network";
   // 4 · "Finalizing your wallet", then the hand-off. A failure leaves the
   // account deployed and activated, so the retry button resumes here instead
   // of redeploying; fundWallet waits on a top-up already sent (fundingProgress)
-  // rather than asking for another.
+  // and then re-asks the relayer, whose once-per-destination record
+  // (infra/relayer/plugins/funder/fundOnce.ts) is what stops a second payment.
   function finalizeWallet(): Promise<void> {
     finalizing ??= runFinalizeWallet().finally(() => {
       finalizing = null;

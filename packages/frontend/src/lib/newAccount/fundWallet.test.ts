@@ -87,6 +87,18 @@ describe('fundWallet (finalizing a new account)', () => {
     expect(net.deps.requestFunding).toHaveBeenCalledTimes(2);
   });
 
+  it('a retry finishes on the relayer reporting the pending top-up landed, even when the client cannot read the chain', async () => {
+    const net = fakeNetwork();
+    const progress: FundingProgress = { hash: null };
+    net.set('tx0', 'THROW');
+    net.deps.nativeBalance.mockRejectedValue(new Error('RPC 503'));
+    await expect(fundWallet(DEST, progress, net.deps)).rejects.toBeInstanceOf(FundingStillConfirming);
+
+    net.deps.requestFunding.mockResolvedValueOnce({ hash: 'tx0', status: 'SUCCESS', alreadyFunded: true });
+    expect(await fundWallet(DEST, progress, net.deps)).toBe('already-funded');
+    expect(progress.hash).toBe('tx0');
+  });
+
   it('does not ask for funding when the account already holds XLM', async () => {
     const net = fakeNetwork();
     net.setBalance(50_000_000n);
