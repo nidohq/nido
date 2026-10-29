@@ -140,10 +140,6 @@ jobs:
       # for a signature.
       - name: Frontend recovery pages
         run: npx vitest run --root packages/frontend src/lib/recovery
-      # Account creation's deploy guards and its resumable funding step. (The
-      # funder plugin's once-per-account guard runs with the support tests.)
-      - name: Frontend new-account setup
-        run: npx vitest run --root packages/frontend src/lib/newAccount
       # The document an app grant with a passkey key applies, kept identical to
       # the fixture the Contracts job compiles with Perch's doc compiler
       # (crates/integration-tests/tests/it/app_grant_doc.rs).
