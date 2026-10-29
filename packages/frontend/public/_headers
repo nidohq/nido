@@ -5,9 +5,12 @@
 # in sync. Enforced: frame/content-type/referrer. CSP is Report-Only (never
 # blocks) until the report stream is verified clean in prod, then promote to
 # Content-Security-Policy (drop -Report-Only) in BOTH places. See docs/MAINNET_READINESS.md.
-# MAINNET CUTOVER: the connect-src Stellar hosts below are TESTNET
-# (soroban-testnet/horizon-testnet/friendbot) — swap to soroban.stellar.org +
-# horizon.stellar.org and remove friendbot at cutover, in BOTH places.
+# This one file ships to both nido.fyi (mainnet) and test.nido.fyi (testnet),
+# so connect-src lists both networks' relayer + RPC hosts: mainnet's
+# nido-mainnet.fly.dev + mainnet.sorobanrpc.com (lib/network.ts,
+# deploy-production.yml), testnet's nido.fly.dev + soroban-testnet/
+# horizon-testnet/friendbot. The worker proxy splits them per environment
+# (wrangler.toml CSP_NETWORK_HOSTS).
 # HSTS covers every subdomain: the storage bridge and the setup cookie trust
 # *.nido.fyi, so none of it may be reachable over plain http.
 /*
@@ -15,7 +18,7 @@
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
-  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.nido.fyi https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org https://api.refractor.space https://api.soroswap.finance; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.nido.fyi https://nido-mainnet.fly.dev https://mainnet.sorobanrpc.com https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org https://api.refractor.space https://api.soroswap.finance; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
 
 # The storage bridge is the one page meant to be framed: account and name
 # origins embed it to share the account list. Detach the site-wide framing
