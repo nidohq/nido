@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { relayerSubmitAndConfirm } from "./submit";
 import { RelayerError, relayerOutcomeBlocksRetry } from "../relayerClient";
+import { readPageCache, writePageCache } from "../pageCache";
 import {
   TransactionBuilder,
   Networks,
@@ -73,6 +74,27 @@ describe("relayerSubmitAndConfirm", () => {
     const firstCall = calls[0] as { params: { func: string; auth: string[] } };
     expect(firstCall.params).toHaveProperty("func");
     expect(firstCall.params).toHaveProperty("auth");
+  });
+
+  // The account's own write moves its balance and history: the page it returns
+  // to must not show the pre-transaction reads from the navigation cache.
+  it("drops cached page reads once the transaction is sent, landed or not", async () => {
+    for (const ok of [true, false]) {
+      writePageCache("balance:xlm:CA", "12.5000000");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          ok
+            ? new Response(
+                JSON.stringify({ data: { transactionId: "tx1", hash: "abc123", status: "confirmed" } }),
+                { status: 200 },
+              )
+            : new Response("<html>502 Bad Gateway</html>", { status: 502 }),
+        ),
+      );
+      await relayerSubmitAndConfirm(fakeSignedTx(), { baseUrl: "https://relay.test" }).catch(() => {});
+      expect(readPageCache("balance:xlm:CA")).toBeNull();
+    }
   });
 });
 

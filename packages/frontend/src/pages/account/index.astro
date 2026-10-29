@@ -328,6 +328,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { formatXlm } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
+  import { cachedRead, clearPageCache, xlmBalanceKey } from "../../lib/pageCache";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
@@ -377,7 +378,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     try {
       const resolved = await resolveNameCached(
         RPC_URL,
-        await fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }),
+        () => fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }),
         detectedName,
         NETWORK_PASSPHRASE
       );
@@ -802,6 +803,9 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     // Validate hex-only before embedding in a URL — a crafted ?txhash= must not
     // be able to inject a javascript: URI or path traversal into the link.
     if (txhash && /^[0-9a-f]{64}$/i.test(txhash)) {
+      // /sign/ may have run on another origin (the contract subdomain behind a
+      // name), whose invalidation can't reach this origin's cache.
+      clearPageCache();
       toast({ msg: "Transaction confirmed", icon: "check" });
       const banner = document.createElement("div");
       banner.className = "alert good";
@@ -840,7 +844,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   // Fetch balance in background — REAL XLM, no fabricated fiat figure.
   const $balance = document.getElementById("xlm-balance")!;
   if (contractId) {
-    fetchXlmBalance(contractId).then((balance) => {
+    const account = contractId;
+    cachedRead(xlmBalanceKey(account), () => fetchXlmBalance(account), (balance) => {
       // Friendly grouping via money.formatXlm; keep the XLM figure truthful
       // (no fabricated fiat "$" balance — that was the prototype's mock).
       const friendly = formatXlm(balance);

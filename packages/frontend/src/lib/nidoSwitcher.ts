@@ -17,6 +17,7 @@ import { buildMyNidoModel, type MyNidoRow } from "./myNidoModel";
 import { nidoRowHref, accountShareUrl } from "./accountLinks";
 import { resolveMissingNames } from "./resolveMyNidoNames";
 import { fetchXlmBalance } from "./balance";
+import { cachedRead, xlmBalanceKey } from "./pageCache";
 import { avatarBackground } from "./avatarStyle";
 import { shortAddr } from "./address";
 import { formatXlm } from "./money";
@@ -270,8 +271,9 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
       const id = rowEl.dataset.balanceFor!;
       const balEl = rowEl.querySelector(".mn-bal")!;
       try {
-        const raw = await fetchXlmBalance(id, RPC_URL);
-        balEl.innerHTML = `${formatXlm(raw)} <small>XLM</small>`;
+        await cachedRead(xlmBalanceKey(id), () => fetchXlmBalance(id, RPC_URL), (raw) => {
+          balEl.innerHTML = `${formatXlm(raw)} <small>XLM</small>`;
+        });
       } catch {
         balEl.innerHTML = `<small>—</small>`;
       }
