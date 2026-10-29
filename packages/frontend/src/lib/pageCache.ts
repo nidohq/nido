@@ -70,6 +70,16 @@ export function clearPageCache(): void {
   }
 }
 
+// A /sign/ success lands back with ?txhash=, possibly after signing on another
+// origin (the contract subdomain behind a name) whose invalidation can't reach
+// this origin's cache. Drop it on load: the page's widgets read the cache as
+// soon as their scripts run, before the page itself sees the param.
+try {
+  if (/^[0-9a-f]{64}$/i.test(new URLSearchParams(location.search).get("txhash") ?? "")) clearPageCache();
+} catch {
+  /* no location — not a browser page */
+}
+
 // Two widgets reading the same key on one page (the hero balance and the
 // switcher row for the current account) share one request.
 const inflight = new Map<string, Promise<unknown>>();

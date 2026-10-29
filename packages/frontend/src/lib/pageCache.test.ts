@@ -111,3 +111,28 @@ describe("pageCache storage", () => {
     expect(sessionStorage.getItem(nidoKey("cache:balance:xlm:CA"))).not.toBeNull();
   });
 });
+
+describe("landing back from /sign/ with ?txhash=", () => {
+  afterEach(() => history.replaceState(null, "", "/"));
+
+  // A page's widgets read the cache as soon as their scripts run — before the
+  // page's own txhash handling — so the drop has to happen on module load.
+  it("drops cached reads before any widget can render them", async () => {
+    writePageCache("assets:CA", ["pre-tx"]);
+    history.replaceState(null, "", `/account/?txhash=${"ab".repeat(32)}`);
+    vi.resetModules();
+    const fresh = await import("./pageCache");
+    const renders: unknown[] = [];
+    const load = vi.fn(async () => ["post-tx"]);
+    await fresh.cachedRead("assets:CA", load, (v) => renders.push(v));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(renders).toEqual([["post-tx"]]);
+  });
+
+  it("a page without a txhash keeps its cache", async () => {
+    writePageCache("assets:CA", ["kept"]);
+    vi.resetModules();
+    const fresh = await import("./pageCache");
+    expect(fresh.readPageCache("assets:CA")?.value).toEqual(["kept"]);
+  });
+});

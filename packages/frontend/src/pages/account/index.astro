@@ -328,7 +328,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { formatXlm } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
-  import { cachedRead, clearPageCache, xlmBalanceKey } from "../../lib/pageCache";
+  import { cachedRead, xlmBalanceKey } from "../../lib/pageCache";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
@@ -803,9 +803,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     // Validate hex-only before embedding in a URL — a crafted ?txhash= must not
     // be able to inject a javascript: URI or path traversal into the link.
     if (txhash && /^[0-9a-f]{64}$/i.test(txhash)) {
-      // /sign/ may have run on another origin (the contract subdomain behind a
-      // name), whose invalidation can't reach this origin's cache.
-      clearPageCache();
       toast({ msg: "Transaction confirmed", icon: "check" });
       const banner = document.createElement("div");
       banner.className = "alert good";
