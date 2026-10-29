@@ -113,10 +113,9 @@ export default {
     // Keep it identical to packages/frontend/public/_headers (the static-origin
     // copy). style-src still carries 'unsafe-inline' (Astro/Tailwind inline styles);
     // dropping it needs its own verification pass.
-    // TODO(mainnet cutover): CSP_NETWORK_HOSTS is TESTNET today
-    // (soroban-testnet/horizon-testnet/friendbot). At mainnet, set it to
-    // soroban.stellar.org + horizon.stellar.org without friendbot, in lockstep
-    // with the frontend network config AND packages/frontend/public/_headers.
+    // CSP_NETWORK_HOSTS is per environment in wrangler.toml (mainnet on
+    // nido.fyi, testnet on test.nido.fyi); _headers lists the union of both,
+    // since that one file ships to both Pages builds.
     // TODO(CSP enforce): after a clean report stream in prod, promote to
     // `Content-Security-Policy` (drop `-Report-Only`). See docs/MAINNET_READINESS.md.
     response.headers.set(
