@@ -359,7 +359,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   // Animated "Setting up your Nido" checklist — full-sized boxed checkbox cards.
   // Each step is one of: "pending" (dim box) · "active" (spinner) · "done" (teal
   // checkmark). "Finalizing your wallet" is backed by a relayer-funded treasury
-  // transfer (see fundAccount), run after deploy and never surfaced as a detail.
+  // transfer (see finalizeWallet / lib/newAccount/fundWallet.ts), run after deploy and never surfaced as a detail.
   const CHECK_LABELS = ["check-0", "check-1", "check-2", "check-3", "check-4", "check-5"];
 
   function renderCheck(i: number, state: "pending" | "active" | "done") {

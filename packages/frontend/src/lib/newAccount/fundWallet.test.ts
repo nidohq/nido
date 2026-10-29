@@ -58,12 +58,33 @@ describe('fundWallet (finalizing a new account)', () => {
     expect(net.deps.requestFunding).toHaveBeenCalledTimes(1);
   });
 
-  it('a retry while the top-up is still pending does not ask for another', async () => {
+  it('a retry while the top-up is still pending gets the same top-up back, not a second payment', async () => {
     const net = fakeNetwork();
     const progress: FundingProgress = { hash: null };
     await expect(fundWallet(DEST, progress, net.deps)).rejects.toBeInstanceOf(FundingStillConfirming);
+
+    // The relayer's record still stands, so it hands back the same hash.
+    net.deps.requestFunding.mockResolvedValueOnce({ hash: 'tx0', status: 'PENDING', alreadyFunded: true });
     await expect(fundWallet(DEST, progress, net.deps)).rejects.toBeInstanceOf(FundingStillConfirming);
-    expect(net.deps.requestFunding).toHaveBeenCalledTimes(1);
+    expect(progress.hash).toBe('tx0');
+    expect(net.deps.requestFunding).toHaveBeenCalledTimes(2);
+
+    net.land('tx0');
+    expect(await fundWallet(DEST, progress, net.deps)).toBe('funded');
+    expect(net.deps.requestFunding).toHaveBeenCalledTimes(2);
+  });
+
+  it('a retry after the pending top-up was dropped adopts the fresh one the relayer sends', async () => {
+    const net = fakeNetwork();
+    const progress: FundingProgress = { hash: null };
+    await expect(fundWallet(DEST, progress, net.deps)).rejects.toBeInstanceOf(FundingStillConfirming);
+    expect(progress.hash).toBe('tx0');
+
+    // tx0's window closed without it landing: the relayer sends tx1.
+    net.set('tx1', 'SUCCESS');
+    expect(await fundWallet(DEST, progress, net.deps)).toBe('funded');
+    expect(progress.hash).toBe('tx1');
+    expect(net.deps.requestFunding).toHaveBeenCalledTimes(2);
   });
 
   it('does not ask for funding when the account already holds XLM', async () => {
