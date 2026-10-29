@@ -60,10 +60,13 @@ export async function resolveName(
 
 /**
  * Resolve a name with sessionStorage caching (5-minute TTL).
+ *
+ * `registryContractId` may be a thunk, resolved only on a cache miss: finding
+ * the registry is itself an RPC read, and a cached name needs no registry.
  */
 export async function resolveNameCached(
   rpcUrl: string,
-  registryContractId: string,
+  registryContractId: string | (() => Promise<string>),
   name: string,
   networkPassphrase: string
 ): Promise<string | null> {
@@ -83,7 +86,7 @@ export async function resolveNameCached(
 
   const contractId = await resolveName(
     rpcUrl,
-    registryContractId,
+    typeof registryContractId === "string" ? registryContractId : await registryContractId(),
     name,
     networkPassphrase
   );

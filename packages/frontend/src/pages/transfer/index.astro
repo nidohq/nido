@@ -204,7 +204,7 @@ import Icon from "../../components/Icon.astro";
       try {
         const resolved = await resolveNameCached(
           RPC_URL,
-          await fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NAME_NETWORK }),
+          () => fetchRegistryAddress("name-registry", { rpcUrl: RPC_URL, networkPassphrase: NAME_NETWORK }),
           detectedName,
           NAME_NETWORK,
         );

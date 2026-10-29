@@ -46,6 +46,7 @@
   import { activityRowHtml } from "../lib/activity/rowHtml.js";
   import { EXPLORER_BASE } from "../lib/network.js";
   import { resolveAccountAddress } from "../lib/resolveAccount.js";
+  import { cachedRead } from "../lib/pageCache.js";
 
   async function init() {
     const card = document.querySelector<HTMLElement>(".recent-activity");
@@ -63,12 +64,15 @@
     try {
       // The compact card only needs the newest few rows — scan a small window so
       // it loads fast; the full /account/activity page scans the default depth.
-      const page = await loadActivityPage({ address, maxChunks: 2 });
-      skel.hidden = true;
-      const top = page.items.slice(0, 5);
-      if (top.length === 0) { empty.hidden = false; return; }
-      list.innerHTML = top.map(activityRowHtml).join("");
-      list.hidden = false;
+      // Cached rows render instantly across page switches (#346).
+      const load = () => loadActivityPage({ address, maxChunks: 2 });
+      await cachedRead(`activity:recent:${address}`, load, (page) => {
+        skel.hidden = true;
+        const top = page.items.slice(0, 5);
+        empty.hidden = top.length > 0;
+        list.hidden = top.length === 0;
+        list.innerHTML = top.map(activityRowHtml).join("");
+      });
     } catch {
       // Update only the text node so the "View full history" link survives.
       skel.hidden = true;
