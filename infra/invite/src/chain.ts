@@ -23,7 +23,7 @@ export async function accountExists(address: string): Promise<boolean> {
  *  funder plugin's transfer has actually landed, not just the deploy.
  *  accountExists() alone goes true the moment create_account confirms,
  *  well before the separate, sometimes-slow async funding step
- *  (new-account/index.astro's fundAccount) finishes — printing "your
+ *  (frontend's newAccount/fundWallet.ts) finishes — printing "your
  *  wallet is ready" on deploy alone would hand out a receipt for an
  *  account that's still at a zero balance. */
 export async function isFunded(address: string): Promise<boolean> {

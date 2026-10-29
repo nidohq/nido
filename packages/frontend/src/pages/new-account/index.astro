@@ -142,6 +142,10 @@ import { NETWORK_LABEL } from "../../lib/network";
             <span class="check-text">Your Nido is ready</span>
           </div>
         </div>
+        <!-- Shown when "Finalizing your wallet" fails; resumes only that step. -->
+        <button id="finalize-retry" type="button" class="btn acc hidden" style="margin-top:22px; width:100%; max-width:340px;">
+          <span>Try again</span>
+        </button>
       </div>
     </section>
 
@@ -241,11 +245,13 @@ import { NETWORK_LABEL } from "../../lib/network";
   import { fetchFactoryAddress } from "../../lib/policyChainFetch.js";
   import { newAccountRefusal, setupAddressMismatch } from "../../lib/newAccount/deployGuard";
   import { accountDeployed, verifyNewNidoAccount } from "../../lib/newAccount/verifyNewAccount";
+  import { fundWallet, type FundingProgress, type FundWalletDeps } from "../../lib/newAccount/fundWallet";
+  import { simulateRead } from "../../lib/simulateRead";
   import { parseReturnIntent, buildClaimReturnUrl } from "../../lib/claimFlow";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
-  import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL } from "../../lib/network";
+  import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL, NATIVE_SAC_ID } from "../../lib/network";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
   import { syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
   import { signAndSubmit } from "../../lib/primaryPasskeySigner";
@@ -309,6 +315,13 @@ import { NETWORK_LABEL } from "../../lib/network";
   // /security/recovery/ (its first apply_doc carries the recovery member).
   let setUpRecoveryAfter = false;
 
+  // --- Finalizing (funding) ---
+  //
+  // The top-up the finalize step has asked for, kept across its retries, and
+  // the run in flight (one at a time).
+  const fundingProgress: FundingProgress = { hash: null };
+  let finalizing: Promise<void> | null = null;
+
   // --- UI refs ---
 
   const $contractIdEl = document.getElementById("contract-id")!;
@@ -328,6 +341,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
   const $deployNestStatic = document.getElementById("deploy-nest-static")!;
   const $doneSection = document.getElementById("done-section")!;
+  const $finalizeRetry = document.getElementById("finalize-retry") as HTMLButtonElement;
   const $step1 = document.getElementById("step-1")!;
   const $step2 = document.getElementById("step-2")!;
 
@@ -374,7 +388,7 @@ import { NETWORK_LABEL } from "../../lib/network";
     }
   }
 
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
   function paramsFromHash(): URLSearchParams {
     return new URLSearchParams(window.location.hash.replace(/^#/, ""));
@@ -438,43 +452,49 @@ import { NETWORK_LABEL } from "../../lib/network";
       : new Error("Funded setup account is not available yet.");
   }
 
-  async function fundAccount(server: rpc.Server, destination: string): Promise<void> {
-    if (!RELAYER_URL) {
-      throw new Error("Relayer is not configured for account funding.");
-    }
-    const resp = await fetch(`${RELAYER_URL}/fund`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ params: { destination } }),
-    });
-    const body = await resp.json().catch(() => null);
-    if (!resp.ok || !body?.success) {
-      // A slow plugin cold-start can blow the relayer's own plugin timeout
-      // (see docs/ISSUE_DRAFT_plugin_pool_orphaned_processes.md), which comes
-      // back with no JSON error and an empty statusText — fall back to the
-      // HTTP status itself rather than showing a bare "Funding failed:".
-      throw new Error(`Funding failed: ${body?.error || resp.statusText || `HTTP ${resp.status}`}`);
-    }
-    const sendHash = body.data?.hash as string | undefined;
-    if (!sendHash) {
-      throw new Error("Funding succeeded but returned no transaction hash");
-    }
-
-    // The funder plugin submits straight to Soroban RPC (bypassing the
-    // relayer's own transaction tracking, which has a sequence-number bug —
-    // see docs/ISSUE_DRAFT_sequence_number_precision_loss.md), so we poll
-    // the same RPC endpoint directly for confirmation rather than the
-    // relayer's own status API.
-    let got = await server.getTransaction(sendHash);
-    let attempts = 0;
-    while (got.status === "NOT_FOUND" && attempts < 20) {
-      await sleep(1000);
-      got = await server.getTransaction(sendHash);
-      attempts++;
-    }
-    if (got.status !== "SUCCESS") {
-      throw new Error(`Funding transaction did not complete: ${got.status}`);
-    }
+  // What "Finalizing your wallet" talks to: the relayer's /fund and the RPC.
+  function fundingDeps(server: rpc.Server): FundWalletDeps {
+    return {
+      async requestFunding(destination) {
+        if (!RELAYER_URL) {
+          throw new Error("Relayer is not configured for account funding.");
+        }
+        const resp = await fetch(`${RELAYER_URL}/fund`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ params: { destination } }),
+        });
+        const body = await resp.json().catch(() => null);
+        if (!resp.ok || !body?.success) {
+          // A slow plugin cold-start can blow the relayer's own plugin timeout
+          // (see docs/ISSUE_DRAFT_plugin_pool_orphaned_processes.md), which comes
+          // back with no JSON error and an empty statusText — fall back to the
+          // HTTP status itself rather than showing a bare "Funding failed:".
+          throw new Error(`Funding failed: ${body?.error || resp.statusText || `HTTP ${resp.status}`}`);
+        }
+        return {
+          hash: (body.data?.hash as string | null | undefined) ?? null,
+          status: body.data?.status,
+          alreadyFunded: body.data?.alreadyFunded === true,
+        };
+      },
+      // The funder plugin submits straight to Soroban RPC (bypassing the
+      // relayer's own transaction tracking, which has a sequence-number bug —
+      // see docs/ISSUE_DRAFT_sequence_number_precision_loss.md), so we poll
+      // the same RPC endpoint directly for confirmation rather than the
+      // relayer's own status API.
+      async topUpStatus(hash) {
+        return (await server.getTransaction(hash)).status;
+      },
+      async nativeBalance(destination) {
+        const raw = await simulateRead(server, NATIVE_SAC_ID, "balance", [
+          Address.fromString(destination).toScVal(),
+        ]);
+        if (typeof raw !== "bigint") throw new Error("Balance read failed");
+        return raw;
+      },
+      sleep,
+    };
   }
 
   // --- Init: surface the contract id ---
@@ -941,59 +961,7 @@ import { NETWORK_LABEL } from "../../lib/network";
       // Checked — 3 done, 4 · "Finalizing your wallet" begins. Funds the new
       // account directly from the relayer's `fund` treasury; must follow the
       // check above since the account contract is the destination.
-      setCheckProgress(4, 4);
-      try {
-        await fundAccount(server, contractId!);
-      } catch (fundingErr) {
-        console.warn("[nido] wallet finalize failed", fundingErr);
-        renderCheck(4, "pending");
-        renderCheck(5, "pending");
-        $deployNestSpinning.style.display = "none";
-        $deployNestStatic.style.display = "block";
-        showError(
-          fundingErr instanceof Error
-            ? `Couldn't finish setting up your wallet: ${fundingErr.message}`
-            : "Couldn't finish setting up your wallet."
-        );
-        return;
-      }
-
-      // Finalized — every card lands its checkmark, including "Your Nido is ready".
-      setCheckProgress(6, -1);
-      $deployNestSpinning.style.display = "none";
-      $deployNestStatic.style.display = "block";
-
-      // Wire up the done screen.
-      const protocol = window.location.protocol;
-      const host = window.location.host;
-      const accountUrl = setUpRecoveryAfter
-        ? `${protocol}//${host}/security/recovery/`
-        : `${protocol}//${host}/account/`;
-
-      // Brief beat so the final check lands before the reveal.
-      await new Promise((r) => setTimeout(r, 700));
-      $deploySection.classList.add("hidden");
-      $doneSection.classList.remove("hidden");
-      $step2.classList.remove("on");
-      $step2.classList.add("done");
-
-      // F-02: auto-advance into the wallet after a brief "ready" beat — arriving
-      // in the funded wallet is the payoff, and the deploy copy already promised
-      // an automatic hand-off.
-      setTimeout(() => {
-        const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
-        if (intent) {
-          const apexHost = stripSubdomain(window.location.host);
-          window.location.href = buildClaimReturnUrl({
-            apexHost,
-            name: intent.name,
-            contractId: contractId!,
-            protocol: window.location.protocol,
-          });
-        } else {
-          window.location.href = accountUrl;
-        }
-      }, 1500 + 2200);
+      await finalizeWallet();
     } catch (err: any) {
       if (err instanceof perch.NewAccountRefused) {
         const refusal = newAccountRefusal(err.problem);
@@ -1012,6 +980,82 @@ import { NETWORK_LABEL } from "../../lib/network";
       $registerBtn.disabled = false;
     }
   }
+
+  // 4 · "Finalizing your wallet", then the hand-off. A failure leaves the
+  // account deployed and activated, so the retry button resumes here instead
+  // of redeploying; fundWallet waits on a top-up already sent (fundingProgress)
+  // rather than asking for another.
+  function finalizeWallet(): Promise<void> {
+    finalizing ??= runFinalizeWallet().finally(() => {
+      finalizing = null;
+    });
+    return finalizing;
+  }
+
+  async function runFinalizeWallet() {
+    clearError();
+    $finalizeRetry.classList.add("hidden");
+    $deployNestSpinning.style.display = "";
+    $deployNestStatic.style.display = "none";
+    setCheckProgress(4, 4);
+    try {
+      await fundWallet(contractId!, fundingProgress, fundingDeps(new rpc.Server(RPC_URL)));
+    } catch (fundingErr) {
+      console.warn("[nido] wallet finalize failed", fundingErr);
+      renderCheck(4, "pending");
+      renderCheck(5, "pending");
+      $deployNestSpinning.style.display = "none";
+      $deployNestStatic.style.display = "block";
+      $finalizeRetry.classList.remove("hidden");
+      showError(
+        fundingErr instanceof Error
+          ? `Couldn't finish setting up your wallet: ${fundingErr.message}`
+          : "Couldn't finish setting up your wallet."
+      );
+      return;
+    }
+
+    // Finalized — every card lands its checkmark, including "Your Nido is ready".
+    setCheckProgress(6, -1);
+    $deployNestSpinning.style.display = "none";
+    $deployNestStatic.style.display = "block";
+
+    // Wire up the done screen.
+    const protocol = window.location.protocol;
+    const host = window.location.host;
+    const accountUrl = setUpRecoveryAfter
+      ? `${protocol}//${host}/security/recovery/`
+      : `${protocol}//${host}/account/`;
+
+    // Brief beat so the final check lands before the reveal.
+    await new Promise((r) => setTimeout(r, 700));
+    $deploySection.classList.add("hidden");
+    $doneSection.classList.remove("hidden");
+    $step2.classList.remove("on");
+    $step2.classList.add("done");
+
+    // F-02: auto-advance into the wallet after a brief "ready" beat — arriving
+    // in the funded wallet is the payoff, and the deploy copy already promised
+    // an automatic hand-off.
+    setTimeout(() => {
+      const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
+      if (intent) {
+        const apexHost = stripSubdomain(window.location.host);
+        window.location.href = buildClaimReturnUrl({
+          apexHost,
+          name: intent.name,
+          contractId: contractId!,
+          protocol: window.location.protocol,
+        });
+      } else {
+        window.location.href = accountUrl;
+      }
+    }, 1500 + 2200);
+  }
+
+  $finalizeRetry.addEventListener("click", () => {
+    void finalizeWallet();
+  });
 
   // A resumed setup whose address already holds a contract is settled before
   // the passkey step is offered (see takeOverIfDeployed).
