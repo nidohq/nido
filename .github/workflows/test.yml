@@ -145,6 +145,11 @@ jobs:
       # (crates/integration-tests/tests/it/app_grant_doc.rs).
       - name: Frontend app-grant document fixture
         run: npx vitest run --root packages/frontend src/lib/policy/appGrantDoc.test.ts
+      # The Docs section's llms.txt and llms-full.txt builders (the built
+      # pages, links and anchors are checked by tests/e2e/ui/docs.spec.ts in
+      # the e2e job).
+      - name: Frontend docs section
+        run: npx vitest run --root packages/frontend src/lib/docs
 
   e2e:
     name: E2E (fast UI + CDP)

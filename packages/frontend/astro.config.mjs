@@ -5,6 +5,11 @@ export default defineConfig({
   // The same static build is served across the apex, name/contract subdomains,
   // and PR previews, so the card image points at one fixed origin.
   site: "https://nido.fyi",
+  markdown: {
+    // The Docs pages (src/pages/docs/*.md) sit on the light-only Warm Nest
+    // palette; DocsLayout supplies the code block background.
+    shikiConfig: { theme: "github-light" },
+  },
   vite: {
     worker: {
       // bb.js (the ZK prover, loaded lazily by the recovery pages) spawns
