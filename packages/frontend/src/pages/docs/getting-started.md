@@ -1,7 +1,7 @@
 ---
 layout: ../../layouts/DocsLayout.astro
 title: Getting started
-description: Make an app from the Nido template, create a passkey account, approve a session once, and make calls your app signs without a prompt, all on testnet.
+description: Make an app from the Nido template, create a passkey account, approve a session once, and sign calls with the app's passkey, all on testnet.
 ---
 
 ## Before you start
@@ -33,10 +33,11 @@ has Friendbot fund it. Keys and contract aliases stay in the project's
 `.stellar-config/`, not in your global `~/.config/stellar`.
 
 > **Run two apps? Give each its own port.** An app made with `init` keeps the
-> default `PORT=5173`. Your app's session key lives in the browser storage of
-> its origin, and the origin includes the port, so two apps on the same port
-> share session storage, and an app that moves to another port has no session.
-> Set a different `PORT` in each app's `.env`.
+> default `PORT=5173`. Session metadata lives in the browser storage of the
+> app's origin, which includes the port, so two apps on the same port share
+> session storage, and an app that moves to another port has no session.
+> Set a different `PORT` in each app's `.env`, and open it at `localhost`,
+> not `127.0.0.1`: passkeys need a hostname.
 
 ## 2. Create a Nido account
 
@@ -63,44 +64,37 @@ signed. The app's header then shows the C-address and its XLM balance.
 
 ## 4. Approve the session
 
-The sample game, Guess the Number, takes 1 XLM for each wrong guess. Before
-your account can play without prompts, its owner approves a session. The
-app's gate explains what it asks for and shows **Approve with Nido (2
-confirmations)**.
+The sample game, Guess the Number, takes 1 XLM for each wrong guess. Its gate
+explains the session and asks you to **Make a passkey for this app**.
 
-1. Press it. The app shows "Preparing a key for this app…" while it makes a new
-   session key and has Friendbot fund it, so the key can pay fees. This can
-   take ten seconds or so. Press once.
-2. The app sends you to Nido's grant page for the first rule: the key may call
-   `guess` on the game contract, for 24 hours, with no spending cap. Nido makes
-   you tick **"Let this key spend without any cap"** for any rule without a
-   cap. This rule can only call `guess`, and the XLM it moves is limited by the
-   second rule. Confirm with your passkey (confirmation 1 of 2).
-3. Nido applies the rule through its relayer and sends you to the second grant
-   page: the key may call `transfer` on the XLM token contract, up to **2 XLM
-   per day**. Confirm (2 of 2).
-4. Back in the app: "This app holds a session key for your account, approved
-   until …", and the game is playable.
+1. Make the app's passkey when your device asks. This is separate from your
+   Nido account's passkey. Its private key stays in the authenticator; the app
+   stores only its public key, credential id and session metadata.
+2. Press **Approve with Nido (2 rules, one confirmation)**. One popup shows
+   both rules for 24 hours: `guess` on the game, without a cap, and `transfer`
+   on XLM, capped at **2 XLM per day** and paying **only the game**. The
+   template sends `limit=none` for `guess`, so no uncapped-spending checkbox
+   is needed for that rule.
+3. Review both rules and confirm once with your **Nido account's passkey**.
+   Nido's relayer applies them together and closes the popup.
+4. Back in the app, the game is playable. The app passkey needs no Friendbot
+   funding: Nido's relayer pays the transaction fees.
 
-There are two confirmations because the game's calls need a rule for each
-contract they authorize: the game itself, and the XLM token it moves. The
-template asks Nido for one grant per request. Nido's grant page can take
-several grants with one confirmation (see
-[Request a session](/docs/sessions/#nidos-grant-page-parameters)), but the
-template doesn't ask that way yet.
+There are two rules because the call authorizes both the game and XLM. They
+share one approval. See [Request a session](/docs/sessions/) for the API.
 
-## 5. Make calls without prompts
+## 5. Make a call with the app's passkey
 
-Guess a number. The app signs the call with its session key and submits it, so
-no popup opens. A wrong guess moves 1 XLM from your account and shows the
-transaction hash.
+Guess a number and answer your device's **app passkey** prompt. No Nido
+approval page opens for each guess. The app signs the authorization and
+Nido's relayer submits it. A wrong guess moves 1 XLM from your account to the
+game and shows the transaction hash.
 
-The third wrong guess in a day is refused. Your account checks the 2 XLM cap
-while the call is simulated, before anything is sent, so the refused guess
-costs nothing, and the app says why:
-
-> That's the 2 XLM a day you let this game spend, so your account stopped this
-> guess before anything was sent. It cost nothing.
+After two wrong guesses, the sample shows **Cap reached until ≈ …** and
+disables Submit. It reads the spending record before requesting another
+passkey signature; the account also enforces the cap during simulation.
+A refused call sends nothing and costs nothing. Renewing the same rules
+keeps their spending record, so re-approving does not reset a spent cap.
 
 That refusal is the account enforcing the rule you approved. The app can't get
 around it, and nobody holding the session key can either.

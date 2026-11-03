@@ -20,8 +20,9 @@ Paths in these files are on the host you fetched them from:
 
 ## The rules
 
-- **Testnet only.** Generate throwaway testnet keys. Never use mainnet or a key
-  a person holds.
+- **The tutorial and template use testnet.** Use throwaway testnet accounts
+  for these examples. Nido's mainnet deployment is separate; do not point
+  the template's testnet contracts, RPC or funding flow at it.
 - **The passkey popup can't call your contract.** It signs under the account's
   admin rule, which covers only calls on the account itself; a call into
   another contract is refused with `#3002` (one contract) or `#3014` (several).
@@ -34,17 +35,24 @@ Paths in these files are on the host you fetched them from:
   it moves the user's tokens. Otherwise simulation refuses with "authorization
   not tied to the root contract invocation".
 - **`limit` caps cumulative `transfer` amounts, only on a grant whose `target`
-  is that token** (`xlmTokenId` for XLM). A grant without `limit` makes Nido ask
-  the owner to accept "no cap". Nido's grant page skips that for `limit=none`
-  on a grant whose `functions` name no token function.
-- **The template asks for one grant per request**, so N grants are N passkey
-  confirmations. Nido's grant page takes up to 8 as `grant.<i>.<field>` with
-  one confirmation ([parameters](/docs/sessions/#nidos-grant-page-parameters)).
+  is that token** (`xlmTokenId` for XLM). The template sends uncapped grants
+  as `limit=none`; Nido skips the checkbox when the explicit `functions`
+  list names no token function. Use **`to`** on a transfer-only grant to
+  restrict the recipient; otherwise it can pay any address up to the cap.
+- **The template sends grants together**, using `pubkey=` and
+  `grant.<i>.<field>` for one confirmation. Give a gate's grants the same
+  duration, with at most 8 in a request
+  ([parameters](/docs/sessions/#nidos-grant-page-parameters)).
 - **`label` is at most 20 bytes**, and asking again with the same label
   replaces that rule. **`duration`** is `24h`, `7d` or `30d`.
-- **The session key is an ed25519 key in the app origin's `localStorage`**. The
-  origin includes the port, so keep `PORT` fixed. The key pays its own fees,
-  never holds the user's funds, and can spend at most the cap until expiry.
+- **The session signer is the app's passkey.** Its private key stays in the
+  authenticator; `localStorage` holds the public key, credential id and
+  session metadata. Each call asks the device to sign, and Nido's relayer
+  submits it and pays the fee. Keep `PORT` fixed and use `localhost`, not an
+  IP address, for local passkeys. Keep `credential_id` out of grant URLs.
+- **Check the cap before prompting.** Use `CapReachedError` and
+  `capReachedUntil` to explain a spent cap and disable the action until it
+  frees up. Renewing the same rules preserves the spending record.
 - **A cap limits a key, not the account's owner**, and **expiry stops a key, it
   doesn't delay a withdrawal**. For allowances, custody or time locks, put the
   money and the rule in your contract.
@@ -101,7 +109,7 @@ npm run stellar -- contract invoke --id <C-address> --network testnet --send=no 
 
 ## When Nido's relayer refuses
 
-Account creation and grants go through Nido's relayer, out of one daily budget
+Account creation, grants and session calls go through Nido's relayer, out of one daily budget
 shared by everyone on testnet. Nido's signing page shows the same "couldn't
 confirm" message for a 429 `FEE_LIMIT_EXCEEDED` (nothing sent), a 503
 `POOL_CAPACITY` (nothing sent) and a 504 (may have landed). Don't loop on
@@ -114,10 +122,8 @@ Nido again**. The full table is in
 Don't design around these; they don't exist yet:
 
 - revoking a session (grants end at their expiry);
-- a passkey session key (`pubkey=`) in the template;
 - Nido's grant page answering `?delegation=error&code=…` or
   `?delegation=signed&payload=…` (it sends only `ok` and `cancelled`);
-- session calls through Nido's relayer (the session key pays);
 - a published Nido SDK for the session flow (it lives in the template's
   `app-lib/session.ts`);
-- mainnet.
+- a mainnet walkthrough in these guides.

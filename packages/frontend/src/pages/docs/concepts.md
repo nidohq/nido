@@ -23,8 +23,8 @@ What that means for your app:
   with a placeholder source.
 - **Your contract doesn't change.** It calls `user.require_auth()` and the
   account decides whether to authorize.
-- **The passkey belongs to the account's own subdomain**,
-  `<c-address>.test.nido.fyi`. That is why Nido's signing and grant pages open
+- **The owner's passkey belongs to the account's own subdomain**,
+  `<c-address>.test.nido.fyi` in this testnet guide. That is why Nido's signing and grant pages open
   there, in a popup or a redirect, and not inside your app.
 - **The owner can recover the account** if they lose the passkey, through
   friends they trust, a recovery kit, or both. See
@@ -44,29 +44,33 @@ call into your contract, the account refuses it:
 
 So an app acts for a Nido account through a **session**.
 
-## Sessions and delegated signers
+## Sessions and app passkeys
 
-A session is a rule in the account's policy that names a key your app holds.
+A session is a set of rules in the account's policy that names your app's
+passkey, separate from the owner's Nido passkey.
 
-1. Your app makes an ed25519 key (a classic G-address keypair) and has it
-   funded so it can pay transaction fees. On testnet, Friendbot funds it.
-2. The owner approves a rule on Nido's grant page with their passkey. The rule
-   names that key as a **delegated signer** (CAP-0071): it may sign for the
-   account, but only for the functions and contracts the rule lists, until it
-   expires, and under its spending cap if it has one.
-3. Your app signs later calls itself, inside the account's own authorization
-   entry, and submits them with the key as the fee payer. The account checks
-   the rule on every call.
+1. The device makes a passkey on the app's own origin. Its private key stays
+   in the authenticator; the app stores its public key and credential id.
+2. The owner approves the rules together on Nido's grant page with their
+   **Nido passkey**. Each rule names the app passkey as an **External signer**,
+   checked by the WebAuthn verifier, and limits the contracts, functions,
+   expiry and spending it may authorize.
+3. For each later call, the device asks for the **app passkey**. The app signs
+   the account's authorization entry under the approved rules; Nido's relayer
+   submits it and pays the fee. The account checks the rules on every call.
 
-The session key never holds the user's money. Every payment still comes out of
-the account and counts against the cap. The trade-off is where the key lives:
+The app passkey never holds the user's money. Payments come from the account
+and the token grant enforces its cap and recipient restriction.
 
-- **In your app's origin, in the browser's `localStorage`.** Whoever can read
-  your origin's storage can use the key, up to the cap and until expiry.
+- **Only public session data lives in `localStorage`.** Reading that data
+  does not reveal a signing key. Code controlling the app can still request
+  a device signature, so caps and recipients bound what an approval permits.
 - **The origin includes the port.** A dev server that moves from port 5173 to
   5174 has no session there, and two apps on one port share one.
-- **One key per account and origin.** Several gates in one app share it, and
+- **One app passkey per account and origin.** Several gates in one app share it, and
   each asks only for the grants it lacks.
+- **Use a hostname.** Open local apps at `localhost`, not `127.0.0.1`, so the
+  browser can create and use passkeys.
 
 ## Grants and spending caps
 
@@ -85,6 +89,7 @@ const grants: Grant[] = [
     functions: ["transfer"],
     duration: "24h",
     limit: { amount: "2", period: "day" }, // "day" | "week" | "30d"
+    to: guessTheNumber.options.contractId, // may pay only the game
     label: "guess-xlm",
   },
 ]
@@ -105,12 +110,15 @@ The rules that follow from how the account checks a call:
   `target` is that token.** A cap on any other contract doesn't limit what that
   contract moves. The period is a rolling window of ledgers: `day` is 17,280
   ledgers, about 24 hours at five seconds a ledger.
-- **A grant without a cap needs the owner's explicit yes.** Nido's page asks
-  them to tick "Let this key spend without any cap". For a contract that moves
-  no money, or one whose own code limits amounts, that is expected; say so in
-  your app's explanation, because the wording alone can read as if the app
-  could spend anything. A grant sent with `limit=none` whose `functions` name
-  no token function skips the tick.
+- **Restrict a payment's recipient with `to`.** On a grant whose functions
+  are exactly `["transfer"]`, it names the only address that may be paid.
+  Without it, the key can pay any address up to the cap. Rules are checked
+  per call, so a token grant can authorize a transfer outside your game's
+  call too; `to` keeps that transfer restricted to the game.
+- **The template sends an uncapped grant as `limit=none`.** Nido skips the
+  uncapped-spending checkbox when its explicit `functions` list names no
+  token function, such as `guess`. Other uncapped grants require the owner
+  to choose a cap or tick "Let this key spend without any cap".
 - **The same label replaces the rule.** Asking again with an existing label
   changes or renews that rule in place.
 
@@ -119,7 +127,7 @@ Patterns that work:
 - **An action that moves no money** (claim, vote, check in): one grant on your
   contract, no cap.
 - **A capped payment** (tip, buy, a game stake): two grants, your contract plus
-  the token with a `limit`.
+  the token with a `limit` and `to` set to your contract, approved together.
 - **Shared funds** (a group pot): your contract holds the money and pays out
   when enough members approve. Each member uses their own Nido account.
 - **Limits for someone else** (an allowance): a cap limits a key, not the
@@ -141,9 +149,11 @@ until its expiry, and pick the shortest duration that works for your app.
 Nido's grant page also offers "Never (until revoked)"; the template leaves it
 out on purpose, and so should you until revoking works.
 
-The template's **Forget it** deletes this browser's copy of the session key.
-The rule stays on chain until it expires. Approving again with the same labels
-replaces the rules, and the old key stops working.
+The template's **Forget it** deletes this browser's session metadata. The
+device may still list the app passkey, and its rules stay on chain until
+expiry. Making a new app passkey and approving it with the same labels
+replaces those rules, so the old key no longer satisfies them. Renewing the
+same capped rules preserves their spending record.
 
 ## The relayer, and who pays for what
 
@@ -155,13 +165,14 @@ by each transaction's fee bid rather than the fee it was finally charged.
 | --- | --- | --- |
 | Create an account | Nido's relayer | Nido's account page |
 | Apply a grant | Nido's relayer | Nido's grant page |
-| A call your app makes with a session | Your app's session key | Your app, straight to the network |
+| A call your app makes with a session | Nido's relayer | Your app signs with its passkey, then calls the relayer |
 | A call through Nido's sign popup | Nido's relayer | Nido submits it and returns the hash |
 | Tokens your contract moves | The account | Counted against the grant's cap |
 
-Session calls don't go through the relayer because it can't submit CAP-0071
-authorization entries yet, so your session key needs XLM for fees. On
-testnet, Friendbot provides it. [Fees and storage](/docs/fees/) has the
+The current template uses passkey signatures in ordinary authorization
+entries, which the relayer accepts. A custom CAP-0071 delegated-key flow
+using `AddressWithDelegates` is different and needs its own submission path.
+[Fees and storage](/docs/fees/) has the
 measured amounts, and [Troubleshooting](/docs/troubleshooting/#nido-says-it-couldnt-confirm-what-happened)
 covers what happens when the relayer's budget runs out.
 

@@ -43,7 +43,8 @@ could pay twice". The cases differ:
 
 What to do:
 
-1. Go back to the app with the browser's Back button.
+1. Close Nido's popup to return to the app. If the browser opened Nido as a
+   full page instead, use Back.
 2. Press **Check again** on the template's gate. It reads the account's rules
    on chain and records a grant that landed.
 3. If nothing landed, press **Ask Nido again**. It reuses the app's key. If
@@ -52,35 +53,32 @@ What to do:
 Don't retry blindly from Nido's page. The account's installed rules are the
 truth: see [Check what an account has approved](#check-what-an-account-has-approved).
 
-### Approve with Nido seems to do nothing
+### Making the app passkey seems to do nothing
 
-The first approval makes a session key and waits for Friendbot to fund it,
-which can take ten seconds or more. The template shows "Preparing a key for
-this app…" meanwhile. Press once; pressing again doesn't help.
+The gate first asks the device to make a passkey for this app. Complete or
+cancel that device prompt before trying again. Use `https://` or `localhost`,
+not a local IP address. No Friendbot funding is needed for the app passkey.
 
-### One Approve, two passkey confirmations
+### Two rules, one confirmation
 
-Expected when your call touches two contracts, such as your contract and the
-XLM token. Each contract needs a grant, and the template asks Nido for one
-grant per request, so the owner confirms once per grant. The template's button
-says how many: "Approve with Nido (2 confirmations)". Nido's grant page can
-take several grants with one confirmation if you build the request yourself
-(see [Request a session](/docs/sessions/#nidos-grant-page-parameters)).
+Each contract the account authorizes needs a grant. The current template sends
+grants sharing a duration together, so the sample shows **Approve with Nido
+(2 rules, one confirmation)**. Making the app passkey is a separate device
+ceremony, and each later call asks for that app passkey. If an older checkout
+asks once per rule, update it to the template's passkey session flow.
 
 ### Nido asks to "spend without any cap" on a rule that can't spend
 
-Nido asks the owner to tick this for every grant without a `limit`, including
-a grant on a contract that moves no money. The rule still allows only the
-functions it lists, on the one contract it names. Say so in your gate's
-explanation, so the owner isn't surprised by the wording. If the call moves
-tokens, put the cap on a grant whose `target` is the token. A request you
-build yourself can send `limit=none` on a grant whose `functions` name no
-token function; Nido then skips the tick and shows "No cap — allows no token
-functions".
+The template sends a grant without a cap as `limit=none`. Nido skips the tick
+only if its explicit `functions` list names no token function, and shows
+"No cap — allows no token functions". A request that omits `limit`, omits the
+function list, or includes a token function still asks the owner to choose a
+cap or accept uncapped spending. If the call moves tokens, cap the grant
+whose `target` is the token and restrict its recipient with `to`.
 
 ### The owner cancelled
 
-Nido sends them back with `?delegation=cancelled`. The template keeps the key
+Nido returns `?delegation=cancelled`. The template keeps the app passkey
 and anything already approved, and the gate asks again.
 
 ## Making calls
@@ -105,10 +103,12 @@ ID, so the old grant no longer covers it, and the gate asks again.
 
 ### `#3221`, over the cap
 
-The call would go over the grant's spending cap. The account refused it in
-simulation: nothing was sent and it cost nothing. Use `isOverCap(error)` to say
-which cap stopped it and when it resets. A `day` cap is a rolling window of
-17,280 ledgers, about 24 hours.
+The call would go over the grant's spending cap. Nothing was sent and it cost
+nothing. The template checks spending before prompting (`CapReachedError`),
+and the account also enforces it in simulation (`#3221`). Use `isOverCap(error)`
+to identify the refusal and `capReachedUntil` to display when the cap frees
+up. A `day` cap is a rolling window of 17,280 ledgers, about 24 hours.
+Re-approving the same rules preserves their spending record.
 
 ### Simulation says "authorization not tied to the root contract invocation"
 
@@ -119,11 +119,12 @@ ask for one grant per contract.
 
 ### The session disappeared
 
-The session key lives in your app origin's `localStorage`, and the origin
-includes the port. A dev server that started on another port, a different
-browser profile, or cleared site data has no session. Keep `PORT` fixed (the
-template sets `strictPort`) and approve again on the new origin. Grants also
-end at their expiry: 24 hours for the sample.
+The session metadata lives in your app origin's `localStorage`, and the
+origin includes the port. A dev server that started on another port, a
+different browser profile, or cleared site data has no session metadata,
+even if the device still lists the passkey. Keep `PORT` fixed (the template
+sets `strictPort`) and approve again on the new origin. Grants also end at
+their expiry: 24 hours for the sample.
 
 ### Nido's popup was blocked
 
@@ -140,9 +141,10 @@ broadcast it again.
 ### Revoking a session
 
 <span class="docs-tag">Not available yet</span>. A grant lasts until its
-expiry. The template's **Forget it** deletes only this browser's copy of the
-key; the rule stays on chain until it expires. Approving again with the same
-labels replaces the rules, and the old key stops working.
+expiry. The template's **Forget it** deletes only this browser's session
+metadata; the passkey may remain on the device and the rules stay on chain.
+Making a new app passkey and approving it with the same labels replaces
+those rules, so the old key no longer satisfies them.
 
 ## Building and deploying
 

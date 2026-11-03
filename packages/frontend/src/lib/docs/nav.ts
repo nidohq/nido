@@ -24,7 +24,7 @@ export const DOCS: readonly DocPage[] = [
     slug: "getting-started",
     label: "Getting started",
     summary:
-      "From `stellar scaffold init` to a passkey account and a first call your app makes without a prompt.",
+      "From `stellar scaffold init` to a passkey account and a first call signed with your app's passkey.",
   },
   {
     slug: "concepts",

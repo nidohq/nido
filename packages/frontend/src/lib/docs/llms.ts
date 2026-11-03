@@ -39,7 +39,7 @@ function plain(markdown: string): string {
 }
 
 const HOST_NOTE =
-  "Nido runs on Stellar testnet only. Paths are on the host you fetched this file from (https://test.nido.fyi for testnet).";
+  "These guides and the app template use Stellar testnet at https://test.nido.fyi. Nido also has a mainnet deployment at https://nido.fyi; the examples and fee measurements here are for testnet. Docs paths are on the host you fetched this file from.";
 
 export function llmsIndex(pages: DocText[]): string {
   const home = pages.find((p) => p.slug === "index");
