@@ -9,23 +9,12 @@ name: Deploy Production
 # deployment and mainnet relayer exist. When they do, this workflow's env
 # vars below are the only things that need to change for the real cutover.
 
-# WARNING — PUBLIC_STELLAR_NETWORK/PUBLIC_RELAYER_URL/PUBLIC_RELAYER_SIM_SOURCE
-# below are now real mainnet values, but vars.PUBLIC_PERCH_DEPLOYMENT_MAINNET is
-# still unset. There's no mainnet default to fall back to (unlike testnet's
-# perch.TESTNET), so the build still fails loud rather than silently shipping a
-# testnet-configured build believing it's mainnet. That means running this
-# workflow as-is still BREAKS nido.fyi's current, working testnet-configured
-# production build.
-#
 # PUBLIC_PERCH_DEPLOYMENT_MAINNET/PUBLIC_INVITE_SERVICE_URL_MAINNET/
 # PUBLIC_INVITE_SERVICE_API_KEY_MAINNET are deliberately *_MAINNET-suffixed,
 # not the plain names deploy-testnet.yml reads: repo variables/secrets are
 # global, not per-workflow, and deploy-testnet.yml auto-runs on every push to
 # main, so a shared name would leak whichever value was set last into the
 # other workflow's build.
-#
-# Do not merge this version of the file to main until Perch+Factory lands and
-# vars.PUBLIC_PERCH_DEPLOYMENT_MAINNET is set.
 
 on:
   workflow_dispatch: {}
@@ -56,7 +45,7 @@ jobs:
 
       - name: Build frontend (production)
         env:
-          # See the file-level WARNING above before touching any of these.
+          # Mainnet values: nido.fyi is the mainnet build.
           PUBLIC_STELLAR_NETWORK: mainnet
           PUBLIC_RELAYER_URL: https://nido-mainnet.fly.dev
           PUBLIC_RELAYER_SIM_SOURCE: GB62GN4DMXIPFGZMGITUP2XIGIVDV3IBK263LMEVQ7AEBHF6KWXLIM6V
