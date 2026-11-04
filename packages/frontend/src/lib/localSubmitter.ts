@@ -3,7 +3,7 @@
  * wallet, done in the browser. The submitter is primaryPasskeySigner's
  * friendbot-funded G keypair, stored in this origin's localStorage only.
  */
-import { Operation, TransactionBuilder, rpc, type Keypair, type Transaction } from "@stellar/stellar-sdk";
+import { Account, Operation, TransactionBuilder, rpc, type Keypair, type Transaction } from "@stellar/stellar-sdk";
 import { getSubmitter } from "./primaryPasskeySigner";
 import { classicSubmitAndPoll } from "./signing/submit";
 import { LOCAL_SUBMITTER, RELAYER_SIM_SOURCE, NETWORK_PASSPHRASE, RPC_URL } from "./network";
@@ -22,11 +22,20 @@ export function localSubmitter(): Promise<Keypair> {
   return submitter;
 }
 
-/** The existing account a simulation names as its source: this browser's
- *  submitter in local-submitter mode, else the relayer's fund address
- *  (empty when no relayer is configured). */
-export async function simulationSource(): Promise<string> {
-  return LOCAL_SUBMITTER ? (await localSubmitter()).publicKey() : RELAYER_SIM_SOURCE;
+/** A simulation reads only its source's address, never its account, so in
+ *  local-submitter mode a read-only simulation names the all-zero key
+ *  (stellar-sdk's own null source) at sequence 0 and waits for no friendbot
+ *  funding or account read. */
+const SIMULATION_ONLY_SOURCE = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+
+/** The source account of a read-only simulation: in local-submitter mode
+ *  the unfunded address at sequence 0, with no network call; otherwise the
+ *  relayer's fund account, read from the chain. Null when neither exists. */
+export async function simulationAccount(server: rpc.Server): Promise<Account | null> {
+  if (LOCAL_SUBMITTER) return new Account(SIMULATION_ONLY_SOURCE, "0");
+  if (!RELAYER_SIM_SOURCE) return null;
+  const account = await server.getAccount(RELAYER_SIM_SOURCE);
+  return new Account(account.accountId(), account.sequenceNumber());
 }
 
 /** Submit `tx`'s host function and auth entries with this browser's
@@ -46,7 +55,8 @@ export async function submitLocally(tx: Transaction, server = new rpc.Server(RPC
 }
 
 /** Fund `destination` (a G or C address) from testnet friendbot. Returns
- *  the funding transaction's hash. */
+ *  the funding transaction's hash. Friendbot answers once the transaction
+ *  has applied, so there is nothing to poll for. */
 export async function fundWithFriendbot(destination: string): Promise<string> {
   const resp = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(destination)}`);
   const body = await resp.json().catch(() => null);

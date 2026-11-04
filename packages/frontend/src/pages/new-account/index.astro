@@ -246,8 +246,8 @@ import { NETWORK_LABEL } from "../../lib/network";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
   import { LOCAL_SUBMITTER, RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL } from "../../lib/network";
-  import { fundWithFriendbot, localSubmitter, simulationSource } from "../../lib/localSubmitter";
-  import { classicSubmitAndPoll } from "../../lib/signing/submit";
+  import { fundWithFriendbot, localSubmitter, simulationAccount } from "../../lib/localSubmitter";
+  import { classicSubmitAndPoll, sendAndPoll } from "../../lib/signing/submit";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
   import { syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
   import { signAndSubmit } from "../../lib/primaryPasskeySigner";
@@ -426,6 +426,12 @@ import { NETWORK_LABEL } from "../../lib/network";
     document.cookie = `${setupCookieName(account)}=; Max-Age=0; Path=/; SameSite=Lax${setupCookieSecure()}${setupCookieDomain()}`;
   }
 
+  // The source of a simulation that is never sent: local-submitter mode
+  // names an unfunded address and reads nothing (lib/localSubmitter.ts).
+  async function simulationSourceAccount(server: rpc.Server): Promise<Account> {
+    return LOCAL_SUBMITTER ? (await simulationAccount(server))! : waitForSourceAccount(server, RELAYER_SIM_SOURCE);
+  }
+
   async function waitForSourceAccount(server: rpc.Server, publicKey: string): Promise<Account> {
     let lastError: unknown;
     for (let i = 0; i < 20; i++) {
@@ -443,7 +449,12 @@ import { NETWORK_LABEL } from "../../lib/network";
   }
 
   async function fundAccount(server: rpc.Server, destination: string): Promise<void> {
-    const sendHash = LOCAL_SUBMITTER ? await fundWithFriendbot(destination) : await fundFromRelayer(destination);
+    if (LOCAL_SUBMITTER) {
+      // Friendbot answers once its transaction has applied.
+      await fundWithFriendbot(destination);
+      return;
+    }
+    const sendHash = await fundFromRelayer(destination);
     if (!sendHash) {
       throw new Error("Funding succeeded but returned no transaction hash");
     }
@@ -602,7 +613,7 @@ import { NETWORK_LABEL } from "../../lib/network";
         let derived: string | null = null;
         try {
           const server = new rpc.Server(RPC_URL);
-          const sourceAccount = await waitForSourceAccount(server, await simulationSource());
+          const sourceAccount = await simulationSourceAccount(server);
           const simTxn = new TransactionBuilder(sourceAccount, {
             fee: "100",
             networkPassphrase: NETWORK_PASSPHRASE,
@@ -682,7 +693,7 @@ import { NETWORK_LABEL } from "../../lib/network";
       throw new Error("Relayer is not configured for account setup.");
     }
     const server = new rpc.Server(RPC_URL);
-    const sourceAccount = await waitForSourceAccount(server, await simulationSource());
+    const sourceAccount = await simulationSourceAccount(server);
 
     const simTxn = new TransactionBuilder(sourceAccount, {
       fee: "100",
@@ -871,7 +882,13 @@ import { NETWORK_LABEL } from "../../lib/network";
     if (!LOCAL_SUBMITTER && (!RELAYER_URL || !RELAYER_SIM_SOURCE)) {
       throw new Error("Relayer is not configured for account setup.");
     }
-    const sourceAccount = await waitForSourceAccount(server, await simulationSource());
+    // Local-submitter mode: the browser key that signs and pays, funded
+    // since the page opened, and its sequence, read beside the simulation.
+    const submitter = LOCAL_SUBMITTER
+      ? localSubmitter().then(async (k) => ({ k, account: await waitForSourceAccount(server, k.publicKey()) }))
+      : null;
+    submitter?.catch(() => {});
+    const sourceAccount = await simulationSourceAccount(server);
     const factory = await fetchFactoryAddress();
     // The setup key signs this passkey for this factory and network: the
     // factory deploys at the setup key's address only with that signature,
@@ -882,40 +899,46 @@ import { NETWORK_LABEL } from "../../lib/network";
     // Deploy only: the factory mints a Perch account whose constructor
     // rule is this passkey. Recovery (and every other rule) arrives with
     // the account's first apply_doc.
-    const simTxn = new TransactionBuilder(sourceAccount, {
-      fee: "100",
-      networkPassphrase: NETWORK_PASSPHRASE,
-    })
-      .addOperation(
-        Operation.invokeContractFunction({
-          contract: factory,
-          function: "create_account",
-          args: [
-            xdr.ScVal.scvBytes(perch.setupPublicKey(secret)),
-            xdr.ScVal.scvBytes(Buffer.from(key)),
-            xdr.ScVal.scvBytes(setupSig),
-          ],
-        })
-      )
-      .setTimeout(0)
-      .build();
+    const build = (source: Account) =>
+      new TransactionBuilder(source, {
+        fee: "100",
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          Operation.invokeContractFunction({
+            contract: factory,
+            function: "create_account",
+            args: [
+              xdr.ScVal.scvBytes(perch.setupPublicKey(secret)),
+              xdr.ScVal.scvBytes(Buffer.from(key)),
+              xdr.ScVal.scvBytes(setupSig),
+            ],
+          })
+        )
+        .setTimeout(0)
+        .build();
+    const simTxn = build(sourceAccount);
 
     const sim = await server.simulateTransaction(simTxn);
     if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
       throw new Error(`Simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
     }
 
-    const transaction = rpc.assembleTransaction(simTxn, sim).setTimeout(0).build();
-
     // Prepared — 1 done, 2 · "Submitting to the network" begins.
     setCheckProgress(2, 2);
-    if (LOCAL_SUBMITTER) {
+    if (submitter) {
       // This browser's submitter is the source: it signs and pays, and the
-      // transaction goes straight to RPC.
+      // transaction goes straight to RPC. create_account carries no
+      // authorization of the account's, so the simulation's footprint is
+      // the whole of it and needs no second, enforcing simulation.
+      const { k, account } = await submitter;
+      const signed = rpc.assembleTransaction(build(account), sim).setTimeout(0).build();
       setCheckProgress(3, 3);
-      await classicSubmitAndPoll(transaction, await localSubmitter(), server);
+      if (sim.result?.auth.length) await classicSubmitAndPoll(signed, k, server);
+      else await sendAndPoll(signed, k, server);
       return;
     }
+    const transaction = rpc.assembleTransaction(simTxn, sim).setTimeout(0).build();
     const { func, auth } = extractFuncAndAuth(transaction);
     const submitted = await submitSorobanTransaction({ func, auth });
     if (!submitted.transactionId) {
@@ -1048,4 +1071,8 @@ import { NETWORK_LABEL } from "../../lib/network";
   // A resumed setup whose address already holds a contract is settled before
   // the passkey step is offered (see takeOverIfDeployed).
   void takeOverIfDeployed();
+
+  // Local-submitter mode: fund this page's browser key now, while the
+  // passkey dialog and the recovery choice are up, not after them.
+  if (LOCAL_SUBMITTER && contractId && !isSetupReservation) void localSubmitter().catch(() => {});
 </script>

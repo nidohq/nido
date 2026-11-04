@@ -1,9 +1,9 @@
-import { Account, Address, Operation, TransactionBuilder, rpc, xdr } from "@stellar/stellar-sdk";
+import { Address, Operation, TransactionBuilder, rpc, xdr } from "@stellar/stellar-sdk";
 import { Buffer } from "buffer";
 import { hex2buf, perch } from "@nidohq/passkey-sdk";
 import { fetchFactoryAddress } from "../policyChainFetch.js";
 import { NETWORK_PASSPHRASE, RPC_URL } from "../network.js";
-import { simulationSource } from "../localSubmitter.js";
+import { simulationAccount } from "../localSubmitter.js";
 
 /**
  * Read-only simulation of the factory's `get_c_address(setup_pk)` — the same
@@ -18,13 +18,10 @@ export async function predictAddress(
   saltHex: string,
   server: rpc.Server = new rpc.Server(RPC_URL),
 ): Promise<string> {
-  const source = await simulationSource();
-  if (!source) {
+  const sourceAccount = await simulationAccount(server);
+  if (!sourceAccount) {
     throw new Error("Relayer is not configured for account setup.");
   }
-
-  const account = await server.getAccount(source);
-  const sourceAccount = new Account(account.accountId(), account.sequenceNumber());
 
   const txn = new TransactionBuilder(sourceAccount, {
     fee: "100",
