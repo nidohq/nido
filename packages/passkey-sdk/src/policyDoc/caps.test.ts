@@ -40,7 +40,7 @@ describe('document limits (perch-js checkLimits)', () => {
   it('refuse one rule too many and an overlong rule name', () => {
     const doc = withKeys(1);
     const rules = Array.from({ length: limits.maxRules + 1 }, (_, i) => ({ ...doc.rules[0]!, name: `r${i}` }));
-    expect(docCapProblem({ ...doc, rules }, limits)).toMatch(/at most 11/);
+    expect(docCapProblem({ ...doc, rules }, limits)).toMatch(`at most ${limits.maxRules}.`);
     const long = 'x'.repeat(21);
     expect(docCapProblem({ ...doc, rules: [{ ...doc.rules[0]!, name: long }] }, limits)).toBe(
       `The rule name "${long}" is 21 bytes; Perch allows at most 20.`,

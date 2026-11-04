@@ -51,9 +51,11 @@ jobs:
           # the relayer's public fund address (simulation-only tx source).
           PUBLIC_RELAYER_URL: https://nido.fly.dev
           PUBLIC_RELAYER_SIM_SOURCE: GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
-          # Overrides the Perch deployment (JSON, or `none`); unset, the
-          # wallet uses perch.TESTNET, Perch's testnet release.
-          PUBLIC_PERCH_DEPLOYMENT: ${{ vars.PUBLIC_PERCH_DEPLOYMENT }}
+          # Overrides the Perch deployment (JSON, or `none`). This branch
+          # points its preview at the separate M6 testnet deployment (the
+          # bitswell fork's Perch at 437a07d, in its own registry) and the
+          # Nido factory built from this branch for its account, 38f06b1d.
+          PUBLIC_PERCH_DEPLOYMENT: '{"network":"Test SDF Network ; September 2015","factory":"CANGJ2QV5YGKNCXFI2ZCNJ3FCE2Y255X4UZWQCMHTDVA3RRUJ2NXVCR5","webauthnVerifier":"CDV5HBEG3UL2YUNYG4RD4J5CARTDVUPHJ7TAADQKIIIRNVHP4EEOAUIF","statelessRegistry":"CD5UG7SBYQNUWHSY7HTS4CK7LFORQZUDHAQO72BSAF76P7ZPRGNZQDDI","docCompiler":"CBIOROJJSXJKCUOCQSZW75JCVDTTGATQJ5OTMMZJQ2GHGSSQZYSIWYGK","interpreter":"CBEO3WGW4CA4VK5WSSZYUCX2OH7LP6FA4HPHDWX6UHVFCBZK5GMYDZJY","spendingLimit":"CDRVCE7AMNWXSFMW53T7RNFF6JBPODHPJBY4OD5I63WLZPTHOH27X2CW","recoveryController":"CB6DTVZ6QB4O7Z6RAZUXNLCB5IQRBZZ2AXSMJR7DWUL5M67NTXZBXJSY","zkPool":"CBY7DPBKHMV57HQWXVYNZCEY7KZ3MJHINPAXJE6FYYTELNXE2YZPNAPO","zkAdapter":"CBCEAKQIXWHA4VETKQYRH3C7UDMVSXSWTHVLQ2ZDEAOPDJ4C6IT52TH6","circuitId":"9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a","treeDepth":32,"accountWasmHash":"38f06b1df6f6033968236cea14b2e5da87266fd5b90e20bdbef509c0f999c387"}'
           # infra/invite's base URL + shared x-api-key (lib/demo/config.ts).
           # Empty disables the /demo/start invite check, it doesn't break the
           # build — but without these, every PR preview hard-fails that check
