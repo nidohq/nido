@@ -804,7 +804,13 @@ import { NETWORK_LABEL } from "../../lib/network";
     if (await takeOverIfDeployed()) return;
     // A retry after a failed deploy keeps the passkey already registered for
     // this address: an earlier submission may still land with it, and a new
-    // passkey would then never match the account.
+    // passkey would then never match the account. After a reload the passkey
+    // is no longer in memory, but completeRegistration stored it.
+    const stored = passkeyPublicKey ? null : loadCredential(contractId);
+    if (stored) {
+      passkeyPublicKey = hex2buf(stored.publicKey);
+      credentialIdBytes = stored.credentialId;
+    }
     if (passkeyPublicKey) {
       proceedToDeploy();
       return;
