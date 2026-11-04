@@ -26,6 +26,7 @@
  */
 
 import { Buffer } from 'buffer';
+import { Operation, xdr } from '@stellar/stellar-sdk';
 import { Client as AccountClient } from '@nidohq/perch-account';
 import { canonicalJson, docHash } from '@stellar-registry/perch';
 import { docCapProblem, type FlatDocLimits } from './caps.js';
@@ -48,6 +49,10 @@ export interface BuildApplyDocArgs {
    *  `snapshot.limits`). Given, an over-limit document is refused here with
    *  a readable reason before simulating; the chain refuses it anyway. */
   limits?: FlatDocLimits;
+  /** Simulate the transaction while building it (default true). A caller
+   *  that simulates the operation itself before signing, as the passkey
+   *  signing flow does, passes false and builds without a network call. */
+  simulate?: boolean;
 }
 
 export interface ApplyDocTx extends TxBuild {
@@ -57,6 +62,17 @@ export interface ApplyDocTx extends TxBuild {
   /** The canonical JSON string submitted as the transaction's `doc_json`
    *  bytes (and therefore carried verbatim in the `DocApplied` event). */
   canonicalJson: string;
+}
+
+/** The operations of a transaction built without simulating it: no auth
+ *  entries yet, which the signer's own simulation records. */
+function unsimulatedOperations(tx: { raw?: { build(): { operations: ReadonlyArray<{ type: string; func?: unknown }> } } }): xdr.Operation[] {
+  const ops = tx.raw?.build().operations;
+  if (!ops) throw new Error('policy-doc-apply: could not build the apply_doc operation');
+  return ops.map((op) => {
+    if (op.type !== 'invokeHostFunction' || !op.func) throw new Error(`policy-doc-apply: unexpected op type ${op.type}`);
+    return Operation.invokeHostFunction({ func: op.func as xdr.HostFunction, auth: [] });
+  });
 }
 
 /**
@@ -90,16 +106,20 @@ export async function buildApplyDocTx(
     networkPassphrase,
     rpcUrl: args.rpcUrl,
   });
-  const tx = await client.apply_doc({
-    doc_json: Buffer.from(canonical, 'utf8'),
-    approval_valid_until: args.approvalValidUntil ?? 0,
-    expected_revision: args.expectedRevision,
-  });
+  const simulate = args.simulate ?? true;
+  const tx = await client.apply_doc(
+    {
+      doc_json: Buffer.from(canonical, 'utf8'),
+      approval_valid_until: args.approvalValidUntil ?? 0,
+      expected_revision: args.expectedRevision,
+    },
+    { simulate },
+  );
 
   return {
     docHash: docHash(doc),
     canonicalJson: canonical,
-    operations: extractXdrOperations(tx, 'policy-doc-apply'),
+    operations: simulate ? extractXdrOperations(tx, 'policy-doc-apply') : unsimulatedOperations(tx),
     description: `Apply policy document ${docHash(doc).slice(0, 8)}… (${doc.rules.length} rule${doc.rules.length === 1 ? '' : 's'})`,
   };
 }

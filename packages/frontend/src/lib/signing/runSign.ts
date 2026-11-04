@@ -10,7 +10,7 @@
 
 import { TransactionBuilder } from "@stellar/stellar-sdk";
 import type { SignRequest } from "./signRequest";
-import { buildOperation } from "./operationBuilders";
+import { buildOperationChecked } from "./operationBuilders";
 import { signAndSubmit } from "../primaryPasskeySigner";
 import { relayerSubmitAndConfirm } from "./submit";
 import { signTransactionXdr } from "../walletSign.js";
@@ -31,10 +31,11 @@ export interface RunSignResult {
 export async function runSign(req: SignRequest, hooks?: RunSignHooks): Promise<RunSignResult> {
   if (req.operation.type !== "raw-xdr") {
     // Own-action path: build the op then sign+submit via primary passkey.
-    const op = await buildOperation(req.operation, req.account);
+    const { operation, checks } = await buildOperationChecked(req.operation, req.account);
     const res = await signAndSubmit({
       account: req.account,
-      operation: op,
+      operation,
+      checks,
       onProgress: hooks?.onProgress,
     });
     return { hash: res.hash };

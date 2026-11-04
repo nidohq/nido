@@ -152,6 +152,11 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   };
 }
 
+function settledValue<T>(r: PromiseSettledResult<T>): T {
+  if (r.status === 'rejected') throw r.reason;
+  return r.value;
+}
+
 /** A WebAuthn assertion over `challenge` by the stored credential. */
 async function passkeyAssertion(challenge: Uint8Array, credentialId: unknown): Promise<PasskeySignature> {
   const challengeBuf = new ArrayBuffer(challenge.byteLength);
@@ -234,20 +239,35 @@ export async function signAndSubmit(args: {
    *  rule, scoped to the recovery controller) instead of the rule holding
    *  this passkey that is scoped to the account itself. */
   ruleName?: string;
+  /** Reads that may refuse the operation (`buildOperationChecked`). They
+   *  run beside the reads and the simulation below, and a refusal stops
+   *  the signing before the passkey prompt. */
+  checks?: Promise<void>;
 }): Promise<rpc.Api.SendTransactionResponse & { authHashHex: string }> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
 
-  // Select the rule this device's passkey signs under, and the verifier its
-  // signer names, from the account's configuration() (one read, by name and
-  // key, never an id scan). A recovered account's new passkey sits on a rule
-  // the completion created, so the rule is looked up, not assumed.
-  const resolved = await resolveSignerRule(args.account, cred.publicKey, args.ruleName);
+  args.onProgress?.({ phase: "build" });
+  // Everything before the prompt is independent, so it runs at once: the
+  // caller's checks; the rule this device's passkey signs under and the
+  // verifier its signer names, from the account's configuration() (one
+  // read, by name and key, never an id scan: a recovered account's new
+  // passkey sits on a rule the completion created); the simulation; and the
+  // account's digest dialect (a redeployed account binds its address,
+  // `addr_oz_v1`; one minted before the redeploy does not, `oz_rule_ids`).
+  // A failure is reported in that order, refusals first.
+  const [checked, resolvedR, preparedR, schemeR] = await Promise.allSettled([
+    args.checks,
+    resolveSignerRule(args.account, cred.publicKey, args.ruleName),
+    prepareInvocation(args.operation),
+    perch.authDigestScheme({ account: args.account, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }),
+  ]);
+  settledValue(checked);
+  const resolved = settledValue(resolvedR);
   if (!resolved) throw new Error(NOT_REGISTERED);
   const verifierAddress = args.verifierAddress ?? resolved.verifier;
-
-  args.onProgress?.({ phase: "build" });
-  const prepared = await prepareInvocation(args.operation);
+  const prepared = settledValue(preparedR);
+  const scheme = settledValue(schemeR);
 
   //    auth_digest = sha256(bound || context_rule_ids.to_xdr()), where
   //    bound = sha256(AUTH_ADDR_DOMAIN || account_id || signature_payload)
@@ -257,14 +277,6 @@ export async function signAndSubmit(args: {
   //    to `injectPasskeySignature` so the AuthPayload's `context_rule_ids`
   //    and the digest the contract recomputes both refer to the same rule.
   const contextRuleIds = [resolved.ruleId];
-  // Sign in the account's own digest dialect: a redeployed account binds its
-  // address (`addr_oz_v1`); one minted before the redeploy does not
-  // (`oz_rule_ids`). Reading it keeps both signable.
-  const scheme = await perch.authDigestScheme({
-    account: args.account,
-    rpcUrl: RPC_URL,
-    networkPassphrase: NETWORK_PASSPHRASE,
-  });
   const challengeBytes = computeAuthDigest(args.account, prepared.signaturePayload, contextRuleIds, scheme);
   const authHashHex = buf2hex(challengeBytes);
 

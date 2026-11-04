@@ -4,7 +4,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../walletSign.js", () => ({ signTransactionXdr: vi.fn(async () => "SIGNEDXDR") }));
 vi.mock("./submit", () => ({ relayerSubmitAndConfirm: vi.fn(async () => ({ hash: "dapphash" })) }));
 vi.mock("../primaryPasskeySigner", () => ({ signAndSubmit: vi.fn(async () => ({ hash: "ownhash" })) }));
-vi.mock("./operationBuilders", () => ({ buildOperation: vi.fn(async () => ({ __op: true })) }));
+vi.mock("./operationBuilders", () => ({
+  buildOperationChecked: vi.fn(async () => ({ operation: { __op: true }, checks: Promise.resolve() })),
+}));
 vi.mock("@stellar/stellar-sdk", async (orig) => {
   const real = await orig<any>();
   return { ...real, TransactionBuilder: { ...real.TransactionBuilder, fromXDR: () => ({ __tx: true }) } };
