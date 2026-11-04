@@ -1,4 +1,5 @@
 import {
+  Account,
   rpc,
   TransactionBuilder,
   Keypair,
@@ -94,17 +95,21 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   // 1. Pick the simulation source account. This is the tx source/fee-payer,
   //    NOT the smart account itself.
   //
-  //    Relayer mode: no ephemeral G is created or funded — recording-mode
-  //    simulation just needs SOME existing on-chain source account, so we use
-  //    the relayer's (public) fund address. It never signs and never pays here.
+  //    Relayer mode: no ephemeral G is created or funded — the simulation
+  //    names the relayer's (public) fund address as its source. It never
+  //    signs and never pays here.
   //    Classic mode: friendbot-funded ephemeral G as before.
   const submitter = relayerEnabled() ? null : await getSubmitter();
   if (relayerEnabled() && !RELAYER_SIM_SOURCE) {
     throw new Error('Relayer misconfigured: PUBLIC_RELAYER_URL is set but PUBLIC_RELAYER_SIM_SOURCE is not.');
   }
-  const sourceAccount = submitter
-    ? await server.getAccount(submitter.publicKey())
-    : await server.getAccount(RELAYER_SIM_SOURCE);
+  //    The simulation reads only the source's address, never its account,
+  //    so it runs at sequence 0 beside the read of the real sequence, which
+  //    only the transaction the submitter signs needs (the relayer takes
+  //    just the host function and auth entries).
+  const sourceAddress = submitter ? submitter.publicKey() : RELAYER_SIM_SOURCE;
+  const sourceAccount = submitter ? server.getAccount(submitter.publicKey()) : null;
+  sourceAccount?.catch(() => {});
 
   // 2. Build & simulate the un-signed tx.
   //
@@ -118,13 +123,15 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   // mutate the caller's operation.
   const opClone = xdr.Operation.fromXDR(operation.toXDR());
   opClone.body().invokeHostFunctionOp().auth([]);
-  const simTx = new TransactionBuilder(sourceAccount, {
-    fee: '10000000',
-    networkPassphrase: NETWORK_PASSPHRASE,
-  })
-    .addOperation(opClone)
-    .setTimeout(0)
-    .build();
+  const buildTx = (source: Account) =>
+    new TransactionBuilder(source, {
+      fee: '10000000',
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(opClone)
+      .setTimeout(0)
+      .build();
+  const simTx = buildTx(new Account(sourceAddress, '0'));
 
   const sim = await server.simulateTransaction(simTx);
   if (rpc.Api.isSimulationError(sim)) {
@@ -140,7 +147,7 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   const signaturePayload = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger, expirationOffset);
 
   // 4. Assemble so auth entries are baked into the tx XDR before signing.
-  const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
+  const assembledTx = rpc.assembleTransaction(sourceAccount ? buildTx(await sourceAccount) : simTx, successSim).build();
   return {
     assembledTx,
     signaturePayload,
