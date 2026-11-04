@@ -14,7 +14,8 @@ import { buildOperation } from "./operationBuilders";
 import { signAndSubmit } from "../primaryPasskeySigner";
 import { relayerSubmitAndConfirm } from "./submit";
 import { signTransactionXdr } from "../walletSign.js";
-import { NETWORK_PASSPHRASE } from "../network.js";
+import { LOCAL_SUBMITTER, NETWORK_PASSPHRASE } from "../network.js";
+import { submitLocally } from "../localSubmitter.js";
 
 export interface RunSignHooks {
   onProgress?: (p: { phase: string; detail?: string }) => void;
@@ -60,6 +61,10 @@ export async function runSign(req: SignRequest, hooks?: RunSignHooks): Promise<R
   });
 
   const tx = TransactionBuilder.fromXDR(signed, networkPassphrase);
+  if (LOCAL_SUBMITTER) {
+    hooks?.onProgress?.({ phase: "confirm" });
+    return { hash: await submitLocally(tx as Parameters<typeof submitLocally>[0]) };
+  }
 
   const onPoll = (info: { status: import("./submit").RelayerStatus | null; attempt: number; maxAttempts: number }) => {
     hooks?.onProgress?.({

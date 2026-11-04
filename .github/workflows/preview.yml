@@ -47,10 +47,11 @@ jobs:
 
       - name: Build frontend
         env:
-          # Gas abstraction via the self-hosted OZ Relayer (#72). SIM_SOURCE is
-          # the relayer's public fund address (simulation-only tx source).
-          PUBLIC_RELAYER_URL: https://nido.fly.dev
-          PUBLIC_RELAYER_SIM_SOURCE: GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
+          # No relayer: this preview runs a deployment the shared relayer
+          # does not serve. A friendbot-funded G key in the browser is the
+          # source and fee payer of every transaction, and friendbot funds
+          # new accounts (lib/localSubmitterGate.ts; testnet builds only).
+          PUBLIC_NIDO_LOCAL_SUBMITTER: "1"
           # Overrides the Perch deployment (JSON, or `none`). This branch
           # points its preview at the separate M6 testnet deployment (the
           # bitswell fork's Perch at 437a07d, in its own registry) and the

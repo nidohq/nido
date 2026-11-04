@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
 vi.mock("../network.js", () => ({
   RPC_URL: "https://rpc.invalid",
   NETWORK_PASSPHRASE: "stub-passphrase",
+  LOCAL_SUBMITTER: false,
   get RELAYER_SIM_SOURCE() {
     return h.simSource;
   },
