@@ -77,13 +77,14 @@ export interface DocValidationResult {
   errors: string[];
 }
 
-/** `limits` is the account's (`fetchDocLimits`), or `null` while they load:
- *  the form's own checks still run, so input errors show at once, and a
- *  submit validates again with the limits before applying. */
 /**
- * Validate a session-grant draft. `account` is the smart account this grant is
+ * Validate a session-grant draft. `limits` is the account's
+ * (`fetchDocLimits`), or `null` while they load: the form's own checks still
+ * run, so input errors show at once, and a submit validates again with the
+ * limits before applying. `account` is the smart account this grant is
  * being applied to; when supplied, a draft whose target contract IS that
- * account is refused.
+ * account is refused, and so is one targeting a contract of `excluded`:
+ * the account's recovery controller, ZK adapter and pool.
  *
  * SECURITY (self-targeted session grant): a session rule scoped to the
  * account's own contract gives the dApp's key authority over the account
@@ -93,11 +94,14 @@ export interface DocValidationResult {
  * one approval of what reads as a scoped app session confers full account
  * authority. Such self-authority must never be spelled as an ordinary dApp
  * session grant; refuse it here (the shared gate both delegate pages call).
+ * A rule on the recovery controller is a guardian's approval authority over
+ * other accounts (Perch spec §7.6), so an app gets none either.
  */
 export function validateSessionDocDraft(
   draft: SessionDocDraft,
   limits: DocLimits | null,
   account?: string,
+  excluded: readonly string[] = [],
 ): DocValidationResult {
   const errors: string[] = [];
 
@@ -106,6 +110,12 @@ export function validateSessionDocDraft(
       'This request targets your own account, which would grant the app full ' +
         'control of it (spend, change its keys, remove recovery). Nido does not ' +
         'issue app sessions over your own account.',
+    );
+  }
+  if (excluded.includes(draft.targetContract.trim())) {
+    errors.push(
+      "This request targets your account's recovery, which would let the app " +
+        'approve recoveries in your name. Nido does not issue app sessions over it.',
     );
   }
 
@@ -281,12 +291,13 @@ function mergeSessionRule(
   };
   // SECURITY: the rule name is a dApp-supplied
   // `label`. A session grant must only ADD a rule or re-delegate an existing
-  // session (a contract-scoped rule) — never overwrite a core self-admin rule
-  // (the account's `admin`/anti-brick rule, or any other non-session rule) by
-  // reusing its name. The new session rule is always contract-scoped; refuse
-  // when an existing rule with the same name is NOT.
+  // session (a contract-scoped rule signed by session keys) — never overwrite
+  // a core rule by reusing its name: a self-admin rule (the account's
+  // `admin`/anti-brick rule), or a rule an admin key signs (the `guardian`
+  // rule on the recovery controller is contract-scoped and the admin's).
   const existing = rules.find((r) => r.name === rule.name);
-  if (existing && existing.scope.type !== 'contract') {
+  const adminSigners = new Set(rules.filter((r) => r.scope.type === 'self-admin').flatMap(principalIds));
+  if (existing && (existing.scope.type !== 'contract' || principalIds(existing).some((id) => adminSigners.has(id)))) {
     throw new Error(
       `A core account rule named "${rule.name}" already exists; a session grant ` +
         `cannot replace it. Choose a different label.`,
@@ -328,10 +339,51 @@ export function upsertSessionRules(
   return rebuildDoc(current, signers, rules, networkPassphrase);
 }
 
+/** The app's key as a signer declaration without its id. */
+export function appKeyOfSigner(signer: SessionSignerDraft): perch.AppKey {
+  return signer.kind === 'delegated'
+    ? { address: signer.address.trim() }
+    : { verifier: signer.verifier.trim(), key: signer.publicKeyHex.trim().toLowerCase() };
+}
+
+/**
+ * `origin`'s scoped document after it grants `signer` every draft's rule,
+ * built on `base` (the scope as applied, or null for a new or wiped one):
+ * perch `upsertAppRules`, so a rule of the same name takes the new
+ * definition and is signed by any one of its keys and the new one.
+ *
+ * Precondition: `validateSessionDocDraft(draft, limits).ok` for each draft,
+ * and every draft names `signer`.
+ */
+export function upsertAppGrants(
+  base: PolicyDoc | null,
+  origin: string,
+  signer: SessionSignerDraft,
+  drafts: readonly SessionDocDraft[],
+  networkPassphrase: string,
+): PolicyDoc {
+  const templates = drafts.map((d) => {
+    const { principals: _, ...rule } = draftToDoc(d, networkPassphrase).rules[0]!;
+    return rule;
+  });
+  return perch.upsertAppRules(base, origin, appKeyOfSigner(signer), templates, networkPassphrase);
+}
+
+/** `doc` without the rules named `names`, their now-unused keys pruned. */
+export function withoutRules(doc: PolicyDoc, names: readonly string[], networkPassphrase: string): PolicyDoc {
+  assertSameNetwork(doc, networkPassphrase);
+  return rebuildDoc(doc, doc.signers, doc.rules.filter((r) => !names.includes(r.name)), networkPassphrase);
+}
+
 // --- Shared doc-merge helpers ----------------------------------------------
 
 type WireSigner = PolicyDoc['signers'][number];
 type WireRule = PolicyDoc['rules'][number];
+
+/** The signer ids a rule's principals name. */
+function principalIds(rule: WireRule): string[] {
+  return rule.principals.type === 'self-authenticating' ? [] : rule.principals.signers;
+}
 
 function assertSameNetwork(doc: PolicyDoc, networkPassphrase: string): void {
   if (doc.network !== undefined && doc.network !== networkPassphrase) {

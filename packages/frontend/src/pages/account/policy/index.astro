@@ -1,8 +1,10 @@
 ---
-// Policy inspector + builder. Shows every context rule on the account (scope,
-// signers, attached policies, expiry) and lets the owner add a new rule. The
-// curated Security page stays the friendly front door for recovery/session
-// keys; this is the full, general view.
+// Policy inspector + builder. Shows the account's admin document (its own
+// rules: admin keys, recovery, guardians), each connected app's scoped
+// document (one per app origin, lib/policy/appScopes), every context rule
+// on the account (scope, signers, attached policies, expiry), and lets the
+// owner add a new rule. The curated Security page stays the friendly front
+// door for recovery/session keys; this is the full, general view.
 import NidoLayout from '../../../layouts/NidoLayout.astro';
 import Toast from '../../../components/Toast.astro';
 import PasskeySheet from '../../../components/PasskeySheet.astro';
@@ -30,8 +32,14 @@ import Icon from '../../../components/Icon.astro';
       <div id="pol-status-line" class="mut" style="font-size:12.5px;margin:14px 0 0;">Loading…</div>
 
       <section aria-labelledby="pol-doc-h" id="pol-doc-section" hidden>
-        <span id="pol-doc-h" class="section-label" style="display:block;margin:22px 0 10px;">Policy document</span>
+        <span id="pol-doc-h" class="section-label" style="display:block;margin:22px 0 10px;">Admin document</span>
         <div id="pol-doc" class="pol-list"></div>
+        <div id="pol-older" class="pol-list" style="margin-top:12px;"></div>
+      </section>
+
+      <section aria-labelledby="pol-apps-h">
+        <span id="pol-apps-h" class="section-label" style="display:block;margin:22px 0 10px;">Apps</span>
+        <div id="pol-apps" class="pol-list"><p class="mut" style="font-size:13px;margin:0;">Loading…</p></div>
       </section>
 
       <section aria-labelledby="pol-current-h">
@@ -121,11 +129,20 @@ import Icon from '../../../components/Icon.astro';
 <script>
   import { canonicalJson, contractIdFromHostname, docHash, isContractId } from '@nidohq/passkey-sdk';
   import { toast } from '../../../lib/toast.js';
+  import { esc } from '../../../lib/html.js';
   import { NETWORK_PASSPHRASE, latestLedgerSequence } from '../../../lib/network.js';
   import { fetchAllChainRules, fetchRegistryAddress, readAccountConfiguration } from '../../../lib/policyChainFetch.js';
   import { fetchUnappliedBaseline, readDocPolicy } from '../../../lib/policy/docPolicyFetch.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocPolicy, renderPolicyList } from '../../../components/PolicyInspector.js';
+  import { renderAppCard, renderOlderAppRule } from '../../../components/AppScopeCard.js';
+  import { appEntries, olderAppPermissions, type AppEntry } from '../../../lib/policy/appScopes.js';
+  import { cleanUpRequest, removeAppRequest, removeKeyRequest } from '../../../lib/policy/appActions.js';
+  import { accountScopes, loadScopeChecks } from '../../../lib/policy/appGrantLoad.js';
+  import { withoutRules } from '../../../lib/policy/docDraft.js';
+  import { applyDocWithPasskey } from '../../../lib/primaryPasskeySigner.js';
+  import { stashSignRequest, type SignRequest } from '../../../lib/signing/signRequest.js';
+  import { perch } from '@nidohq/passkey-sdk';
   import { mountPolicyBuilder } from '../../../components/PolicyBuilder.js';
   import { mountUpgrades } from '../../../lib/recovery/upgradesPanel.js';
   import { perchDeployment } from '../../../lib/recovery/deployment.js';
@@ -136,6 +153,71 @@ import Icon from '../../../components/Icon.astro';
   const docSectionEl = document.getElementById('pol-doc-section')! as HTMLElement;
   const docEl = document.getElementById('pol-doc')!;
   const rulesHeadingEl = document.getElementById('pol-current-h')!;
+  const appsEl = document.getElementById('pol-apps')!;
+  const olderEl = document.getElementById('pol-older')!;
+
+  /** Hand a scope change to /sign/, which comes back here. */
+  function toSign(req: SignRequest): void {
+    window.location.href = `/sign/?req=${stashSignRequest(req)}`;
+  }
+
+  /**
+   * The Apps section (one card per app scope) and, under the admin
+   * document, the app permissions still in it. A failed read leaves a note
+   * and never takes down the rest of the page.
+   */
+  async function renderApps(known: Map<string, string>): Promise<void> {
+    olderEl.replaceChildren();
+    try {
+      const [{ scopes }, checks] = await Promise.all([perch.readScopes(accountScopes(account!)), loadScopeChecks(account!)]);
+      const back = '/account/policy/';
+      const apps = appEntries(scopes);
+      appsEl.replaceChildren(
+        ...apps.map((app) =>
+          renderAppCard(app, {
+            onRemoveApp: (a: AppEntry) => {
+              if (confirm(`Remove ${a.origin ?? 'this app'}? Every permission it holds on this account ends now.`)) {
+                toSign(removeAppRequest(account!, a, back));
+              }
+            },
+            onRemoveKey: (a: AppEntry, id: string) => {
+              try {
+                toSign(removeKeyRequest(account!, a, id, back));
+              } catch (e) {
+                toast(e instanceof Error ? e.message : String(e));
+              }
+            },
+            onCleanUp: (a: AppEntry) => toSign(cleanUpRequest(account!, a, back)),
+          }),
+        ),
+      );
+      if (apps.length === 0) {
+        appsEl.innerHTML = '<p class="mut" style="font-size:13px;margin:0;">No apps have been let in.</p>';
+      }
+      const admin = checks.admin;
+      if (admin === null) return;
+      for (const { rule, movedTo } of olderAppPermissions(admin.doc, checks.excluded, scopes)) {
+        olderEl.append(
+          renderOlderAppRule(admin.doc, rule, movedTo, async () => {
+            if (!confirm(`Remove "${rule.name}" from your admin document?`)) return;
+            try {
+              await applyDocWithPasskey({
+                account: account!,
+                doc: withoutRules(admin.doc, [rule.name], NETWORK_PASSPHRASE),
+                baseRevision: admin.revision,
+              });
+              toast(`Removed "${rule.name}".`);
+              await refresh(known);
+            } catch (e) {
+              toast(e instanceof Error ? e.message : String(e));
+            }
+          }),
+        );
+      }
+    } catch (e) {
+      appsEl.innerHTML = `<p class="mut" style="font-size:13px;margin:0;">Couldn't read the apps: ${esc(e instanceof Error ? e.message : String(e))}</p>`;
+    }
+  }
 
   // Resolve which of the known registry policies map to which address, so
   // attached policy contracts render with a name instead of a bare C-address.
@@ -243,7 +325,8 @@ import Icon from '../../../components/Icon.astro';
         docSectionEl.hidden = true;
         docLine = ' (Policy-document read failed; showing raw rules only.)';
       }
-      statusEl.textContent = `${rules.length} rule${rules.length === 1 ? '' : 's'} installed.${docLine}`;
+      statusEl.textContent = `${rules.length} rule${rules.length === 1 ? '' : 's'} installed by your admin document.${docLine}`;
+      await renderApps(known);
     } catch (err) {
       statusEl.textContent = `Couldn't load: ${err instanceof Error ? err.message : String(err)}`;
     }

@@ -10,8 +10,11 @@
  *
  *   register          → account/index.astro runNameClaim (invokeContractFunction)
  *   transfer          → lib/transfer/buildSend.ts buildSendOperation
- *   apply-policy-doc  → the ONE policy write (buildApplyDocTx); both
- *                       delegate pages and the policy builder route here
+ *   apply-policy-doc  → the admin document's write (buildApplyDocTx)
+ *   apply-scope       → an app's scoped document (apply_scope); both
+ *                       delegate pages route here
+ *   remove-scope      → removing an app (remove_scope)
+ *   gc-scope          → cleaning up an app scope a recovery wiped (gc_scope)
  *
  * DOC-ONLY: the add-context-rule / remove-context-rule descriptors THROW —
  * the account has no general rule mutators (add_context_rule is hard-gated
@@ -20,7 +23,7 @@
  */
 
 import { Address, Operation, nativeToScVal, xdr } from "@stellar/stellar-sdk";
-import { buildApplyDocTx, docCapProblem, parsePolicyDocJson } from "@nidohq/passkey-sdk";
+import { buildApplyDocTx, docCapProblem, parsePolicyDocJson, perch } from "@nidohq/passkey-sdk";
 import type { OperationDescriptor } from "./signRequest";
 import { buildSendOperation } from "../transfer/buildSend.js";
 import { fetchRegistryAddress } from "../policyChainFetch.js";
@@ -28,6 +31,7 @@ import { RPC_URL, NETWORK_PASSPHRASE } from "../network.js";
 import { isClaimableName } from "../claimFlow.js";
 import { recoveryEditProblem } from "../policy/docDraft.js";
 import { fetchAppliedDocument, fetchDocLimits } from "../policy/docPolicyFetch.js";
+import { accountScopes, loadScopeChecks } from "../policy/appGrantLoad.js";
 
 /**
  * `buildOperation`, with the reads that may refuse the operation returned as
@@ -152,6 +156,38 @@ export async function buildOperation(
       await checks;
       return operation;
     }
+
+    case "apply-scope": {
+      // An app's scoped document. `apply_scope` names no revision, so the
+      // scope record is read again here, right before signing: if anything
+      // applied over it since the request was built, refuse rather than
+      // overwrite that change.
+      if (d.prevDocHash !== null && typeof d.prevDocHash !== "string") {
+        throw new Error("apply-scope request is missing the scope it was built from; start again from the app");
+      }
+      const doc = parsePolicyDocJson(d.docJson);
+      const [record, checks, limits] = await Promise.all([
+        accountScopes(account).scope(d.scope),
+        loadScopeChecks(account),
+        fetchDocLimits(account),
+      ]);
+      if ((record?.docHash ?? null) !== d.prevDocHash) {
+        throw new Error("This app's permissions changed after this page read them. Start again from the app.");
+      }
+      const tx = perch.buildApplyScopeTx(d.scope, doc, {
+        account,
+        networkPassphrase: NETWORK_PASSPHRASE,
+        limits,
+        scoped: { account, excluded: checks.excluded, adminKeys: checks.adminKeys, origin: d.origin },
+      });
+      return tx.operations[0]!;
+    }
+
+    case "remove-scope":
+      return perch.buildRemoveScopeTx(d.scope, { account, networkPassphrase: NETWORK_PASSPHRASE }).operations[0]!;
+
+    case "gc-scope":
+      return perch.buildGcScopeTx(d.scope, { account, networkPassphrase: NETWORK_PASSPHRASE }).operations[0]!;
 
     case "remove-context-rule": {
       // DOC-ONLY: the account no longer exports remove_context_rule

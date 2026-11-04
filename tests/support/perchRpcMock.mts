@@ -5,6 +5,7 @@ import { Address, contract, Keypair, Networks, scValToNative, SorobanDataBuilder
 import { Client as AccountClient } from '@nidohq/perch-account';
 import { Client as CompilerClient } from '@nidohq/perch-doc-compiler';
 import { Client as RecoveryClient } from '@nidohq/perch-recovery';
+import { canonicalJson, docHash, type PolicyDoc } from '@nidohq/passkey-sdk';
 
 /**
  * A browser page against the frontend built for a fixture Perch deployment
@@ -251,9 +252,41 @@ export async function mockPerchChain(
 }
 
 /** What an account's `configuration()`, `capabilities()`, `revision()` and
- *  `document()` answer, at revision 1 with `canonical` applied. */
-export function accountViews(account: string, opts: { canonical?: string; rules?: unknown[] }): Views {
+ *  `document()` answer, at revision 1 with `canonical` applied, and its
+ *  scope views with `scopes` applied (by scope id) at scope generation 0. */
+export function accountViews(
+  account: string,
+  opts: { canonical?: string; rules?: unknown[]; scopes?: Record<number, PolicyDoc> },
+): Views {
+  const scopes = opts.scopes ?? {};
+  const ids = Object.keys(scopes).map(Number);
   return {
+    [`${account}:scope_generation`]: 0n,
+    [`${account}:scope_count`]: ids.length,
+    [`${account}:scopes`]: ([start, count]: unknown[]) => ids.slice(Number(start), Number(start) + Number(count)),
+    [`${account}:scope`]: ([id]: unknown[]) => {
+      const doc = scopes[Number(id)];
+      if (doc === undefined) return null;
+      return {
+        gen: 0n,
+        doc_hash: Buffer.from(docHash(doc), 'hex'),
+        rules: doc.rules.map((r, i) => ({
+          context_type: { tag: 'CallContract', values: [r.scope.type === 'contract' ? r.scope.address : account] },
+          id: 100 + i,
+          name: r.name,
+          policies: [],
+          recovery: false,
+          signers: [],
+          valid_until: undefined,
+        })),
+      };
+    },
+    [`${account}:scope_doc`]: ([id]: unknown[]) => {
+      const doc = scopes[Number(id)];
+      return doc === undefined ? null : Buffer.from(canonicalJson(doc), 'utf8');
+    },
+    [`${account}:credential_generation`]: null,
+    [`${account}:is_revoked`]: false,
     [`${account}:configuration`]: {
       revision: 1n,
       doc_hash: undefined,

@@ -73,23 +73,40 @@ const NOT_REGISTERED =
 
 type Progress = (p: { phase: "build" | "sign" | "submit" | "confirm"; detail?: string }) => void;
 
-/** An account invocation simulated and assembled, waiting for its
- *  `AuthPayload`: the Soroban signature payload a signer's digest is built
- *  from, and what `submitPrepared` needs afterwards. */
-interface PreparedInvocation {
+/** An invocation simulated and assembled: what `submitPrepared` needs. */
+interface Assembled {
   assembledTx: Transaction;
-  signaturePayload: Uint8Array;
-  lastLedger: number;
-  expirationOffset: number;
   /** Resource fee the simulation asked for, in stroops. */
   fee: bigint;
   submitter: Keypair | null;
   server: rpc.Server;
+  sim: rpc.Api.SimulateTransactionSuccessResponse;
+}
+
+/** An account invocation simulated and assembled, waiting for its
+ *  `AuthPayload`: the Soroban signature payload a signer's digest is built
+ *  from, and what `submitPrepared` needs afterwards. */
+interface PreparedInvocation extends Assembled {
+  signaturePayload: Uint8Array;
+  lastLedger: number;
+  expirationOffset: number;
 }
 
 /** Simulate `operation` against the account (recording mode, which learns
  *  the account's auth entry) and assemble it. */
 async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvocation> {
+  const assembled = await assemble(operation);
+  // The account's auth entry and its Soroban signature payload, at the
+  // expiration the injected payload will carry.
+  const authEntry = getAuthEntry(assembled.sim);
+  const lastLedger = assembled.sim.latestLedger;
+  const expirationOffset = signatureExpirationOffset();
+  const signaturePayload = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger, expirationOffset);
+  return { ...assembled, signaturePayload, lastLedger, expirationOffset };
+}
+
+/** Simulate `operation` (recording mode) and assemble it. */
+async function assemble(operation: xdr.Operation): Promise<Assembled> {
   const server = new rpc.Server(RPC_URL);
 
   // 1. Pick the simulation source account. This is the tx source/fee-payer,
@@ -139,23 +156,14 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   }
   const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
 
-  // 3. The account's auth entry and its Soroban signature payload, at the
-  //    expiration the injected payload will carry.
-  const authEntry = getAuthEntry(successSim);
-  const lastLedger = successSim.latestLedger;
-  const expirationOffset = signatureExpirationOffset();
-  const signaturePayload = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger, expirationOffset);
-
-  // 4. Assemble so auth entries are baked into the tx XDR before signing.
+  // 3. Assemble so auth entries are baked into the tx XDR before signing.
   const assembledTx = rpc.assembleTransaction(sourceAccount ? buildTx(await sourceAccount) : simTx, successSim).build();
   return {
     assembledTx,
-    signaturePayload,
-    lastLedger,
-    expirationOffset,
     fee: BigInt(successSim.minResourceFee ?? '0'),
     submitter,
     server,
+    sim: successSim,
   };
 }
 
@@ -189,7 +197,7 @@ async function passkeyAssertion(challenge: Uint8Array, credentialId: unknown): P
 /** Submit a prepared invocation whose `AuthPayload` is injected, and wait
  *  for it to land. */
 async function submitPrepared(
-  p: PreparedInvocation,
+  p: Assembled,
   onProgress?: Progress,
 ): Promise<rpc.Api.SendTransactionResponse> {
   onProgress?.({ phase: "submit" });
@@ -301,6 +309,20 @@ export async function signAndSubmit(args: {
 
   const sent = await submitPrepared(prepared, args.onProgress);
   return { ...sent, authHashHex };
+}
+
+/**
+ * Build, simulate and submit an operation that needs no signature of the
+ * account's: a permissionless call such as `gc_scope`, whose simulation
+ * records no authorization entry for it.
+ */
+export async function submitWithoutAuth(args: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  operation: any;
+  onProgress?: Progress;
+}): Promise<rpc.Api.SendTransactionResponse> {
+  args.onProgress?.({ phase: "build" });
+  return submitPrepared(await assemble(args.operation), args.onProgress);
 }
 
 /**

@@ -17,7 +17,7 @@ export async function checkSessionKeyStatus(
 	const material = loadSessionKeyMaterial(account, targetContract)
 	if (!material) return "missing"
 
-	const ruleId = await findRuleForPubkey(account, material.publicKey)
+	const ruleId = await findRuleForPubkey(account, material.publicKey, targetContract)
 	if (ruleId === null) {
 		forgetSessionKeyMaterial(account, targetContract)
 		return "revoked"
