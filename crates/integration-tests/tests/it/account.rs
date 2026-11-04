@@ -113,11 +113,12 @@ fn each_document_replaces_the_whole_rule_set() {
     assert_eq!(w.account(&alice).applied_doc_hash(), Some(hash));
 }
 
-/// A capped rule installs Perch's interpreter AND Perch's stock spending
-/// limit, both at the content addresses the account derives from its
-/// build-time pins (never an address the document or an admin supplies).
+/// A capped rule installs no policy: OZ holds its contract and signers, and
+/// the rule-eval rule the account stores for it carries the cap, which
+/// `__check_auth` meters from the `transfer` amount (argument 2). Nothing is
+/// installed at an address the document or an admin supplies.
 #[test]
-fn a_capped_rule_installs_the_spending_limit_beside_the_interpreter() {
+fn a_capped_rule_stores_its_cap_in_the_rule_eval_rule() {
     let w = world();
     let alice = minted(&w);
     let json = w.doc(&alice, None).json(&w).replace(
@@ -131,20 +132,17 @@ fn a_capped_rule_installs_the_spending_limit_beside_the_interpreter() {
         0,
     )
     .expect("capped document");
-    let rule = w
-        .account(&alice)
-        .get_context_rule(&w.rule_id(&alice.address, "app"));
-    assert_eq!(rule.policies.len(), 2, "interpreter + spending limit");
-    assert!(rule
-        .policies
-        .contains(perch_smart_account::infra::perch_spending_limit::address(
-            &w.env
-        )));
-    assert!(rule
-        .policies
-        .contains(perch_smart_account::infra::perch_interpreter::address(
-            &w.env
-        )));
+    let account = w.account(&alice);
+    let id = w.rule_id(&alice.address, "app");
+    assert_eq!(account.get_context_rule(&id).policies.len(), 0);
+    let at = account
+        .installed_rules()
+        .iter()
+        .position(|r| r.id == id)
+        .expect("the app rule is installed");
+    let stored = account.rule_set().get_unchecked(u32::try_from(at).unwrap());
+    let cap = stored.cap.get(0).expect("a cap");
+    assert_eq!((cap.limit, cap.period, cap.amount_arg), (10, 1000, 2));
 }
 
 /// Only the admin rule's signers can change the document: the `device`

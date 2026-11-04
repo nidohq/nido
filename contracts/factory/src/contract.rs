@@ -1,7 +1,7 @@
 use admin_sep::Administratable;
 use soroban_sdk::{
     address_payload::AddressPayload, contract, contractevent, contractimpl,
-    deploy::DeployerWithAddress, Address, Bytes, BytesN, Env, String, Symbol,
+    deploy::DeployerWithAddress, Address, Bytes, BytesN, ContractExecutable, Env, String, Symbol,
 };
 use soroban_sdk_tools::{contractstorage, InstanceItem};
 use stellar_accounts::smart_account::Signer;
@@ -21,7 +21,7 @@ use stellar_accounts::smart_account::Signer;
 // `vendor/perch/deployments/<STELLAR_NETWORK>.json` (default testnet), and
 // `just check-vendor-drift` fails when the two differ.
 //
-// The factory carries only the 32-byte hash. `deploy_v2` resolves it against
+// The factory carries only the 32-byte hash. `deploy_contract` resolves it against
 // installed code, so the wasm with exactly this hash must be installed on the
 // network before the factory creates an account (`scripts/deploy-factory.sh`
 // installs it, refuses a factory wasm pinning another hash, and reads the pin
@@ -132,13 +132,16 @@ pub struct Contract;
 impl Administratable for Contract {
     /// admin-sep's default, plus an `AdminChanged` event so watchers see who
     /// can change the factory.
-    fn set_admin(e: &Env, new_admin: Address) {
+    fn set_admin(e: &Env, new_admin: &Address) {
         let store = e.storage().instance();
         if let Some(current) = store.get::<_, Address>(admin_sep::STORAGE_KEY) {
             current.require_auth();
         }
-        store.set(admin_sep::STORAGE_KEY, &new_admin);
-        AdminChanged { admin: new_admin }.publish(e);
+        store.set(admin_sep::STORAGE_KEY, new_admin);
+        AdminChanged {
+            admin: new_admin.clone(),
+        }
+        .publish(e);
     }
 }
 
@@ -157,7 +160,7 @@ impl Contract {
         verifier: Option<Address>,
         manager: Option<Address>,
     ) {
-        Self::set_admin(e, admin);
+        Self::set_admin(e, &admin);
         if let Some(verifier) = verifier {
             Self::store_verifier(e, verifier);
         }
@@ -175,7 +178,8 @@ impl Contract {
             wasm_hash: wasm_hash.clone(),
         }
         .publish(e);
-        e.deployer().update_current_contract_wasm(wasm_hash);
+        e.deployer()
+            .update_current_contract(ContractExecutable::Wasm(wasm_hash));
     }
 
     /// Pin `verifier` for every account created afterwards. Admin only.
@@ -227,8 +231,10 @@ impl Contract {
             .ed25519_verify(&setup_pk, &Self::binding(e, &key).into(), &setup_sig);
         let verifier = Self::resolve(e, "verifier");
         let admin_signers = soroban_sdk::vec![e, Signer::External(verifier, key.to_bytes())];
-        let account =
-            Self::deployer(e, &setup_pk).deploy_v2(Self::account_wasm_hash(e), (&admin_signers,));
+        let account = Self::deployer(e, &setup_pk).deploy_contract(
+            ContractExecutable::Wasm(Self::account_wasm_hash(e)),
+            (&admin_signers,),
+        );
         AccountCreated {
             account: account.clone(),
             setup_pk,
@@ -330,7 +336,7 @@ mod test {
 
     /// The bytes of the account wasm the factory pins, as `just perch-infra`
     /// fetched them. The pin (`perch_account::hash`) is only a hash, and
-    /// `deploy_v2` resolves it against installed code, so the tests need
+    /// `deploy_contract` resolves it against installed code, so the tests need
     /// the bytes for one thing: installing that code (`install_account`).
     const ACCOUNT_WASM: &[u8] =
         include_bytes!("../../../target/wasm32v1-none/contract/perch_account.wasm");
@@ -971,7 +977,7 @@ mod test {
     /// The pin is the `perch-account` hash in the manifest `just
     /// perch-infra` writes it from (`STELLAR_NETWORK`, default testnet), the
     /// hash the factory reports, and the hash of the code `install_account`
-    /// installs, so `deploy_v2` resolves it.
+    /// installs, so `deploy_contract` resolves it.
     #[test]
     fn the_pinned_account_hash_is_the_manifests_and_the_fetched_wasms() {
         let env = Env::default();

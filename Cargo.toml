@@ -17,46 +17,52 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 base64 = "0.22"
-soroban-sdk = "27.0.2"
+soroban-sdk = "29.0.1"
 # admin-sep: SEP admin/upgrade contract traits (`Administratable` + `Upgradable`,
-# soroban-sdk-27 `#[contracttrait]` default methods). Used by the policy,
-# verifier, name-registry and factory contracts. Published by theahaco
-# (https://github.com/theahaco/admin-sep); Apache-2.0.
-admin-sep = "0.27.0"
+# `#[contracttrait]` default methods). Used by the policy, verifier,
+# name-registry and factory contracts. Published by theahaco
+# (https://github.com/theahaco/admin-sep); Apache-2.0. Its newest release,
+# 0.28.1, is on soroban-sdk 28; Perch vendors it moved to soroban-sdk 29
+# (vendor/admin-sep/NOTICE there), taken from Perch's rev below.
+admin-sep = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
 # Perch's pinned OZ fork, the same rev vendor/perch/Cargo.toml pins:
-# theahaco/stellar-contracts-OZ PR #5 (head 3372676), stacked on PR #4 and the
-# CAP-0071 delegated-auth patch (PR #3, on upstream fbfde38). PR #4 adds the
+# bitswell-hq/theahaco__stellar-contracts-OZ 42089fc, theahaco's
+# stellar-contracts-OZ PR #5 (head 3372676, stacked on PR #4 and the CAP-0071
+# delegated-auth patch, PR #3) moved to soroban-sdk 29.0.1. PR #4 adds the
 # `*_no_events` mutations (apply_doc emits one DocApplied instead) and PR #5
 # `reconcile_signers`. Nido's contracts and Perch's account, controller and
 # compiler must share ONE `stellar-accounts` crate: the factory hands the
 # account `Signer`s, and the tests build `AuthPayload`s for it. Upstream
 # adoption is tracked by Perch (docs/recovery/cap-0071.md there).
-stellar-accounts = { version = "0.7.1", git = "https://github.com/theahaco/stellar-contracts-OZ.git", rev = "33726766a1fd5e7e3d2977d79f64ee29e1ea3ca9", package = "stellar-accounts" }
-# soroban-sdk-tools 0.1.3 (crates.io) targets soroban-sdk 27.
-soroban-sdk-tools = "0.1.3"
+stellar-accounts = { version = "0.7.1", git = "https://github.com/bitswell-hq/theahaco__stellar-contracts-OZ.git", rev = "42089fc90684fdab33a85eac3e8311259b69a61b", package = "stellar-accounts" }
+# soroban-sdk-tools: its newest release, 0.1.4, is on soroban-sdk 28; Perch
+# vendors it moved to soroban-sdk 29 (vendor/soroban-sdk-tools/NOTICE there),
+# taken from Perch's rev below.
+soroban-sdk-tools = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
 
-# The Perch stack (stellar-registry/perch epic #99), as git dependencies on
-# Perch's main. Perch publishes no crates yet; versions replace the rev once it
-# does. The rev is the vendor/perch submodule's commit, which carries the
-# testnet deployment manifest (deployments/testnet.json) the stack is fetched
-# by: scripts/repin-perch.sh moves both together, and
+# The Perch stack (stellar-registry/perch epic #99), as git dependencies.
+# Perch publishes no crates yet; versions replace the rev once it does. The
+# pin is the bitswell fork's M6 stack (rule-eval in the account, scoped
+# documents) on upstream Perch's main, which upstream has not taken yet. The
+# rev is the vendor/perch submodule's commit: scripts/repin-perch.sh moves
+# both together, and
 # scripts/check-perch-drift.sh fails when they differ. The build reads only
 # tracked files (the smart account's build-time pins are committed in Perch),
 # so cargo needs no submodule. All Perch crates come from the one rev so their
 # types unify.
-perch-account = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-smart-account = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-recovery = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-recovery-interface = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-doc-compiler = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-interpreter = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-spending-limit = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-zk-pool = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-zk-adapter = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-zk-prover = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-zk-primitives = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-ir = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
-perch-registry-resolve = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
+perch-account = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-smart-account = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-recovery = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-recovery-interface = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-doc-compiler = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-interpreter = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-spending-limit = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-zk-pool = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-zk-adapter = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-zk-prover = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-zk-primitives = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-ir = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
+perch-registry-resolve = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "437a07d108548faadc40e56cf2e632ab0b4d2a2c" }
 
 [profile.release]
 overflow-checks = true

@@ -23,7 +23,7 @@ pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
 
 /// The factory pins the hash of [`PERCH_ACCOUNT_WASM`], written from the same
 /// manifest (`contracts/factory/wasm/perch-account.sha256`), so uploading
-/// [`PERCH_ACCOUNT_WASM`] before `create_account` satisfies its `deploy_v2`
+/// [`PERCH_ACCOUNT_WASM`] before `create_account` satisfies its `deploy_contract`
 /// hash lookup.
 pub const FACTORY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");

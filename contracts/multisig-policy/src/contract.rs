@@ -31,7 +31,7 @@ impl MultisigPolicy {
     /// #26). `set_admin` on first call (no admin yet) skips the auth check.
     #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(e: Env, admin: Address) {
-        Self::set_admin(&e, admin);
+        Self::set_admin(&e, &admin);
     }
 
     /// Read the installed M-of-N threshold for a given account + rule.
