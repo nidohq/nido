@@ -93,7 +93,11 @@ sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -
 m() { jq -r "$1" "$MANIFEST"; }
 
 ACCOUNT_HASH="$(m '.contracts["perch-account"].sha256')"
-VERIFIER="$(m '.contracts["perch-webauthn-verifier"].address')"
+# The WebAuthn verifier the factory pins: its content address in
+# perch/verifiers (the manifest's `verifiers` block), which an account's
+# constructor requires of an admin signer; the registry's copy for a
+# manifest from before perch/verifiers.
+VERIFIER="$(m '.verifiers.contracts["perch-webauthn-verifier"].address // .contracts["perch-webauthn-verifier"].address')"
 [[ "$ACCOUNT_HASH" =~ ^[0-9a-f]{64}$ ]] || die "manifest has no perch-account hash"
 [[ "$VERIFIER" =~ ^C[A-Z2-7]{55}$ ]] || die "manifest has no perch-webauthn-verifier address"
 DEPLOYER="$(stellar keys address "$IDENTITY")"

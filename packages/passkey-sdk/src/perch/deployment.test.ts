@@ -30,6 +30,35 @@ describe('TESTNET', () => {
   });
 });
 
+describe('a manifest that records perch/verifiers', () => {
+  // The registry's copy of a verifier is no admin verifier (Perch M7): the
+  // factory pins, and documents name, its instance in perch/verifiers.
+  const withVerifiers: PerchManifest = {
+    ...manifest,
+    verifiers: {
+      id: 'CDQG7KTWPERJ37HRQQCTMPTTQ3EO7OUUCRZBD5W7TMWS6ETPE7GZK4WO',
+      contracts: {
+        'perch-webauthn-verifier': {
+          address: 'CA4Q6TWJLLMLHRDQ4ADAVNWKDDDZZXACZPXD4OHPT7VPPTU7HBTZVJQ3',
+          name: 'perch-webauthn-verifier@0.1.2',
+        },
+      },
+    },
+  };
+
+  it('takes the WebAuthn verifier, and its name, from perch/verifiers', () => {
+    const d = fromPerchManifest(withVerifiers, TESTNET.factory);
+    expect(d.webauthnVerifier).toBe('CA4Q6TWJLLMLHRDQ4ADAVNWKDDDZZXACZPXD4OHPT7VPPTU7HBTZVJQ3');
+    expect(d.webauthnVerifierName).toBe('perch-webauthn-verifier@0.1.2');
+  });
+
+  it('keeps the registry copy and no name for a manifest without it', () => {
+    const d = fromPerchManifest(manifest, TESTNET.factory);
+    expect(d.webauthnVerifier).toBe(manifest.contracts['perch-webauthn-verifier']!.address);
+    expect(d.webauthnVerifierName).toBeUndefined();
+  });
+});
+
 describe("Nido's testnet factory", () => {
   it('is the recorded factory', () => {
     expect(TESTNET.factory).toBe(factory.factory);

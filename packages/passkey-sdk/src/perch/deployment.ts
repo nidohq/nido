@@ -94,6 +94,10 @@ export interface PerchManifest {
   registry: { id: string };
   zk: { circuit_id: string; tree_depth: number };
   contracts: Record<string, { sha256: string; address?: string }>;
+  /** `perch/verifiers`, with each verifier it serves: its content address
+   *  there (what the factory pins and a document names) and its
+   *  `verifier-name`. Absent from a manifest that predates it. */
+  verifiers?: { id: string; contracts: Record<string, { address: string; name: string }> };
 }
 
 /** The deployment a Perch manifest describes, with Nido's `factory`. */
@@ -105,10 +109,14 @@ export function fromPerchManifest(manifest: PerchManifest, factory: string): Per
   };
   const hash = manifest.contracts['perch-account']?.sha256;
   if (!hash) throw new Error('perch manifest: no perch-account hash');
+  // The verifier in perch/verifiers, where the manifest records it: the
+  // registry's copy of the same bytes is no admin verifier.
+  const named = manifest.verifiers?.contracts['perch-webauthn-verifier'];
   return parsePerchDeployment({
     network: manifest.network_passphrase,
     factory,
-    webauthnVerifier: address('perch-webauthn-verifier'),
+    webauthnVerifier: named?.address ?? address('perch-webauthn-verifier'),
+    ...(named ? { webauthnVerifierName: named.name } : {}),
     statelessRegistry: manifest.registry.id,
     docCompiler: address('perch-doc-compiler'),
     interpreter: address('perch-interpreter'),

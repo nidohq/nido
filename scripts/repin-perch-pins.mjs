@@ -40,7 +40,11 @@ const contract = (name, key) =>
 
 const registry = field('registry.id', manifest.registry?.id, CONTRACT);
 const testnet = {
-  webauthnVerifier: contract('perch-webauthn-verifier', 'address'),
+  // perch/verifiers' instance where the manifest records it (no account
+  // admits the registry's copy as an admin verifier).
+  webauthnVerifier: manifest.verifiers?.contracts?.['perch-webauthn-verifier']?.address
+    ? field('verifiers.contracts.perch-webauthn-verifier.address', manifest.verifiers.contracts['perch-webauthn-verifier'].address, CONTRACT)
+    : contract('perch-webauthn-verifier', 'address'),
   statelessRegistry: registry,
   docCompiler: contract('perch-doc-compiler', 'address'),
   interpreter: contract('perch-interpreter', 'address'),
