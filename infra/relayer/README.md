@@ -8,7 +8,7 @@ the user does not sign a transaction envelope and does not pay XLM fees.
 
 The deployed stack is:
 
-- OpenZeppelin Relayer `v1.5.0`
+- OpenZeppelin Relayer `v1.9.0`
 - OpenZeppelin Channels plugin
 - Caddy sidecar
 - self-hosted Redis — a separate `nido-redis` Fly app (stock `redis:7-alpine`
@@ -537,7 +537,7 @@ Options:
 
 ## Versioning
 
-OpenZeppelin Relayer is pinned to `v1.5.0` intentionally. Stellar support is
+OpenZeppelin Relayer is pinned to `v1.9.0` intentionally. Stellar support is
 still moving.
 
 A bump to `v1.6.0` was attempted on 2026-10-20 specifically for
@@ -547,6 +547,10 @@ flags a regression risk (a multi-threaded transaction pipeline (#810)), and we
 had time constraints so this risk didn't seem work it. Instead, the `funder`
 plugin routes around the bug entirely by getting the seq number, and handling
 the tx creation and submission via rpc calls.
+
+Since `v1.6.0` the base image ships `/app/plugins/pnpm-workspace.yaml`, which
+makes a plain `pnpm install` inside a plugin directory abort; the Dockerfile's
+plugin installs pass `--ignore-workspace` for it.
 
 Before attempting this upgrade again:
 
