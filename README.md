@@ -194,7 +194,7 @@ For deeper implementation details, read [ARCHITECTURE.md](./ARCHITECTURE.md).
   [security invariants](./docs/SECURITY_INVARIANTS.md),
   [deferred work](./docs/DEFERRED.md), [supply chain](./docs/SUPPLY_CHAIN.md),
   [runbooks](./docs/RUNBOOKS.md), [mainnet readiness](./docs/MAINNET_READINESS.md)
-- [Perch recovery specification](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/recovery/spec.md)
+- [Perch recovery specification](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/recovery/spec.md)
   (`vendor/perch/docs/recovery/spec.md`)
 - [Status Message dApp guide](./examples/status-message-dapp/README.md)
 - [Wallets Kit module guide](./packages/stellar-wallets-kit-module/README.md)

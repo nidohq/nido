@@ -1,0 +1,54 @@
+{
+  "domain": "nido/app-scope/v1",
+  "preimage": "domain || 0x00 || utf8(origin) || 0x00 || u8(i); id = big-endian u32 of sha256(preimage)[0..4]",
+  "vectors": [
+    {
+      "origin": "https://game.example",
+      "candidates": [
+        1161629162,
+        4257937709,
+        2252845505,
+        1683948196
+      ]
+    },
+    {
+      "origin": "https://status.nido.fyi",
+      "candidates": [
+        4172672489,
+        3020625164,
+        3078756472,
+        1589971947
+      ]
+    },
+    {
+      "origin": "http://localhost:4321",
+      "candidates": [
+        2287049387,
+        1889830692,
+        3572936647,
+        4043274189
+      ]
+    },
+    {
+      "origin": "https://xn--bcher-kva.example",
+      "candidates": [
+        2521422227,
+        312025045,
+        1319133214,
+        1955724350
+      ]
+    }
+  ],
+  "signer_ids": [
+    {
+      "origin": "https://game.example",
+      "key": "04cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "id": "https://game.example#a8efcf5c"
+    },
+    {
+      "origin": "https://game.example",
+      "address": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+      "id": "https://game.example#d3812905"
+    }
+  ]
+}

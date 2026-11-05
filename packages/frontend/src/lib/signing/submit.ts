@@ -121,9 +121,17 @@ export async function classicSubmitAndPoll(
   // cloneFrom carries operations across as-is (including the signed auth
   // entries on our InvokeHostFunction op). build() emits a new Transaction
   // with the right footprint AND our signature intact.
-  const refitted_tx = refittedBuilder.build();
-  refitted_tx.sign(submitter);
-  const sendResult = await server.sendTransaction(refitted_tx);
+  return sendAndPoll(refittedBuilder.build(), submitter, server);
+}
+
+/** Sign `tx` with `submitter`, send it to RPC, and poll until it lands. */
+export async function sendAndPoll(
+  tx: Transaction,
+  submitter: Keypair,
+  server: rpc.Server,
+): Promise<rpc.Api.SendTransactionResponse> {
+  tx.sign(submitter);
+  const sendResult = await server.sendTransaction(tx);
   if (sendResult.status === "ERROR") {
     const detail = sendResult.errorResult?.toXDR("base64") ?? "unknown";
     throw new Error(`Submit rejected: ${detail}`);

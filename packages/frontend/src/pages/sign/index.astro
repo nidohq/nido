@@ -229,7 +229,8 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     authEntryConsequence,
     TX_AUTH_CONSEQUENCE,
   } from '../../lib/signing/authReview.js';
-  import { reviewGrant } from '../../lib/policy/grantReview.js';
+  import { emptyScope, reviewScopeGrant } from '../../lib/policy/appScopes.js';
+  import { esc } from '../../lib/html.js';
   import { ruleRecipient } from '../../lib/policy/reviewText.js';
   import { withPasskeySheet, openPasskeySheet, closePasskeySheet } from '../../lib/passkeySheet';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
@@ -551,73 +552,86 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         syncLimitControls();
         $limitEdit.classList.remove('hidden');
       }
-    } else if (op.type === 'apply-policy-doc') {
-      // Doc-based session grant — the document IS what gets approved, so the
-      // review card renders straight from its canonical JSON (rule name,
-      // signer, functions, cap, doc_hash), and the technical-details toggle
-      // shows the JSON itself. Nothing here is editable: the delegate-doc
-      // page already offered the duration/cap controls before the handoff.
+    } else if (op.type === 'apply-scope') {
+      // An app's scoped document — the document IS what gets approved, so
+      // the review renders straight from its canonical JSON (rule name, the
+      // keys that may sign it, functions, cap), and the technical-details
+      // toggle shows the JSON itself. Nothing here is editable: the
+      // delegate pages offered the duration/cap controls before the
+      // handoff. An approval that moves older rules out of the admin
+      // document says so, with that document's diff: it is the second
+      // passkey confirmation.
       payload = op.docJson; // non-empty so validate() passes
       document.getElementById('payload-row')!.classList.add('hidden');
       document.getElementById('payload-divider')?.classList.add('hidden');
       const $detail = document.getElementById('tx-detail')!;
-      const docOrigin =
-        req.returnTarget.type === 'dapp' ? req.returnTarget.origin : (req.subtitle ?? '');
       let docCardHtml: string;
       try {
         const doc = parsePolicyDocJson(op.docJson);
-        // Doc-update diff: apply_doc REPLACES the applied document, so show
-        // exactly what changes vs the previous one (carried in the
-        // descriptor; absent = first apply, rendered as all-new).
-        let diffHtml = '';
-        try {
-          const prev = op.prevDocJson !== undefined ? parsePolicyDocJson(op.prevDocJson) : null;
-          diffHtml = renderDocDiffHtml(diffPolicyDocs(prev, doc));
-        } catch {
-          diffHtml = '';
-        }
-        // One card per rule this request grants, never the document's
-        // first rule (the account's own admin rule leads it).
         const prev = op.prevDocJson !== undefined ? parsePolicyDocJson(op.prevDocJson) : null;
-        const review = reviewGrant(prev, doc);
-        if (!review.ok) throw new Error(review.reason);
-        const periodMap: Array<[number, LimitPeriod]> = [
-          [17280, 'day'], [120960, 'week'], [518400, '30d'],
-        ];
-        const hash = docHash(doc);
-        docCardHtml = review.grants.map(({ rule, signers }, index) => {
-          const cap = rule.cap;
-          return renderDocSessionGrant({
-            origin: docOrigin,
-            ruleName: rule.name,
-            target: rule.scope.type === 'contract' ? rule.scope.address : (account ?? ''),
-            signers: signers.map((d) => ('address' in d ? d.address : d.key)),
-            functions: rule.functions !== undefined ? [...rule.functions] : null,
-            expiryLabel:
-              op.expiryLabel ??
-              (rule['not-after-ledger'] != null ? `Ledger ${rule['not-after-ledger']}` : 'Until revoked'),
-            capStroops: cap !== undefined ? cap.limit : null,
-            capPeriod: cap !== undefined
-              ? (periodMap.find(([l]) => l === cap['period-ledgers'])?.[1] ?? 'day')
-              : 'day',
-            docHash: hash,
-            position: { index, count: review.grants.length },
-            // Whom its transfer may pay; when that is the contract another
-            // rule of this request calls, say which.
-            recipient: (() => {
-              const to = ruleRecipient(rule);
-              const sibling = review.grants.find(
-                (g) => g.rule !== rule && g.rule.scope.type === 'contract' && g.rule.scope.address === to,
-              );
-              return { address: to, ...(sibling ? { ruleName: sibling.rule.name } : {}) };
-            })(),
+        const diffHtml = renderDocDiffHtml(diffPolicyDocs(prev ?? emptyScope(doc.network ?? NETWORK_PASSPHRASE), doc));
+        const head = `<div class="card" style="padding:12px 16px;font-size:12.5px;line-height:1.5;">` +
+          `<strong>${esc(op.origin)}</strong>'s permissions on this account ` +
+          `<span class="mut">(scope ${op.scope})</span>. They are kept apart from your own rules, ` +
+          `and removing the app removes all of them.</div>`;
+        if (op.removesKey !== undefined) {
+          docCardHtml = head +
+            `<div class="card" style="padding:14px 16px;margin-top:10px;font-size:13px;">Removes the key ` +
+            `<code class="mono">${esc(op.removesKey)}</code> from this app. Its other keys keep their access.</div>` +
+            `<div class="card" style="padding:14px 16px;margin-top:10px;">${diffHtml}</div>`;
+        } else {
+          const review = reviewScopeGrant(prev, doc, op.origin, op.adminFollowUp?.moved);
+          if (!review.ok) throw new Error(review.reason);
+          const periodMap: Array<[number, LimitPeriod]> = [
+            [17280, 'day'], [120960, 'week'], [518400, '30d'],
+          ];
+          const hash = docHash(doc);
+          const cards = review.grants.map(({ rule, signers }, index) => {
+            const cap = rule.cap;
+            return renderDocSessionGrant({
+              origin: op.origin,
+              ruleName: rule.name,
+              target: rule.scope.type === 'contract' ? rule.scope.address : (account ?? ''),
+              signers: signers.map((d) => ('address' in d ? d.address : d.key)),
+              functions: rule.functions !== undefined ? [...rule.functions] : null,
+              expiryLabel: review.moved.includes(rule.name)
+                ? (rule['not-after-ledger'] != null ? `Ledger ${rule['not-after-ledger']}` : 'Until revoked')
+                : (op.expiryLabel ??
+                  (rule['not-after-ledger'] != null ? `Ledger ${rule['not-after-ledger']}` : 'Until revoked')),
+              capStroops: cap !== undefined ? cap.limit : null,
+              capPeriod: cap !== undefined
+                ? (periodMap.find(([l]) => l === cap['period-ledgers'])?.[1] ?? 'day')
+                : 'day',
+              docHash: hash,
+              position: { index, count: review.grants.length },
+              recipient: (() => {
+                const to = ruleRecipient(rule);
+                const sibling = review.grants.find(
+                  (g) => g.rule !== rule && g.rule.scope.type === 'contract' && g.rule.scope.address === to,
+                );
+                return { address: to, ...(sibling ? { ruleName: sibling.rule.name } : {}) };
+              })(),
+            });
           });
-        }).join('<div style="height:10px;"></div>') +
-          (diffHtml ? `<div class="card" style="padding:14px 16px;margin-top:10px;">${diffHtml}</div>` : '');
+          let follow = '';
+          if (op.adminFollowUp) {
+            const before = parsePolicyDocJson(op.adminFollowUp.prevDocJson);
+            const after = parsePolicyDocJson(op.adminFollowUp.docJson);
+            follow = `<div class="card" style="padding:14px 16px;margin-top:10px;font-size:12.5px;line-height:1.5;">` +
+              `<strong>Then a second confirmation</strong> moves this app's older permissions ` +
+              `(${op.adminFollowUp.moved.map((n) => `<code class="mono">${esc(n)}</code>`).join(', ')}) ` +
+              `out of your admin document, where apps no longer keep theirs. The app keeps working throughout. ` +
+              `A moved spending cap starts a new window.` +
+              `<div style="margin-top:10px;">${renderDocDiffHtml(diffPolicyDocs(before, after))}</div></div>`;
+          }
+          docCardHtml = head + '<div style="height:10px;"></div>' +
+            cards.join('<div style="height:10px;"></div>') +
+            `<div class="card" style="padding:14px 16px;margin-top:10px;">${diffHtml}</div>` + follow;
+        }
       } catch (e) {
         // Unparseable doc JSON, or not what an app request grants (see
-        // reviewGrant): refuse, showing the raw document below so the user
-        // can see what was asked.
+        // reviewScopeGrant): refuse, showing the raw document below so the
+        // user can see what was asked.
         docCardHtml = '';
         refuseReview(e instanceof Error ? e.message : String(e));
       }
@@ -648,6 +662,27 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
         document.getElementById('payload-label')!.textContent = 'Policy document JSON';
         document.getElementById('payload-text')!.textContent = op.docJson;
       }
+    } else if (op.type === 'apply-policy-doc') {
+      // App approvals are scoped documents now; an admin-document request
+      // stashed before that has no review here, so it is refused.
+      payload = op.docJson;
+      refuseReview('This request was made by an earlier version of Nido. Start again from the app.');
+    } else if (op.type === 'remove-scope' || op.type === 'gc-scope') {
+      // Removing an app (every rule of its scope), or cleaning up a scope a
+      // completed recovery already ended.
+      payload = String(op.scope);
+      document.getElementById('payload-row')!.classList.add('hidden');
+      document.getElementById('payload-divider')?.classList.add('hidden');
+      const $detail = document.getElementById('tx-detail')!;
+      const app = op.origin ?? `the app of scope ${op.scope}`;
+      $detail.innerHTML = `<div class="card" style="padding:13px 16px;font-size:13.5px;line-height:1.5;">` +
+        (op.type === 'remove-scope'
+          ? `<strong>Removes ${esc(app)}</strong>: every permission it holds on this account ends now. ` +
+            `To use it again, connect it again.`
+          : `<strong>Cleans up ${esc(app)}</strong>: a recovery already ended its permissions; ` +
+            `this removes what is left of them.`) +
+        ` <span class="mut">(scope ${op.scope})</span></div>`;
+      $detail.classList.remove('hidden');
     } else if (op.type === 'remove-context-rule') {
       // Session-revoke descriptor — render the human-readable revoke line
       // (F7) instead of dumping raw JSON into the payload row.
@@ -1126,7 +1161,9 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       try {
         const result = await runSign(req!, { onProgress, reviewedInvocationXdr });
         steps.finish();
-        $status.textContent = 'Done — returning…';
+        $status.textContent = result.notice ?? 'Done — returning…';
+        // A notice is read before the page moves on.
+        const returnDelay = result.notice ? 4000 : 300;
         // F3: drop the stashed SignRequest now that it submitted successfully,
         // so back/forward to `/sign/?req=<id>` can't reload and re-submit it.
         // Only on success — a failed attempt (catch below) must stay retryable.
@@ -1139,7 +1176,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           const successQuery =
             req.returnTarget.successQuery ??
             '?nido_submitted=' + encodeURIComponent(result.hash) + '&kind=tx';
-          setTimeout(() => finish(successQuery), 300);
+          setTimeout(() => finish(successQuery), returnDelay);
         } else {
           // own-action (route): navigate internally, appending txhash so the
           // return page (e.g. status-message) can display an explorer link.
@@ -1149,7 +1186,9 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
           // navigate to an attacker-controlled `javascript:`/cross-origin URL.
           const base = safeRouteUrl(req.returnTarget.url, window.location.origin) ?? '/account/';
           const sep = base.includes('?') ? '&' : '?';
-          window.location.href = base + sep + 'txhash=' + encodeURIComponent(result.hash);
+          setTimeout(() => {
+            window.location.href = base + sep + 'txhash=' + encodeURIComponent(result.hash);
+          }, result.notice ? returnDelay : 0);
         }
       } catch (err) {
         const e = err as { name?: string; message?: string; code?: string; details?: { hash?: string | null } };

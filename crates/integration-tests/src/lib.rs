@@ -21,9 +21,26 @@ pub const SPENDING_LIMIT_POLICY_WASM: &[u8] =
 pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_preauth_sweep_policy.wasm");
 
+/// `a` as the contract type that twins its own: Perch's account types
+/// (`perch-account-types`) keep OpenZeppelin's names, fields and XDR, so a
+/// `Signer` or `ContextRule` the account returns converts to the
+/// `stellar-accounts` one Nido's contracts and these tests use, and back,
+/// through its `ScVal`.
+///
+/// # Panics
+///
+/// When the two types' XDR differ.
+pub fn twin<A, B>(env: &soroban_sdk::Env, a: &A) -> B
+where
+    A: soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val> + Clone,
+    B: soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val>,
+{
+    B::try_from_val(env, &a.clone().into_val(env)).unwrap_or_else(|_| panic!("not a twin type"))
+}
+
 /// The factory pins the hash of [`PERCH_ACCOUNT_WASM`], written from the same
 /// manifest (`contracts/factory/wasm/perch-account.sha256`), so uploading
-/// [`PERCH_ACCOUNT_WASM`] before `create_account` satisfies its `deploy_v2`
+/// [`PERCH_ACCOUNT_WASM`] before `create_account` satisfies its `deploy_contract`
 /// hash lookup.
 pub const FACTORY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
@@ -248,7 +265,9 @@ pub fn deploy_smart_account(
     soroban_sdk::Address,
     SigningKey,
 ) {
-    let verifier_addr = env.register(PERCH_WEBAUTHN_VERIFIER_WASM, ());
+    // Where `perch/verifiers` deploys it: an M7 account admits an admin
+    // passkey under no other verifier.
+    let verifier_addr = perch_testkit::verifiers::deploy_wasm(env, PERCH_WEBAUTHN_VERIFIER_WASM);
     let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
     let pubkey_sec1 = signing_key.verifying_key().to_sec1_bytes();
     let signer = Signer::External(
@@ -258,6 +277,88 @@ pub fn deploy_smart_account(
     let account_addr = env.register(PERCH_ACCOUNT_WASM, (soroban_sdk::vec![env, signer],));
     let client = SmartAccountClient::new(env, &account_addr);
     (client, account_addr, verifier_addr, signing_key)
+}
+
+/// An OpenZeppelin smart account, for the suites that stage OpenZeppelin
+/// rules and policies by hand (the `*_direct` backdoors) to test Nido's
+/// policy contracts, which are OpenZeppelin policies. Perch's account ran
+/// OpenZeppelin's storage and `do_check_auth` until M7; since then it keeps
+/// its rules in records of its own, which those backdoors never reach. This
+/// account runs them as Perch's did: the constructor's admin rule scoped to
+/// itself (id 0), and `__check_auth` over the host payload bound to its own
+/// address (`addr_oz_v1`), so the same passkey signatures verify.
+#[soroban_sdk::contract]
+pub struct OzAccount;
+
+#[soroban_sdk::contractimpl]
+impl OzAccount {
+    /// Install rule 0, `admin`, for `admin_signers`.
+    pub fn __constructor(e: soroban_sdk::Env, admin_signers: soroban_sdk::Vec<Signer>) {
+        stellar_accounts::smart_account::add_context_rule(
+            &e,
+            &ContextRuleType::CallContract(e.current_contract_address()),
+            &soroban_sdk::String::from_str(&e, "admin"),
+            None,
+            &admin_signers,
+            &soroban_sdk::Map::new(&e),
+        );
+    }
+
+    pub fn get_context_rule(e: soroban_sdk::Env, context_rule_id: u32) -> ContextRule {
+        stellar_accounts::smart_account::get_context_rule(&e, context_rule_id)
+    }
+}
+
+#[soroban_sdk::contractimpl]
+impl soroban_sdk::auth::CustomAccountInterface for OzAccount {
+    type Error = stellar_accounts::smart_account::SmartAccountError;
+    type Signature = stellar_accounts::smart_account::AuthPayload;
+
+    fn __check_auth(
+        e: soroban_sdk::Env,
+        signature_payload: soroban_sdk::crypto::Hash<32>,
+        signatures: Self::Signature,
+        auth_contexts: soroban_sdk::Vec<soroban_sdk::auth::Context>,
+    ) -> Result<(), Self::Error> {
+        // `sha256(AUTH_ADDR_DOMAIN || account_id || signature_payload)`, as
+        // `perch_smart_account::bind_signature_payload` computes it.
+        let Some(soroban_sdk::address_payload::AddressPayload::ContractIdHash(id)) =
+            e.current_contract_address().to_payload()
+        else {
+            unreachable!("a contract's own address is a contract id")
+        };
+        let mut preimage =
+            soroban_sdk::Bytes::from_slice(&e, perch_smart_account::AUTH_ADDR_DOMAIN);
+        preimage.append(&id.into());
+        preimage.append(&signature_payload.to_bytes().into());
+        let bound = e.crypto().sha256(&preimage);
+        stellar_accounts::smart_account::do_check_auth(&e, &bound, &signatures, &auth_contexts)
+    }
+}
+
+/// [`deploy_smart_account`], with the account an [`OzAccount`].
+#[must_use]
+pub fn deploy_oz_account(
+    env: &soroban_sdk::Env,
+) -> (
+    SmartAccountClient<'_>,
+    soroban_sdk::Address,
+    soroban_sdk::Address,
+    SigningKey,
+) {
+    let verifier_addr = perch_testkit::verifiers::deploy_wasm(env, PERCH_WEBAUTHN_VERIFIER_WASM);
+    let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    let signer = Signer::External(
+        verifier_addr.clone(),
+        soroban_sdk::Bytes::from_slice(env, &signing_key.verifying_key().to_sec1_bytes()),
+    );
+    let account_addr = env.register(OzAccount, (soroban_sdk::vec![env, signer],));
+    (
+        SmartAccountClient::new(env, &account_addr),
+        account_addr,
+        verifier_addr,
+        signing_key,
+    )
 }
 
 /// Deploy the multisig policy contract and return its address.

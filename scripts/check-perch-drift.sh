@@ -40,6 +40,11 @@ cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
 offline=""
 [ "${1:-}" = "--offline" ] && offline=1
 network="${STELLAR_NETWORK:-testnet}"
+# The repository .gitmodules names: upstream Perch, or a fork whose branch
+# holds the pin. Documentation links and Cargo's Perch come from it.
+perch_repo="$(git config -f .gitmodules submodule.vendor/perch.url)"
+perch_repo="${perch_repo#https://github.com/}"
+perch_repo="${perch_repo%.git}"
 manifest="vendor/perch/deployments/$network.json"
 problems=()
 problem() { problems+=("$*"); }
@@ -56,9 +61,14 @@ case "${status:0:1}" in
     "-") echo "error: vendor/perch is not checked out (git submodule update --init)" >&2; exit 1 ;;
     *) problem "vendor/perch is at $(git -C vendor/perch rev-parse --short HEAD), not the commit the superproject records ($(git rev-parse --short :vendor/perch))" ;;
 esac
-if [ -n "$(git -C vendor/perch status --porcelain --untracked-files=no)" ]; then
-    problem "vendor/perch has local edits to tracked files: $(git -C vendor/perch status --porcelain --untracked-files=no | awk '{print $2}' | tr '\n' ' ')"
-fi
+# Edits are drift, except perch-overlay/'s files exactly as it holds them: the
+# rehearsal deployment this branch builds against (scripts/perch-overlay.sh).
+edited=()
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ -f "perch-overlay/$f" ] && cmp -s "perch-overlay/$f" "vendor/perch/$f" || edited+=("$f")
+done < <(git -C vendor/perch status --porcelain --untracked-files=no | awk '{print $2}')
+[ ${#edited[@]} -eq 0 ] || problem "vendor/perch has local edits to tracked files: ${edited[*]}"
 # The pin as staged, which `git submodule status` also compares against: the
 # checked-out commit's, or a re-pin's about to be committed.
 pinned="$(git rev-parse :vendor/perch)"
@@ -155,10 +165,10 @@ done
 #    tests against (scripts/pin-perch-links.sh rewrites them after a bump).
 while IFS= read -r hit; do
     problem "documentation links Perch at another commit (scripts/pin-perch-links.sh): $hit"
-done < <(git grep -n -E 'github\.com/stellar-registry/perch/(blob|tree)/([0-9a-f]{40}|PERCH_SHA)' -- '*.md' ':!vendor' ':!docs/reviews' | grep -v "/$pinned/" || true)
+done < <(git grep -n -E "github\.com/(stellar-registry/perch|${perch_repo//./\\.})/(blob|tree)/([0-9a-f]{40}|PERCH_SHA)" -- '*.md' ':!vendor' ':!docs/reviews' | grep -v "github\.com/$perch_repo/[a-z]*/$pinned/" || true)
 
-# 6. Cargo's Perch is the submodule's commit.
-perch_git=https://github.com/stellar-registry/perch
+# 6. Cargo's Perch is the submodule's commit, from its repository.
+perch_git="https://github.com/$perch_repo"
 deps="$(grep -E "^perch-[a-z0-9-]+ = .*git = \"$perch_git\"" Cargo.toml || true)"
 [ -n "$deps" ] || problem "Cargo.toml has no Perch git dependency on $perch_git"
 while IFS= read -r dep; do

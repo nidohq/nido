@@ -210,7 +210,8 @@ import Icon from "../../components/Icon.astro";
     fetchRegistryAddress,
     perch,
   } from "@nidohq/passkey-sdk";
-  import { findRuleForPubkey, fetchVerifierAddress } from "../../lib/policyChainFetch.js";
+  import { fetchVerifierAddress } from "../../lib/policyChainFetch.js";
+  import { accountScopes } from "../../lib/policy/appGrantLoad.js";
   import { startDelegation, readDelegationReturn, consumePendingDelegation, writePendingDelegation } from "../../lib/delegationHandover.js";
   import { Keypair, TransactionBuilder, Transaction, rpc, xdr } from "@stellar/stellar-sdk";
   import { defineNidoWalletButton, WALLET_CHANGED_EVENT } from "../../components/nido-wallet-button.js";
@@ -578,29 +579,33 @@ import Icon from "../../components/Icon.astro";
       if (material) {
         $setForm.textContent = "Finding session rule on chain...";
 
-        // Discover which context rule on this account contains our
-        // session-passkey signer. The wallet's add_context_rule assigned
-        // some non-zero rule id when it installed the delegation; we
-        // can't hard-code [0] (that's the default rule for the primary
-        // passkey) and can't easily plumb the id back from the wallet's
-        // redirect either. Querying every time is cheap and self-healing:
-        // if the install tx never landed, this returns null and we tear
-        // the stale localStorage entry down.
-        const ruleId = await findRuleForPubkey(contract, material.publicKey);
-        if (ruleId === null) {
-          forgetSessionKeyMaterial(contract, STATUS_CONTRACT);
-          throw new Error(
-            "Session passkey is not installed on chain (the delegation never " +
-              "actually committed). Please re-delegate this dApp."
-          );
-        }
-        const contextRuleIds = [ruleId];
-
         // Look up the verifier the smart account actually trusts —
         // not a hardcoded address. Once issue #26 (registry resolution)
         // is fully wired this and `fetchVerifierAddress` collapse into
-        // a single registry call.
+        // a single registry call. The session passkey is declared
+        // against it.
         const verifierAddress = await fetchVerifierAddress(contract);
+
+        // The rule our session passkey signs through: in this origin's
+        // scope on the account (the wallet derives the scope id from the
+        // origin), or in its admin document for a key let in before apps
+        // had scopes. Rule ids move when a scope or document is applied
+        // again, so it is looked up every time. None: the delegation never
+        // landed, the owner removed this app, or a recovery ended its
+        // scope; the stale key goes, and delegating again makes a new one.
+        const found = await perch.findAppRule(accountScopes(contract), {
+          origin: window.location.origin,
+          key: { verifier: verifierAddress, key: material.publicKey.toLowerCase() },
+          contract: STATUS_CONTRACT,
+        });
+        if (found === null) {
+          forgetSessionKeyMaterial(contract, STATUS_CONTRACT);
+          throw new Error(
+            "This dApp's session passkey has no permission on this account " +
+              "(never granted, removed, or ended by a recovery). Please re-delegate this dApp."
+          );
+        }
+        const contextRuleIds = [found.ruleId];
 
         $setForm.textContent = "Touch your authenticator to sign...";
 

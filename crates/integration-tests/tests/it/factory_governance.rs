@@ -204,7 +204,8 @@ impl Governed {
     fn verifier_of(&self, account: &Address) -> Address {
         let rule = nido_integration_tests::SmartAccountClient::new(&self.w.env, account)
             .get_context_rule(&0);
-        match rule.signers.get(0).unwrap() {
+        match nido_integration_tests::twin::<_, Signer>(&self.w.env, &rule.signers.get(0).unwrap())
+        {
             Signer::External(verifier, _) => verifier,
             Signer::Delegated(_) => panic!("not a passkey signer"),
         }
@@ -251,8 +252,12 @@ fn only_the_admin_can_upgrade_pin_set_the_manager_or_set_the_admin() {
 #[test]
 fn a_repin_reaches_only_accounts_created_after_it() {
     let g = governed();
-    let next = contract_at(&g.w.env, "webauthn-verifier-next");
-    g.w.env.register_at(&next, PERCH_WEBAUTHN_VERIFIER_WASM, ());
+    // Another verifier `perch/verifiers` deployed: the same code with an
+    // empty custom section `next` appended, so another hash and another
+    // content address there.
+    let mut wasm = PERCH_WEBAUTHN_VERIFIER_WASM.to_vec();
+    wasm.extend_from_slice(&[0x00, 0x05, 0x04, b'n', b'e', b'x', b't']);
+    let next = perch_testkit::verifiers::deploy_wasm(&g.w.env, &wasm);
     g.w.env.set_auths(&[]);
 
     let before = g.mint("before-repin");
@@ -406,7 +411,7 @@ fn the_manager_cannot_put_another_passkey_at_a_users_address() {
     let admin =
         nido_integration_tests::SmartAccountClient::new(&g.w.env, &account).get_context_rule(&0);
     assert_eq!(
-        admin.signers,
+        nido_integration_tests::twin::<_, soroban_sdk::Vec<Signer>>(&g.w.env, &admin.signers),
         soroban_sdk::vec![
             &g.w.env,
             Passkey::labelled("victim").signer(&g.w.env, &g.w.verifier)

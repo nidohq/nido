@@ -207,17 +207,6 @@ export async function fetchFactoryAddress(): Promise<string> {
   return perchDeployment()?.factory ?? fetchRegistryAddress('factory');
 }
 
-/** The id of the rule on `account` that holds an External signer with the
- *  given public key (see `resolveSignerRule`), or `null` when none does
- *  (e.g. the delegation never committed, or the rule was removed). */
-export async function findRuleForPubkey(
-  account: string,
-  pubkeyHex: string,
-): Promise<number | null> {
-  const resolved = await resolveSignerRule(account, pubkeyHex);
-  return resolved ? resolved.ruleId : null;
-}
-
 const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 
 /** The rule a passkey signs under, the verifier its External signer names,

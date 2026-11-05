@@ -1,6 +1,6 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
-import { buildPolicyDoc, canonicalJson, docHash, parsePolicyDocJson, type PolicyDoc } from '@nidohq/passkey-sdk';
+import { buildPolicyDoc, canonicalJson, docHash, parsePolicyDocJson, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
 import {
   accountViews,
   deployment,
@@ -13,10 +13,11 @@ import { createShimPasskey, installPasskeyShim } from '../../support/passkeyShim
 // The app-approval page (/security/delegate-doc/) in a browser, against a
 // build with a Perch deployment and a mocked chain
 // (tests/support/perchRpcMock.mts): several grants reviewed and approved
-// as one document update, a passkey as the app's key, the caps a request
-// declares (or doesn't), the decision in view without scrolling, the way
-// back to the app as a popup or a page, and the whole approval through
-// /sign/ to the one apply_doc it submits.
+// as one update of the app origin's scoped document, a passkey as the
+// app's key, the caps a request declares (or doesn't), the decision in view
+// without scrolling, the way back to the app as a popup or a page, and the
+// whole approval through /sign/ to the one apply_scope it submits (then the
+// apply_doc that moves the key's older rules out of the admin document).
 //
 // Needs `packages/frontend/dist-perch`:
 //   PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.json)" \
@@ -39,6 +40,13 @@ const adminDoc = (key: string): PolicyDoc =>
     permissions: [{ name: 'admin', on: 'self-admin', by: ['admin'] }],
   });
 const applied = adminDoc(ADMIN_KEY);
+/** The app origin's scope id, and its key as a scoped document names it. */
+const SCOPE = perch.appScopeCandidates(DAPP)[0]!;
+const APP = { verifier: deployment.webauthnVerifier, key: APP_KEY };
+const APP_ID = perch.appSignerId(DAPP, APP);
+/** The app's scope holding `rules` for its key. */
+const appScope = (rules: perch.AppRuleTemplate[]): PolicyDoc =>
+  perch.upsertAppRules(null, DAPP, APP, rules, deployment.network);
 
 /** Guess the Number's session: `guess` on the game (no cap: a cap allows
  *  transfers only) and the XLM transfer that moves the stake (2 XLM/day),
@@ -123,7 +131,15 @@ async function stashedDoc(page: Page) {
   const raw = await page.evaluate((key) => sessionStorage.getItem(key), `nido:signreq:${id}`);
   const req = JSON.parse(raw!) as {
     kind: string;
-    operation: { type: string; docJson: string; prevDocJson?: string; expectedRevision: string };
+    operation: {
+      type: string;
+      scope: number;
+      origin: string;
+      docJson: string;
+      prevDocJson?: string;
+      prevDocHash: string | null;
+      adminFollowUp?: { docJson: string; expectedRevision: string; moved: string[] };
+    };
     returnTarget: { type: string; origin: string; returnUrl: string; successQuery: string };
   };
   return { req, doc: parsePolicyDocJson(req.operation.docJson) };
@@ -164,7 +180,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     // The mock chain is at ledger 1,000.
     await expect(page.locator('#expiry-text')).toHaveText('At ledger 18,280 (≈ 17,280 ledgers from now).');
     await expect(page.locator('#scope-expiry')).toHaveText('At ledger 18,280 (≈ 24 hours)');
-    // Both rules land in the one previewed update, over the applied admin rule.
+    // Both rules land in the app's one previewed scope.
     await expect(page.locator('#doc-diff')).toContainText('guess-xlm');
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
     // The document card says the same of each rule, the cap in XLM.
@@ -199,7 +215,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     expect(style.family.toLowerCase()).toMatch(/mono/);
   });
 
-  test('approving hands /sign/ ONE document holding both rules', async ({ page }) => {
+  test("approving hands /sign/ the app's ONE scoped document holding both rules", async ({ page }) => {
     await mockChain(page);
     await page.goto(grantUrl());
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
@@ -207,20 +223,20 @@ test.describe('app approval page: several grants, one approval @fast', () => {
 
     const { req, doc } = await stashedDoc(page);
     expect(req.kind).toBe('session-grant');
-    expect(req.operation.type).toBe('apply-policy-doc');
-    expect(req.operation.expectedRevision).toBe('1');
+    expect(req.operation).toMatchObject({ type: 'apply-scope', scope: SCOPE, origin: DAPP, prevDocHash: null });
+    // A new app: nothing moves out of the admin document.
+    expect(req.operation.adminFollowUp).toBeUndefined();
     expect(req.returnTarget).toEqual({
       type: 'dapp',
       origin: DAPP,
       returnUrl: `${DAPP}/play`,
-      successQuery: '?delegation=ok',
+      successQuery: `?delegation=ok&scope=${SCOPE}`,
     });
-    expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'guess', 'guess-xlm']);
+    expect(doc.rules.map((r) => r.name)).toEqual(['guess', 'guess-xlm']);
     // One declaration for the app's passkey — its bare key, against the
-    // account's verifier — shared by both rules.
-    const session = doc.signers.filter((s) => s.id !== 'admin');
-    expect(session).toEqual([{ id: 'session', verifier: deployment.webauthnVerifier, key: APP_KEY }]);
-    const [, guess, stake] = doc.rules;
+    // account's verifier, named by the app's origin — shared by both rules.
+    expect(doc.signers).toEqual([{ id: APP_ID, verifier: deployment.webauthnVerifier, key: APP_KEY }]);
+    const [guess, stake] = doc.rules;
     expect(guess!.scope).toEqual({ type: 'contract', address: GAME });
     expect(guess!.functions).toEqual(['guess']);
     expect(guess!.cap).toBeUndefined();
@@ -234,22 +250,14 @@ test.describe('app approval page: several grants, one approval @fast', () => {
   });
 
   test('a grant already applied as asked reads "Already in place", counted as /sign/ counts', async ({ page }) => {
-    // The account already holds `guess` exactly as this request builds it.
-    const withGuess = buildPolicyDoc({
-      network: deployment.network,
-      signers: [
-        { id: 'admin', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: ADMIN_KEY },
-        { id: 'session', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: APP_KEY },
-      ],
-      permissions: [
-        { name: 'admin', on: 'self-admin', by: ['admin'] },
-        { name: 'guess', on: { contract: GAME }, by: ['session'], functions: ['guess'], until: 1_000 + 17_280 },
-      ],
-    });
+    // The app's scope already holds `guess` exactly as this request builds it.
+    const withGuess = appScope([
+      { name: 'guess', scope: { type: 'contract', address: GAME }, functions: ['guess'], 'not-after-ledger': 1_000 + 17_280 },
+    ]);
     await mockPerchChain(page, {
       ...deploymentViews(),
-      ...accountViews(ACCOUNT, { canonical: canonicalJson(withGuess) }),
-      [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(withGuess), 'hex'),
+      ...accountViews(ACCOUNT, { canonical: canonicalJson(applied), scopes: { [SCOPE]: withGuess } }),
+      [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(applied), 'hex'),
     });
     await page.goto(grantUrl());
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
@@ -270,23 +278,16 @@ test.describe('app approval page: several grants, one approval @fast', () => {
   });
 
   test('changing grants are numbered in document order, as /sign/ numbers them', async ({ page }) => {
-    // An earlier request left `guess-xlm` (another expiry), so the built
-    // document updates it in place and appends `guess`: [admin, guess-xlm, guess].
-    const withXlm = buildPolicyDoc({
-      network: deployment.network,
-      signers: [
-        { id: 'admin', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: ADMIN_KEY },
-        { id: 'session', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: APP_KEY },
-      ],
-      permissions: [
-        { name: 'admin', on: 'self-admin', by: ['admin'] },
-        { name: 'guess-xlm', on: { contract: XLM }, by: ['session'], functions: ['transfer'], until: 500 },
-      ],
-    });
+    // An earlier request left `guess-xlm` (another expiry) in the app's
+    // scope, so the built document updates it in place and appends `guess`:
+    // [guess-xlm, guess].
+    const withXlm = appScope([
+      { name: 'guess-xlm', scope: { type: 'contract', address: XLM }, functions: ['transfer'], 'not-after-ledger': 500 },
+    ]);
     await mockPerchChain(page, {
       ...deploymentViews(),
-      ...accountViews(ACCOUNT, { canonical: canonicalJson(withXlm) }),
-      [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(withXlm), 'hex'),
+      ...accountViews(ACCOUNT, { canonical: canonicalJson(applied), scopes: { [SCOPE]: withXlm } }),
+      [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(applied), 'hex'),
     });
     await page.goto(grantUrl());
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
@@ -303,8 +304,9 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     await expect(cards.nth(1)).toContainText('rule 2 of 2');
   });
 
-  test('on a first apply, only the grants are numbered, not the admin rule the document must carry', async ({ page }) => {
-    // No applied document: the page anchors the admin rule on the live passkey.
+  test('with no admin document applied, the scope holds the grants alone', async ({ page }) => {
+    // No applied document: the app's scope needs none (the constructor's
+    // admin rule authorizes apply_scope), and carries no admin rule.
     await mockPerchChain(page, {
       ...deploymentViews(),
       ...accountViews(ACCOUNT, {
@@ -452,7 +454,7 @@ test.describe('app approval page: back to the app @fast', () => {
     await expect(popup.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
     await popup.locator('#approve').click();
     const { doc } = await stashedDoc(popup);
-    expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'guess', 'guess-xlm']);
+    expect(doc.rules.map((r) => r.name)).toEqual(['guess', 'guess-xlm']);
     expect(await popup.evaluate(() => window.opener !== null)).toBe(true);
 
     // /sign/ returns to the opener the same way (its cancel here: the
@@ -475,18 +477,23 @@ test.describe('app approval page: back to the app @fast', () => {
 
 // The whole approval, as a player would make it: the two grants reviewed on
 // the approval page, then each rule on /sign/, one passkey confirmation (the
-// test authenticator), and one apply_doc submitted with both rules.
+// test authenticator), and one apply_scope submitted with both rules; for a
+// key that still holds rules in the admin document from before apps had
+// scopes, a second confirmation and the apply_doc that moves them out.
 test.describe('app approval page through /sign/ @fast', () => {
-  test('two grants are confirmed once and applied as one document', async ({ context, page }) => {
+  /** This device's passkey on the account, whose applied document is
+   *  `doc(passkey)`; the chain records what is submitted. */
+  async function onDevice(context: BrowserContext, page: Page, doc: (admin: string) => PolicyDoc) {
     await installPasskeyShim(context);
-    // This device's passkey, which the account's admin rule names.
     await page.route(`${WALLET}/blank`, (route) => route.fulfill({ contentType: 'text/html', body: '' }));
     await page.goto(`${WALLET}/blank`);
     const { publicKeyHex, credentialIdB64u } = await createShimPasskey(page);
     await page.unroute(`${WALLET}/blank`);
-    const owner = adminDoc(publicKeyHex);
+    const owner = doc(publicKeyHex);
     const submitter = Keypair.random();
     const submitted: Invocation[] = [];
+    const hashOf = (json: unknown) =>
+      Buffer.from(docHash(parsePolicyDocJson(Buffer.from(json as Uint8Array).toString('utf8'))), 'hex');
     await mockPerchChain(
       page,
       {
@@ -507,8 +514,8 @@ test.describe('app approval page through /sign/ @fast', () => {
           ],
         }),
         [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(owner), 'hex'),
-        [`${ACCOUNT}:apply_doc`]: ([json]: unknown[]) =>
-          Buffer.from(docHash(parsePolicyDocJson(Buffer.from(json as Uint8Array).toString('utf8'))), 'hex'),
+        [`${ACCOUNT}:apply_doc`]: ([json]: unknown[]) => hashOf(json),
+        [`${ACCOUNT}:apply_scope`]: ([, json]: unknown[]) => hashOf(json),
       },
       { selfAuthorizing: [ACCOUNT], classicAccounts: [submitter.publicKey()], submitted },
     );
@@ -524,7 +531,16 @@ test.describe('app approval page through /sign/ @fast', () => {
       },
       [ACCOUNT, credentialIdB64u, publicKeyHex, submitter.secret()],
     );
+    return { owner, submitted };
+  }
 
+  const scopeOf = (call: Invocation) => ({
+    scope: call.args[0],
+    doc: parsePolicyDocJson(Buffer.from(call.args[1] as Uint8Array).toString('utf8')),
+  });
+
+  test('two grants are confirmed once and applied as the app’s one scope', async ({ context, page }) => {
+    const { submitted } = await onDevice(context, page, adminDoc);
     await page.goto(grantUrl());
     await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
     await page.locator('#approve').click();
@@ -539,6 +555,7 @@ test.describe('app approval page through /sign/ @fast', () => {
     await expect(page.locator('#lead')).toHaveText(
       `${DAPP} wants this account to sign a session key grant for 2 rules.`,
     );
+    await expect(page.locator('#tx-detail')).toContainText(`scope ${SCOPE}`);
     await expect(cards.nth(1)).toContainText('Can pay');
     await expect(cards.nth(1)).toContainText('the contract “guess” calls');
     await expect(cards.nth(1)).toContainText('24 hours');
@@ -553,17 +570,57 @@ test.describe('app approval page through /sign/ @fast', () => {
     await expect(page.locator('#approve')).toBeEnabled();
     await page.locator('#approve').click();
 
-    await page.waitForURL(`${DAPP}/play?delegation=ok`, { timeout: 20_000 });
-    expect(submitted.map((c) => [c.contract, c.fn])).toEqual([[ACCOUNT, 'apply_doc']]);
-    const doc = parsePolicyDocJson(Buffer.from(submitted[0]!.args[0] as Uint8Array).toString('utf8'));
-    expect(doc.rules.map((r) => r.name)).toEqual(['admin', 'guess', 'guess-xlm']);
-    expect(doc.rules.map((r) => r.scope)).toEqual([
-      { type: 'self-admin' },
-      { type: 'contract', address: GAME },
-      { type: 'contract', address: XLM },
+    await page.waitForURL(`${DAPP}/play?delegation=ok&scope=${SCOPE}`, { timeout: 20_000 });
+    expect(submitted.map((c) => [c.contract, c.fn])).toEqual([[ACCOUNT, 'apply_scope']]);
+    const { scope, doc } = scopeOf(submitted[0]!);
+    expect(scope).toBe(SCOPE);
+    expect(doc.rules.map((r) => [r.name, r.scope])).toEqual([
+      ['guess', { type: 'contract', address: GAME }],
+      ['guess-xlm', { type: 'contract', address: XLM }],
     ]);
-    expect(doc.signers.filter((sg) => sg.id !== 'admin')).toEqual([
-      { id: 'session', verifier: deployment.webauthnVerifier, key: APP_KEY },
+    expect(doc.signers).toEqual([{ id: APP_ID, verifier: deployment.webauthnVerifier, key: APP_KEY }]);
+  });
+
+  test('a key’s older rule in the admin document moves into its scope: the scope, then the admin document', async ({
+    context,
+    page,
+  }) => {
+    // The app's key holds `stake` in the admin document from before apps had scopes.
+    const withOlder = (admin: string) =>
+      buildPolicyDoc({
+        network: deployment.network,
+        signers: [
+          { id: 'admin', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: admin },
+          { id: 'session', kind: 'passkey', verifier: deployment.webauthnVerifier, publicKey: APP_KEY },
+        ],
+        permissions: [
+          { name: 'admin', on: 'self-admin', by: ['admin'] },
+          { name: 'stake', on: { contract: XLM }, by: ['session'], functions: ['approve'], until: 5_000 },
+        ],
+      });
+    const { submitted } = await onDevice(context, page, withOlder);
+    await page.goto(grantUrl());
+    await expect(page.locator('#doc-diff')).toContainText('moves them here');
+    await page.locator('#approve').click();
+
+    await page.waitForURL(/\/sign\/\?req=/);
+    await expect(page.locator('[data-grant-rule]')).toHaveCount(3);
+    await expect(page.locator('#tx-detail')).toContainText('Then a second confirmation');
+    await page.locator('#approve').click();
+
+    await page.waitForURL(`${DAPP}/play?delegation=ok&scope=${SCOPE}`, { timeout: 20_000 });
+    // The scope first, so the app keeps working; then the admin document without the rule.
+    expect(submitted.map((c) => [c.contract, c.fn])).toEqual([
+      [ACCOUNT, 'apply_scope'],
+      [ACCOUNT, 'apply_doc'],
     ]);
+    const { doc } = scopeOf(submitted[0]!);
+    expect(doc.rules.map((r) => r.name)).toEqual(['stake', 'guess', 'guess-xlm']);
+    expect(doc.rules[0]!.functions).toEqual(['approve']);
+    const admin = parsePolicyDocJson(Buffer.from(submitted[1]!.args[0] as Uint8Array).toString('utf8'));
+    expect(admin.rules.map((r) => r.name)).toEqual(['admin']);
+    expect(admin.signers.map((sg) => sg.id)).toEqual(['admin']);
+    // The admin apply names the revision it was read at.
+    expect(submitted[1]!.args[2]).toBe(1n);
   });
 });

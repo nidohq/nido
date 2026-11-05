@@ -142,9 +142,9 @@ export async function signSessionCallInPage<T extends InjectableTx>(opts: {
 	const authHash = buildAuthHash(authEntry, networkPassphrase, lastLedger, opts.expirationOffset)
 
 	note("Finding session rule on chain…")
-	// The wallet's add_context_rule assigned some non-zero rule id; discover it
-	// so the AuthPayload + the chain-recomputed digest reference the same rule.
-	const ruleId = await findRuleForPubkey(account, material.publicKey)
+	// The wallet's apply_scope gave our rule an id; discover it so the
+	// AuthPayload + the chain-recomputed digest reference the same rule.
+	const ruleId = await findRuleForPubkey(account, material.publicKey, targetContract)
 	if (ruleId === null) {
 		forgetSessionKeyMaterial(account, targetContract)
 		throw new Error(

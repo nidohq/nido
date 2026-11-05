@@ -40,6 +40,42 @@ export type OperationDescriptor =
       /** Human-readable expiry label (e.g. "24 hours"), as for add-context-rule. */
       expiryLabel?: string;
     }
+  | {
+      /** Apply an app's scoped document (Perch `apply_scope`): the app
+       *  approval, or the removal of one of its keys. `docJson` is the whole
+       *  scoped document; `prevDocJson` the scope's live document it was
+       *  built from (absent for a new or wiped scope), shown as the diff. */
+      type: "apply-scope";
+      scope: number;
+      /** The app origin the scope belongs to, canonical. */
+      origin: string;
+      docJson: string;
+      prevDocJson?: string;
+      /** The scope record's `doc_hash` when `docJson` was built (null: no
+       *  record). `apply_scope` names no revision, so /sign/ reads it again
+       *  right before signing and refuses if it moved. REQUIRED. */
+      prevDocHash: string | null;
+      expiryLabel?: string;
+      /** The signer id this update removes (the policy page's Remove key);
+       *  absent for an approval. */
+      removesKey?: string;
+      /** The second step of an approval that moves the key's older rules out
+       *  of the admin document: that document without them, applied once
+       *  the scope has landed, at the revision it was read at. */
+      adminFollowUp?: { docJson: string; prevDocJson: string; expectedRevision: string; moved: string[] };
+    }
+  | {
+      /** Remove an app: Perch `remove_scope`, every rule of its scope. */
+      type: "remove-scope";
+      scope: number;
+      origin: string | null;
+    }
+  | {
+      /** Clean up an app's scope a completed recovery wiped: `gc_scope`. */
+      type: "gc-scope";
+      scope: number;
+      origin: string | null;
+    }
   | { type: "raw-xdr"; xdr: string };
 
 export type SignKind =
@@ -102,6 +138,16 @@ export function loadSignRequest(id: string, store: Storage = sessionStorage): Si
     if (
       op && op.type === "apply-policy-doc" &&
       (typeof op.expectedRevision !== "string" || op.expectedRevision.length === 0)
+    ) {
+      return null;
+    }
+    // Likewise an apply-scope request must name the scope record it was
+    // built from, and its follow-up the admin revision.
+    if (
+      op && op.type === "apply-scope" &&
+      ((op.prevDocHash !== null && typeof op.prevDocHash !== "string") ||
+        (op.adminFollowUp !== undefined &&
+          (typeof op.adminFollowUp.expectedRevision !== "string" || op.adminFollowUp.expectedRevision.length === 0)))
     ) {
       return null;
     }

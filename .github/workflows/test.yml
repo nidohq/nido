@@ -88,8 +88,10 @@ jobs:
       # controller, pool, and adapter wasm under enforcing authorization, replaying the committed
       # real UltraHonk proofs (crates/integration-tests/fixtures/zk/), and the
       # `costs` suite's 75%-of-network-limit budget gate.
+      # With perch-overlay/ (a rehearsal deployment), the Perch crates build
+      # from the overlaid submodule (scripts/perch-overlay.sh).
       - name: cargo test --workspace
-        run: cargo test --workspace
+        run: cargo test --workspace $(scripts/perch-overlay-config.sh)
 
       # Re-prove every committed fixture from source with Perch's pinned,
       # checksum-verified nargo/bb (vendor/perch/scripts/zk-toolchain.sh); each
@@ -114,7 +116,7 @@ jobs:
       - name: Factory check against the record and the manifest
         run: python3 scripts/test_check_factory.py -v
       - name: shellcheck
-        run: shellcheck -s bash -x -S warning scripts/stellar-rpc.sh scripts/perch-infra.sh scripts/deploy-factory.sh scripts/check-factory.sh
+        run: shellcheck -s bash -x -S warning scripts/stellar-rpc.sh scripts/perch-infra.sh scripts/perch-overlay.sh scripts/perch-overlay-config.sh scripts/deploy-factory.sh scripts/check-factory.sh
 
   unit:
     name: Unit (TestAuthenticator)

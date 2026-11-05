@@ -44,10 +44,10 @@ fn a_passkey_app_grant_compiles() {
 fn a_credential_id_after_the_app_key_is_refused() {
     let w = world();
     let mut doc: Value = serde_json::from_str(DOC).unwrap();
+    // The app's passkey: the scoped document's one signer with a `key`.
     for signer in doc["signers"].as_array_mut().unwrap() {
-        if signer["id"] == "session" {
-            let key = format!("{}abcdef123456", signer["key"].as_str().unwrap());
-            signer["key"] = Value::String(key);
+        if let Some(key) = signer["key"].as_str() {
+            signer["key"] = Value::String(format!("{key}abcdef123456"));
         }
     }
     let json = serde_json::to_string(&doc).unwrap();

@@ -134,6 +134,15 @@ describe("groupTxRows", () => {
     expect(rows[0]).toMatchObject({ kind: "rule", title: "Updated policies", subtitle: "2 rules added, 1 rule edited, 1 signer added" });
   });
 
+  it("names an app's scope changes and the recovery that ends them", () => {
+    const one = (topics: unknown[], data: unknown) => groupTxRows(tx([{ contractId: SELF, topics, data }]), SELF)[0];
+    expect(
+      one(["scope_applied", 7], { scope: 7, gen: 0n, rules_added: 2, rules_removed: 0, rules_edited: 0, signers_added: 1, signers_removed: 0, policies_added: 0, policies_removed: 0 }),
+    ).toMatchObject({ kind: "rule", title: "Updated an app's permissions", subtitle: "2 rules added, 1 signer added" });
+    expect(one(["scope_removed", 7], { scope: 7, gen: 0n, rules_removed: 2 })).toMatchObject({ kind: "rule", title: "Removed an app" });
+    expect(one(["scopes_wiped"], { gen: 1n })).toMatchObject({ kind: "rule", title: "Recovery ended every app's permissions" });
+  });
+
   it("falls back to a generic row for unrecognized events from trustworthy sources only", () => {
     // own-contract event with an unknown name -> generic row
     const generic = groupTxRows(tx([{ contractId: SELF, topics: ["mystery_event"], data: {} }]), SELF);

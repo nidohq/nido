@@ -127,7 +127,10 @@ fn new_account_reads() {
     let admin =
         PerchAccountClient::new(&w.env, &handed).get_context_rule(&w.rule_id(&handed, "admin"));
     assert_eq!(
-        admin.signers,
+        nido_integration_tests::twin::<_, soroban_sdk::Vec<stellar_accounts::smart_account::Signer>>(
+            &w.env,
+            &admin.signers
+        ),
         soroban_sdk::vec![&w.env, owner.signer(&w.env, &w.verifier)],
         "the admin key is the owner's"
     );

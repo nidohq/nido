@@ -81,6 +81,26 @@ describe("stash/load SignRequest", () => {
     }));
     expect(loadSignRequest("z", store)).toBeNull();
   });
+
+  // Likewise an apply-scope request must name the scope record it was built
+  // from (null for none), and its follow-up the admin revision.
+  it("loads an apply-scope request only with the scope record it was built from", () => {
+    const op = { type: "apply-scope", scope: 7, origin: "https://game.example", docJson: "{}" };
+    const stash = (operation: object) => {
+      store.setItem("nido:signreq:s", JSON.stringify({
+        v: 1, kind: "session-grant", account: C1, operation,
+        title: "Grant", submitMode: "relayer",
+        returnTarget: { type: "route", url: "https://cabc.nido.fyi/account/" },
+      }));
+      return loadSignRequest("s", store);
+    };
+    expect(stash({ ...op, prevDocHash: null })).not.toBeNull();
+    expect(stash({ ...op, prevDocHash: "ab".repeat(32) })).not.toBeNull();
+    expect(stash(op)).toBeNull();
+    const follow = { docJson: "{}", prevDocJson: "{}", moved: ["guess"] };
+    expect(stash({ ...op, prevDocHash: null, adminFollowUp: { ...follow, expectedRevision: "3" } })).not.toBeNull();
+    expect(stash({ ...op, prevDocHash: null, adminFollowUp: follow })).toBeNull();
+  });
 });
 
 describe("safeRouteUrl (F1 XSS / open-redirect guard)", () => {

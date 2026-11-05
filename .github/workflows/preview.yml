@@ -47,13 +47,18 @@ jobs:
 
       - name: Build frontend
         env:
-          # Gas abstraction via the self-hosted OZ Relayer (#72). SIM_SOURCE is
-          # the relayer's public fund address (simulation-only tx source).
-          PUBLIC_RELAYER_URL: https://nido.fly.dev
-          PUBLIC_RELAYER_SIM_SOURCE: GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3
-          # Overrides the Perch deployment (JSON, or `none`); unset, the
-          # wallet uses perch.TESTNET, Perch's testnet release.
-          PUBLIC_PERCH_DEPLOYMENT: ${{ vars.PUBLIC_PERCH_DEPLOYMENT }}
+          # No relayer: this preview runs a deployment the shared relayer
+          # does not serve. A friendbot-funded G key in the browser is the
+          # source and fee payer of every transaction, and friendbot funds
+          # new accounts (lib/localSubmitterGate.ts; testnet builds only).
+          PUBLIC_NIDO_LOCAL_SUBMITTER: "1"
+          # Overrides the Perch deployment (JSON, or `none`). This branch
+          # points its preview at the separate M7 testnet deployment (the
+          # bitswell fork's Perch at a410123, in its own registries) and the
+          # Nido factory built from this branch for its account, 0bdbdd14.
+          # Its WebAuthn verifier is the perch/verifiers instance, which
+          # admin documents name as webauthnVerifierName.
+          PUBLIC_PERCH_DEPLOYMENT: '{"network":"Test SDF Network ; September 2015","factory":"CC32RVTK6YS4ZPJ6JDHLO5LMFILW2BPS3SAYX5TABN4GJJY5QXNMCMU4","webauthnVerifier":"CA4Q6TWJLLMLHRDQ4ADAVNWKDDDZZXACZPXD4OHPT7VPPTU7HBTZVJQ3","webauthnVerifierName":"perch-webauthn-verifier@0.1.2","verifierRegistry":"CDQG7KTWPERJ37HRQQCTMPTTQ3EO7OUUCRZBD5W7TMWS6ETPE7GZK4WO","statelessRegistry":"CBFU6FT66OG4CCQ2HTLG7ZS33TUSPLN3WCVQTJAVEA5S5UVDRQ5HPHSP","docCompiler":"CBGZOAOLGLIHH7IXWKCWU2E2B2L2UNHJE32NQTJMNOZ5AEKYXSN5JKFM","interpreter":"CCZT3ZDFTTBKGM7ZATHKH4R3TSCFNAFC57XHVPBZSG36FJGD7DUWIA4V","spendingLimit":"CAJKKO7JD4DJHROI4JXGVQW65C3MQOV52L3KYBENGNGPVSRE7MY23J3N","recoveryController":"CCBNXQZYY5ZU7L4KSLZ2Q5BLIBVIPAYCG5MZXLHWZBNYKQGEZIHZKI5V","zkPool":"CCI6XU4PHSWBWO6J6KRVQKEEWUDJWK3QQCBKGA6FXYHVUJ6JLOX3RAWP","zkAdapter":"CAED4MOC2XCO2NGVOBXJ3T3TIYDZQ776VQDXVP4V6SUY27UTFKN4FAX3","circuitId":"9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a","treeDepth":32,"accountWasmHash":"0bdbdd142c953976056196cc837f84667e0fb64e731b007cc45d8b852c4ce844"}'
           # infra/invite's base URL + shared x-api-key (lib/demo/config.ts).
           # Empty disables the /demo/start invite check, it doesn't break the
           # build — but without these, every PR preview hard-fails that check

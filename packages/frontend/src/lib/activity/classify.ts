@@ -116,6 +116,11 @@ function adminMeta(name: string): { kind: ActivityKind; title: string } | null {
     // A Perch account's mutations are quiet; one DocApplied records each
     // apply_doc (with counts, see docAppliedSubtitle).
     case "doc_applied": return { kind: "rule", title: "Updated policies" };
+    // An app origin's own permissions (apply_scope / remove_scope), and the
+    // completed recovery that ends every app's at once.
+    case "scope_applied": return { kind: "rule", title: "Updated an app's permissions" };
+    case "scope_removed": return { kind: "rule", title: "Removed an app" };
+    case "scopes_wiped": return { kind: "rule", title: "Recovery ended every app's permissions" };
     case "credential_revoked": return { kind: "signer", title: "Revoked a replaced passkey" };
     case "upgrade_scheduled": return { kind: "other", title: "Scheduled an account upgrade" };
     case "upgrade_executed": return { kind: "other", title: "Upgraded the account" };
@@ -128,8 +133,8 @@ function adminMeta(name: string): { kind: ActivityKind; title: string } | null {
   }
 }
 
-/** "2 rules added, 1 signer removed" from a DocApplied event's counts, or
- *  undefined when there are none to show. */
+/** "2 rules added, 1 signer removed" from a DocApplied or ScopeApplied
+ *  event's counts, or undefined when there are none to show. */
 function docAppliedSubtitle(data: unknown): string | undefined {
   if (data === null || typeof data !== "object") return undefined;
   const d = data as Record<string, unknown>;
@@ -175,7 +180,8 @@ export function groupTxRows(decoded: DecodedTx, self: string, knownSacIds?: Set<
   for (const e of events) {
     const meta = adminMeta(eventName(e));
     if (meta && (!best || PRIORITY[meta.kind] > PRIORITY[best.kind])) {
-      const subtitle = eventName(e) === "doc_applied" ? docAppliedSubtitle(e.data) : undefined;
+      const name = eventName(e);
+      const subtitle = name === "doc_applied" || name === "scope_applied" ? docAppliedSubtitle(e.data) : undefined;
       best = { ...meta, ...(subtitle ? { subtitle } : {}) };
     }
   }

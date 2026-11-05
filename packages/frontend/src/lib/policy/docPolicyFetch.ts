@@ -21,6 +21,7 @@ import { fetchDefaultRuleAuthInfo, readAccountConfiguration, simulateView } from
 import { adminBaseline } from './docDraft.js';
 import { Client as InterpreterClient } from '@stellar-registry/perch-interpreter';
 import { RPC_URL, NETWORK_PASSPHRASE } from '../network.js';
+import { perchDeployment } from '../recovery/deployment.js';
 
 /** How far back the `DocApplied` event fallback scans. Testnet RPC keeps
  *  roughly a day of events; ask for a bit less so the request never starts
@@ -99,8 +100,17 @@ export async function fetchAppliedDocument(account: string): Promise<{ revision:
  * the views don't answer.
  */
 export async function fetchDocLimits(account: string): Promise<perch.FlatDocLimits> {
-  const reader = await perch.openAccountReader({ account, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE });
-  return (await reader.limits()).value;
+  const args = { account, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE };
+  // Usually the account pins this build's compiler: read its limits beside
+  // the configuration rather than after it, and use them only if the
+  // configuration names that compiler.
+  const expected = perchDeployment()?.docCompiler;
+  const early = expected
+    ? perch.accountSnapshotReader({ ...args, docCompiler: expected }).limits().catch(() => null)
+    : null;
+  const { infra } = await perch.readConfiguration(args);
+  const read = infra.docCompiler === expected ? await early : null;
+  return (read ?? (await perch.accountSnapshotReader({ ...args, docCompiler: infra.docCompiler }).limits())).value;
 }
 
 /**

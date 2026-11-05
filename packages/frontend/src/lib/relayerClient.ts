@@ -3,7 +3,7 @@
  * types/error/extractor unchanged and wraps the network calls with this
  * app's `PUBLIC_RELAYER_URL` default (the SDK itself has no env coupling).
  */
-import { RELAYER_URL, RELAYER_EXPIRATION_OFFSET } from "./network";
+import { RELAYER_URL, RELAYER_EXPIRATION_OFFSET, LOCAL_SUBMITTER } from "./network";
 import type { RelayerStatus } from "@nidohq/passkey-sdk";
 export {
   RelayerError,
@@ -19,7 +19,7 @@ import {
 } from "@nidohq/passkey-sdk";
 
 export function relayerEnabled(): boolean {
-  return RELAYER_URL.length > 0;
+  return RELAYER_URL.length > 0 && !LOCAL_SUBMITTER;
 }
 
 /** The ledger offset a signing ceremony must use for THIS submit mode — the

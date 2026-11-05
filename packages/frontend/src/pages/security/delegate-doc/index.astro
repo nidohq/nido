@@ -6,12 +6,16 @@
 // spend-capped. Several grants are one request: one review, one document
 // update, one passkey confirmation.
 //
-// Policy writes are DOC-ONLY: the wallet reads the account's currently
-// applied document, upserts the requested session rules into it (apply_doc
-// replaces the whole document, so the update carries existing rules
-// forward), previews the merged document's canonical JSON + doc_hash AND
-// the exact diff against the applied one — rules added / removed / modified
-// — then hands off to /sign/ with an apply-policy-doc descriptor.
+// Each app origin's permissions are its own scoped document (Perch
+// `apply_scope`), kept apart from the account's admin document: the wallet
+// finds the origin's scope (lib/policy/appScopes), upserts the requested
+// rules into it (a second key from the same origin joins its rules),
+// previews the scope's canonical JSON + doc_hash AND the exact diff against
+// what the scope holds now, then hands off to /sign/ with an apply-scope
+// descriptor. Rules this key still holds in the admin document from before
+// apps had scopes move into the scope with the same approval (a second
+// passkey confirmation at /sign/). The answer names the scope:
+// `?delegation=ok&scope=<id>`.
 //
 // The origin / return-URL validation (anti-redirect-abuse) mirrors
 // /security/delegate/ verbatim; the query-param contract is parsed by the
@@ -82,10 +86,10 @@ import Icon from '../../../components/Icon.astro';
 
       <span class="section-label dd-label">What changes</span>
       <div class="card" style="padding:16px;">
-        <div id="doc-diff" class="mut" style="font-size:12.5px;">Reading the applied document…</div>
+        <div id="doc-diff" class="mut" style="font-size:12.5px;">Reading this app's current permissions…</div>
       </div>
 
-      <span class="section-label dd-label">The document (after this update)</span>
+      <span class="section-label dd-label">This app's permissions (after this update)</span>
       <div class="card" style="padding:16px;display:grid;gap:8px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span class="mut" style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">doc_hash</span>
@@ -93,9 +97,10 @@ import Icon from '../../../components/Icon.astro';
         </div>
         <div id="doc-preview" class="mut" style="font-size:12.5px;">—</div>
         <p class="mut" style="font-size:12px;margin:4px 0 0;line-height:1.5;">
-          What you approve becomes part of your account's policy
-          <em>document</em>, so <a class="link" href="/account/policy/">your Policy page</a>
-          can always show exactly this, verified against a hash stored on chain.
+          What you approve is this app's own permissions document, kept apart
+          from your account's own rules, so <a class="link" href="/account/policy/">your Policy page</a>
+          can always show exactly this, verified against a hash stored on chain,
+          and removing the app removes all of it.
         </p>
       </div>
     </div>
@@ -118,14 +123,12 @@ import Icon from '../../../components/Icon.astro';
 </NidoLayout>
 
 <script>
-  import { contractIdFromHostname, canonicalJson, docCapProblem, docHash, parsePolicyDocJson } from '@nidohq/passkey-sdk';
-  import type { PolicyDoc } from '@nidohq/passkey-sdk';
+  import { contractIdFromHostname, canonicalJson, docCapProblem, docHash, perch } from '@nidohq/passkey-sdk';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
-  import { NETWORK_PASSPHRASE, latestLedgerSequence } from '../../../lib/network.js';
+  import { latestLedgerSequence } from '../../../lib/network.js';
   import {
     DOC_DURATIONS,
     DOC_DURATION_LABEL,
-    buildSessionGrantOperation,
     describeSessionScope,
     limitNoneHonoured,
     parseDocDelegateParams,
@@ -135,18 +138,18 @@ import Icon from '../../../components/Icon.astro';
   import { NO_CAP_NO_TOKEN_FUNCTIONS } from '../../../lib/policy/tokenFunctions.js';
   import { canTransfer } from '../../../lib/policy/reviewText.js';
   import {
-    adminBaseline,
-    upsertSessionRules,
+    appKeyOfSigner,
     validateSessionDocDraft,
     type DocLimits,
     type SessionDocDraft,
   } from '../../../lib/policy/docDraft.js';
+  import { emptyScope, planAppGrant, type AppGrantContext } from '../../../lib/policy/appScopes.js';
+  import { appKeyUsable, loadAppGrantContext } from '../../../lib/policy/appGrantLoad.js';
   import { diffPolicyDocs } from '../../../lib/policy/docDiff.js';
   import { summarizeDoc } from '../../../lib/policy/docView.js';
   import { renderDocDiffHtml, renderDocPreviewHtml } from '../../../components/PolicyInspector.js';
-  import { fetchAppliedDocument, fetchDocLimits, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
-  import { fetchDefaultRuleAuthInfo, fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
-  import { bytesToHex } from '../../../lib/policy/policyView.js';
+  import { fetchDocLimits, fetchDocSurface } from '../../../lib/policy/docPolicyFetch.js';
+  import { fetchVerifierAddress } from '../../../lib/policyChainFetch.js';
   import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../../../lib/spendingLimitParams.js';
   import { stroopsToXlm } from '../../../lib/money.js';
   import { stashSignRequest, httpOrigin, type SignRequest } from '../../../lib/signing/signRequest';
@@ -359,22 +362,19 @@ import Icon from '../../../components/Icon.astro';
         )
       : Promise.resolve();
 
-  // The merge baseline and the diff's "before" side: the applied document,
-  // or — on a first apply — the synthesized owner-admin baseline (apply_doc
-  // replaces EVERY rule and refuses docs without a policy-free self-admin
-  // rule, so the account's own passkey must ride along from the start).
-  // Doc-only writes: an account without the apply_doc surface cannot take
-  // this grant at all, so the flow refuses up front rather than at /sign/.
-  let baselineDoc: PolicyDoc | null = null;
-  /** The configuration revision the baseline was read at: the request's
-   *  `expectedRevision`. */
-  let baselineRevision = 0n;
+  // What the approval is built from: the origin's scope (its live
+  // document is the merge base and the diff's "before" side; a new or
+  // wiped scope starts empty), the admin document (only to move this key's
+  // older rules out of it), the excluded set and the admin keys no app
+  // rule may reach or name. An account without the document surface
+  // cannot take this grant at all, so the flow refuses up front rather
+  // than at /sign/.
+  let grantCtx: AppGrantContext | null = null;
   /** The account's document limits (its compiler's `limits()`), loaded
-   *  with the baseline: the form validates against these. */
+   *  with the context: the form validates against these. */
   let docLimits: DocLimits | null = null;
-  let isFirstApply = false;
-  let baselineLoaded = false;
-  // Set when the baseline read refused the flow — approve must never proceed.
+  let contextLoaded = false;
+  // Set when the read refused the flow — approve must never proceed.
   let docBaselineBlocked = false;
   const refuse = (msg: string) => {
     status.textContent = msg;
@@ -385,44 +385,20 @@ import Icon from '../../../components/Icon.astro';
     ? (async () => {
         try {
           const surface = await fetchDocSurface(account);
-          if (surface.supported) docLimits = await fetchDocLimits(account);
           if (!surface.supported) {
             refuse(
               "This account's contract predates policy documents — it cannot accept this request.",
             );
-          } else if (surface.appliedDocHash !== null) {
-            const applied = await fetchAppliedDocument(account);
-            baselineRevision = applied.revision;
-            if (applied.json !== undefined) baselineDoc = parsePolicyDocJson(applied.json);
-            else {
-              // A document is applied but not recoverable: an update built
-              // on an unknown baseline would silently DROP the applied
-              // rules on apply. Refuse.
-              refuse(
-                'The account has an applied policy document that could not be read — cannot build a safe update.',
-              );
-            }
-          } else {
-            // First apply: anchor the anti-brick admin rule on the
-            // account's live primary passkey (the constructor default rule).
-            baselineRevision = (await fetchAppliedDocument(account)).revision;
-            const info = await fetchDefaultRuleAuthInfo(account);
-            const passkey = info.externalSigners[0];
-            if (passkey === undefined) {
-              refuse(
-                "Could not read the account's primary passkey — a first document must carry it.",
-              );
-            } else {
-              baselineDoc = adminBaseline(
-                { verifier: passkey.verifier, publicKeyHex: bytesToHex(passkey.publicKey) },
-                NETWORK_PASSPHRASE,
-              );
-              isFirstApply = true;
-            }
+            return;
           }
-          baselineLoaded = true;
-        } catch {
-          refuse('Could not read the applied policy document — try again.');
+          [docLimits, grantCtx] = await Promise.all([fetchDocLimits(account), loadAppGrantContext(account, req.origin)]);
+          contextLoaded = true;
+        } catch (e) {
+          refuse(
+            e instanceof perch.AppScopesTaken
+              ? e.message
+              : "Could not read this app's current permissions — try again.",
+          );
         }
       })()
     : Promise.resolve();
@@ -478,7 +454,7 @@ import Icon from '../../../components/Icon.astro';
   /** The draft problems, each naming its rule when there are several. */
   function draftProblems(drafts: SessionDocDraft[], limits: DocLimits | null): string[] {
     return drafts.flatMap((d) => {
-      const { errors } = validateSessionDocDraft(d, limits, account ?? undefined);
+      const { errors } = validateSessionDocDraft(d, limits, account ?? undefined, grantCtx?.excluded ?? []);
       return drafts.length > 1 ? errors.map((e) => `${d.name}: ${e}`) : errors;
     });
   }
@@ -537,7 +513,7 @@ import Icon from '../../../components/Icon.astro';
         ? (status.textContent ?? 'Unavailable.')
         : verifierFailed
           ? "Could not resolve the account's passkey verifier — approve to try again."
-          : 'Reading the applied document…';
+          : "Reading this app's current permissions…";
       return;
     }
     const problems = draftProblems(drafts, docLimits);
@@ -546,14 +522,16 @@ import Icon from '../../../components/Icon.astro';
       docPreviewEl.textContent = problems.join(' ');
       return;
     }
-    if (!baselineLoaded || baselineDoc === null) {
+    if (!contextLoaded || grantCtx === null) {
       docDiffEl.textContent = docBaselineBlocked
         ? (status.textContent ?? 'Unavailable.')
-        : 'Reading the applied document…';
+        : "Reading this app's current permissions…";
       return;
     }
     try {
-      const doc = upsertSessionRules(baselineDoc, drafts, NETWORK_PASSPHRASE);
+      const signer = sessionSignerDraft(req.signer, verifierAddress)!;
+      const plan = planAppGrant(grantCtx, signer, drafts, DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked');
+      const doc = plan.doc;
       const hash = docHash(doc);
       const tooLarge = docCapProblem(doc, docLimits);
       docHashEl.textContent = tooLarge === undefined ? hash : '—';
@@ -562,12 +540,20 @@ import Icon from '../../../components/Icon.astro';
       } else {
         docPreviewEl.textContent = tooLarge;
       }
-      // First apply: nothing was applied before, so everything — the
-      // anti-brick admin rule included — renders as newly granted.
-      const diff = diffPolicyDocs(isFirstApply ? null : baselineDoc, doc);
+      // A new (or wiped) scope: everything renders as newly granted.
+      const diff = diffPolicyDocs(plan.base ?? emptyScope(grantCtx.network), doc);
       docDiffEl.innerHTML = renderDocDiffHtml(diff);
+      if (plan.moved.length > 0) {
+        const note = el('p', 'mut', '');
+        note.style.cssText = 'font-size:12px;line-height:1.5;margin:10px 0 0;';
+        note.textContent =
+          `This key still holds ${plan.moved.length === 1 ? 'a permission' : `${plan.moved.length} permissions`} ` +
+          `(${plan.moved.join(', ')}) in your account's own document from before apps had their own. ` +
+          'Approving moves them here: a second confirmation removes them from your document once this lands.';
+        docDiffEl.append(note);
+      }
       const changed = new Set([...diff.rulesAdded.map((r) => r.name), ...diff.rulesModified.map((m) => m.name)]);
-      labelGrants(doc.rules.filter((r) => r.scope.type === 'contract' && changed.has(r.name)).map((r) => r.name));
+      labelGrants(doc.rules.filter((r) => changed.has(r.name)).map((r) => r.name));
     } catch (e) {
       docHashEl.textContent = '—';
       docPreviewEl.textContent = `Cannot build the update: ${e instanceof Error ? e.message : String(e)}`;
@@ -681,9 +667,10 @@ import Icon from '../../../components/Icon.astro';
           return;
         }
       }
-      status.textContent = 'Reading the applied document…';
+      status.textContent = "Reading this app's current permissions…";
       await baselineReady;
-      if (docBaselineBlocked || baselineDoc === null || docLimits === null) return; // refusal above already set status + disabled
+      if (docBaselineBlocked || grantCtx === null || docLimits === null) return; // refusal above already set status + disabled
+      const ctx: AppGrantContext = grantCtx;
 
       const drafts = draftsFromControls()!;
       const problems = draftProblems(drafts, docLimits);
@@ -692,22 +679,28 @@ import Icon from '../../../components/Icon.astro';
         approveBtn.disabled = false;
         return;
       }
-      const operation = buildSessionGrantOperation({
-        baseline: baselineDoc,
-        baselineRevision,
-        isFirstApply,
-        drafts,
-        networkPassphrase: NETWORK_PASSPHRASE,
-        expiryLabel: DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked',
-      });
-      // Every grant adds a rule: refuse here, in words, a document the
-      // account's compiler would refuse at /sign/.
-      const tooLarge = docCapProblem(parsePolicyDocJson(operation.docJson), docLimits);
-      if (tooLarge !== undefined) {
-        status.textContent = tooLarge;
+      const signer = sessionSignerDraft(req.signer, verifierAddress)!;
+      // A recovery that completed after a scope named this key ended it for
+      // good: the account refuses any document naming it again.
+      if (!(await appKeyUsable(account, appKeyOfSigner(signer)))) {
+        status.textContent =
+          "A recovery of this account ended this app key. Ask the app to make a new key and connect again.";
         approveBtn.disabled = false;
         return;
       }
+      const plan = planAppGrant(ctx, signer, drafts, DOC_DURATION_LABEL[durationSel.value] ?? 'Until revoked');
+      // Refuse here, in words, a document the account's compiler would
+      // refuse at /sign/; a ninth key from one app is the likely one.
+      const tooLarge = docCapProblem(plan.doc, docLimits);
+      if (tooLarge !== undefined) {
+        status.textContent =
+          plan.doc.signers.length > docLimits.maxSigners
+            ? `This app already holds ${docLimits.maxSigners} keys on your account. Remove one of its keys on your Policy page first.`
+            : tooLarge;
+        approveBtn.disabled = false;
+        return;
+      }
+      const operation = plan.operation;
       const signReq: SignRequest = {
         v: 1,
         kind: 'session-grant',
@@ -722,7 +715,7 @@ import Icon from '../../../components/Icon.astro';
           type: 'dapp',
           origin: req.origin,
           returnUrl: req.returnUrl,
-          successQuery: '?delegation=ok',
+          successQuery: `?delegation=ok&scope=${operation.scope}`,
         },
       };
 
