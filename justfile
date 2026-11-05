@@ -5,7 +5,7 @@ default:
 # Run all workspace tests. Needs the contract wasm (`just build-contracts`),
 # which the integration tests embed.
 test:
-    cargo test --workspace
+    cargo test --workspace $(scripts/perch-overlay-config.sh)
 
 # Build all crates (native)
 build:
@@ -59,7 +59,7 @@ gen-zk-fixtures:
     set -euo pipefail
     eval "$(bash vendor/perch/scripts/zk-toolchain.sh)"
     (cd vendor/perch/circuits && "$NARGO" compile --workspace)
-    NIDO_ZK_PROVE=1 cargo test -p nido-integration-tests --test it -- --test-threads=1
+    NIDO_ZK_PROVE=1 cargo test -p nido-integration-tests --test it $(scripts/perch-overlay-config.sh) -- --test-threads=1
 
 # Build and optimize Nido's Soroban contracts. The factory compiles in the
 # perch-account hash in contracts/factory/wasm/perch-account.sha256

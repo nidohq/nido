@@ -24,6 +24,9 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+# A rehearsal deployment this branch builds against (perch-overlay/): lay
+# its files over vendor/perch first, so everything below reads its manifest.
+[ -n "${NIDO_PERCH_DIR:-}" ] || "$repo_root/scripts/perch-overlay.sh"
 perch="${NIDO_PERCH_DIR:-$repo_root/vendor/perch}"
 stack="$repo_root/target/wasm32v1-none/contract"
 manifest="$perch/deployments/${STELLAR_NETWORK:-testnet}.json"

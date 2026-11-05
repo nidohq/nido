@@ -1039,6 +1039,7 @@ dependencies = [
  "admin-sep",
  "ed25519-dalek",
  "perch-registry-resolve",
+ "perch-testkit",
  "serde_json",
  "soroban-sdk",
  "soroban-sdk-tools",
@@ -1061,6 +1062,7 @@ dependencies = [
  "perch-recovery",
  "perch-recovery-interface",
  "perch-smart-account",
+ "perch-testkit",
  "perch-zk-pool",
  "perch-zk-primitives",
  "perch-zk-prover",
@@ -1212,6 +1214,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "perch-compile"
+version = "0.1.1"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+dependencies = [
+ "perch-ir",
+ "perch-program",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "perch-doc-compiler"
 version = "0.3.5"
 source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
@@ -1224,6 +1236,15 @@ dependencies = [
  "perch-rule-eval",
  "soroban-sdk",
  "soroban-sdk-tools",
+]
+
+[[package]]
+name = "perch-ed25519-verifier"
+version = "10.0.2"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+dependencies = [
+ "soroban-sdk",
+ "stellar-accounts",
 ]
 
 [[package]]
@@ -1322,6 +1343,42 @@ dependencies = [
  "rule-eval",
  "soroban-sdk",
  "soroban-sdk-tools",
+]
+
+[[package]]
+name = "perch-spending-limit"
+version = "0.1.4"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+dependencies = [
+ "soroban-sdk",
+ "stellar-accounts",
+]
+
+[[package]]
+name = "perch-testkit"
+version = "0.1.1"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+dependencies = [
+ "arbitrary",
+ "base64",
+ "hex",
+ "p256",
+ "perch-account",
+ "perch-account-types",
+ "perch-compile",
+ "perch-doc-compiler",
+ "perch-ed25519-verifier",
+ "perch-interpreter",
+ "perch-ir",
+ "perch-program",
+ "perch-recovery",
+ "perch-rule-eval",
+ "perch-smart-account",
+ "perch-spending-limit",
+ "rule-eval",
+ "sha2",
+ "soroban-sdk",
+ "stellar-accounts",
 ]
 
 [[package]]

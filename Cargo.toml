@@ -63,6 +63,9 @@ perch-zk-prover = { git = "https://github.com/bitswell-hq/stellar-registry__perc
 perch-zk-primitives = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
 perch-ir = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
 perch-registry-resolve = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
+# Test worlds only: verifiers where `perch/verifiers` deploys them, which an
+# M7 account requires of an admin signer's verifier (`verifiers`).
+perch-testkit = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
 
 [profile.release]
 overflow-checks = true

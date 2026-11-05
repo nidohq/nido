@@ -302,6 +302,10 @@ pub struct Recovery {
     pub max_cancels: u32,
 }
 
+/// The `verifier-name` the world's WebAuthn verifier is published under in
+/// `perch/verifiers`, as the deployment names it.
+pub const WEBAUTHN_VERIFIER_NAME: &str = "perch-webauthn-verifier@0.1.2";
+
 /// A policy document: the account's passkeys (the first is the admin), extra
 /// rules (each scoped to a contract and signed by the admin), and recovery.
 #[derive(Clone)]
@@ -320,7 +324,7 @@ impl Doc {
             .iter()
             .map(|(id, pk)| {
                 format!(
-                    r#"{{"id":"{id}","verifier":"{verifier}","key":"{}"}}"#,
+                    r#"{{"id":"{id}","verifier":"{verifier}","verifier-name":"{WEBAUTHN_VERIFIER_NAME}","key":"{}"}}"#,
                     hex::encode(pk)
                 )
             })
@@ -482,8 +486,11 @@ pub fn world() -> World {
     );
 
     let admin = contract_at(&env, "deployer");
-    let verifier = contract_at(&env, "webauthn-verifier");
-    env.register_at(&verifier, PERCH_WEBAUTHN_VERIFIER_WASM, ());
+    // An M7 account admits an admin passkey only under a verifier
+    // `perch/verifiers` deployed: the verifier's wasm at its content address
+    // there, published under the name documents give it.
+    let verifier = perch_testkit::verifiers::deploy_wasm(&env, PERCH_WEBAUTHN_VERIFIER_WASM);
+    perch_testkit::verifiers::name(&env, WEBAUTHN_VERIFIER_NAME, &verifier);
     let controller = contract_at(&env, "recovery-controller");
     env.register_at(&controller, PERCH_RECOVERY_WASM, ());
     let pool = contract_at(&env, "zk-pool");

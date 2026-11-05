@@ -17,8 +17,11 @@ import { planAppGrant } from './appScopes.js';
 import { PERIOD_LEDGERS } from '../spendingLimitParams.js';
 
 const FIXTURE = fileURLToPath(new URL('./testdata/app-grant-doc.json', import.meta.url));
-// `contract_at(env, "webauthn-verifier")` in crates/integration-tests.
-const VERIFIER = StrKey.encodeContract(hash(Buffer.from('nido-it/webauthn-verifier')));
+// The integration world's WebAuthn verifier: its wasm at its content address
+// in this branch's `perch/verifiers` (perch-overlay/), where an M7 account
+// requires an admin passkey's verifier, which is also where the M7 testnet
+// deployment runs it.
+const VERIFIER = 'CA4Q6TWJLLMLHRDQ4ADAVNWKDDDZZXACZPXD4OHPT7VPPTU7HBTZVJQ3';
 const APP_KEY = '04' + 'cd'.repeat(64);
 const ORIGIN = 'https://game.example';
 

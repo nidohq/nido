@@ -432,7 +432,7 @@ mod test {
     /// factory, the verifier, and the admin.
     fn setup(env: &Env) -> (Address, Address, Address) {
         env.mock_all_auths();
-        let verifier = env.register(StubVerifier, ());
+        let verifier = perch_testkit::verifiers::deploy(env, StubVerifier);
         env.register_at(
             &Address::from_str(env, REGISTRY),
             MockRegistry,
@@ -602,7 +602,7 @@ mod test {
         let env = Env::default();
         on_testnet(&env);
         install_account(&env);
-        let verifier = env.register(StubVerifier, ());
+        let verifier = perch_testkit::verifiers::deploy(&env, StubVerifier);
         let factory = factory_at(&env, 7);
         env.register_at(
             &factory,
@@ -898,7 +898,7 @@ mod test {
         let env = Env::default();
         let (factory, registry_verifier, _) = setup(&env);
         let client = ContractClient::new(&env, &factory);
-        let pinned = env.register(StubVerifier, ());
+        let pinned = perch_testkit::verifiers::deploy(&env, StubVerifier);
 
         let before = mint(&env, &factory, 20);
         assert_eq!(verifier_of(&env, &before), registry_verifier);
@@ -1028,7 +1028,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         env.deployer().upload_contract_wasm(PREVIOUS_ACCOUNT_WASM);
-        let verifier = env.register(StubVerifier, ());
+        let verifier = perch_testkit::verifiers::deploy(&env, StubVerifier);
         let factory = env.register(
             Contract,
             (Address::generate(&env), Some(verifier), None::<Address>),
@@ -1053,7 +1053,7 @@ mod test {
         let env = Env::default();
         env.register_at(&Address::from_str(&env, REGISTRY), PanicRegistry, ());
         install_account(&env);
-        let pinned = env.register(StubVerifier, ());
+        let pinned = perch_testkit::verifiers::deploy(&env, StubVerifier);
         let factory = env.register(
             Contract,
             (

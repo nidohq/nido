@@ -29,6 +29,7 @@ perch-zk-pool = { workspace = true }
 perch-zk-prover = { workspace = true }
 perch-zk-primitives = { workspace = true }
 perch-ir = { workspace = true }
+perch-testkit = { workspace = true }
 
 # Crypto
 p256 = { version = "0.13", features = ["ecdsa"] }

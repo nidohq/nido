@@ -18,6 +18,7 @@ admin-sep = { workspace = true }
 perch-registry-resolve = { workspace = true }
 
 [dev-dependencies]
+perch-testkit = { workspace = true }
 soroban-sdk = { workspace = true, features = ["testutils"] }
 ed25519-dalek = "2"
 serde_json = "1"

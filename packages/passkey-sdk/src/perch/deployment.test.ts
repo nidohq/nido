@@ -1,12 +1,18 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fromPerchManifest, MAINNET, TESTNET, type PerchManifest } from './deployment';
 
 // The submodule's manifest is the source of truth; TESTNET is Nido's copy of
 // it plus Nido's factory. A Perch redeploy (or a testnet reset) fails here
 // until TESTNET follows.
+// This branch builds against the deployment in perch-overlay/, which
+// scripts/perch-overlay.sh lays over the submodule (the M7 rehearsal).
+const overlay = new URL('../../../../perch-overlay/deployments/testnet.json', import.meta.url);
 const manifest = JSON.parse(
-  readFileSync(new URL('../../../../vendor/perch/deployments/testnet.json', import.meta.url), 'utf8'),
+  readFileSync(
+    existsSync(overlay) ? overlay : new URL('../../../../vendor/perch/deployments/testnet.json', import.meta.url),
+    'utf8',
+  ),
 ) as PerchManifest;
 
 // What `scripts/deploy-factory.sh` read back from the factory it deployed.
@@ -53,7 +59,8 @@ describe('a manifest that records perch/verifiers', () => {
   });
 
   it('keeps the registry copy and no name for a manifest without it', () => {
-    const d = fromPerchManifest(manifest, TESTNET.factory);
+    const { verifiers: _, ...plain } = manifest;
+    const d = fromPerchManifest(plain, TESTNET.factory);
     expect(d.webauthnVerifier).toBe(manifest.contracts['perch-webauthn-verifier']!.address);
     expect(d.webauthnVerifierName).toBeUndefined();
   });
@@ -70,7 +77,11 @@ describe("Nido's testnet factory", () => {
   // committed with the re-pin.
   it("deploys the manifest's account and pins its verifier", () => {
     expect(factory.account_wasm_hash).toBe(manifest.contracts['perch-account']?.sha256);
-    expect(factory.pinned_verifier).toBe(manifest.contracts['perch-webauthn-verifier']?.address);
+    // The verifier in perch/verifiers where the manifest records it.
+    expect(factory.pinned_verifier).toBe(
+      manifest.verifiers?.contracts['perch-webauthn-verifier']?.address ??
+        manifest.contracts['perch-webauthn-verifier']?.address,
+    );
   });
 });
 
