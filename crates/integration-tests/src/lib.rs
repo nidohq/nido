@@ -21,6 +21,23 @@ pub const SPENDING_LIMIT_POLICY_WASM: &[u8] =
 pub const PREAUTH_SWEEP_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_preauth_sweep_policy.wasm");
 
+/// `a` as the contract type that twins its own: Perch's account types
+/// (`perch-account-types`) keep OpenZeppelin's names, fields and XDR, so a
+/// `Signer` or `ContextRule` the account returns converts to the
+/// `stellar-accounts` one Nido's contracts and these tests use, and back,
+/// through its `ScVal`.
+///
+/// # Panics
+///
+/// When the two types' XDR differ.
+pub fn twin<A, B>(env: &soroban_sdk::Env, a: &A) -> B
+where
+    A: soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val> + Clone,
+    B: soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val>,
+{
+    B::try_from_val(env, &a.clone().into_val(env)).unwrap_or_else(|_| panic!("not a twin type"))
+}
+
 /// The factory pins the hash of [`PERCH_ACCOUNT_WASM`], written from the same
 /// manifest (`contracts/factory/wasm/perch-account.sha256`), so uploading
 /// [`PERCH_ACCOUNT_WASM`] before `create_account` satisfies its `deploy_contract`

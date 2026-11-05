@@ -25,6 +25,7 @@ import {
   nidoKey,
 } from '@nidohq/passkey-sdk';
 import { resolveSignerRule } from './policyChainFetch.js';
+import { namedDoc } from './policy/verifierNames.js';
 import {
   relayerEnabled,
   signatureExpirationOffset,
@@ -347,6 +348,7 @@ export async function applyDocWithPasskey(args: {
 }): Promise<{ hash: string; revision: bigint }> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
+  const doc = namedDoc(args.doc);
   // Over the compiler the account pins, which an account minted by an
   // earlier Perch release keeps.
   const reader = await perch.openAccountReader({
@@ -361,12 +363,14 @@ export async function applyDocWithPasskey(args: {
   const transport: perch.ApplyDocTransport = {
     async prepareApplyDoc({ account, approvalValidUntil, expectedRevision }) {
       args.onProgress?.({ phase: "build" });
-      const tx = await buildApplyDocTx(args.doc, {
+      const tx = await buildApplyDocTx(doc, {
         account,
         rpcUrl: RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
         approvalValidUntil,
         expectedRevision,
+        // prepareInvocation simulates it.
+        simulate: false,
       });
       const prepared = await prepareInvocation(tx.operations[0]!);
       return {
@@ -394,7 +398,7 @@ export async function applyDocWithPasskey(args: {
   };
 
   const op = perch.applyDocument(
-    args.doc,
+    doc,
     backend,
     {
       async sign(request) {
@@ -422,7 +426,7 @@ export async function applyDocWithPasskey(args: {
       throw new Error('Your Nido changed after this page read it. Reload the page and make the change again.');
     }
     // perch-js checked the document against the account's own limits.
-    if (err instanceof perch.OverLimits) throw new Error(overLimitsMessage(err, args.doc));
+    if (err instanceof perch.OverLimits) throw new Error(overLimitsMessage(err, doc));
     throw err;
   }
 }

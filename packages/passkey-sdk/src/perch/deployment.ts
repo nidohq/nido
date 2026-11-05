@@ -11,6 +11,7 @@
  */
 
 import { StrKey } from '@stellar/stellar-sdk';
+import { parseVerifierName } from '@stellar-registry/perch';
 
 export interface PerchDeployment {
   /** The network passphrase every document must name. */
@@ -38,6 +39,11 @@ export interface PerchDeployment {
   treeDepth: number;
   /** `sha256` of the account wasm the factory deploys, 64 lowercase hex. */
   accountWasmHash: string;
+  /** The `verifier-name` (`<name>@<version>`) `webauthnVerifier` is
+   *  registered under in Perch's `perch/verifiers`, for a deployment whose
+   *  compiler resolves verifier names (Perch M7): every admin document and
+   *  recovery member must name it. Absent on a deployment without names. */
+  webauthnVerifierName?: string;
 }
 
 /** Perch's testnet release (`vendor/perch/deployments/testnet.json`, at the
@@ -152,6 +158,9 @@ export function parsePerchDeployment(value: unknown): PerchDeployment {
   }
   if (v.treeDepth !== 32 && v.treeDepth !== 24) {
     throw new Error('perch deployment: treeDepth must be 32 or 24');
+  }
+  if (v.webauthnVerifierName !== undefined && (typeof v.webauthnVerifierName !== 'string' || parseVerifierName(v.webauthnVerifierName) === null)) {
+    throw new Error('perch deployment: webauthnVerifierName is not <name>@<version>');
   }
   return value as PerchDeployment;
 }

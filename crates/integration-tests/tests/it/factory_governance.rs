@@ -204,7 +204,8 @@ impl Governed {
     fn verifier_of(&self, account: &Address) -> Address {
         let rule = nido_integration_tests::SmartAccountClient::new(&self.w.env, account)
             .get_context_rule(&0);
-        match rule.signers.get(0).unwrap() {
+        match nido_integration_tests::twin::<_, Signer>(&self.w.env, &rule.signers.get(0).unwrap())
+        {
             Signer::External(verifier, _) => verifier,
             Signer::Delegated(_) => panic!("not a passkey signer"),
         }
@@ -406,7 +407,7 @@ fn the_manager_cannot_put_another_passkey_at_a_users_address() {
     let admin =
         nido_integration_tests::SmartAccountClient::new(&g.w.env, &account).get_context_rule(&0);
     assert_eq!(
-        admin.signers,
+        nido_integration_tests::twin::<_, soroban_sdk::Vec<Signer>>(&g.w.env, &admin.signers),
         soroban_sdk::vec![
             &g.w.env,
             Passkey::labelled("victim").signer(&g.w.env, &g.w.verifier)

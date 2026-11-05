@@ -70,3 +70,4 @@ export {
   perchTestnetAddresses,
 } from './deployment.js';
 export type { PerchAddresses } from './deployment.js';
+export { withVerifierNames } from './verifierNames.js';

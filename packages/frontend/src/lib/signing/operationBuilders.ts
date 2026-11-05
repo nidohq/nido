@@ -32,6 +32,7 @@ import { isClaimableName } from "../claimFlow.js";
 import { recoveryEditProblem } from "../policy/docDraft.js";
 import { fetchAppliedDocument, fetchDocLimits } from "../policy/docPolicyFetch.js";
 import { accountScopes, loadScopeChecks } from "../policy/appGrantLoad.js";
+import { namedDoc } from "../policy/verifierNames.js";
 
 /**
  * `buildOperation`, with the reads that may refuse the operation returned as
@@ -67,7 +68,7 @@ async function applyPolicyDocOperation(
       "apply-policy-doc request is missing expected_revision; rebuild it from the current configuration",
     );
   }
-  const doc = parsePolicyDocJson(d.docJson);
+  const doc = namedDoc(parsePolicyDocJson(d.docJson));
   // The apply lands only at the revision the request was composed from.
   // Built without simulating: the signer simulates it before the prompt.
   const tx = await buildApplyDocTx(doc, {
@@ -165,7 +166,7 @@ export async function buildOperation(
       if (d.prevDocHash !== null && typeof d.prevDocHash !== "string") {
         throw new Error("apply-scope request is missing the scope it was built from; start again from the app");
       }
-      const doc = parsePolicyDocJson(d.docJson);
+      const doc = namedDoc(parsePolicyDocJson(d.docJson));
       const [record, checks, limits] = await Promise.all([
         accountScopes(account).scope(d.scope),
         loadScopeChecks(account),

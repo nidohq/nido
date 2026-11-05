@@ -17,6 +17,7 @@ import {
   type PolicyDoc,
 } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress } from './policyDraft.js';
+import { namedDoc } from './verifierNames.js';
 
 /** The account's document limits: its compiler's `limits()` (perch-js
  *  `FlatDocLimits`), read from the chain with the baseline
@@ -237,13 +238,15 @@ export interface AdminPasskey {
  * alone: it upserts into this baseline instead.
  */
 export function adminBaseline(admin: AdminPasskey, networkPassphrase: string): PolicyDoc {
-  return buildPolicyDoc({
-    network: networkPassphrase,
-    signers: [
-      { id: 'admin', kind: 'passkey', verifier: admin.verifier, publicKey: admin.publicKeyHex },
-    ],
-    permissions: [{ name: 'admin', on: 'self-admin', by: ['admin'] }],
-  });
+  return namedDoc(
+    buildPolicyDoc({
+      network: networkPassphrase,
+      signers: [
+        { id: 'admin', kind: 'passkey', verifier: admin.verifier, publicKey: admin.publicKeyHex },
+      ],
+      permissions: [{ name: 'admin', on: 'self-admin', by: ['admin'] }],
+    }),
+  );
 }
 
 /**
@@ -487,13 +490,15 @@ function rebuildDoc(
     ...rules.flatMap((r) => (r.principals.type === 'self-authenticating' ? [] : r.principals.signers)),
     ...(base.recovery?.replaceable ?? []),
   ]);
-  return parsePolicyDoc(
-    renameLegacyOwner({
-      ...base,
-      network: networkPassphrase,
-      signers: signers.filter((s) => referenced.has(s.id)),
-      rules,
-    } as PolicyDoc),
+  return namedDoc(
+    parsePolicyDoc(
+      renameLegacyOwner({
+        ...base,
+        network: networkPassphrase,
+        signers: signers.filter((s) => referenced.has(s.id)),
+        rules,
+      } as PolicyDoc),
+    ),
   );
 }
 

@@ -5,7 +5,7 @@ import { Address, contract, Keypair, Networks, scValToNative, SorobanDataBuilder
 import { Client as AccountClient } from '@nidohq/perch-account';
 import { Client as CompilerClient } from '@nidohq/perch-doc-compiler';
 import { Client as RecoveryClient } from '@nidohq/perch-recovery';
-import { canonicalJson, docHash, type PolicyDoc } from '@nidohq/passkey-sdk';
+import { docHash, type PolicyDoc } from '@nidohq/passkey-sdk';
 
 /**
  * A browser page against the frontend built for a fixture Perch deployment
@@ -251,6 +251,57 @@ export async function mockPerchChain(
   return seen;
 }
 
+const I128_MAX = (1n << 127n) - 1n;
+
+/** A scoped document (in normal form) as an M7 account stores it, in the
+ *  shapes its generated client returns: each rule's stored rule, and the
+ *  signer ids and verifier names in declaration order. */
+function lowerScope(account: string, doc: PolicyDoc) {
+  const byId = new Map(doc.signers.map((s) => [s.id, s]));
+  const signer = (id: string) => {
+    const s = byId.get(id)! as { address?: string; verifier?: string; key?: string };
+    return s.address !== undefined
+      ? { tag: 'Delegated', values: [s.address] }
+      : { tag: 'External', values: [s.verifier!, Buffer.from(s.key!, 'hex')] };
+  };
+  const ruleSet = doc.rules.map((r) => {
+    const ids = r.principals.type === 'self-authenticating' ? [] : [...r.principals.signers];
+    const conds: unknown[] = (r.args ?? []).map((a) => {
+      const p = a.pred as { type: string; address?: string; values?: string[]; prefix?: string };
+      switch (p.type) {
+        case 'is-self':
+          return { tag: 'ArgEq', values: [a.index, { tag: 'Address', values: [account] }] };
+        case 'address-eq':
+          return { tag: 'ArgEq', values: [a.index, { tag: 'Address', values: [p.address] }] };
+        case 'string-in':
+          return { tag: 'ArgIn', values: [a.index, p.values!.map((v) => ({ tag: 'String', values: [v] }))] };
+        case 'string-prefix':
+          return { tag: 'ArgStrPrefix', values: [a.index, p.prefix] };
+        default:
+          throw new Error(`lowerScope: no lowering for ${p.type}`);
+      }
+    });
+    const cap = r.cap === undefined ? [] : [{ limit: BigInt(r.cap.limit), period: r.cap['period-ledgers'], amount_arg: 2 }];
+    if (r.cap !== undefined) conds.push({ tag: 'ArgI128AtMost', values: [2, I128_MAX] });
+    return {
+      contract: r.scope.type === 'contract' ? r.scope.address : account,
+      functions: r.functions === undefined ? { tag: 'AnyExcept', values: [[]] } : { tag: 'Only', values: [[...r.functions]] },
+      conds,
+      signers: ids.map(signer),
+      threshold: r.principals.type === 'threshold' ? r.principals.m : ids.length,
+      cap,
+      valid_until: r['not-after-ledger'] === undefined ? undefined : r['not-after-ledger'] - 1,
+      generation: 0n,
+    };
+  });
+  const names = doc.signers.map((s) => ('verifier-name' in s ? (s['verifier-name'] ?? '') : ''));
+  return {
+    ruleSet,
+    signerIds: doc.signers.map((s) => s.id),
+    verifierNames: names.some((n) => n !== '') ? names : [],
+  };
+}
+
 /** What an account's `configuration()`, `capabilities()`, `revision()` and
  *  `document()` answer, at revision 1 with `canonical` applied, and its
  *  scope views with `scopes` applied (by scope id) at scope generation 0. */
@@ -281,9 +332,20 @@ export function accountViews(
         })),
       };
     },
-    [`${account}:scope_doc`]: ([id]: unknown[]) => {
+    // An M7 account keeps no scoped document's text: its stored rules and
+    // signer ids, from which the wallet rebuilds the text (perch-js
+    // `readScopeDoc`). `lowerScope` is that rebuild's inverse.
+    [`${account}:scope_rule_set`]: ([id]: unknown[]) => {
       const doc = scopes[Number(id)];
-      return doc === undefined ? null : Buffer.from(canonicalJson(doc), 'utf8');
+      return doc === undefined ? [] : lowerScope(account, doc).ruleSet;
+    },
+    [`${account}:scope_signer_ids`]: ([id]: unknown[]) => {
+      const doc = scopes[Number(id)];
+      return doc === undefined ? null : lowerScope(account, doc).signerIds;
+    },
+    [`${account}:scope_verifier_names`]: ([id]: unknown[]) => {
+      const doc = scopes[Number(id)];
+      return doc === undefined ? null : lowerScope(account, doc).verifierNames;
     },
     [`${account}:credential_generation`]: null,
     [`${account}:is_revoked`]: false,

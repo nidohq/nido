@@ -7,9 +7,11 @@
  * restores. Each app origin the owner lets in gets one scoped document
  * (`apply_scope(scope, doc)`) holding that app's rules: rules scoped to
  * other contracts only, signed by the app's own keys. Removing the app is
- * `remove_scope(scope)`. A scope's rules are read from `scope(id)` and
- * `scope_doc(id)`, never from `configuration()`, which covers the admin
- * document alone. `apply_scope` advances neither the configuration
+ * `remove_scope(scope)`. A scope's rules are read from `scope(id)`, and
+ * its document is rebuilt from the account's scope views (perch-js
+ * `readScopeDoc`: the account keeps no scoped document's text, and the
+ * rebuild is trusted only once it hashes to the stored `doc_hash`), never
+ * read from `configuration()`, which covers the admin document alone. `apply_scope` advances neither the configuration
  * revision nor the applied `doc_hash`.
  *
  * Scope ids are derived from the origin, so every wallet device and the
@@ -47,10 +49,13 @@ import {
   docHash,
   parsePolicyDoc,
   parsePolicyDocJson,
+  readScopeDoc,
+  ScopeNotRebuilt,
   type AccountConfiguration,
   type Credential,
   type PolicyDoc,
   type Rule,
+  type ScopeBindings,
   type SignerDecl,
 } from '@stellar-registry/perch';
 import { docCapProblem, type FlatDocLimits } from '../policyDoc/caps.js';
@@ -207,8 +212,16 @@ export function scopeReader(args: AccountArgs & { allowHttp?: boolean }): ScopeR
       };
     },
     async scopeDoc(id) {
-      const d = (await c.scope_doc({ scope: id })).result;
-      return d === undefined || d === null ? null : Buffer.from(d).toString('utf8');
+      // Four reads straddling an `apply_scope` can disagree; read once more.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const rebuilt = await readScopeDoc(c as unknown as ScopeBindings, args.account, args.networkPassphrase, id);
+          return rebuilt === null ? null : rebuilt.canonical;
+        } catch (e) {
+          if (!(e instanceof ScopeNotRebuilt)) throw e;
+          if (attempt > 0) return null;
+        }
+      }
     },
     async credentialGeneration(fingerprint) {
       const g = (await c.credential_generation({ fingerprint: Buffer.from(fingerprint) })).result;

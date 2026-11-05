@@ -275,7 +275,7 @@ fn raised_limit_mid_window_keeps_spent_total() {
 
     // Raise the limit to 10 XLM mid-window through the wrapper's entry point.
     // The lib's `smart_account.require_auth()` is satisfied by mock_all_auths.
-    let rule = client.get_context_rule(&1);
+    let rule: ContextRule = nido_integration_tests::twin(&env, &client.get_context_rule(&1));
     SpendingLimitPolicyClient::new(&env, &policy_addr).set_spending_limit(
         &(10 * XLM),
         &rule,
