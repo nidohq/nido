@@ -53,10 +53,12 @@ jobs:
           # new accounts (lib/localSubmitterGate.ts; testnet builds only).
           PUBLIC_NIDO_LOCAL_SUBMITTER: "1"
           # Overrides the Perch deployment (JSON, or `none`). This branch
-          # points its preview at the separate M6 testnet deployment (the
-          # bitswell fork's Perch at 437a07d, in its own registry) and the
-          # Nido factory built from this branch for its account, 38f06b1d.
-          PUBLIC_PERCH_DEPLOYMENT: '{"network":"Test SDF Network ; September 2015","factory":"CANGJ2QV5YGKNCXFI2ZCNJ3FCE2Y255X4UZWQCMHTDVA3RRUJ2NXVCR5","webauthnVerifier":"CDV5HBEG3UL2YUNYG4RD4J5CARTDVUPHJ7TAADQKIIIRNVHP4EEOAUIF","statelessRegistry":"CD5UG7SBYQNUWHSY7HTS4CK7LFORQZUDHAQO72BSAF76P7ZPRGNZQDDI","docCompiler":"CBIOROJJSXJKCUOCQSZW75JCVDTTGATQJ5OTMMZJQ2GHGSSQZYSIWYGK","interpreter":"CBEO3WGW4CA4VK5WSSZYUCX2OH7LP6FA4HPHDWX6UHVFCBZK5GMYDZJY","spendingLimit":"CDRVCE7AMNWXSFMW53T7RNFF6JBPODHPJBY4OD5I63WLZPTHOH27X2CW","recoveryController":"CB6DTVZ6QB4O7Z6RAZUXNLCB5IQRBZZ2AXSMJR7DWUL5M67NTXZBXJSY","zkPool":"CBY7DPBKHMV57HQWXVYNZCEY7KZ3MJHINPAXJE6FYYTELNXE2YZPNAPO","zkAdapter":"CBCEAKQIXWHA4VETKQYRH3C7UDMVSXSWTHVLQ2ZDEAOPDJ4C6IT52TH6","circuitId":"9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a","treeDepth":32,"accountWasmHash":"38f06b1df6f6033968236cea14b2e5da87266fd5b90e20bdbef509c0f999c387"}'
+          # points its preview at the separate M7 testnet deployment (the
+          # bitswell fork's Perch at a410123, in its own registries) and the
+          # Nido factory built from this branch for its account, 0bdbdd14.
+          # Its WebAuthn verifier is the perch/verifiers instance, which
+          # admin documents name as webauthnVerifierName.
+          PUBLIC_PERCH_DEPLOYMENT: '{"network":"Test SDF Network ; September 2015","factory":"CC32RVTK6YS4ZPJ6JDHLO5LMFILW2BPS3SAYX5TABN4GJJY5QXNMCMU4","webauthnVerifier":"CA4Q6TWJLLMLHRDQ4ADAVNWKDDDZZXACZPXD4OHPT7VPPTU7HBTZVJQ3","webauthnVerifierName":"perch-webauthn-verifier@0.1.2","verifierRegistry":"CDQG7KTWPERJ37HRQQCTMPTTQ3EO7OUUCRZBD5W7TMWS6ETPE7GZK4WO","statelessRegistry":"CBFU6FT66OG4CCQ2HTLG7ZS33TUSPLN3WCVQTJAVEA5S5UVDRQ5HPHSP","docCompiler":"CBGZOAOLGLIHH7IXWKCWU2E2B2L2UNHJE32NQTJMNOZ5AEKYXSN5JKFM","interpreter":"CCZT3ZDFTTBKGM7ZATHKH4R3TSCFNAFC57XHVPBZSG36FJGD7DUWIA4V","spendingLimit":"CAJKKO7JD4DJHROI4JXGVQW65C3MQOV52L3KYBENGNGPVSRE7MY23J3N","recoveryController":"CCBNXQZYY5ZU7L4KSLZ2Q5BLIBVIPAYCG5MZXLHWZBNYKQGEZIHZKI5V","zkPool":"CCI6XU4PHSWBWO6J6KRVQKEEWUDJWK3QQCBKGA6FXYHVUJ6JLOX3RAWP","zkAdapter":"CAED4MOC2XCO2NGVOBXJ3T3TIYDZQ776VQDXVP4V6SUY27UTFKN4FAX3","circuitId":"9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a","treeDepth":32,"accountWasmHash":"0bdbdd142c953976056196cc837f84667e0fb64e731b007cc45d8b852c4ce844"}'
           # infra/invite's base URL + shared x-api-key (lib/demo/config.ts).
           # Empty disables the /demo/start invite check, it doesn't break the
           # build — but without these, every PR preview hard-fails that check
