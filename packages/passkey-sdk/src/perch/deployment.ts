@@ -11,7 +11,12 @@
  */
 
 import { StrKey } from '@stellar/stellar-sdk';
-import { parseVerifierName } from '@stellar-registry/perch';
+
+/** A `verifier-name`, `<name>@<MAJOR>.<MINOR>.<PATCH>`: perch-js's schema
+ *  pattern (`policy.schema.json`). Kept here so this module imports no
+ *  perch-js, which ships as ESM only and which the Playwright suites' CJS
+ *  loader reaches through this file. */
+const VERIFIER_NAME = /^[a-z][a-z0-9-]{0,63}@(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})$/;
 
 export interface PerchDeployment {
   /** The network passphrase every document must name. */
@@ -168,7 +173,7 @@ export function parsePerchDeployment(value: unknown): PerchDeployment {
   if (v.treeDepth !== 32 && v.treeDepth !== 24) {
     throw new Error('perch deployment: treeDepth must be 32 or 24');
   }
-  if (v.webauthnVerifierName !== undefined && (typeof v.webauthnVerifierName !== 'string' || parseVerifierName(v.webauthnVerifierName) === null)) {
+  if (v.webauthnVerifierName !== undefined && (typeof v.webauthnVerifierName !== 'string' || !VERIFIER_NAME.test(v.webauthnVerifierName))) {
     throw new Error('perch deployment: webauthnVerifierName is not <name>@<version>');
   }
   return value as PerchDeployment;
