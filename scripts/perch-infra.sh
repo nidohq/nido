@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # `just perch-infra`: fetch Perch's deployed stack into
-# target/wasm32v1-none/contract/ with vendor/perch/scripts/fetch-infra-wasm.sh,
+# target/wasm32v1-none/contract/ with Perch's scripts/fetch-infra-wasm.sh at
+# Nido's Perch pin (scripts/perch-src.sh fetches that source),
 # reading the chain through the endpoint scripts/stellar-rpc.sh chooses
 # (RPC_URL/STELLAR_RPC_URL override, else the manifest's rpc_url, else a
 # guarded fallback while that is down; docs/RUNBOOKS.md "RPC endpoints").
@@ -19,16 +20,17 @@
 # `registry_contract!` compiles in. A manifest without that hash fails here:
 # the pin never comes from another network.
 #
-# Env: STELLAR_NETWORK (default testnet) picks vendor/perch/deployments/<net>.json;
-# NIDO_PERCH_DIR overrides vendor/perch and NIDO_FACTORY_PIN the pin file (tests).
+# Env: STELLAR_NETWORK (default testnet) picks Perch's deployments/<net>.json;
+# NIDO_PERCH_DIR overrides the pinned Perch source and NIDO_FACTORY_PIN the
+# pin file (tests).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-perch="${NIDO_PERCH_DIR:-$repo_root/vendor/perch}"
+perch="$("$repo_root/scripts/perch-src.sh")"
 stack="$repo_root/target/wasm32v1-none/contract"
 manifest="$perch/deployments/${STELLAR_NETWORK:-testnet}.json"
 fetch="$perch/scripts/fetch-infra-wasm.sh"
-[ -f "$manifest" ] || { echo "error: no manifest at $manifest (git submodule update --init)" >&2; exit 1; }
+[ -f "$manifest" ] || { echo "error: no manifest at $manifest" >&2; exit 1; }
 command -v jq >/dev/null || { echo "error: jq not found" >&2; exit 1; }
 
 pin="${NIDO_FACTORY_PIN:-$repo_root/contracts/factory/wasm/perch-account.sha256}"

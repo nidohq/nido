@@ -2,9 +2,10 @@
 """Tests for scripts/check-factory.sh: the factory record and the manifest's
 perch-account against what the chain says the factory deploys.
 
-Each case runs the script in a fake checkout (the two scripts it needs, a
-Perch submodule that is a git repo holding one manifest, and a factory
-record) with a fake `stellar` on PATH answering the instance read and the
+Each case runs the script in a fake checkout (the three scripts it needs, a
+Cargo.toml pinning Perch at the commit of a fake Perch checkout, a git repo
+holding one manifest that NIDO_PERCH_DIR names, and a factory record) with a
+fake `stellar` on PATH answering the instance read and the
 `account_wasm_hash` simulation. RPC_URL is set, so nothing is probed. Run:
 python3 scripts/test_check_factory.py
 """
@@ -49,10 +50,10 @@ class CheckFactory(unittest.TestCase):
         d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, d)
         os.makedirs(f"{d}/scripts")
-        for name in ("check-factory.sh", "stellar-rpc.sh"):
+        for name in ("check-factory.sh", "stellar-rpc.sh", "perch-src.sh"):
             shutil.copy(f"{ROOT}/scripts/{name}", f"{d}/scripts/{name}")
 
-        perch = f"{d}/vendor/perch"
+        perch = f"{d}/perch"
         os.makedirs(f"{perch}/deployments")
         with open(f"{perch}/deployments/testnet.json", "w") as f:
             json.dump({"network": "testnet", "network_passphrase": TESTNET,
@@ -63,6 +64,8 @@ class CheckFactory(unittest.TestCase):
         git(perch, "commit", "-qm", "manifest")
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=perch, check=True,
                               capture_output=True, text=True).stdout.strip()
+        with open(f"{d}/Cargo.toml", "w") as f:
+            f.write(f'perch-account = {{ git = "https://example.invalid/perch", rev = "{head}" }}\n')
 
         record = f"{d}/packages/passkey-sdk/src/perch/factory.testnet.json"
         os.makedirs(os.path.dirname(record))
@@ -87,7 +90,7 @@ class CheckFactory(unittest.TestCase):
         os.chmod(f"{d}/bin/stellar", 0o755)
 
         env = {k: v for k, v in os.environ.items() if k != "STELLAR_RPC_URL" and not k.startswith("PERCH_")}
-        env.update(PATH=f"{d}/bin:{env['PATH']}", RPC_URL="http://127.0.0.1:9",
+        env.update(PATH=f"{d}/bin:{env['PATH']}", RPC_URL="http://127.0.0.1:9", NIDO_PERCH_DIR=perch,
                    FAKE_INSTANCE=instance, FAKE_ACCOUNT=chain_account or "")
         return subprocess.run(["bash", f"{d}/scripts/check-factory.sh", "testnet"],
                               capture_output=True, text=True, env=env)

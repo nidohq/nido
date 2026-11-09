@@ -271,9 +271,12 @@ fn a_repin_reaches_only_accounts_created_after_it() {
 fn the_factory_deploys_exactly_the_pinned_account_before_and_after_an_upgrade() {
     let g = governed();
     let env = &g.w.env;
-    let manifest: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../vendor/perch/deployments/testnet.json"
-    ))
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            nido_integration_tests::perch_src().join("deployments/testnet.json"),
+        )
+        .unwrap(),
+    )
     .unwrap();
     let pinned = g.client().account_wasm_hash();
     assert_eq!(

@@ -12,23 +12,25 @@ build:
     cargo build --workspace
 
 # Fetch the Perch stack Nido builds and tests against: Perch's testnet
-# deployment, by the hashes in vendor/perch/deployments/testnet.json
-# (STELLAR_NETWORK picks another manifest). Writes the factory's account pin,
+# deployment, by the hashes in deployments/testnet.json at Nido's Perch pin,
+# the rev of the root Cargo.toml's Perch git dependencies (STELLAR_NETWORK
+# picks another manifest; scripts/perch-src.sh fetches Perch's source at the
+# pin into target/perch-src/). Writes the factory's account pin,
 # contracts/factory/wasm/perch-account.sha256, from that manifest first. Puts
 # every deployed contract's wasm in target/wasm32v1-none/contract/
 # (perch_*.wasm), so the tests run the deployed bytes, including the account
 # whose hash the factory pins. (The Perch crates build from the pins Perch commits; cargo
-# fetches them at the submodule's commit, see the root Cargo.toml.) Perch's script refuses any
+# fetches them at the same rev, see the root Cargo.toml.) Perch's script refuses any
 # file whose sha256 or content address differs from the manifest. Needs the
-# Stellar CLI, curl and jq. Run once after cloning and after bumping
-# vendor/perch. Reads the chain through the manifest's rpc_url, an
+# Stellar CLI, curl, git and jq. Run once after cloning and after moving the
+# Perch pin. Reads the chain through the manifest's rpc_url, an
 # RPC_URL/STELLAR_RPC_URL override, or a guarded fallback while the manifest's
 # endpoint is down (scripts/perch-infra.sh; docs/RUNBOOKS.md "RPC endpoints").
 perch-infra:
     scripts/perch-infra.sh
 
-# Re-pin vendor/perch to a Perch commit (full 40-hex) and regenerate what the
-# pin derives: the stack by manifest hash, Nido's contracts, the Perch
+# Re-pin Nido to a Perch commit (full 40-hex): the Perch git dependencies in
+# Cargo.toml move to it. Then regenerate what the pin derives: the stack by manifest hash, Nido's contracts, the Perch
 # bindings, the SDK's Perch pins, and the lockfiles; then the drift check
 # and the Rust suites. Nido's factory is not redeployed: a re-pin that moves
 # the account or verifier needs `just deploy-factory` on its branch before it
@@ -37,17 +39,22 @@ perch-infra:
 repin-perch commit:
     scripts/repin-perch.sh {{commit}}
 
-# Check the vendored Perch stack hasn't drifted from what Nido builds against:
-# the submodule at its recorded commit (on its declared branch), the fetched
-# wasm, pin cache, and factory pin equal to the manifest's, and npm resolving
-# Perch's packages to the submodule. See scripts/check-perch-drift.sh. Run after
+# Check the pinned Perch stack hasn't drifted from what Nido builds against:
+# every Cargo Perch rev and lock entry at the pin (on its declared branch), the
+# fetched wasm, pin cache, and factory pin equal to the pinned manifest's, and
+# npm resolving perch-zk at the version the pin carries. See
+# scripts/check-perch-drift.sh. Run after
 # `just perch-infra` and `just build-contracts`.
-check-vendor-drift:
+check-perch-drift:
     bash scripts/check-perch-drift.sh
+
+# The recipe's name from when Perch was the vendor/perch submodule.
+alias check-vendor-drift := check-perch-drift
 
 # Regenerate the real UltraHonk proofs the recovery integration tests replay
 # (crates/integration-tests/fixtures/zk/). Installs Perch's pinned nargo/bb
-# under vendor/perch/target/zk-toolchain/, compiles Perch's circuit, and runs
+# under target/zk-toolchain/, compiles Perch's circuit (in Perch's source at
+# the pin, scripts/perch-src.sh), and runs
 # the integration suites in prove mode: each ZK test builds its statement through
 # the real controller, proves it natively, verifies it through the deployed
 # adapter, and writes the fixture. The proofs are zero-knowledge, so proving is
@@ -57,8 +64,9 @@ check-vendor-drift:
 gen-zk-fixtures:
     #!/usr/bin/env bash
     set -euo pipefail
-    eval "$(bash vendor/perch/scripts/zk-toolchain.sh)"
-    (cd vendor/perch/circuits && "$NARGO" compile --workspace)
+    perch="$(scripts/perch-src.sh)"
+    eval "$(PERCH_ZK_TOOLCHAIN_DIR="${PERCH_ZK_TOOLCHAIN_DIR:-$PWD/target/zk-toolchain}" bash "$perch/scripts/zk-toolchain.sh")"
+    (cd "$perch/circuits" && "$NARGO" compile --workspace)
     NIDO_ZK_PROVE=1 cargo test -p nido-integration-tests --test it -- --test-threads=1
 
 # Build and optimize Nido's Soroban contracts. The factory compiles in the
