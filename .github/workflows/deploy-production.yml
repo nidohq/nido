@@ -40,9 +40,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # vendor/perch: the npm workspace includes its packages.
-          submodules: true
 
       - uses: actions/setup-node@v4
         with:
@@ -62,7 +59,7 @@ jobs:
           PUBLIC_RELAYER_SIM_SOURCE: GB62GN4DMXIPFGZMGITUP2XIGIVDV3IBK263LMEVQ7AEBHF6KWXLIM6V
           # The full PerchDeployment JSON (perch.fromPerchManifest(manifest,
           # factory) — see lib/recovery/deployment.ts), built from Perch's
-          # vendor/perch/deployments/mainnet.json plus Nido's
+          # deployments/mainnet.json (at Nido's Perch pin) plus Nido's
           # factory.mainnet.json. A *_MAINNET-suffixed repo variable, not the
           # plain PUBLIC_PERCH_DEPLOYMENT deploy-testnet.yml reads — repo
           # variables are global, not per-workflow, and deploy-testnet.yml

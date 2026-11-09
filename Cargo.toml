@@ -6,9 +6,7 @@ members = [
 ]
 # examples/* are self-contained stellar-scaffold projects with their own
 # workspace + toolchain; keep them out of this workspace's resolution.
-# vendor/perch is the Perch submodule: its crates belong to Perch's own
-# workspace (Nido consumes them as git dependencies, below).
-exclude = ["examples", "vendor/perch"]
+exclude = ["examples"]
 
 [workspace.package]
 version = "0.1.0"
@@ -25,7 +23,7 @@ soroban-sdk = "29.0.1"
 # 0.28.1, is on soroban-sdk 28; Perch vendors it moved to soroban-sdk 29
 # (vendor/admin-sep/NOTICE there), taken from Perch's rev below.
 admin-sep = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-# Perch's pinned OZ fork, the same rev vendor/perch/Cargo.toml pins:
+# Perch's pinned OZ fork, the same rev Perch's Cargo.toml pins at Nido's Perch rev:
 # bitswell-hq/theahaco__stellar-contracts-OZ 42089fc, theahaco's
 # stellar-contracts-OZ PR #5 (head 3372676, stacked on PR #4 and the CAP-0071
 # delegated-auth patch, PR #3) moved to soroban-sdk 29.0.1. PR #4 adds the
@@ -42,14 +40,16 @@ soroban-sdk-tools = { git = "https://github.com/bitswell-hq/stellar-registry__pe
 
 # The Perch stack (stellar-registry/perch epic #99), as git dependencies.
 # Perch publishes no crates yet; versions replace the rev once it does. The
-# pin is the bitswell fork's M6 stack (rule-eval in the account, scoped
-# documents) on upstream Perch's main, which upstream has not taken yet. The
-# rev is the vendor/perch submodule's commit: scripts/repin-perch.sh moves
-# both together, and
-# scripts/check-perch-drift.sh fails when they differ. The build reads only
-# tracked files (the smart account's build-time pins are committed in Perch),
-# so cargo needs no submodule. All Perch crates come from the one rev so their
-# types unify.
+# pin is the bitswell fork's M7 stack (rule-eval in the account, scoped
+# documents, named verifiers), which upstream has not taken yet. All Perch
+# crates (and admin-sep and soroban-sdk-tools above, which Perch vendors) come
+# from the one rev so their types unify, and that rev is Nido's whole Perch
+# pin: scripts/perch-src.sh fetches Perch's source at it (the deployment
+# manifest, deployments/testnet.json, the stack is fetched by; circuits;
+# testdata) for the scripts and tests that read it, scripts/repin-perch.sh
+# moves it, and scripts/check-perch-drift.sh fails when a Perch crate,
+# Cargo.lock entry, or anything built or fetched from the manifest disagrees
+# with it. The rev must be on the branch [workspace.metadata.perch] declares.
 perch-account = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
 perch-smart-account = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
 perch-recovery = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
@@ -66,6 +66,9 @@ perch-registry-resolve = { git = "https://github.com/bitswell-hq/stellar-registr
 # Test worlds only: verifiers where `perch/verifiers` deploys them, which an
 # M7 account requires of an admin signer's verifier (`verifiers`).
 perch-testkit = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
+
+[workspace.metadata.perch]
+branch = "fm/rc7-vnames"
 
 [profile.release]
 overflow-checks = true

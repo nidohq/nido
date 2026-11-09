@@ -1,18 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fromPerchManifest, MAINNET, TESTNET, type PerchManifest } from './deployment';
+import { readPerch } from '../../../../tests/support/perchSrc.mts';
 
-// The submodule's manifest is the source of truth; TESTNET is Nido's copy of
+// The manifest at Nido's Perch pin is the source of truth; TESTNET is Nido's copy of
 // it plus Nido's factory. A Perch redeploy (or a testnet reset) fails here
 // until TESTNET follows.
 // This branch builds against the deployment in perch-overlay/, which
-// scripts/perch-overlay.sh lays over the submodule (the M7 rehearsal).
+// scripts/perch-overlay.sh lays over Perch's source (the M7 rehearsal).
 const overlay = new URL('../../../../perch-overlay/deployments/testnet.json', import.meta.url);
 const manifest = JSON.parse(
-  readFileSync(
-    existsSync(overlay) ? overlay : new URL('../../../../vendor/perch/deployments/testnet.json', import.meta.url),
-    'utf8',
-  ),
+  existsSync(overlay) ? readFileSync(overlay, 'utf8') : readPerch('deployments/testnet.json'),
 ) as PerchManifest;
 
 // What `scripts/deploy-factory.sh` read back from the factory it deployed.
@@ -85,9 +83,7 @@ describe("Nido's testnet factory", () => {
   });
 });
 
-const mainnetManifest = JSON.parse(
-  readFileSync(new URL('../../../../vendor/perch/deployments/mainnet.json', import.meta.url), 'utf8'),
-) as PerchManifest;
+const mainnetManifest = JSON.parse(readPerch('deployments/mainnet.json')) as PerchManifest;
 
 const mainnetFactory = JSON.parse(
   readFileSync(new URL('./factory.mainnet.json', import.meta.url), 'utf8'),

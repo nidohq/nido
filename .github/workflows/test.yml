@@ -11,13 +11,12 @@ jobs:
     name: Contracts (cargo test --workspace)
     runs-on: ubuntu-latest
     steps:
-      # vendor/perch (a submodule): Perch's deployment manifest and the fetch
-      # script `just perch-infra` runs, the drift check, and the ZK circuits
-      # and toolchain `just gen-zk-fixtures` uses. Cargo takes Perch's crates
-      # as git dependencies at the same commit.
+      # Cargo takes Perch's crates as git dependencies; Perch's source at the
+      # same rev (its deployment manifest and the fetch script `just
+      # perch-infra` runs, the drift check, and the ZK circuits and toolchain
+      # `just gen-zk-fixtures` uses) is fetched on first use into
+      # target/perch-src/ (scripts/perch-src.sh).
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       # Pinned to match the workspace-root rust-toolchain.toml (keep the two in
       # lockstep) so contract wasm bytecode is reproducible rather than built
@@ -53,7 +52,7 @@ jobs:
           tool: just,stellar-cli@28.1.0,stellar-scaffold-cli@0.0.27
 
       # Perch's testnet deployment, by the hashes in its manifest
-      # (vendor/perch/deployments/testnet.json): every deployed contract's
+      # (deployments/testnet.json at Nido's Perch pin): every deployed contract's
       # wasm, each refused unless its sha256 and content address match.
       # The RPC comes from scripts/stellar-rpc.sh: the manifest's rpc_url, a
       # guarded fallback while it is down, or the repository variable RPC_URL
@@ -67,12 +66,12 @@ jobs:
       - name: Build contract wasms
         run: just build-contracts
 
-      # The vendored Perch stack can't silently diverge from what Nido
-      # consumes: submodule pin and branch, Cargo's Perch rev, the fetched
-      # wasm, build-time pins, and factory pin against the manifest
-      # (scripts/check-perch-drift.sh).
-      - name: Check vendor/perch for drift
-        run: just check-vendor-drift
+      # The pinned Perch stack can't silently diverge from what Nido
+      # consumes: the pin's branch, every Cargo Perch rev and lock entry, the
+      # fetched wasm, build-time pins, factory pin, and npm's perch-zk against
+      # the pinned source and its manifest (scripts/check-perch-drift.sh).
+      - name: Check the Perch pin for drift
+        run: just check-perch-drift
 
       # The factory record (packages/passkey-sdk/src/perch/factory.testnet.json)
       # against the deployed factory, read over RPC, and the account hash it
@@ -89,12 +88,12 @@ jobs:
       # real UltraHonk proofs (crates/integration-tests/fixtures/zk/), and the
       # `costs` suite's 75%-of-network-limit budget gate.
       # With perch-overlay/ (a rehearsal deployment), the Perch crates build
-      # from the overlaid submodule (scripts/perch-overlay.sh).
+      # from the overlaid Perch source (scripts/perch-overlay.sh).
       - name: cargo test --workspace
         run: cargo test --workspace $(scripts/perch-overlay-config.sh)
 
       # Re-prove every committed fixture from source with Perch's pinned,
-      # checksum-verified nargo/bb (vendor/perch/scripts/zk-toolchain.sh); each
+      # checksum-verified nargo/bb (Perch's scripts/zk-toolchain.sh); each
       # fresh proof must verify through the deployed adapter. The proofs are
       # zero-knowledge, so their bytes differ on every run, but each fixture's
       # statement digest, root, and nullifier must not: a diff there means a
@@ -116,16 +115,13 @@ jobs:
       - name: Factory check against the record and the manifest
         run: python3 scripts/test_check_factory.py -v
       - name: shellcheck
-        run: shellcheck -s bash -x -S warning scripts/stellar-rpc.sh scripts/perch-infra.sh scripts/perch-overlay.sh scripts/perch-overlay-config.sh scripts/deploy-factory.sh scripts/check-factory.sh
+        run: shellcheck -s bash -x -S warning scripts/perch-src.sh scripts/stellar-rpc.sh scripts/perch-infra.sh scripts/perch-overlay.sh scripts/perch-overlay-config.sh scripts/deploy-factory.sh scripts/check-factory.sh
 
   unit:
     name: Unit (TestAuthenticator)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # vendor/perch: the npm workspace includes its packages.
-          submodules: true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -158,9 +154,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # vendor/perch: the npm workspace includes its packages.
-          submodules: true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -211,9 +204,6 @@ jobs:
     # signal in the Checks tab.
     steps:
       - uses: actions/checkout@v4
-        with:
-          # vendor/perch: the npm workspace includes its packages.
-          submodules: true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

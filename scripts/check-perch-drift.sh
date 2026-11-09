@@ -1,34 +1,36 @@
 #!/usr/bin/env bash
-# Detect drift between the vendored Perch stack (the vendor/perch submodule)
-# and what Nido builds, tests, and ships against it. Fails, listing every
-# mismatch, when:
+# Detect drift between Nido's Perch pin (the rev of the root Cargo.toml's
+# Perch git dependencies) and what Nido builds, tests, and ships against it.
+# Perch's source at the pin is scripts/perch-src.sh's checkout. Fails, listing
+# every mismatch, when:
 #
-#   1. the submodule checkout isn't the commit the superproject records, or has
-#      local edits to tracked files;
-#   2. that commit isn't on the branch .gitmodules declares (a rewritten or
-#      deleted branch); skipped with --offline;
+#   1. that checkout isn't the pinned commit, or has local edits to tracked
+#      files;
+#   2. the pinned commit isn't on the Perch branch Cargo.toml's
+#      [workspace.metadata.perch] declares (a rewritten or deleted branch);
+#      skipped with --offline;
 #   3. a Perch wasm Nido consumes isn't the manifest's
-#      (vendor/perch/deployments/$STELLAR_NETWORK.json, default testnet): the
+#      (deployments/$STELLAR_NETWORK.json at the pin, default testnet): the
 #      fetched stack in target/wasm32v1-none/contract/, the build-time pins
 #      the smart account compiles in (committed in Perch, read here from the
-#      submodule; the registry its registry.path derives, by Perch's
+#      checkout; the registry its registry.path derives, by Perch's
 #      scripts/derive-id.py), and the account hash the factory pins (its
 #      committed contracts/factory/wasm/perch-account.sha256, which `just
 #      perch-infra` writes, and the built nido_factory.wasm);
-#   4. npm doesn't resolve a Perch package the root workspace list vendors
-#      (today only perch-zk, which Perch hasn't published) to the submodule,
-#      or the SDK pins another version than it carries. Published Perch
-#      packages (@stellar-registry/perch) come from npm by version.
+#   4. npm resolves an unbundled Perch package (today only perch-zk, which
+#      Perch's npm packages do not carry) to another version than the pinned
+#      source carries, or the SDK pins another. Perch's main package
+#      (@stellar-registry/perch) comes from npm by its own version.
 #   5. a commit-pinned Perch link in Nido's documentation names another commit
 #      than the pinned one (scripts/pin-perch-links.sh rewrites them);
-#   6. a Perch crate Cargo builds comes from anywhere but the submodule's
-#      commit: a Perch git dependency in Cargo.toml at another rev, a
-#      Cargo.lock entry resolved to another commit, or a path into
-#      vendor/perch (scripts/repin-perch.sh moves the rev with the submodule).
+#   6. a Perch crate Cargo builds comes from anywhere but the pinned commit: a
+#      Perch git dependency in Cargo.toml at another repository or rev, a
+#      Cargo.lock entry resolved to another commit, or a path dependency into
+#      the fetched source (scripts/repin-perch.sh moves every rev together).
 #
 # `just perch-infra` refuses any byte that doesn't match the manifest when it
-# fetches; this check catches what changes afterwards (a submodule bump without
-# a refetch, a stale target/, a hand-copied wasm). The SDK's `perch.TESTNET` is
+# fetches; this check catches what changes afterwards (a re-pin without a
+# refetch, a stale target/, a hand-copied wasm). The SDK's `perch.TESTNET` is
 # checked against the same manifest by packages/passkey-sdk/src/perch/
 # deployment.test.ts.
 #
@@ -40,52 +42,48 @@ cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
 offline=""
 [ "${1:-}" = "--offline" ] && offline=1
 network="${STELLAR_NETWORK:-testnet}"
-# The repository .gitmodules names: upstream Perch, or a fork whose branch
-# holds the pin. Documentation links and Cargo's Perch come from it.
-perch_repo="$(git config -f .gitmodules submodule.vendor/perch.url)"
-perch_repo="${perch_repo#https://github.com/}"
-perch_repo="${perch_repo%.git}"
-manifest="vendor/perch/deployments/$network.json"
 problems=()
 problem() { problems+=("$*"); }
 
-for tool in jq python3; do
+for tool in git jq python3; do
     command -v "$tool" >/dev/null || { echo "error: $tool not found" >&2; exit 1; }
 done
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
-# 1. The checkout is the recorded commit, unedited.
-status="$(git submodule status vendor/perch)"
-case "${status:0:1}" in
-    " ") ;;
-    "-") echo "error: vendor/perch is not checked out (git submodule update --init)" >&2; exit 1 ;;
-    *) problem "vendor/perch is at $(git -C vendor/perch rev-parse --short HEAD), not the commit the superproject records ($(git rev-parse --short :vendor/perch))" ;;
-esac
-# Edits are drift, except perch-overlay/'s files exactly as it holds them: the
-# rehearsal deployment this branch builds against (scripts/perch-overlay.sh).
-edited=()
-while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    [ -f "perch-overlay/$f" ] && cmp -s "perch-overlay/$f" "vendor/perch/$f" || edited+=("$f")
-done < <(git -C vendor/perch status --porcelain --untracked-files=no | awk '{print $2}')
-[ ${#edited[@]} -eq 0 ] || problem "vendor/perch has local edits to tracked files: ${edited[*]}"
-# The pin as staged, which `git submodule status` also compares against: the
-# checked-out commit's, or a re-pin's about to be committed.
-pinned="$(git rev-parse :vendor/perch)"
+pinned="$(scripts/perch-src.sh --rev)"
+perch_git="$(scripts/perch-src.sh --git)"
+branch="$(scripts/perch-src.sh --branch)"
+perch="$(scripts/perch-src.sh)"
+manifest="$perch/deployments/$network.json"
+# The repository Cargo.toml's Perch comes from: upstream Perch, or a fork
+# whose branch holds the pin. Documentation links name it too.
+perch_repo="${perch_git#https://github.com/}"
+perch_repo="${perch_repo%.git}"
 
-# 2. The pinned commit is on the declared branch.
-branch="$(git config -f .gitmodules submodule.vendor/perch.branch || true)"
-if [ -z "$branch" ]; then
-    problem ".gitmodules declares no branch for vendor/perch"
-elif [ -z "$offline" ]; then
-    # A shallow checkout (CI's) can't answer ancestry without the history.
-    deepen=()
-    [ "$(git -C vendor/perch rev-parse --is-shallow-repository)" = true ] && deepen=(--unshallow)
-    if git -C vendor/perch fetch --quiet ${deepen[@]+"${deepen[@]}"} origin "$branch"; then
-        git -C vendor/perch merge-base --is-ancestor "$pinned" FETCH_HEAD ||
-            problem "the pinned commit ${pinned:0:7} is not on origin/$branch"
+# 1. The checkout is the pinned commit, unedited, except perch-overlay/'s
+# files exactly as it holds them: the rehearsal deployment this branch builds
+# against (scripts/perch-overlay.sh).
+if ! head="$(git -C "$perch" rev-parse HEAD 2>/dev/null)"; then
+    problem "$perch is not a Perch git checkout"
+else
+    [ "$head" = "$pinned" ] || problem "$perch is at ${head:0:7}, not the pinned ${pinned:0:7}"
+    edited=()
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        [ -f "perch-overlay/$f" ] && cmp -s "perch-overlay/$f" "$perch/$f" || edited+=("$f")
+    done < <(git -C "$perch" status --porcelain --untracked-files=no | awk '{print $2}')
+    [ ${#edited[@]} -eq 0 ] || problem "$perch has local edits to tracked files: ${edited[*]}"
+fi
+
+# 2. The pinned commit is on the declared branch. The checkout is shallow;
+# its branch's commits alone (no trees or blobs) answer ancestry.
+if [ -z "$offline" ]; then
+    if git -C "$perch" fetch --quiet --unshallow --filter=tree:0 origin "$branch" 2>/dev/null ||
+        git -C "$perch" fetch --quiet --filter=tree:0 origin "$branch"; then
+        git -C "$perch" merge-base --is-ancestor "$pinned" FETCH_HEAD ||
+            problem "the pinned commit ${pinned:0:7} is not on $perch_git $branch"
     else
-        problem "could not fetch origin/$branch to check the pin (use --offline to skip)"
+        problem "could not fetch $perch_git $branch to check the pin (use --offline to skip)"
     fi
 fi
 
@@ -107,9 +105,9 @@ for name in perch-account perch-recovery perch-zk-pool perch-zk-adapter perch-do
     check "target/wasm32v1-none/contract/${name//-/_}.wasm" "$name"
 done
 # The smart account's build-time pins, as the Perch git dependency builds
-# them: the submodule is at the same commit (check 6) with no local edits
+# them: the checkout is the same commit (check 6) with no local edits
 # (check 1).
-pins=vendor/perch/crates/perch-smart-account/wasm
+pins="$perch/crates/perch-smart-account/wasm"
 for name in perch-doc-compiler perch-interpreter perch-spending-limit; do
     if [ "$(tr -d '[:space:]' < "$pins/$name.sha256" 2>/dev/null)" != "$(want "$name")" ]; then
         problem "$pins/$name.sha256 is not the manifest's $name ($(want "$name"))"
@@ -123,7 +121,7 @@ done
 # before registry.path (Perch #146) committed the id itself, in stateless.id.
 registry="$(jq -r .registry.id "$manifest")"
 if [ -f "$pins/registry.path" ]; then
-    if ! chain="$(python3 vendor/perch/scripts/derive-id.py chain "$(jq -r .network_passphrase "$manifest")" "$pins/registry.path" 2>&1)"; then
+    if ! chain="$(python3 "$perch/scripts/derive-id.py" chain "$(jq -r .network_passphrase "$manifest")" "$pins/registry.path" 2>&1)"; then
         problem "could not derive the registry from $pins/registry.path: $chain"
     else
         [ "$(tail -n1 <<<"$chain")" = "$registry" ] ||
@@ -147,17 +145,16 @@ elif ! od -An -v -tx1 "$factory" | tr -d ' \n' | grep -q "$(want perch-account)"
     problem "$factory does not pin the manifest's perch-account ($(want perch-account)); rebuild it (just build-contracts)"
 fi
 
-# 4. npm resolves each vendored Perch package to the submodule, at the version
-#    it carries (for each package the root workspace list includes).
-for pkg in perch:perch-js perch-zk:perch-zk; do
-    name="@stellar-registry/${pkg%%:*}"
-    dir="vendor/perch/packages/${pkg##*:}"
-    jq -e --arg d "$dir" '.workspaces | index($d)' package.json >/dev/null || continue
-    resolved="$(jq -r --arg k "node_modules/$name" '.packages[$k].resolved // empty' package-lock.json)"
-    [ "$resolved" = "$dir" ] || problem "package-lock.json resolves $name to '${resolved:-the registry}', not $dir"
-    carried="$(jq -r .version "$dir/package.json")"
-    sdk="$(jq -r --arg n "$name" '.dependencies[$n] // empty' packages/passkey-sdk/package.json)"
-    [ -z "$sdk" ] || [ "$sdk" = "$carried" ] || problem "packages/passkey-sdk pins $name $sdk; vendor/perch carries $carried"
+# 4. npm resolves perch-zk at the version the pinned source carries, from
+#    the npm registry, and the SDK and frontend pin the same.
+name=@stellar-registry/perch-zk
+carried="$(jq -r .version "$perch/packages/perch-zk/package.json")"
+locked="$(jq -r --arg k "node_modules/$name" '.packages[$k] | "\(.version) \(.resolved)"' package-lock.json)"
+[[ "$locked" == "$carried https://registry.npmjs.org/"* ]] ||
+    problem "package-lock.json resolves $name to '$locked', not $carried from the npm registry (Perch ${pinned:0:7} carries $carried)"
+for consumer in packages/passkey-sdk packages/frontend; do
+    want="$(jq -r --arg n "$name" '.dependencies[$n] // empty' "$consumer/package.json")"
+    [ -z "$want" ] || [ "$want" = "$carried" ] || problem "$consumer pins $name $want; Perch ${pinned:0:7} carries $carried"
 done
 
 # 5. Every commit-pinned Perch link in Nido's documentation names the pinned
@@ -165,30 +162,31 @@ done
 #    tests against (scripts/pin-perch-links.sh rewrites them after a bump).
 while IFS= read -r hit; do
     problem "documentation links Perch at another commit (scripts/pin-perch-links.sh): $hit"
-done < <(git grep -n -E "github\.com/(stellar-registry/perch|${perch_repo//./\\.})/(blob|tree)/([0-9a-f]{40}|PERCH_SHA)" -- '*.md' ':!vendor' ':!docs/reviews' | grep -v "github\.com/$perch_repo/[a-z]*/$pinned/" || true)
+done < <(git grep -n -E "github\.com/(stellar-registry/perch|${perch_repo//./\\.})/(blob|tree)/([0-9a-f]{40}|PERCH_SHA)" -- '*.md' ':!docs/reviews' | grep -v "github\.com/$perch_repo/[a-z]*/$pinned/" || true)
 
-# 6. Cargo's Perch is the submodule's commit, from its repository.
-perch_git="https://github.com/$perch_repo"
-deps="$(grep -E "^perch-[a-z0-9-]+ = .*git = \"$perch_git\"" Cargo.toml || true)"
-[ -n "$deps" ] || problem "Cargo.toml has no Perch git dependency on $perch_git"
+# 6. Cargo's Perch is the pinned commit: every git dependency on a Perch
+#    repository (the Perch crates, and the crates Perch vendors).
+deps="$(grep -E 'git = "https://github\.com/[^"]*perch(\.git)?"' Cargo.toml || true)"
+[ -n "$deps" ] || problem "Cargo.toml has no Perch git dependency"
 while IFS= read -r dep; do
     [ -n "$dep" ] || continue
-    [[ "$dep" == *"rev = \"$pinned\""* ]] || problem "Cargo.toml pins Perch at another rev than vendor/perch (${pinned:0:7}): $dep"
+    [[ "$dep" == *"git = \"$perch_git\", rev = \"$pinned\""* ]] ||
+        problem "Cargo.toml pins a Perch crate elsewhere than perch-account ($perch_git at ${pinned:0:7}): $dep"
 done <<<"$deps"
 while IFS= read -r hit; do
-    problem "a Perch crate is a path dependency into the submodule: $hit"
-done < <(git grep -n 'path = "[^"]*vendor/perch' -- '*Cargo.toml' ':!vendor' || true)
+    problem "a Perch crate is a path dependency into the fetched source: $hit"
+done < <(git grep -n 'path = "[^"]*perch-src' -- '*Cargo.toml' || true)
 locked="$(grep -F "source = \"git+$perch_git" Cargo.lock | sort -u || true)"
 [ -n "$locked" ] || problem "Cargo.lock resolves no crate from $perch_git"
 while IFS= read -r src; do
     [ -n "$src" ] || continue
     [ "$src" = "source = \"git+$perch_git?rev=$pinned#$pinned\"" ] ||
-        problem "Cargo.lock resolves Perch at another commit than vendor/perch (${pinned:0:7}): $src"
+        problem "Cargo.lock resolves Perch at another commit than the pin (${pinned:0:7}): $src"
 done <<<"$locked"
 
 if [ ${#problems[@]} -gt 0 ]; then
-    echo "Perch drift (vendor/perch at ${pinned:0:7}, $manifest):" >&2
+    echo "Perch drift (pin ${pinned:0:7}, $manifest):" >&2
     printf '  - %s\n' "${problems[@]}" >&2
     exit 1
 fi
-echo "vendor/perch ${pinned:0:7} on $branch; Cargo's Perch crates at the same commit; consumed wasm, build-time pins, factory pin, and npm workspaces match $manifest"
+echo "Perch ${pinned:0:7} on $branch; Cargo's Perch crates and lock at that commit; consumed wasm, build-time pins, factory pin, and npm's perch-zk match $manifest"

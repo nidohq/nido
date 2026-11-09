@@ -1,6 +1,6 @@
 /**
  * Doc-only: the two-tier policy read for accounts whose sole policy
- * write path is `apply_doc` (vendor/perch/crates/perch-smart-account):
+ * write path is `apply_doc` (Perch's crates/perch-smart-account):
  *
  *   a. `doc-verified` — a document read from the on-chain copy
  *      (`applied_doc`, lossless, no indexer needed) or recovered from

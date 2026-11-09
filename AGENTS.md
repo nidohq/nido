@@ -9,8 +9,7 @@ Nido helps users move from Stellar G-addresses to Soroban Smart Accounts (C-addr
 ## Build & Test Commands
 
 ```bash
-git submodule update --init   # vendor/perch, the Perch stack
-just perch-infra       # Perch's deployed wasm + pin caches, by the hashes in vendor/perch/deployments/testnet.json
+just perch-infra       # Perch's deployed wasm + pin caches, by the hashes in Perch's deployments/testnet.json at the pin
 just build-contracts   # Nido's wasm (the factory pins the manifest's Perch account hash)
 just test              # cargo test --workspace (embeds the wasm above)
 just check             # cargo fmt --check + cargo clippy -D warnings
@@ -23,8 +22,10 @@ Run a single test by name: `cargo test -p nido-integration-tests --test it recov
 
 The smart account, WebAuthn verifier, recovery controller, ZK membership pool,
 and ZK adapter are Perch's (stellar-registry/perch epic #99), consumed as git
-dependencies at the `vendor/perch` submodule's commit; the root `Cargo.toml`
-comment says how the two stay in lockstep. Nido's own crates:
+dependencies at one rev, Nido's whole Perch pin. Scripts and tests read Perch's
+source at that rev through `scripts/perch-src.sh` (fetched into
+`target/perch-src/`; no submodule); the root `Cargo.toml` comment says how the
+pin moves and is checked. Nido's own crates:
 
 **`contracts/factory`** — Deploys Perch accounts (by the account wasm hash pinned from Perch's manifest) with a passkey admin rule checked by Perch's immutable WebAuthn verifier (pinned by the constructor).
 
@@ -37,10 +38,12 @@ The perch PolicyDoc is nido's policy source of truth at the doc layer:
 rules (stock policies where the shape fits, the perch interpreter otherwise),
 and decompiles chain rules back to a doc view — its module docs are the
 authoritative reference. `@stellar-registry/perch-interpreter` comes from npm
-(a root `overrides` entry keeps its bindings on the workspace's single
-`@stellar/stellar-sdk` copy — the #72 dual-SDK hazard); `@stellar-registry/perch`
-(perch-js) and `perch-zk` are npm workspaces from the `vendor/perch` submodule,
-so they move with its pin. Perch contract addresses are derived, not deployed
+(a root `overrides` entry keeps its and perch-zk's bindings on the workspace's
+single `@stellar/stellar-sdk` copy — the #72 dual-SDK hazard), and so does
+`@stellar-registry/perch-zk`, at the version the pin carries.
+`@stellar-registry/perch` (perch-js) has no published version for the pin, so
+the SDK installs `perch-npm/`'s tarball, packed from the pinned source by
+`scripts/perch-js-pack.sh` (`--check` proves it). Perch contract addresses are derived, not deployed
 by nido — see DEPLOYED.md "Perch policy layer (0.2.1 era)" and
 `src/policyDoc/deployment.ts`; frozen golden vectors live in
 `src/policyDoc/testdata/`. The frontend's doc surface lives under
@@ -70,8 +73,8 @@ state revealed; the script's `reveal` map handles this (currently un-hides
 
 ## Account recovery (guardian quorum + ZK)
 
-Recovery is Perch's: `vendor/perch/docs/recovery/spec.md` is the authoritative
-state machine and `vendor/perch/docs/zk/` the ZK backend. Nido's coverage of it
+Recovery is Perch's: its [`docs/recovery/spec.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/recovery/spec.md) is the authoritative
+state machine and [`docs/zk/`](https://github.com/bitswell-hq/stellar-registry__perch/tree/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/zk) the ZK backend. Nido's coverage of it
 is `crates/integration-tests/tests/it/recovery_*.rs`, `onboarding.rs`, and
 `costs.rs`. ZK tests build their statement through the real controller and
 replay a committed proof of it; a changed statement fails with the instruction
@@ -85,7 +88,7 @@ Tests use synthetic P-256 keypairs (`SigningKey::random()`) to construct full We
 
 ## Dependency Version Constraints
 
-- `stellar-accounts` is pinned to Perch's CAP-0071 OZ fork rev (theahaco/stellar-contracts-OZ), the same rev `vendor/perch/Cargo.toml` pins, so Nido's crates and Perch's share one `stellar-accounts`
+- `stellar-accounts` is pinned to Perch's CAP-0071 OZ fork rev (theahaco/stellar-contracts-OZ), the same rev Perch's [`Cargo.toml`](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/Cargo.toml) pins, so Nido's crates and Perch's share one `stellar-accounts`
 ## Relayer channels plugin
 
 `infra/relayer/plugins/channels/index.ts` is a thin passthrough to the upstream

@@ -11,6 +11,29 @@ use stellar_accounts::smart_account::{ContextRule, ContextRuleType, Signer};
 pub mod world;
 pub mod zk;
 
+/// Perch's source at Nido's pin, the rev of the root Cargo.toml's Perch git
+/// dependencies: the deployment manifests, circuits, and testdata the suites
+/// read. `scripts/perch-src.sh` fetches it into `target/perch-src/` on first
+/// use (`NIDO_PERCH_DIR` names another checkout).
+///
+/// # Panics
+///
+/// When the script cannot fetch the source.
+#[must_use]
+pub fn perch_src() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/perch-src.sh");
+        let out = std::process::Command::new("bash")
+            .arg(script)
+            .stderr(std::process::Stdio::inherit())
+            .output()
+            .expect("run scripts/perch-src.sh");
+        assert!(out.status.success(), "scripts/perch-src.sh failed");
+        std::path::PathBuf::from(String::from_utf8(out.stdout).unwrap().trim())
+    })
+}
+
 /// Nido's own contracts, built by `just build-contracts`.
 pub const MULTISIG_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_multisig_policy.wasm");
@@ -46,8 +69,8 @@ pub const FACTORY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_factory.wasm");
 
 /// The Perch deployables under test: the exact wasm of Perch's testnet
-/// deployment, fetched by `just perch-infra` from the hashes in
-/// `vendor/perch/deployments/testnet.json` (each refused unless its sha256
+/// deployment, fetched by `just perch-infra` from the hashes in Perch's
+/// `deployments/testnet.json` at the pin (each refused unless its sha256
 /// and content address match).
 pub const PERCH_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/perch_account.wasm");

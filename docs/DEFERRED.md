@@ -7,8 +7,7 @@ audited code.
 
 Perch owns the first eight items and keeps the authoritative entry for each in
 its own register,
-[`docs/DEFERRED.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md)
-(`vendor/perch/docs/DEFERRED.md`). The sections below give Nido's side of
+[`docs/DEFERRED.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md). The sections below give Nido's side of
 each. The last item is Nido's.
 
 These are not deferred, because they are implemented and in scope: Perch's
@@ -43,8 +42,7 @@ check on `apply_doc`.
   regenerated parity vectors, followed by a review of the changed identity
   and integration surfaces.
 - **Owner:** Perch. Nido owns the wallet and factory migration.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#canon-v2-structured-document-identity)
-  (`vendor/perch/docs/DEFERRED.md`).
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#canon-v2-structured-document-identity).
 
 ## Canonical value spellings
 
@@ -61,8 +59,7 @@ check on `apply_doc`.
   it in `perch-ir` and perch-js with parity vectors, and bumps `CANON_VERSION`
   with CANON v2.
 - **Owner:** Perch, with Nido for the perch-js/SDK builders.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#canonical-value-spellings)
-  (`vendor/perch/docs/DEFERRED.md`).
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#canonical-value-spellings).
 
 ## Versioned policy backend and larger limits
 
@@ -88,8 +85,7 @@ check on `apply_doc`.
   existing funded accounts reach a new backend (each owner's seven-day
   upgrade, then re-application).
 - **Owner:** Perch, with Nido for the account migration decision.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#versioned-policy-backend-and-larger-limits)
-  (`vendor/perch/docs/DEFERRED.md`).
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#versioned-policy-backend-and-larger-limits).
 
 ## Revision-bound ordinary signatures
 
@@ -118,8 +114,7 @@ check on `apply_doc`.
   sign page, the Wallets Kit module, session keys) adopt them; the changed
   signing surface is reviewed.
 - **Owner:** Perch, with Nido for its signers.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#revision-bound-ordinary-signatures)
-  (`vendor/perch/docs/DEFERRED.md`).
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#revision-bound-ordinary-signatures).
 
 ## Stable numeric rule IDs
 
@@ -137,8 +132,7 @@ check on `apply_doc`.
   signature-validity semantics; Nido relies on them only after that
   definition is reviewed.
 - **Owner:** Perch.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#stable-numeric-rule-ids)
-  (`vendor/perch/docs/DEFERRED.md`).
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#stable-numeric-rule-ids).
 
 ## Persistent spending budgets across replacements
 
@@ -165,8 +159,7 @@ check on `apply_doc`.
   and state semantics with its own audit. Until then, Nido states the reset
   in its threat model and in the wallet's explanation of caps.
 - **Owner:** Perch, with Nido for the threat model and wallet wording.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#persistent-spending-budgets-across-replacements)
-  (`vendor/perch/docs/DEFERRED.md`).
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#persistent-spending-budgets-across-replacements).
 
 ## Additional formal models
 
@@ -184,8 +177,7 @@ check on `apply_doc`.
 - **Exit criterion:** set by Perch; a new model's coverage statement says
   what it establishes and what it does not.
 - **Owner:** Perch.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#additional-formal-models)
-  (`vendor/perch/docs/DEFERRED.md`).
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#additional-formal-models).
 
 ## OZ quiet-events fork pull requests
 
@@ -212,46 +204,45 @@ check on `apply_doc`.
   fork's main) and both repositories move to it after a diff review against
   the audited rev, or the accepted risk of staying on the rev is recorded.
 - **Owner:** Perch.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#oz-quiet-events-fork-pull-requests)
-  (`vendor/perch/docs/DEFERRED.md`); the three fork pull requests above.
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#oz-quiet-events-fork-pull-requests); the three fork pull requests above.
 
 ## npm publishing of perch-zk and the contract clients
 
 This section is the one home for Nido's package-migration plans.
 
-- **Deferred:** consuming `@stellar-registry/perch-zk` and Perch's contract
-  clients (`@stellar-registry/perch-contracts`) as published npm packages.
+- **Deferred:** consuming Perch's contract clients
+  (`@stellar-registry/perch-contracts`) as published npm packages.
 - **Current behaviour in Nido:**
-  - `@stellar-registry/perch-zk` 0.1.0 is an npm workspace from the submodule
-    (`vendor/perch/packages/perch-zk`, root `package.json`). The SDK pins the
-    version the submodule carries, and `scripts/check-perch-drift.sh` fails if
-    npm resolves it anywhere else or the versions differ.
+  - `@stellar-registry/perch-zk` 0.1.0 comes from npm, the version Perch's
+    [`packages/perch-zk`](https://github.com/bitswell-hq/stellar-registry__perch/tree/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/packages/perch-zk) carries at the pin. The SDK and
+    frontend pin it, and `scripts/check-perch-drift.sh` fails if npm resolves
+    another version or from anywhere but the registry.
   - Perch's contract clients are generated in Nido, from the deployed wasm
     `just perch-infra` fetched, into `packages/contract-bindings/perch-*`
     (`@nidohq/perch-*`, `private`; `just bindings-perch`).
   - `@stellar-registry/perch` and `@stellar-registry/perch-interpreter` already
-    come from npm ([SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md#perch-vendorperch-submodule)).
-  - Perch's Rust crates are path dependencies on the submodule. Perch
+    come from npm ([SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md#perch-pinned-git-rev)).
+  - Perch's Rust crates are git dependencies at the pinned rev. Perch
     publishes no crates (its releases are on-chain wasm publishes and npm
-    packages), so the submodule stays Nido's source for them.
+    packages), so the git rev stays Nido's source for them.
   - Consequence: `@nidohq/passkey-sdk` is not publishable while it depends on
-    the private `@nidohq/perch-*` clients and the workspace-only perch-zk.
+    the private `@nidohq/perch-*` clients.
 - **Why it is safe to defer:** the consumed code is fixed by the Perch source
   commit in the audit manifest, the consumed wasm by the manifest's hashes
   (`just perch-infra`), and npm's resolution of perch-zk by the drift check.
   Switching to published packages changes packaging only if each published
   artifact is shown equal to the reviewed source; a version bump is not that
   proof.
-- **Exit criterion:** Perch publishes perch-zk and
-  `@stellar-registry/perch-contracts`; Nido replaces the workspace link and
-  its generated clients with them after showing each published artifact
-  equals the reviewed one (source unchanged at the release tag, and the
-  published build or the clients' wasm hashes compared); `@nidohq/passkey-sdk`
+- **Exit criterion:** Perch publishes `@stellar-registry/perch-contracts`;
+  Nido replaces its generated clients with them after showing each published
+  artifact equals the reviewed one (source unchanged at the release tag, and
+  the clients' wasm hashes compared), as it did for perch-zk 0.1.0 (its
+  `dist/`, `artifacts/` and `package.json` equal a build of `packages/perch-zk`
+  at the pin); `@nidohq/passkey-sdk`
   then becomes publishable. Until then no Nido release publishes it
   ([SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md#npm)).
 - **Owner:** Perch publishes; Nido migrates.
-- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)
-  (`vendor/perch/docs/DEFERRED.md`);
+- **Tracking:** [Perch entry](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients);
   [nidohq/nido#208](https://github.com/nidohq/nido/issues/208) (Perch
   consumability gaps).
 
@@ -270,11 +261,11 @@ This section is the one home for Nido's package-migration plans.
   else a registry lookup that it then caches. The Perch account wasm hash
   is pinned at build time with Perch's `registry_contract!` from the
   committed `contracts/factory/wasm/perch-account.sha256`, which `just
-  perch-infra` writes from `vendor/perch/deployments/<STELLAR_NETWORK>.json`
+  perch-infra` writes from Perch's `deployments/<STELLAR_NETWORK>.json` at the pin
   (default testnet); a missing or malformed pin fails the build. The
   factory deploys every account from that hash (`account_wasm_hash`), so
   the wasm must already be installed on the network. A pin from another
-  network's manifest still builds: `just check-vendor-drift` and
+  network's manifest still builds: `just check-perch-drift` and
   `scripts/deploy-factory.sh` (before it deploys) refuse it.
 - **Why it is safe to defer:** the deployed factory has Perch's verifier
   pinned, so the registry is off the account-creation path; a repointed or

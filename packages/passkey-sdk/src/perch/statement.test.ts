@@ -18,9 +18,9 @@ import {
   type RecoveryStatement,
   type StatementSubject,
 } from './statement.js';
+import { readPerch } from '../../../../tests/support/perchSrc.mts';
 
 const root = new URL('../../../../', import.meta.url);
-const read = (path: string) => JSON.parse(readFileSync(new URL(path, root), 'utf8'));
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString('hex');
 const bytes = (h: string) => new Uint8Array(Buffer.from(h.replace(/^0x/, ''), 'hex'));
@@ -62,7 +62,7 @@ function credential(c: any): Credential {
 }
 
 describe("Perch's statement vectors", () => {
-  const vectors = read('vendor/perch/testdata/recovery/statement-v2.json');
+  const vectors = JSON.parse(readPerch('testdata/recovery/statement-v2.json'));
 
   for (const v of vectors.statements) {
     it(`encodes the ${v.name} statement byte for byte`, () => {

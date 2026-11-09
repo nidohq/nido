@@ -1,4 +1,0 @@
- [submodule "vendor/perch"]
-	path = vendor/perch
-	url = https://github.com/bitswell-hq/stellar-registry__perch.git
-	branch = fm/rc7-vnames
