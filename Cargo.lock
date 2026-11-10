@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "admin-sep"
 version = "0.28.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-sdk",
 ]
@@ -1199,7 +1199,7 @@ dependencies = [
 [[package]]
 name = "perch-account"
 version = "0.5.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-smart-account",
  "soroban-sdk",
@@ -1208,7 +1208,7 @@ dependencies = [
 [[package]]
 name = "perch-account-types"
 version = "0.1.0"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-sdk",
 ]
@@ -1216,7 +1216,7 @@ dependencies = [
 [[package]]
 name = "perch-compile"
 version = "0.1.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-ir",
  "perch-program",
@@ -1226,7 +1226,7 @@ dependencies = [
 [[package]]
 name = "perch-doc-compiler"
 version = "0.3.5"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "hex",
  "perch-account-types",
@@ -1241,7 +1241,7 @@ dependencies = [
 [[package]]
 name = "perch-ed25519-verifier"
 version = "10.0.2"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-sdk",
  "stellar-accounts",
@@ -1250,7 +1250,7 @@ dependencies = [
 [[package]]
 name = "perch-interpreter"
 version = "0.1.6"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-program",
  "soroban-sdk",
@@ -1260,7 +1260,7 @@ dependencies = [
 [[package]]
 name = "perch-ir"
 version = "0.1.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "hex",
  "hifijson",
@@ -1270,7 +1270,7 @@ dependencies = [
 [[package]]
 name = "perch-program"
 version = "0.1.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-flux",
  "soroban-sdk",
@@ -1279,7 +1279,7 @@ dependencies = [
 [[package]]
 name = "perch-recovery"
 version = "0.1.5"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-doc-compiler",
  "perch-recovery-interface",
@@ -1290,7 +1290,7 @@ dependencies = [
 [[package]]
 name = "perch-recovery-interface"
 version = "0.1.0"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-sdk",
  "soroban-sdk-tools",
@@ -1299,7 +1299,7 @@ dependencies = [
 [[package]]
 name = "perch-registry-resolve"
 version = "0.1.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-registry-resolve-macro",
  "soroban-sdk",
@@ -1308,7 +1308,7 @@ dependencies = [
 [[package]]
 name = "perch-registry-resolve-macro"
 version = "0.1.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1320,7 +1320,7 @@ dependencies = [
 [[package]]
 name = "perch-rule-eval"
 version = "0.1.0"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "hex",
  "perch-account-types",
@@ -1333,7 +1333,7 @@ dependencies = [
 [[package]]
 name = "perch-smart-account"
 version = "0.1.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-account-types",
  "perch-doc-compiler",
@@ -1348,7 +1348,7 @@ dependencies = [
 [[package]]
 name = "perch-spending-limit"
 version = "0.1.4"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-sdk",
  "stellar-accounts",
@@ -1357,7 +1357,7 @@ dependencies = [
 [[package]]
 name = "perch-testkit"
 version = "0.1.1"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "arbitrary",
  "base64",
@@ -1384,7 +1384,7 @@ dependencies = [
 [[package]]
 name = "perch-zk-pool"
 version = "0.1.4"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-zk-primitives",
  "soroban-sdk",
@@ -1394,7 +1394,7 @@ dependencies = [
 [[package]]
 name = "perch-zk-primitives"
 version = "0.1.0"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-recovery-interface",
  "soroban-poseidon",
@@ -1404,7 +1404,7 @@ dependencies = [
 [[package]]
 name = "perch-zk-prover"
 version = "0.1.0"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "perch-recovery-interface",
  "perch-zk-primitives",
@@ -1545,7 +1545,7 @@ dependencies = [
 [[package]]
 name = "rule-eval"
 version = "0.1.0"
-source = "git+https://github.com/bitswell/soroban-rule-core?rev=cbabe594ae2df408991e825e56ddd618ea29541b#cbabe594ae2df408991e825e56ddd618ea29541b"
+source = "git+https://github.com/bitswell/soroban-rule-core?rev=a3c92ba074dcac4052727b7599e5fd8674af6c0a#a3c92ba074dcac4052727b7599e5fd8674af6c0a"
 
 [[package]]
 name = "rustc_version"
@@ -1854,7 +1854,7 @@ dependencies = [
 [[package]]
 name = "soroban-facade"
 version = "0.1.0"
-source = "git+https://github.com/bitswell/soroban-rule-core?rev=cbabe594ae2df408991e825e56ddd618ea29541b#cbabe594ae2df408991e825e56ddd618ea29541b"
+source = "git+https://github.com/bitswell/soroban-rule-core?rev=a3c92ba074dcac4052727b7599e5fd8674af6c0a#a3c92ba074dcac4052727b7599e5fd8674af6c0a"
 dependencies = [
  "rule-eval",
  "soroban-sdk",
@@ -1863,7 +1863,7 @@ dependencies = [
 [[package]]
 name = "soroban-flux"
 version = "0.1.0"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-flux-rs",
  "soroban-sdk",
@@ -1915,7 +1915,7 @@ dependencies = [
 [[package]]
 name = "soroban-poseidon"
 version = "28.0.0"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-sdk",
 ]
@@ -1967,7 +1967,7 @@ dependencies = [
 [[package]]
 name = "soroban-sdk-tools"
 version = "0.1.4"
-source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=f0275f41c5ab47c903bbfe9986b4bf3239c01b11#f0275f41c5ab47c903bbfe9986b4bf3239c01b11"
+source = "git+https://github.com/bitswell-hq/stellar-registry__perch?rev=fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1#fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
 dependencies = [
  "soroban-sdk",
  "soroban-sdk-tools-macro",

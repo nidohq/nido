@@ -983,18 +983,18 @@ mod test {
         let env = Env::default();
         let client = ContractClient::new(&env, &factory(&env, &Address::generate(&env)));
         let network = std::env::var("STELLAR_NETWORK").unwrap_or_else(|_| "testnet".into());
-        // Perch's source at Nido's pin (scripts/perch-src.sh fetches it).
+        // The manifest of the stack Nido tests (scripts/perch-src.sh).
         let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/perch-src.sh");
         let out = std::process::Command::new("bash")
-            .arg(script)
+            .args([script, "--manifest", network.as_str()])
             .stderr(std::process::Stdio::inherit())
             .output()
             .unwrap();
         assert!(out.status.success(), "scripts/perch-src.sh failed");
-        let perch = std::string::String::from_utf8(out.stdout).unwrap();
-        let path = std::format!("{}/deployments/{network}.json", perch.trim());
+        let path = std::string::String::from_utf8(out.stdout).unwrap();
+        let path = path.trim();
         let manifest: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let mut pin = std::string::String::new();
         for byte in perch_account::WASM_HASH {
             core::fmt::Write::write_fmt(&mut pin, format_args!("{byte:02x}")).unwrap();

@@ -41,7 +41,7 @@ export type OperationDescriptor =
       expiryLabel?: string;
     }
   | {
-      /** Apply an app's scoped document (Perch `apply_scope`): the app
+      /** Apply an app's scoped document (Perch `apply_grant`): the app
        *  approval, or the removal of one of its keys. `docJson` is the whole
        *  scoped document; `prevDocJson` the scope's live document it was
        *  built from (absent for a new or wiped scope), shown as the diff. */
@@ -52,7 +52,7 @@ export type OperationDescriptor =
       docJson: string;
       prevDocJson?: string;
       /** The scope record's `doc_hash` when `docJson` was built (null: no
-       *  record). `apply_scope` names no revision, so /sign/ reads it again
+       *  record). `apply_grant` names no revision, so /sign/ reads it again
        *  right before signing and refuses if it moved. REQUIRED. */
       prevDocHash: string | null;
       expiryLabel?: string;
@@ -65,13 +65,13 @@ export type OperationDescriptor =
       adminFollowUp?: { docJson: string; prevDocJson: string; expectedRevision: string; moved: string[] };
     }
   | {
-      /** Remove an app: Perch `remove_scope`, every rule of its scope. */
+      /** Remove an app: Perch `remove_grant`, every rule of its scope. */
       type: "remove-scope";
       scope: number;
       origin: string | null;
     }
   | {
-      /** Clean up an app's scope a completed recovery wiped: `gc_scope`. */
+      /** Clean up an app's scope a completed recovery wiped: `gc_grant`. */
       type: "gc-scope";
       scope: number;
       origin: string | null;

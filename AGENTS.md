@@ -73,8 +73,8 @@ state revealed; the script's `reveal` map handles this (currently un-hides
 
 ## Account recovery (guardian quorum + ZK)
 
-Recovery is Perch's: its [`docs/recovery/spec.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/recovery/spec.md) is the authoritative
-state machine and [`docs/zk/`](https://github.com/bitswell-hq/stellar-registry__perch/tree/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/zk) the ZK backend. Nido's coverage of it
+Recovery is Perch's: its [`docs/recovery/spec.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/recovery/spec.md) is the authoritative
+state machine and [`docs/zk/`](https://github.com/bitswell-hq/stellar-registry__perch/tree/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/zk) the ZK backend. Nido's coverage of it
 is `crates/integration-tests/tests/it/recovery_*.rs`, `onboarding.rs`, and
 `costs.rs`. ZK tests build their statement through the real controller and
 replay a committed proof of it; a changed statement fails with the instruction
@@ -88,7 +88,7 @@ Tests use synthetic P-256 keypairs (`SigningKey::random()`) to construct full We
 
 ## Dependency Version Constraints
 
-- `stellar-accounts` is pinned to Perch's CAP-0071 OZ fork rev (theahaco/stellar-contracts-OZ), the same rev Perch's [`Cargo.toml`](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/Cargo.toml) pins, so Nido's crates and Perch's share one `stellar-accounts`
+- `stellar-accounts` is pinned to Perch's CAP-0071 OZ fork rev (theahaco/stellar-contracts-OZ), the same rev Perch's [`Cargo.toml`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/Cargo.toml) pins, so Nido's crates and Perch's share one `stellar-accounts`
 ## Relayer channels plugin
 
 `infra/relayer/plugins/channels/index.ts` is a thin passthrough to the upstream

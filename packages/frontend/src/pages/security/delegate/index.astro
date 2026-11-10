@@ -4,7 +4,7 @@
 // to be allowed on one contract, time-boxed, optionally spend-capped.
 //
 // A grant is an update of the app origin's own scoped document (Perch
-// `apply_scope`), kept apart from the account's admin document, exactly as
+// `apply_grant`), kept apart from the account's admin document, exactly as
 // /security/delegate-doc/ builds it (lib/policy/appScopes `planAppGrant`):
 // a "session-key" rule for the dApp's passkey is upserted into the origin's
 // scope (re-delegation from the same key REPLACES the same-named rule — the

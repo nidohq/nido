@@ -134,7 +134,16 @@ describe("groupTxRows", () => {
     expect(rows[0]).toMatchObject({ kind: "rule", title: "Updated policies", subtitle: "2 rules added, 1 rule edited, 1 signer added" });
   });
 
-  it("names an app's scope changes and the recovery that ends them", () => {
+  it("names an app's grant changes and the recovery that ends them", () => {
+    const one = (topics: unknown[], data: unknown) => groupTxRows(tx([{ contractId: SELF, topics, data }]), SELF)[0];
+    expect(
+      one(["grant_applied", 7], { grant: 7, gen: 0n, rules_added: 2, rules_removed: 0, rules_edited: 0, signers_added: 1, signers_removed: 0, policies_added: 0, policies_removed: 0 }),
+    ).toMatchObject({ kind: "rule", title: "Updated an app's permissions", subtitle: "2 rules added, 1 signer added" });
+    expect(one(["grant_removed", 7], { grant: 7, gen: 0n, rules_removed: 2 })).toMatchObject({ kind: "rule", title: "Removed an app" });
+    expect(one(["grants_wiped"], { gen: 1n })).toMatchObject({ kind: "rule", title: "Recovery ended every app's permissions" });
+  });
+
+  it("names the same events from an account built before Perch's rename", () => {
     const one = (topics: unknown[], data: unknown) => groupTxRows(tx([{ contractId: SELF, topics, data }]), SELF)[0];
     expect(
       one(["scope_applied", 7], { scope: 7, gen: 0n, rules_added: 2, rules_removed: 0, rules_edited: 0, signers_added: 1, signers_removed: 0, policies_added: 0, policies_removed: 0 }),

@@ -257,7 +257,7 @@ fn a_repin_reaches_only_accounts_created_after_it() {
     // content address there.
     let mut wasm = PERCH_WEBAUTHN_VERIFIER_WASM.to_vec();
     wasm.extend_from_slice(&[0x00, 0x05, 0x04, b'n', b'e', b'x', b't']);
-    let next = perch_testkit::verifiers::deploy_wasm(&g.w.env, &wasm);
+    let next = nido_integration_tests::deploy_verifier_wasm(&g.w.env, &wasm);
     g.w.env.set_auths(&[]);
 
     let before = g.mint("before-repin");
@@ -276,13 +276,7 @@ fn a_repin_reaches_only_accounts_created_after_it() {
 fn the_factory_deploys_exactly_the_pinned_account_before_and_after_an_upgrade() {
     let g = governed();
     let env = &g.w.env;
-    let manifest: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(
-            nido_integration_tests::perch_src().join("deployments/testnet.json"),
-        )
-        .unwrap(),
-    )
-    .unwrap();
+    let manifest = nido_integration_tests::perch_manifest("testnet");
     let pinned = g.client().account_wasm_hash();
     assert_eq!(
         hex::encode(pinned.to_array()),

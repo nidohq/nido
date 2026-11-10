@@ -116,11 +116,12 @@ function adminMeta(name: string): { kind: ActivityKind; title: string } | null {
     // A Perch account's mutations are quiet; one DocApplied records each
     // apply_doc (with counts, see docAppliedSubtitle).
     case "doc_applied": return { kind: "rule", title: "Updated policies" };
-    // An app origin's own permissions (apply_scope / remove_scope), and the
-    // completed recovery that ends every app's at once.
-    case "scope_applied": return { kind: "rule", title: "Updated an app's permissions" };
-    case "scope_removed": return { kind: "rule", title: "Removed an app" };
-    case "scopes_wiped": return { kind: "rule", title: "Recovery ended every app's permissions" };
+    // An app origin's own permissions (apply_grant / remove_grant), and the
+    // completed recovery that ends every app's at once. The scope_* names
+    // are the same events from an account built before Perch's rename.
+    case "grant_applied": case "scope_applied": return { kind: "rule", title: "Updated an app's permissions" };
+    case "grant_removed": case "scope_removed": return { kind: "rule", title: "Removed an app" };
+    case "grants_wiped": case "scopes_wiped": return { kind: "rule", title: "Recovery ended every app's permissions" };
     case "credential_revoked": return { kind: "signer", title: "Revoked a replaced passkey" };
     case "upgrade_scheduled": return { kind: "other", title: "Scheduled an account upgrade" };
     case "upgrade_executed": return { kind: "other", title: "Upgraded the account" };
@@ -133,7 +134,7 @@ function adminMeta(name: string): { kind: ActivityKind; title: string } | null {
   }
 }
 
-/** "2 rules added, 1 signer removed" from a DocApplied or ScopeApplied
+/** "2 rules added, 1 signer removed" from a DocApplied or GrantApplied
  *  event's counts, or undefined when there are none to show. */
 function docAppliedSubtitle(data: unknown): string | undefined {
   if (data === null || typeof data !== "object") return undefined;
@@ -181,7 +182,7 @@ export function groupTxRows(decoded: DecodedTx, self: string, knownSacIds?: Set<
     const meta = adminMeta(eventName(e));
     if (meta && (!best || PRIORITY[meta.kind] > PRIORITY[best.kind])) {
       const name = eventName(e);
-      const subtitle = name === "doc_applied" || name === "scope_applied" ? docAppliedSubtitle(e.data) : undefined;
+      const subtitle = name === "doc_applied" || name === "grant_applied" || name === "scope_applied" ? docAppliedSubtitle(e.data) : undefined;
       best = { ...meta, ...(subtitle ? { subtitle } : {}) };
     }
   }

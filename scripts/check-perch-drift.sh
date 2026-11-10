@@ -54,15 +54,16 @@ pinned="$(scripts/perch-src.sh --rev)"
 perch_git="$(scripts/perch-src.sh --git)"
 branch="$(scripts/perch-src.sh --branch)"
 perch="$(scripts/perch-src.sh)"
-manifest="$perch/deployments/$network.json"
+stack="$(scripts/perch-src.sh --stack)"
+manifest="$(scripts/perch-src.sh --manifest "$network")"
 # The repository Cargo.toml's Perch comes from: upstream Perch, or a fork
 # whose branch holds the pin. Documentation links name it too.
 perch_repo="${perch_git#https://github.com/}"
 perch_repo="${perch_repo%.git}"
 
-# 1. The checkout is the pinned commit, unedited, except perch-overlay/'s
-# files exactly as it holds them: the rehearsal deployment this branch builds
-# against (scripts/perch-overlay.sh).
+# 1. The checkout is the pinned commit, unedited, except, for a stack built
+# from source, the build-time pins the build wrote (crates/*/wasm/*.sha256),
+# which check 3 holds to the built stack.
 if ! head="$(git -C "$perch" rev-parse HEAD 2>/dev/null)"; then
     problem "$perch is not a Perch git checkout"
 else
@@ -70,7 +71,7 @@ else
     edited=()
     while IFS= read -r f; do
         [ -n "$f" ] || continue
-        [ -f "perch-overlay/$f" ] && cmp -s "perch-overlay/$f" "$perch/$f" || edited+=("$f")
+        [ "$stack" = build ] && [[ "$f" == crates/*/wasm/*.sha256 ]] || edited+=("$f")
     done < <(git -C "$perch" status --porcelain --untracked-files=no | awk '{print $2}')
     [ ${#edited[@]} -eq 0 ] || problem "$perch has local edits to tracked files: ${edited[*]}"
 fi
@@ -157,6 +158,19 @@ for consumer in packages/passkey-sdk packages/frontend; do
     [ -z "$want" ] || [ "$want" = "$carried" ] || problem "$consumer pins $name $want; Perch ${pinned:0:7} carries $carried"
 done
 
+# perch-js, when the SDK takes it from perch-npm/ (a pin npm has no version
+# of): the tarball named for the pinned commit and the version it carries.
+# scripts/perch-js-pack.sh --check rebuilds it and compares the contents.
+sdk_js="$(jq -r '.dependencies["@stellar-registry/perch"] // empty' packages/passkey-sdk/package.json)"
+if [[ "$sdk_js" == file:* ]]; then
+    js_version="$(jq -r .version "$perch/packages/perch-js/package.json")"
+    want="file:../../perch-npm/stellar-registry-perch-$js_version-${pinned:0:7}.tgz"
+    [ "$sdk_js" = "$want" ] || problem "packages/passkey-sdk takes @stellar-registry/perch from '$sdk_js', not $want (scripts/perch-js-pack.sh)"
+    [ -f "${want#file:../../}" ] || problem "${want#file:../../} is missing (scripts/perch-js-pack.sh)"
+    resolved="$(jq -r '.packages["node_modules/@stellar-registry/perch"].resolved // empty' package-lock.json)"
+    [ "$resolved" = "file:${want#file:../../}" ] || problem "package-lock.json resolves @stellar-registry/perch to '$resolved', not file:${want#file:../../}"
+fi
+
 # 5. Every commit-pinned Perch link in Nido's documentation names the pinned
 #    commit, so a reader on GitHub sees the Perch source this tree builds and
 #    tests against (scripts/pin-perch-links.sh rewrites them after a bump).
@@ -189,4 +203,4 @@ if [ ${#problems[@]} -gt 0 ]; then
     printf '  - %s\n' "${problems[@]}" >&2
     exit 1
 fi
-echo "Perch ${pinned:0:7} on $branch; Cargo's Perch crates and lock at that commit; consumed wasm, build-time pins, factory pin, and npm's perch-zk match $manifest"
+echo "Perch ${pinned:0:7} on $branch; Cargo's Perch crates and lock at that commit; consumed wasm, build-time pins, factory pin, and npm's Perch packages match $manifest ($stack)"

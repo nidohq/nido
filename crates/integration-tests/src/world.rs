@@ -489,7 +489,7 @@ pub fn world() -> World {
     // An M7 account admits an admin passkey only under a verifier
     // `perch/verifiers` deployed: the verifier's wasm at its content address
     // there, published under the name documents give it.
-    let verifier = perch_testkit::verifiers::deploy_wasm(&env, PERCH_WEBAUTHN_VERIFIER_WASM);
+    let verifier = crate::deploy_verifier_wasm(&env, PERCH_WEBAUTHN_VERIFIER_WASM);
     perch_testkit::verifiers::name(&env, WEBAUTHN_VERIFIER_NAME, &verifier);
     let controller = contract_at(&env, "recovery-controller");
     env.register_at(&controller, PERCH_RECOVERY_WASM, ());

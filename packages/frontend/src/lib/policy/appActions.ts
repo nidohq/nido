@@ -1,7 +1,7 @@
 // What the owner can do about a connected app, as /sign/ requests: remove
-// it (`remove_scope`), remove one of its keys (`apply_scope` without it, or
-// `remove_scope` when nothing is left), or clean up a scope a completed
-// recovery ended (`gc_scope`). An older app permission in the admin
+// it (`remove_grant`), remove one of its keys (`apply_grant` without it, or
+// `remove_grant` when nothing is left), or clean up a scope a completed
+// recovery ended (`gc_grant`). An older app permission in the admin
 // document is removed with that document's own write (`withoutRules`).
 
 import { canonicalJson, perch } from '@nidohq/passkey-sdk';

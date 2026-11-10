@@ -11,10 +11,10 @@
  *   register          → account/index.astro runNameClaim (invokeContractFunction)
  *   transfer          → lib/transfer/buildSend.ts buildSendOperation
  *   apply-policy-doc  → the admin document's write (buildApplyDocTx)
- *   apply-scope       → an app's scoped document (apply_scope); both
+ *   apply-scope       → an app's scoped document (apply_grant); both
  *                       delegate pages route here
- *   remove-scope      → removing an app (remove_scope)
- *   gc-scope          → cleaning up an app scope a recovery wiped (gc_scope)
+ *   remove-scope      → removing an app (remove_grant)
+ *   gc-scope          → cleaning up an app scope a recovery wiped (gc_grant)
  *
  * DOC-ONLY: the add-context-rule / remove-context-rule descriptors THROW —
  * the account has no general rule mutators (add_context_rule is hard-gated
@@ -159,7 +159,7 @@ export async function buildOperation(
     }
 
     case "apply-scope": {
-      // An app's scoped document. `apply_scope` names no revision, so the
+      // An app's scoped document. `apply_grant` names no revision, so the
       // scope record is read again here, right before signing: if anything
       // applied over it since the request was built, refuse rather than
       // overwrite that change.

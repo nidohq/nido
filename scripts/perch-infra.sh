@@ -20,28 +20,66 @@
 # `registry_contract!` compiles in. A manifest without that hash fails here:
 # the pin never comes from another network.
 #
+# With [workspace.metadata.perch] stack = "build", it builds the stack from
+# the pinned source instead (below).
+#
 # Env: STELLAR_NETWORK (default testnet) picks Perch's deployments/<net>.json;
 # NIDO_PERCH_DIR overrides the pinned Perch source and NIDO_FACTORY_PIN the
 # pin file (tests).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-# A rehearsal deployment this branch builds against (perch-overlay/): lay
-# its files over the fetched Perch source first, so everything below reads
-# its manifest.
+# A stack built from source: the Cargo patch that builds the native Perch
+# crates from the same source (scripts/perch-overlay.sh).
 [ -n "${NIDO_PERCH_DIR:-}" ] || "$repo_root/scripts/perch-overlay.sh"
 perch="$("$repo_root/scripts/perch-src.sh")"
 stack="$repo_root/target/wasm32v1-none/contract"
-manifest="$perch/deployments/${STELLAR_NETWORK:-testnet}.json"
+network="${STELLAR_NETWORK:-testnet}"
+manifest="$perch/deployments/$network.json"
 fetch="$perch/scripts/fetch-infra-wasm.sh"
 [ -f "$manifest" ] || { echo "error: no manifest at $manifest" >&2; exit 1; }
 command -v jq >/dev/null || { echo "error: jq not found" >&2; exit 1; }
+
+built=""
+if [ "$("$repo_root/scripts/perch-src.sh" --stack)" = build ]; then
+    # Nothing deploys the pin: build its stack from the pinned source with
+    # Perch's scripts/build-stack.sh (which also writes each tier's pins into
+    # the source, for the next tier and the native crates) into
+    # target/perch-stack/, once per rev, and record it as the manifest
+    # everything else reads (scripts/perch-src.sh --manifest): each
+    # contract's sha256 and version, the registries the stack's paths derive
+    # on the network, and the passphrase and RPC of the pin's own manifest.
+    # Nothing is fetched; the chain is not read.
+    out="$repo_root/target/perch-stack"
+    rev="$("$repo_root/scripts/perch-src.sh" --rev)"
+    account_pin="$perch/crates/perch-account-factory/wasm/perch-account.sha256"
+    if [ "$(jq -r '.source.commit // empty' "$out/build.json" 2>/dev/null)" != "$rev" ] ||
+        [ "$(tr -d '[:space:]' <"$account_pin")" != "$(jq -r '.artifacts[] | select(.package == "perch-account") | .sha256' "$out/build.json")" ]; then
+        (cd "$perch" && bash scripts/build-stack.sh --out "$out" --network-passphrase "$(jq -r .network_passphrase "$manifest")")
+    fi
+    mkdir -p "$stack"
+    cp "$out"/*.wasm "$stack/"
+    jq --slurpfile src "$manifest" --arg network "$network" '{
+        network: $network,
+        network_passphrase: $src[0].network_passphrase,
+        rpc_url: $src[0].rpc_url,
+        built_from_source: true,
+        source: .source,
+        toolchain: .toolchain,
+        registry: {id: .registry},
+        verifier_registry: .verifier_registry,
+        contracts: ([.artifacts[] | {key: .package, value: {sha256, version}}] | from_entries)
+    }' "$out/build.json" >"$out/$network.json"
+    manifest="$out/$network.json"
+    built=1
+fi
 
 pin="${NIDO_FACTORY_PIN:-$repo_root/contracts/factory/wasm/perch-account.sha256}"
 account="$(jq -r '.contracts["perch-account"].sha256 // empty' "$manifest")"
 [[ "$account" =~ ^[0-9a-f]{64}$ ]] ||
     { echo "error: $manifest has no perch-account hash for the factory to pin" >&2; exit 1; }
 printf '%s\n' "$account" >"$pin"
+[ -z "$built" ] || { echo "perch-infra: Perch ${rev:0:7} built from source into $stack ($manifest)" >&2; exit 0; }
 
 if grep -q 'stellar-rpc\.sh' "$fetch"; then
     cd "$perch" && exec bash "$fetch" --manifest "$manifest" --stack "$stack"

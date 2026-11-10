@@ -7,7 +7,7 @@
 // update, one passkey confirmation.
 //
 // Each app origin's permissions are its own scoped document (Perch
-// `apply_scope`), kept apart from the account's admin document: the wallet
+// `apply_grant`), kept apart from the account's admin document: the wallet
 // finds the origin's scope (lib/policy/appScopes), upserts the requested
 // rules into it (a second key from the same origin joins its rules),
 // previews the scope's canonical JSON + doc_hash AND the exact diff against

@@ -1,18 +1,20 @@
 /**
- * Scoped documents, one per connected app origin (Perch
- * `docs/recovery/spec.md` §7.6).
+ * Grant documents, one per connected app origin (Perch
+ * `docs/recovery/spec.md` §7.6). Nido calls the slot an app's grant lives in
+ * its scope; Perch's account calls the document a grant.
  *
  * The admin document (`apply_doc`) holds the account's own rules: its admin
  * keys, its guardian rules, the recovery member, and everything a recovery
- * restores. Each app origin the owner lets in gets one scoped document
- * (`apply_scope(scope, doc)`) holding that app's rules: rules scoped to
+ * restores. Each app origin the owner lets in gets one grant document
+ * (`apply_grant(grant, doc)`) holding that app's rules: rules scoped to
  * other contracts only, signed by the app's own keys. Removing the app is
- * `remove_scope(scope)`. A scope's rules are read from `scope(id)`, and
- * its document is rebuilt from the account's scope views (perch-js
- * `readScopeDoc`: the account keeps no scoped document's text, and the
+ * `remove_grant(grant)`. A grant's rules are read from `grant(id)`, and
+ * its document is rebuilt from the account's grant views (perch-js
+ * `readGrantDoc`: the account keeps no grant document's text, and the
  * rebuild is trusted only once it hashes to the stored `doc_hash`), never
- * read from `configuration()`, which covers the admin document alone. `apply_scope` advances neither the configuration
- * revision nor the applied `doc_hash`.
+ * read from `configuration()`, which covers the admin document alone.
+ * `apply_grant` advances neither the configuration revision nor the applied
+ * `doc_hash`.
  *
  * Scope ids are derived from the origin, so every wallet device and the
  * app itself find an origin's scope from chain state alone. Candidate `i`
@@ -33,7 +35,7 @@
  * spending record per origin. Rules the new request does not name keep
  * their keys.
  *
- * A scoped document must never name an admin credential: `apply_scope`
+ * A grant document must never name an admin credential: `apply_grant`
  * records every credential it names, and once a recovery completes, any
  * document naming one of them is refused (`WipedCredential`), the admin
  * document included.
@@ -49,20 +51,20 @@ import {
   docHash,
   parsePolicyDoc,
   parsePolicyDocJson,
-  readScopeDoc,
-  ScopeNotRebuilt,
+  readGrantDoc,
+  GrantNotRebuilt,
   type AccountConfiguration,
   type Credential,
   type PolicyDoc,
   type Rule,
-  type ScopeBindings,
+  type GrantBindings,
   type SignerDecl,
 } from '@stellar-registry/perch';
 import { docCapProblem, type FlatDocLimits } from '../policyDoc/caps.js';
 import type { TxBuild } from '../policyBlocks/types.js';
 import type { AccountArgs } from './account.js';
 
-/** A scope id: Perch's `u32`. */
+/** A scope (grant) id: Perch's `u32`. */
 export type ScopeId = number;
 
 /** How many candidate ids an origin has. */
@@ -158,7 +160,7 @@ function credentialOf(key: AppKey): Credential {
 
 // --- Reads ------------------------------------------------------------------
 
-/** A scope's record as `scope(id)` returns it. */
+/** A scope's record as `grant(id)` returns it. */
 export interface ScopeRecordView {
   gen: bigint;
   /** Lowercase hex. */
@@ -194,16 +196,16 @@ export function scopeReader(args: AccountArgs & { allowHttp?: boolean }): ScopeR
   });
   return {
     async scopeGeneration() {
-      return BigInt((await c.scope_generation()).result);
+      return BigInt((await c.grant_generation()).result);
     },
     async scopeCount() {
-      return Number((await c.scope_count()).result);
+      return Number((await c.grant_count()).result);
     },
     async scopes(start, count) {
-      return (await c.scopes({ start, count })).result.map(Number);
+      return (await c.grants({ start, count })).result.map(Number);
     },
     async scope(id) {
-      const r = (await c.scope({ scope: id })).result;
+      const r = (await c.grant({ grant: id })).result;
       if (r === undefined || r === null) return null;
       return {
         gen: BigInt(r.gen),
@@ -212,13 +214,13 @@ export function scopeReader(args: AccountArgs & { allowHttp?: boolean }): ScopeR
       };
     },
     async scopeDoc(id) {
-      // Four reads straddling an `apply_scope` can disagree; read once more.
+      // Four reads straddling an `apply_grant` can disagree; read once more.
       for (let attempt = 0; ; attempt++) {
         try {
-          const rebuilt = await readScopeDoc(c as unknown as ScopeBindings, args.account, args.networkPassphrase, id);
+          const rebuilt = await readGrantDoc(c as unknown as GrantBindings, args.account, args.networkPassphrase, id);
           return rebuilt === null ? null : rebuilt.canonical;
         } catch (e) {
-          if (!(e instanceof ScopeNotRebuilt)) throw e;
+          if (!(e instanceof GrantNotRebuilt)) throw e;
           if (attempt > 0) return null;
         }
       }
@@ -279,9 +281,9 @@ export async function readScope(r: ScopeReader, id: ScopeId, generation?: bigint
 const PAGE = 32;
 
 /**
- * Every scope the account holds, wiped ones included, with the scope
- * generation they were read against. `scopes(start, count)` swap-removes,
- * so the listing is read again whenever `scope_count` moved during it.
+ * Every scope the account holds, wiped ones included, with the grant
+ * generation they were read against. `grants(start, count)` swap-removes,
+ * so the listing is read again whenever `grant_count` moved during it.
  */
 export async function readScopes(r: ScopeReader): Promise<{ generation: bigint; scopes: ScopeView[] }> {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -358,8 +360,8 @@ export interface ScopedDocContext {
 }
 
 /**
- * Why `doc` cannot be `origin`'s scoped document, or undefined. Mirrors the
- * account's `check_scoped` (no `recovery` member; every rule scoped to a
+ * Why `doc` cannot be `origin`'s grant document, or undefined. Mirrors the
+ * account's grant checks (no `recovery` member; every rule scoped to a
  * contract that is neither the account nor in the excluded set), and adds
  * Nido's own two: no admin credential, and every signer id names `origin`.
  */
@@ -472,7 +474,7 @@ const u32 = (n: ScopeId) => {
 };
 
 /**
- * `apply_scope(scope, canonicalJson(doc))`. With `limits`, an over-limit
+ * `apply_grant(scope, canonicalJson(doc))`. With `limits`, an over-limit
  * document is refused here, with the reason; with `scoped`, so is one the
  * account would refuse ({@link scopedDocProblem}).
  */
@@ -489,7 +491,7 @@ export function buildApplyScopeTx(
   const problem = args.scoped === undefined ? undefined : scopedDocProblem(doc, args.scoped);
   if (problem !== undefined) throw new Error(problem);
   const canonical = canonicalJson(doc);
-  const op = invoke(args.account, 'apply_scope', [u32(scope), nativeToScVal(Buffer.from(canonical, 'utf8'))]);
+  const op = invoke(args.account, 'apply_grant', [u32(scope), nativeToScVal(Buffer.from(canonical, 'utf8'))]);
   return {
     docHash: docHash(doc),
     canonicalJson: canonical,
@@ -498,21 +500,21 @@ export function buildApplyScopeTx(
   };
 }
 
-/** `remove_scope(scope)`: the owner revokes every rule of the scope. */
+/** `remove_grant(scope)`: the owner revokes every rule of the scope. */
 export function buildRemoveScopeTx(scope: ScopeId, args: ScopeTxArgs): TxBuild {
-  return { operations: [invoke(args.account, 'remove_scope', [u32(scope)])], description: `Remove scope ${scope}` };
+  return { operations: [invoke(args.account, 'remove_grant', [u32(scope)])], description: `Remove scope ${scope}` };
 }
 
-/** `gc_scope(scope)`: anyone removes a scope a completed recovery wiped. */
+/** `gc_grant(scope)`: anyone removes a scope a completed recovery wiped. */
 export function buildGcScopeTx(scope: ScopeId, args: ScopeTxArgs): TxBuild {
-  return { operations: [invoke(args.account, 'gc_scope', [u32(scope)])], description: `Clean up scope ${scope}` };
+  return { operations: [invoke(args.account, 'gc_grant', [u32(scope)])], description: `Clean up scope ${scope}` };
 }
 
 // --- The app's side ---------------------------------------------------------
 
 /**
  * The rule an app signs a call on `contract` through, for its key on this
- * account: in its origin's live scope first (by name from `scope(id)`), then
+ * account: in its origin's live scope first (by name from `grant(id)`), then
  * in the admin document (a rule from before the app's permissions moved to
  * its scope). Null when neither holds one, or the origin's scope was wiped
  * by a recovery: the app must then ask again with a new key.

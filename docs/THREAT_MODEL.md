@@ -11,7 +11,7 @@ by STRIDE category with its release gate and status; this file holds the
 analysis.
 
 Recovery's own threat model, by profile, is Perch's:
-[Perch recovery spec §2](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/recovery/spec.md#2-roles-and-trust). "§" and "D" numbers below are that
+[Perch recovery spec §2](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/recovery/spec.md#2-roles-and-trust). "§" and "D" numbers below are that
 spec's sections and decisions. This file adds what Nido's contracts, wallet,
 and infrastructure bring.
 
@@ -181,7 +181,7 @@ and infrastructure bring.
     UltraHonk verifier plus Perch's delta for that flavor (one new file and
     visibility-only changes). **The delta is not audited**; Perch lists its
     audit as a release criterion
-    ([Perch ZK README](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/zk/README.md); MAINNET_READINESS D5). Until then,
+    ([Perch ZK README](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/zk/README.md); MAINNET_READINESS D5). Until then,
     recovery's ZK factor rests on that unaudited code.
 14. **Malicious dApp or link.** Anyone can send the user a link into their
     own account's wallet pages, or open `/sign/` from a dApp, with whatever
@@ -365,7 +365,7 @@ post-audit work, its entry in [DEFERRED.md](./DEFERRED.md).
   BN254, and Poseidon2 functions.
 - The host's CAP-0071 delegated-auth and invoker-auth behaviour, as pinned by
   Perch's tests
-  ([Perch CAP-0071 notes](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/recovery/cap-0071.md)).
+  ([Perch CAP-0071 notes](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/recovery/cap-0071.md)).
 - The OZ `stellar-accounts` fork at the pinned revision: `do_check_auth`,
   context rules, nonces.
 - Perch's WebAuthn verifier, controller, pool, adapter, compiler, and

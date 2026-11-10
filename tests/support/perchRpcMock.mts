@@ -312,10 +312,10 @@ export function accountViews(
   const scopes = opts.scopes ?? {};
   const ids = Object.keys(scopes).map(Number);
   return {
-    [`${account}:scope_generation`]: 0n,
-    [`${account}:scope_count`]: ids.length,
-    [`${account}:scopes`]: ([start, count]: unknown[]) => ids.slice(Number(start), Number(start) + Number(count)),
-    [`${account}:scope`]: ([id]: unknown[]) => {
+    [`${account}:grant_generation`]: 0n,
+    [`${account}:grant_count`]: ids.length,
+    [`${account}:grants`]: ([start, count]: unknown[]) => ids.slice(Number(start), Number(start) + Number(count)),
+    [`${account}:grant`]: ([id]: unknown[]) => {
       const doc = scopes[Number(id)];
       if (doc === undefined) return null;
       return {
@@ -332,18 +332,18 @@ export function accountViews(
         })),
       };
     },
-    // An M7 account keeps no scoped document's text: its stored rules and
+    // An account keeps no grant document's text: its stored rules and
     // signer ids, from which the wallet rebuilds the text (perch-js
-    // `readScopeDoc`). `lowerScope` is that rebuild's inverse.
-    [`${account}:scope_rule_set`]: ([id]: unknown[]) => {
+    // `readGrantDoc`). `lowerScope` is that rebuild's inverse.
+    [`${account}:grant_rule_set`]: ([id]: unknown[]) => {
       const doc = scopes[Number(id)];
       return doc === undefined ? [] : lowerScope(account, doc).ruleSet;
     },
-    [`${account}:scope_signer_ids`]: ([id]: unknown[]) => {
+    [`${account}:grant_signer_ids`]: ([id]: unknown[]) => {
       const doc = scopes[Number(id)];
       return doc === undefined ? null : lowerScope(account, doc).signerIds;
     },
-    [`${account}:scope_verifier_names`]: ([id]: unknown[]) => {
+    [`${account}:grant_verifier_names`]: ([id]: unknown[]) => {
       const doc = scopes[Number(id)];
       return doc === undefined ? null : lowerScope(account, doc).verifierNames;
     },

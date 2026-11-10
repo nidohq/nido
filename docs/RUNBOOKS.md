@@ -107,7 +107,7 @@ manifest (`deployments/<network>.json` in Perch). Nido doesn't deploy them.
 Before using a manifest:
 
 1. Run Perch's
-   [`scripts/verify-deployment.sh`](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/scripts/verify-deployment.sh) against it: by hash and
+   [`scripts/verify-deployment.sh`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/scripts/verify-deployment.sh) against it: by hash and
    address only, it checks each contract at its content address, its code
    hash, the registry's records, the account installed, and what consumers
    resolve.

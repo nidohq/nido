@@ -1,16 +1,17 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fromPerchManifest, MAINNET, TESTNET, type PerchManifest } from './deployment';
 import { readPerch } from '../../../../tests/support/perchSrc.mts';
 
-// The manifest at Nido's Perch pin is the source of truth; TESTNET is Nido's copy of
-// it plus Nido's factory. A Perch redeploy (or a testnet reset) fails here
-// until TESTNET follows.
-// This branch builds against the deployment in perch-overlay/, which
-// scripts/perch-overlay.sh lays over Perch's source (the M7 rehearsal).
-const overlay = new URL('../../../../perch-overlay/deployments/testnet.json', import.meta.url);
+// The manifest of the deployment TESTNET names is the source of truth;
+// TESTNET is Nido's copy of it plus Nido's factory. A Perch redeploy (or a
+// testnet reset) fails here until TESTNET follows. Nothing deploys this
+// branch's Perch pin (perch dev; its stack is built from source, see the root
+// Cargo.toml), so TESTNET and the factory record still name the M7 rehearsal
+// deployment, whose manifest is deployment.testnet.json, until a deployment
+// of the pin exists.
 const manifest = JSON.parse(
-  existsSync(overlay) ? readFileSync(overlay, 'utf8') : readPerch('deployments/testnet.json'),
+  readFileSync(new URL('./deployment.testnet.json', import.meta.url), 'utf8'),
 ) as PerchManifest;
 
 // What `scripts/deploy-factory.sh` read back from the factory it deployed.

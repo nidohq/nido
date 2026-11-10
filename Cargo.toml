@@ -6,7 +6,10 @@ members = [
 ]
 # examples/* are self-contained stellar-scaffold projects with their own
 # workspace + toolchain; keep them out of this workspace's resolution.
-exclude = ["examples"]
+# target/perch-src holds Perch's source at the pin (scripts/perch-src.sh); its
+# crates belong to Perch's own workspace when a stack built from it patches
+# them in (scripts/perch-overlay.sh).
+exclude = ["examples", "target/perch-src"]
 
 [workspace.package]
 version = "0.1.0"
@@ -22,7 +25,7 @@ soroban-sdk = "29.0.1"
 # (https://github.com/theahaco/admin-sep); Apache-2.0. Its newest release,
 # 0.28.1, is on soroban-sdk 28; Perch vendors it moved to soroban-sdk 29
 # (vendor/admin-sep/NOTICE there), taken from Perch's rev below.
-admin-sep = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
+admin-sep = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
 # Perch's pinned OZ fork, the same rev Perch's Cargo.toml pins at Nido's Perch rev:
 # bitswell-hq/theahaco__stellar-contracts-OZ 42089fc, theahaco's
 # stellar-contracts-OZ PR #5 (head 3372676, stacked on PR #4 and the CAP-0071
@@ -36,12 +39,14 @@ stellar-accounts = { version = "0.7.1", git = "https://github.com/bitswell-hq/th
 # soroban-sdk-tools: its newest release, 0.1.4, is on soroban-sdk 28; Perch
 # vendors it moved to soroban-sdk 29 (vendor/soroban-sdk-tools/NOTICE there),
 # taken from Perch's rev below.
-soroban-sdk-tools = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
+soroban-sdk-tools = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
 
 # The Perch stack (stellar-registry/perch epic #99), as git dependencies.
 # Perch publishes no crates yet; versions replace the rev once it does. The
-# pin is the bitswell fork's M7 stack (rule-eval in the account, scoped
-# documents, named verifiers), which upstream has not taken yet. All Perch
+# pin is perch dev, the consolidated release branch on the bitswell fork
+# (stellar-registry/perch#168: the M7 stack with scopes renamed to grants,
+# apply_grant etc., and rule-core at rule_eval::check_auth), which upstream
+# has not taken yet. All Perch
 # crates (and admin-sep and soroban-sdk-tools above, which Perch vendors) come
 # from the one rev so their types unify, and that rev is Nido's whole Perch
 # pin: scripts/perch-src.sh fetches Perch's source at it (the deployment
@@ -50,25 +55,29 @@ soroban-sdk-tools = { git = "https://github.com/bitswell-hq/stellar-registry__pe
 # moves it, and scripts/check-perch-drift.sh fails when a Perch crate,
 # Cargo.lock entry, or anything built or fetched from the manifest disagrees
 # with it. The rev must be on the branch [workspace.metadata.perch] declares.
-perch-account = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-smart-account = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-recovery = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-recovery-interface = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-doc-compiler = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-interpreter = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-spending-limit = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-zk-pool = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-zk-adapter = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-zk-prover = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-zk-primitives = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-ir = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
-perch-registry-resolve = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
+perch-account = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-smart-account = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-recovery = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-recovery-interface = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-doc-compiler = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-interpreter = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-spending-limit = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-zk-pool = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-zk-adapter = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-zk-prover = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-zk-primitives = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-ir = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
+perch-registry-resolve = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
 # Test worlds only: verifiers where `perch/verifiers` deploys them, which an
 # M7 account requires of an admin signer's verifier (`verifiers`).
-perch-testkit = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "f0275f41c5ab47c903bbfe9986b4bf3239c01b11" }
+perch-testkit = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
 
+# The branch the Perch pin must be on, and where the stack Nido tests comes
+# from: perch dev has no deployment, so `just perch-infra` builds it from the
+# pinned source (scripts/perch-src.sh --stack).
 [workspace.metadata.perch]
-branch = "fm/rc7-vnames"
+branch = "dev"
+stack = "build"
 
 [profile.release]
 overflow-checks = true

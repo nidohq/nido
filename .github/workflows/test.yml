@@ -87,8 +87,8 @@ jobs:
       # controller, pool, and adapter wasm under enforcing authorization, replaying the committed
       # real UltraHonk proofs (crates/integration-tests/fixtures/zk/), and the
       # `costs` suite's 75%-of-network-limit budget gate.
-      # With perch-overlay/ (a rehearsal deployment), the Perch crates build
-      # from the overlaid Perch source (scripts/perch-overlay.sh).
+      # For a Perch stack built from the pinned source, the Perch crates build
+      # from that source, with the stack's pins (scripts/perch-overlay.sh).
       - name: cargo test --workspace
         run: cargo test --workspace $(scripts/perch-overlay-config.sh)
 
@@ -115,7 +115,7 @@ jobs:
       - name: Factory check against the record and the manifest
         run: python3 scripts/test_check_factory.py -v
       - name: shellcheck
-        run: shellcheck -s bash -x -S warning scripts/perch-src.sh scripts/stellar-rpc.sh scripts/perch-infra.sh scripts/perch-overlay.sh scripts/perch-overlay-config.sh scripts/deploy-factory.sh scripts/check-factory.sh
+        run: shellcheck -s bash -x -S warning scripts/perch-src.sh scripts/perch-js-pack.sh scripts/stellar-rpc.sh scripts/perch-infra.sh scripts/perch-overlay.sh scripts/perch-overlay-config.sh scripts/deploy-factory.sh scripts/check-factory.sh
 
   unit:
     name: Unit (TestAuthenticator)
@@ -127,6 +127,10 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install
+      # perch-npm/'s perch-js tarball is perch-js as the pinned Perch source
+      # builds it (no published version carries this pin).
+      - name: perch-js tarball against the pinned source
+        run: scripts/perch-js-pack.sh --check
       - name: Unit tests (shim crypto vs SDK parsers)
         run: npx vitest run --config vitest.support.config.ts
       # The SDK's Perch layer against Perch's statement vectors and Nido's

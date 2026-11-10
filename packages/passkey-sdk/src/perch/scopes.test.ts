@@ -276,12 +276,12 @@ describe('scope transactions', () => {
     };
   };
 
-  it('apply_scope(scope, canonical bytes)', () => {
+  it('apply_grant(scope, canonical bytes)', () => {
     const doc = upsertAppRules(null, GAME_ORIGIN, passkey(0xaa), [guess], NET);
     const tx = buildApplyScopeTx(4_000_000_000, doc, args);
     const c = call(tx.operations[0]!);
     expect(c.contract).toBe(ACCOUNT);
-    expect(c.fn).toBe('apply_scope');
+    expect(c.fn).toBe('apply_grant');
     expect(c.args[0]).toBe(4_000_000_000);
     expect(Buffer.from(c.args[1] as Uint8Array).toString('utf8')).toBe(canonicalJson(doc));
     expect(tx.docHash).toBe(docHash(doc));
@@ -295,9 +295,9 @@ describe('scope transactions', () => {
     expect(() => buildApplyScopeTx(-1, doc, args)).toThrow(/not a scope id/);
   });
 
-  it('remove_scope(scope) and gc_scope(scope)', () => {
-    expect(call(buildRemoveScopeTx(7, args).operations[0]!)).toEqual({ contract: ACCOUNT, fn: 'remove_scope', args: [7] });
-    expect(call(buildGcScopeTx(7, args).operations[0]!)).toEqual({ contract: ACCOUNT, fn: 'gc_scope', args: [7] });
+  it('remove_grant(scope) and gc_grant(scope)', () => {
+    expect(call(buildRemoveScopeTx(7, args).operations[0]!)).toEqual({ contract: ACCOUNT, fn: 'remove_grant', args: [7] });
+    expect(call(buildGcScopeTx(7, args).operations[0]!)).toEqual({ contract: ACCOUNT, fn: 'gc_grant', args: [7] });
   });
 });
 

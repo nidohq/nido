@@ -46,30 +46,30 @@ const doc = perch.upsertAppRules(
 beforeEach(() => scope.mockReset());
 
 describe("buildOperation: app scopes", () => {
-  it("remove-scope is remove_scope(scope) on the account", async () => {
+  it("remove-scope is remove_grant(scope) on the account", async () => {
     expect(call(await buildOperation({ type: "remove-scope", scope: ID, origin: ORIGIN }, ACCOUNT))).toEqual({
       contract: ACCOUNT,
-      fn: "remove_scope",
+      fn: "remove_grant",
       args: [ID],
     });
   });
 
-  it("gc-scope is gc_scope(scope) on the account", async () => {
+  it("gc-scope is gc_grant(scope) on the account", async () => {
     expect(call(await buildOperation({ type: "gc-scope", scope: ID, origin: null }, ACCOUNT))).toEqual({
       contract: ACCOUNT,
-      fn: "gc_scope",
+      fn: "gc_grant",
       args: [ID],
     });
   });
 
-  it("apply-scope is apply_scope(scope, the canonical bytes) while the scope is as reviewed", async () => {
+  it("apply-scope is apply_grant(scope, the canonical bytes) while the scope is as reviewed", async () => {
     scope.mockResolvedValue(null);
     const op = await buildOperation(
       { type: "apply-scope", scope: ID, origin: ORIGIN, docJson: canonicalJson(doc), prevDocHash: null },
       ACCOUNT,
     );
     const c = call(op);
-    expect([c.contract, c.fn, c.args[0]]).toEqual([ACCOUNT, "apply_scope", ID]);
+    expect([c.contract, c.fn, c.args[0]]).toEqual([ACCOUNT, "apply_grant", ID]);
     expect(Buffer.from(c.args[1] as Uint8Array).toString("utf8")).toBe(canonicalJson(doc));
   });
 

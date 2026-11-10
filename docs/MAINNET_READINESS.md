@@ -8,7 +8,7 @@ stable and cited from the other audit documents; `[x]` is met, `[~]` partly
 met, `[ ]` open.
 
 Perch's specification puts mainnet rollout outside its own scope
-([Perch recovery spec §1](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/recovery/spec.md#1-scope-and-vocabulary)), so a mainnet Perch deployment is a
+([Perch recovery spec §1](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/recovery/spec.md#1-scope-and-vocabulary)), so a mainnet Perch deployment is a
 prerequisite on top of everything here (A1).
 
 ## 1. Audit-entry gates (before handoff)
@@ -185,7 +185,7 @@ Every box here is checked before mainnet.
   (upgrading the relayer and its Channels plugin).
 - [ ] **D9. Proving measured on reference devices.** In-page proving fits
   the client budgets in
-  [Perch's budgets.md §1](https://github.com/bitswell-hq/stellar-registry__perch/blob/f0275f41c5ab47c903bbfe9986b4bf3239c01b11/docs/recovery/budgets.md#1-proving-client) on its mid-range phone and
+  [Perch's budgets.md §1](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/recovery/budgets.md#1-proving-client) on its mid-range phone and
   laptop. Only desktop numbers exist.
 
 ### Network and submission

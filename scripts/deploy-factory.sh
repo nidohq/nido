@@ -80,6 +80,8 @@ NETWORK="${2:-testnet}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
+[ "$(scripts/perch-src.sh --stack)" = deployment ] ||
+    die "Perch $(scripts/perch-src.sh --rev | cut -c1-7) is built from source, not deployed: there is no deployed account or verifier to build a factory around"
 MANIFEST="$(scripts/perch-src.sh)/deployments/$NETWORK.json"
 ACCOUNT_WASM="target/wasm32v1-none/contract/perch_account.wasm"
 FACTORY_WASM="target/wasm32v1-none/contract/nido_factory.wasm"

@@ -200,7 +200,7 @@ class PerchInfra(Case):
         log = f"{d}/log"
         open(log, "w").close()
         r = subprocess.run(["bash", WRAPPER], capture_output=True, text=True,
-                           env=base_env(NIDO_PERCH_DIR=d, NIDO_FACTORY_PIN=self.pin, FAKE_LOG=log,
+                           env=base_env(NIDO_PERCH_DIR=d, NIDO_PERCH_STACK="deployment", NIDO_FACTORY_PIN=self.pin, FAKE_LOG=log,
                                         FAKE_GOOD=" ".join(good),
                                         FAKE_FAIL=fail, PERCH_RPC_CALL_ATTEMPTS="1", **env))
         with open(log) as f:

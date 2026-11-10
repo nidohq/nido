@@ -314,7 +314,7 @@ export async function signAndSubmit(args: {
 
 /**
  * Build, simulate and submit an operation that needs no signature of the
- * account's: a permissionless call such as `gc_scope`, whose simulation
+ * account's: a permissionless call such as `gc_grant`, whose simulation
  * records no authorization entry for it.
  */
 export async function submitWithoutAuth(args: {

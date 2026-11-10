@@ -16,9 +16,20 @@
 #   scripts/perch-src.sh --git     # the repository it comes from
 #   scripts/perch-src.sh --branch  # the Perch branch the pin must be on
 #                                  # ([workspace.metadata.perch] in Cargo.toml)
+#   scripts/perch-src.sh --stack   # where the stack Nido tests comes from:
+#                                  # `deployment` (default; the pin's
+#                                  # deployments/<network>.json) or `build`
+#                                  # (built from the pinned source by `just
+#                                  # perch-infra`, for a pin nothing deploys)
+#   scripts/perch-src.sh --manifest [network]
+#                                  # the manifest of that stack: the pin's
+#                                  # deployments/<network>.json, or the one
+#                                  # `just perch-infra` writes for a build,
+#                                  # target/perch-stack/<network>.json
 #
 # Env: NIDO_PERCH_DIR names a Perch checkout to use instead (a local Perch
 # being worked on, or a test's stand-in); it is printed as is.
+# NIDO_PERCH_STACK overrides the stack mode (a test of the fetch path).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
@@ -28,17 +39,32 @@ rev="$(sed -nE 's/.*rev = "([^"]+)".*/\1/p' <<<"$dep")"
 [ -n "$git_url" ] && [[ "$rev" =~ ^[0-9a-f]{40}$ ]] ||
     { echo "error: the root Cargo.toml pins no perch-account git dependency at a full rev" >&2; exit 1; }
 
+meta() { sed -n '/^\[workspace\.metadata\.perch\]/,/^\[/s/^'"$1"' = "\(.*\)"$/\1/p' "$repo_root/Cargo.toml"; }
+stack="${NIDO_PERCH_STACK:-$(meta stack)}"
+stack="${stack:-deployment}"
+case "$stack" in deployment|build) ;; *) echo "error: [workspace.metadata.perch] stack is '$stack', not deployment or build" >&2; exit 1 ;; esac
+
 case "${1:-}" in
     --rev) echo "$rev"; exit 0 ;;
     --git) echo "$git_url"; exit 0 ;;
     --branch)
-        branch="$(sed -n '/^\[workspace\.metadata\.perch\]/,/^\[/s/^branch = "\(.*\)"$/\1/p' "$repo_root/Cargo.toml")"
+        branch="$(meta branch)"
         [ -n "$branch" ] || { echo "error: Cargo.toml's [workspace.metadata.perch] declares no branch" >&2; exit 1; }
         echo "$branch"
         exit 0
         ;;
+    --stack) echo "$stack"; exit 0 ;;
+    --manifest)
+        network="${2:-${STELLAR_NETWORK:-testnet}}"
+        if [ "$stack" = build ]; then
+            echo "$repo_root/target/perch-stack/$network.json"
+            exit 0
+        fi
+        echo "$("$repo_root/scripts/perch-src.sh")/deployments/$network.json"
+        exit 0
+        ;;
     "") ;;
-    *) echo "usage: scripts/perch-src.sh [--rev|--git|--branch]" >&2; exit 1 ;;
+    *) echo "usage: scripts/perch-src.sh [--rev|--git|--branch|--stack|--manifest [network]]" >&2; exit 1 ;;
 esac
 
 if [ -n "${NIDO_PERCH_DIR:-}" ]; then

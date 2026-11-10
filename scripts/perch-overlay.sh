@@ -1,30 +1,20 @@
 #!/usr/bin/env bash
-# This branch builds and tests against a Perch rehearsal deployment, one
-# deployed in registries of its own: Perch's tree at the pinned commit plus
-# the files that deployment changed (Perch docs/deploy/README.md, rehearsal
-# mode), kept in perch-overlay/ at the same paths: its manifest, its dev
-# registry.path and verifiers.path, and the build-time pins of its bytes.
+# When this branch tests a Perch stack built from the pinned source
+# ([workspace.metadata.perch] stack = "build", `just perch-infra`), the
+# native Perch crates must compile in the same build-time pins as that
+# stack's wasm, which perch-infra writes into the fetched source
+# (scripts/perch-src.sh), not the ones Perch commits. This writes
+# target/perch-overlay.toml, a Cargo `[patch]` building every Perch crate
+# Cargo.lock takes from the pinned repository from that source instead. Pass
+# it to the commands that run the Perch stack
+# (`cargo test --workspace $(scripts/perch-overlay-config.sh)`).
 #
-#   1. Copies perch-overlay/ over Perch's source at the pin
-#      (scripts/perch-src.sh), so `just perch-infra` fetches
-#      that deployment by its manifest's hashes and content addresses and
-#      the drift and factory checks read it.
-#   2. Writes target/perch-overlay.toml, a Cargo `[patch]` building every
-#      Perch crate Cargo.lock takes from the pinned repository from the
-#      overlaid source instead, so the registries and pins those crates
-#      compile in are the deployment's. Pass it to the commands that run the
-#      Perch stack (`cargo test --workspace --config target/perch-overlay.toml`).
-#
-# No-op without perch-overlay/. Usage: scripts/perch-overlay.sh
+# No-op for a deployed stack. Usage: scripts/perch-overlay.sh
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
-[ -d perch-overlay ] || exit 0
+[ "$(scripts/perch-src.sh --stack)" = build ] || exit 0
 perch="$(scripts/perch-src.sh)"
-
-(cd perch-overlay && find . -type f) | while IFS= read -r f; do
-    cp "perch-overlay/$f" "$perch/$f"
-done
 
 url="$(scripts/perch-src.sh --git)"
 mkdir -p target
@@ -51,4 +41,4 @@ print(f'[patch."{url}"]')
 for n in names:
     print(f'{n} = {{ path = "{dirs[n]}" }}')
 EOF
-echo "perch-overlay: $(cd perch-overlay && find . -type f | wc -l | tr -d ' ') files over $perch; target/perch-overlay.toml patches $(($(wc -l < target/perch-overlay.toml) - 1)) Perch crates" >&2
+echo "perch-overlay: target/perch-overlay.toml patches $(($(wc -l < target/perch-overlay.toml) - 1)) Perch crates to $perch" >&2

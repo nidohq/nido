@@ -16,7 +16,7 @@ import { createShimPasskey, installPasskeyShim } from '../../support/passkeyShim
 // as one update of the app origin's scoped document, a passkey as the
 // app's key, the caps a request declares (or doesn't), the decision in view
 // without scrolling, the way back to the app as a popup or a page, and the
-// whole approval through /sign/ to the one apply_scope it submits (then the
+// whole approval through /sign/ to the one apply_grant it submits (then the
 // apply_doc that moves the key's older rules out of the admin document).
 //
 // Needs `packages/frontend/dist-perch`:
@@ -306,7 +306,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
 
   test('with no admin document applied, the scope holds the grants alone', async ({ page }) => {
     // No applied document: the app's scope needs none (the constructor's
-    // admin rule authorizes apply_scope), and carries no admin rule.
+    // admin rule authorizes apply_grant), and carries no admin rule.
     await mockPerchChain(page, {
       ...deploymentViews(),
       ...accountViews(ACCOUNT, {
@@ -477,7 +477,7 @@ test.describe('app approval page: back to the app @fast', () => {
 
 // The whole approval, as a player would make it: the two grants reviewed on
 // the approval page, then each rule on /sign/, one passkey confirmation (the
-// test authenticator), and one apply_scope submitted with both rules; for a
+// test authenticator), and one apply_grant submitted with both rules; for a
 // key that still holds rules in the admin document from before apps had
 // scopes, a second confirmation and the apply_doc that moves them out.
 test.describe('app approval page through /sign/ @fast', () => {
@@ -515,7 +515,7 @@ test.describe('app approval page through /sign/ @fast', () => {
         }),
         [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(owner), 'hex'),
         [`${ACCOUNT}:apply_doc`]: ([json]: unknown[]) => hashOf(json),
-        [`${ACCOUNT}:apply_scope`]: ([, json]: unknown[]) => hashOf(json),
+        [`${ACCOUNT}:apply_grant`]: ([, json]: unknown[]) => hashOf(json),
       },
       { selfAuthorizing: [ACCOUNT], classicAccounts: [submitter.publicKey()], submitted },
     );
@@ -571,7 +571,7 @@ test.describe('app approval page through /sign/ @fast', () => {
     await page.locator('#approve').click();
 
     await page.waitForURL(`${DAPP}/play?delegation=ok&scope=${SCOPE}`, { timeout: 20_000 });
-    expect(submitted.map((c) => [c.contract, c.fn])).toEqual([[ACCOUNT, 'apply_scope']]);
+    expect(submitted.map((c) => [c.contract, c.fn])).toEqual([[ACCOUNT, 'apply_grant']]);
     const { scope, doc } = scopeOf(submitted[0]!);
     expect(scope).toBe(SCOPE);
     expect(doc.rules.map((r) => [r.name, r.scope])).toEqual([
@@ -611,7 +611,7 @@ test.describe('app approval page through /sign/ @fast', () => {
     await page.waitForURL(`${DAPP}/play?delegation=ok&scope=${SCOPE}`, { timeout: 20_000 });
     // The scope first, so the app keeps working; then the admin document without the rule.
     expect(submitted.map((c) => [c.contract, c.fn])).toEqual([
-      [ACCOUNT, 'apply_scope'],
+      [ACCOUNT, 'apply_grant'],
       [ACCOUNT, 'apply_doc'],
     ]);
     const { doc } = scopeOf(submitted[0]!);

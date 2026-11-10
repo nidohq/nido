@@ -39,6 +39,12 @@ command -v stellar >/dev/null || die "stellar CLI not found"
 command -v jq >/dev/null || die "jq not found"
 command -v curl >/dev/null || die "curl not found"
 [ -f "$RECORD" ] || die "no factory record at $RECORD"
+if [ "$("$REPO_ROOT/scripts/perch-src.sh" --stack)" = build ]; then
+    # Nothing deploys the pinned Perch: its stack is built from source, so no
+    # factory on the chain is built around it to check.
+    echo "factory record not checked: Perch $("$REPO_ROOT/scripts/perch-src.sh" --rev | cut -c1-7) is built from source, not deployed (the record names $(jq -r .factory "$RECORD"))"
+    exit 0
+fi
 MANIFEST="$("$REPO_ROOT/scripts/perch-src.sh")/deployments/$NETWORK.json"
 [ -f "$MANIFEST" ] || die "no Perch manifest at $MANIFEST"
 

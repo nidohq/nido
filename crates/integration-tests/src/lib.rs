@@ -34,6 +34,51 @@ pub fn perch_src() -> &'static std::path::Path {
     })
 }
 
+/// Deploy a verifier's wasm at its content address in `perch/verifiers`, as
+/// the registry's `deploy_stateless` puts one there: the verifier an account
+/// admits an admin passkey under. (perch-testkit deploys verifiers from
+/// native contracts only.)
+#[must_use]
+pub fn deploy_verifier_wasm(env: &soroban_sdk::Env, wasm: &[u8]) -> soroban_sdk::Address {
+    let hash = env
+        .deployer()
+        .upload_contract_wasm(soroban_sdk::Bytes::from_slice(env, wasm));
+    let registry = perch_testkit::verifiers::registry(env);
+    let at = env
+        .deployer()
+        .with_address(registry.clone(), hash.clone())
+        .deployed_address();
+    if at.executable().is_none() {
+        env.as_contract(&registry, || {
+            env.deployer()
+                .with_current_contract(hash.clone())
+                .deploy_contract(soroban_sdk::ContractExecutable::Wasm(hash.clone()), ())
+        });
+    }
+    at
+}
+
+/// The manifest of the Perch stack the suites run: the pin's
+/// `deployments/<network>.json`, or, for a stack built from the pinned
+/// source, the one `just perch-infra` writes (`scripts/perch-src.sh
+/// --manifest`).
+///
+/// # Panics
+///
+/// When the script fails or the manifest is not JSON.
+#[must_use]
+pub fn perch_manifest(network: &str) -> serde_json::Value {
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/perch-src.sh");
+    let out = std::process::Command::new("bash")
+        .args([script, "--manifest", network])
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .expect("run scripts/perch-src.sh");
+    assert!(out.status.success(), "scripts/perch-src.sh failed");
+    let path = String::from_utf8(out.stdout).unwrap();
+    serde_json::from_str(&std::fs::read_to_string(path.trim()).unwrap()).unwrap()
+}
+
 /// Nido's own contracts, built by `just build-contracts`.
 pub const MULTISIG_POLICY_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/contract/nido_multisig_policy.wasm");
@@ -290,7 +335,7 @@ pub fn deploy_smart_account(
 ) {
     // Where `perch/verifiers` deploys it: an M7 account admits an admin
     // passkey under no other verifier.
-    let verifier_addr = perch_testkit::verifiers::deploy_wasm(env, PERCH_WEBAUTHN_VERIFIER_WASM);
+    let verifier_addr = deploy_verifier_wasm(env, PERCH_WEBAUTHN_VERIFIER_WASM);
     let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
     let pubkey_sec1 = signing_key.verifying_key().to_sec1_bytes();
     let signer = Signer::External(
@@ -369,7 +414,7 @@ pub fn deploy_oz_account(
     soroban_sdk::Address,
     SigningKey,
 ) {
-    let verifier_addr = perch_testkit::verifiers::deploy_wasm(env, PERCH_WEBAUTHN_VERIFIER_WASM);
+    let verifier_addr = deploy_verifier_wasm(env, PERCH_WEBAUTHN_VERIFIER_WASM);
     let signing_key = SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
     let signer = Signer::External(
         verifier_addr.clone(),
