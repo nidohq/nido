@@ -8,7 +8,7 @@ members = [
 # workspace + toolchain; keep them out of this workspace's resolution.
 # vendor/perch is the Perch submodule: its crates belong to Perch's own
 # workspace (Nido consumes them as git dependencies, below).
-exclude = ["examples", "vendor/perch"]
+exclude = ["examples", "vendor/perch", "crates/g-account-core"]
 
 [workspace.package]
 version = "0.1.0"
