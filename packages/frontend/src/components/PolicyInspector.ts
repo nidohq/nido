@@ -121,7 +121,7 @@ function docRuleCard(rule: DocRuleView, currentLedger: number | null): string {
   const capRow = rule.cap
     ? `<div class="pol-field">
         <span class="pol-field-label">Spending cap</span>
-        <span class="pol-field-val">${esc(capText(rule.cap.limit, rule.cap.periodLedgers))} (rolling)</span>
+        <span class="pol-field-val">${esc(capText(rule.cap.limit, rule.cap.periodLedgers, rule.cap.token))} (rolling)</span>
       </div>`
     : '';
   const argsBadge = rule.hasArgConstraints
@@ -310,7 +310,7 @@ export function renderDocPreviewHtml(model: DocViewModel, canonical: string): st
       );
     }
     if (r.cap !== null) {
-      facts.push(`<span class="pol-preview-fact">${esc(capText(r.cap.limit, r.cap.periodLedgers))}</span>`);
+      facts.push(`<span class="pol-preview-fact">${esc(capText(r.cap.limit, r.cap.periodLedgers, r.cap.token))}</span>`);
     } else if (r.contract !== null) {
       // An uncapped contract rule: a warning only where it allows a token function.
       facts.push(
@@ -415,6 +415,12 @@ export function renderDocDiffHtml(diff: DocDiff): string {
       <div><strong>"${esc(s.decl.id)}"</strong> <span class="mut" style="font-size:12px;">${esc(label)}</span>
         <div class="pol-mono mut" style="font-size:11px;word-break:break-all;">${esc(detail)}</div>
       </div>
+    </div>`);
+  }
+  for (const line of diff.otherChanges) {
+    parts.push(`<div class="pol-diff-row">
+      <span class="pol-badge gated">± other</span>
+      <div class="mut" style="font-size:12px;">${esc(line)}</div>
     </div>`);
   }
   if (diff.unchangedRuleNames.length > 0) {

@@ -1,5 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { Keypair, StrKey } from '@stellar/stellar-sdk';
+import { Asset, Keypair, Networks, StrKey } from '@stellar/stellar-sdk';
 import { buildPolicyDoc, canonicalJson, docHash, parsePolicyDocJson, type PolicyDoc } from '@nidohq/passkey-sdk';
 import {
   accountViews,
@@ -25,7 +25,8 @@ import { createShimPasskey, installPasskeyShim } from '../../support/passkeyShim
 const contract = (n: number) => StrKey.encodeContract(Buffer.alloc(32, n));
 const ACCOUNT = contract(30);
 const GAME = contract(40);
-const XLM = contract(41);
+// The network's XLM contract: its caps read in XLM.
+const XLM = Asset.native().contractId(Networks.TESTNET);
 const ADMIN_KEY = '04' + 'ab'.repeat(64);
 const APP_KEY = '04' + 'cd'.repeat(64);
 const WALLET = `http://${ACCOUNT.toLowerCase()}.localhost:4397`;

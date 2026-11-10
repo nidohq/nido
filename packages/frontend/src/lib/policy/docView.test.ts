@@ -40,7 +40,7 @@ describe('describeDocRule', () => {
     expect(v.contract).toBe(TARGET);
     expect(v.functions).toEqual(['update_message']);
     expect(v.notAfterLedger).toBe(5000);
-    expect(v.cap).toEqual({ limit: '1000000000', periodLedgers: 17280 });
+    expect(v.cap).toEqual({ limit: '1000000000', periodLedgers: 17280, token: TARGET });
     expect(v.signerIds).toEqual(['session']);
   });
 

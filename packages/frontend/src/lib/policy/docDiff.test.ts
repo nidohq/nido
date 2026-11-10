@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Networks } from '@stellar/stellar-sdk';
-import { buildPolicyDoc, scopedSessionKeyDoc } from '@nidohq/passkey-sdk';
+import { buildPolicyDoc, scopedSessionKeyDoc, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { diffPolicyDocs, diffRuleFields } from './docDiff.js';
 import { adminBaseline, upsertSessionRule, type SessionDocDraft } from './docDraft.js';
 
@@ -121,7 +121,9 @@ describe('diffRuleFields', () => {
     };
     const changes = diffRuleFields(a, b);
     expect(changes.join('\n')).toContain('scope:');
-    expect(changes.join('\n')).toContain('cap: no cap → up to 5 XLM per day');
+    // TARGET2 is not the XLM contract: the cap is in its own smallest units.
+    expect(changes.join('\n')).toContain('cap: no cap → up to 50000000 (smallest units) of token CDVVRZ…RF6POX per day');
+    expect(changes.join('\n')).not.toContain('XLM');
   });
 });
 
@@ -274,5 +276,118 @@ describe('diffRuleFields — transfer recipient', () => {
         permissions: [{ name: 'pay', on: { contract: TARGET }, by: ['admin'], functions: ['approve'], ...(args ? { args } : {}) }],
       }).rules[0]!;
     expect(diffRuleFields(approve(), approve(only(TARGET2)))).toEqual(['argument conditions changed']);
+  });
+});
+
+// Documents whose canonical JSON (so doc_hash) differs are never "identical",
+// and every difference is shown: the three pairs from the verified-wallet-UI
+// review's Appendix C, which the diff reported as identical, and the rest of
+// the fields its lines do not describe.
+describe('diffPolicyDocs on documents that differ only in fields the lines do not describe', () => {
+  const base = {
+    version: 1,
+    network: 'Test SDF Network ; September 2015',
+    signers: [
+      { id: 'owner', verifier: 'CVERIFIER', key: '04aa' },
+      { id: 'app', address: 'GAPPKEY' },
+    ],
+    rules: [
+      { name: 'owner', scope: { type: 'self-admin' }, principals: { type: 'all', signers: ['owner'] } },
+      {
+        name: 'app',
+        scope: { type: 'contract', address: 'CUSDC' },
+        principals: { type: 'all', signers: ['app'] },
+        functions: ['transfer'],
+        cap: { token: 'CUSDC', limit: '20000000', 'period-ledgers': 17280 },
+      },
+    ],
+  } as unknown as PolicyDoc;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const clone = (d: PolicyDoc): any => JSON.parse(JSON.stringify(d));
+
+  it('reports a moved cap token on the rule (Appendix C)', () => {
+    const next = clone(base);
+    next.rules[1].cap.token = 'CXLMSAC';
+    const d = diffPolicyDocs(base, next);
+    expect(d.identical).toBe(false);
+    expect(d.rulesModified.map((m) => [m.name, m.changes])).toEqual([
+      [
+        'app',
+        [
+          'cap: up to 20000000 (smallest units) of token CUSDC per day → up to 20000000 (smallest units) of token CXLMSAC per day',
+          'other changes: cap.token',
+        ],
+      ],
+    ]);
+  });
+
+  it('reports an added recovery on the document (Appendix C)', () => {
+    const next = clone(base);
+    next.recovery = {
+      profile: 'loss',
+      mode: { type: 'guardian-only', guardians: ['GATTACKER'], quorum: 1 },
+      controller: 'CCONTROLLER',
+      replaceable: ['owner'],
+      'delay-ledgers': 0,
+      'expiry-ledgers': 17280,
+      'max-cancels': 0,
+    };
+    const d = diffPolicyDocs(base, next);
+    expect(d.identical).toBe(false);
+    expect(d.otherChanges).toEqual(['document: other changes: recovery']);
+  });
+
+  it("reports a changed self-authenticating rule's policy (Appendix C)", () => {
+    const prev = clone(base);
+    prev.rules[1].principals = { type: 'self-authenticating', policy: 'CPOLICY1', 'install-param-hex': '00', ack: 'x' };
+    const next = clone(prev);
+    next.rules[1].principals.policy = 'CPOLICY2';
+    const d = diffPolicyDocs(prev, next);
+    expect(d.identical).toBe(false);
+    expect(d.rulesModified.map((m) => m.changes)).toEqual([['other changes: principals.policy']]);
+  });
+
+  it('reports a changed network', () => {
+    const next = clone(base);
+    next.network = 'Public Global Stellar Network ; September 2015';
+    expect(diffPolicyDocs(base, next)).toMatchObject({
+      identical: false,
+      otherChanges: ['document: other changes: network'],
+    });
+  });
+
+  it("reports a signer field the diff does not compare, on a signer that kept its key", () => {
+    const next = clone(base);
+    next.signers[0]['verifier-name'] = 'perch-webauthn-verifier@0.1.2';
+    expect(diffPolicyDocs(base, next)).toMatchObject({
+      identical: false,
+      signers: [],
+      otherChanges: ['signer "owner": other changes: verifier-name'],
+    });
+  });
+
+  it('reports rules in another order', () => {
+    const next = clone(base);
+    next.rules.reverse();
+    expect(diffPolicyDocs(base, next)).toMatchObject({
+      identical: false,
+      otherChanges: ['other changes: the order of rules or signers'],
+    });
+  });
+
+  it('is identical only for the same canonical document', () => {
+    const d = diffPolicyDocs(base, clone(base));
+    expect(d).toMatchObject({ identical: true, otherChanges: [], rulesModified: [] });
+  });
+
+  it('shows every other change in the rendered diff', async () => {
+    const { renderDocDiffHtml } = await import('../../components/PolicyInspector.js');
+    const next = clone(base);
+    next.network = 'Public Global Stellar Network ; September 2015';
+    next.rules[1].cap.token = 'CXLMSAC';
+    const html = renderDocDiffHtml(diffPolicyDocs(base, next));
+    expect(html).not.toContain('No changes');
+    expect(html).toContain('document: other changes: network');
+    expect(html).toContain('other changes: cap.token');
   });
 });
