@@ -1,0 +1,82 @@
+{
+  "entry_file": "src/lib.rs",
+  "summary": "Pure authority kernel for Nido classic Stellar G-accounts. An Authority snapshot bundles an AccountRef, profile, role keys (bootstrap/local/service/recovery/fee), master weight, thresholds, and a signer list. validate enforces the MVP self-directed configuration invariant (StellarG, master 0, all thresholds 2, five distinct role keys, exactly three signers local/2 service/1 recovery/1). authorization_weight sums registered signer weights for evidence keys, iterating the validated signer list so each key contributes at most once regardless of evidence duplicates. can_authorize compares accumulated weight to the category threshold. rotate validates the current authority, checks request identity and template constraints, verifies evidence for the rotation kind, applies the single-role replacement to roles and signers, and re-validates the result. No crypto, I/O, or signature verification is performed.",
+  "properties": [
+    "For a valid Authority (validate returns Ok), authorization_weight iterates a.signers and sums each signer's weight as u16 when contains_key(evidence, signer.key) is true, contributing each registered key at most once even if evidence repeats it; the maximum possible result is 4 (2+1+1) and the minimum is 0 (empty evidence).",
+    "can_authorize returns Ok(true) when authorization_weight >= the threshold for the given category (low/medium/high); for a valid Authority with all thresholds 2, evidence containing only the local key yields weight 2 and authorizes, evidence containing both service and recovery yields weight 2 and authorizes, while evidence containing only service (weight 1), only recovery (weight 1), only bootstrap (not a signer, weight 0), or empty evidence (weight 0) does not authorize.",
+    "validate returns Ok(()) if and only if: profile == SelfDirected, account.kind == StellarG, account.address == roles.bootstrap, master_weight == 0, thresholds.low == thresholds.medium == thresholds.high == 2, roles_distinct returns true (all five role keys pairwise unequal), signers.len() == 3, and the three signers are exactly {local with weight 2, service with weight 1, recovery with weight 1} with no duplicates; if any condition fails validate returns the corresponding Refusal variant and no state is modified.",
+    "validate rejects: UnsupportedProfile when profile != SelfDirected; InvalidAccount when kind != StellarG or address != roles.bootstrap; InvalidMaster when master_weight != 0; InvalidThresholds when any threshold != 2; AliasedRoles when any two of the five role keys are equal; InvalidSigners when signer count != 3 or when entries do not match the expected {local/2, service/1, recovery/1} set.",
+    "rotate for ReplaceLocal with a well-formed request (request.account == a.account, transaction_source == account.address, old_key == roles.local, new_key not equal to any of the five role keys, operations == [SetSigner{new_key, 2}, SetSigner{old_key, 0}] both with source None) succeeds when evidence contains the local key, producing an Authority identical to the input except roles.local and the matching signer entry are replaced with new_key; account, profile, master_weight, thresholds, and all other role keys are preserved.",
+    "rotate for RecoverLocal requires evidence containing both the service and recovery keys (not the local key); ReplaceService and ReplaceRecovery require evidence containing the local key; in each case old_key must match the role being replaced (service for ReplaceService, recovery for ReplaceRecovery) and the replacement weight matches the role's original weight (1 for service/recovery).",
+    "rotate rejects with: WrongAccount if request.account != a.account; WrongSource if transaction_source != account.address; WrongOldKey if old_key does not match the role key for the requested RotationKind; InvalidNewKey if new_key equals any of the five current role keys (bootstrap, local, service, recovery, or fee); InvalidOperations if operations length != 2 or operation sources are not None or operation bodies do not match [SetSigner{new_key, expected_weight}, SetSigner{old_key, 0}]; InsufficientEvidence if the required evidence keys are absent.",
+    "After a successful rotate, can_authorize on the resulting Authority preserves the coalition predicate for surviving (unreplaced) keys: if local was not replaced, local alone still authorizes; if service and recovery were not replaced, service+recovery still authorizes. The replaced key no longer contributes weight.",
+    "If only local is lost and service+recovery survive, RecoverLocal can restore authority with a fresh local key. If local survives but service or recovery is lost, local can ReplaceService or ReplaceRecovery. If local plus either service or recovery is lost simultaneously, authority is unrecoverable: neither local evidence for Replace nor service+recovery evidence for Recover can be assembled."
+  ],
+  "invariants": [
+    "validate(a) == Ok(()) implies a.signers.len() == 3 and the sum of signer weights as u16 is exactly 4 (2+1+1).",
+    "validate(a) == Ok(()) implies all five role keys (bootstrap, local, service, recovery, fee) are pairwise distinct, and every signer key equals exactly one of {local, service, recovery}.",
+    "A successful rotate always produces an Authority that itself passes validate — the MVP configuration invariant is inductively preserved by every state transition.",
+    "rotate never modifies account, profile, master_weight, or thresholds — only the targeted role in roles and the corresponding signer entry in signers are changed."
+  ],
+  "edge_cases": [
+    "Duplicate evidence keys: the same Key repeated in evidence must not double-count weight; authorization_weight iterates signers (not evidence), so each signer contributes at most once.",
+    "new_key collision with fee: rotate rejects InvalidNewKey if new_key equals roles.fee, not just the four operational role keys.",
+    "Self-replacement is impossible: new_key == old_key cannot occur because old_key is a current role key and new_key must differ from all five role keys.",
+    "Signers with correct keys but wrong weights (e.g. local with weight 1) are rejected by validate as InvalidSigners.",
+    "Signers with duplicate entries for the same key are rejected: the loop flags the duplicate as an unmatched entry.",
+    "Empty evidence yields authorization_weight 0; can_authorize returns Ok(false) for any category.",
+    "Evidence containing all three signer keys yields weight 4, not more.",
+    "overflow_checks = true in release profile; however weight is u16 with maximum 4 so arithmetic overflow cannot occur in practice.",
+    "Rotation operations with a non-None source on either operation are rejected as InvalidOperations.",
+    "Rotation with OperationBody::Unsupported in either operation position is rejected as InvalidOperations."
+  ],
+  "target_patterns": [
+    "crate::authority::validate",
+    "crate::authority::authorization_weight",
+    "crate::authority::can_authorize",
+    "crate::authority::rotate",
+    "crate::authority::roles_distinct",
+    "crate::authority::contains_key"
+  ],
+  "relevant_state": [
+    "Authority.account",
+    "Authority.profile",
+    "Authority.roles",
+    "Authority.master_weight",
+    "Authority.thresholds",
+    "Authority.signers",
+    "AccountRef.tenant",
+    "AccountRef.network",
+    "AccountRef.kind",
+    "AccountRef.address",
+    "Roles.bootstrap",
+    "Roles.local",
+    "Roles.service",
+    "Roles.recovery",
+    "Roles.fee",
+    "Thresholds.low",
+    "Thresholds.medium",
+    "Thresholds.high",
+    "Signer.key",
+    "Signer.weight",
+    "Rotation.account",
+    "Rotation.transaction_source",
+    "Rotation.kind",
+    "Rotation.old_key",
+    "Rotation.new_key",
+    "Rotation.operations",
+    "Operation.source",
+    "Operation.body",
+    "Key",
+    "Profile",
+    "AccountKind",
+    "RotationKind",
+    "Category",
+    "Refusal",
+    "OperationBody"
+  ],
+  "anchor_functions": [
+    "authorization_weight",
+    "can_authorize"
+  ]
+}
