@@ -232,13 +232,14 @@ import Icon from '../../../components/Icon.astro';
   }
 
   /** Whom a grant's `transfer` may pay: its `to` (and, when that is the
-   *  contract another grant of the request calls, which one), or anyone. */
+   *  contract another grant of the request calls, which one). The request
+   *  parser refuses a grant that may call transfer without one. */
   function payeeNode(grant: DocDelegateGrant): HTMLElement {
     const node = el('span', 'dd-v');
     node.dataset.field = 'pays-to';
     if (grant.to === undefined) {
-      // The cap row below bounds it; the summary says both together.
-      node.textContent = 'Any address';
+      // Unreachable for a parsed request; never imply a payee.
+      node.textContent = 'No recipient named';
       return node;
     }
     const sibling = req?.grants.find((g) => g !== grant && g.target === grant.to);

@@ -338,19 +338,17 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     );
   });
 
-  test('a capped transfer grant without to= says plainly it can pay any address', async ({ page }) => {
-    await mockChain(page);
-    await page.goto(grantUrl({ 'grant.1.to': null }));
-    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
-    await expect(page.locator('[data-grant="1"] [data-field="pays-to"]')).toHaveText('Any address');
-    await expect(page.locator('[data-scope="guess-xlm"]')).toContainText('Up to 2 XLM per day, to any address.');
-    await expect(page.locator('#doc-preview .pol-preview-rule', { hasText: 'transfer()' }).first()).toContainText(
-      'Pays any address',
-    );
-    await page.locator('#approve').click();
-    const { doc } = await stashedDoc(page);
-    expect(doc.rules.find((r) => r.name === 'guess-xlm')!.args).toBeUndefined();
-  });
+  for (const [name, overrides, error] of [
+    ['a transfer grant without to=', { 'grant.1.to': null }, 'grant.1: A transfer grant must name its recipient (to=)'],
+    ['a grant with no functions', { 'grant.1.functions': null, 'grant.1.to': null }, 'grant.1: List the functions the grant may call'],
+  ] as const) {
+    test(`${name} is refused: every grant that may call transfer names its recipient`, async ({ page }) => {
+      await mockChain(page);
+      await page.goto(grantUrl(overrides));
+      await expect(page.locator('#status')).toContainText(error);
+      await expect(page.locator('#approve')).toBeDisabled();
+    });
+  }
 
   test('a grant with no limit hides the cap inputs and asks the user to choose', async ({ page }) => {
     await mockChain(page);
@@ -373,15 +371,10 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     expect(doc.rules.find((r) => r.name === 'guess-xlm')!.cap).toBeUndefined();
   });
 
-  for (const [name, functions] of [
-    ['transfer', 'transfer'],
-    ['any function', null],
-  ] as const) {
+  for (const [name, functions] of [['transfer', 'transfer']] as const) {
     test(`limit=none on ${name} still asks the user to choose a cap`, async ({ page }) => {
       await mockChain(page);
-      await page.goto(
-        grantUrl({ 'grant.1.functions': functions, 'grant.1.limit': 'none', 'grant.1.limit_period': null, 'grant.1.to': null }),
-      );
+      await page.goto(grantUrl({ 'grant.1.functions': functions, 'grant.1.limit': 'none', 'grant.1.limit_period': null }));
       const stake = page.locator('[data-grant="1"]');
       await expect(stake.locator('[data-field="cap"]')).not.toContainText('token functions');
       await expect(stake.locator('[data-cap-on]')).not.toBeChecked();
@@ -397,7 +390,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
       // A rule that can move tokens, left uncapped by the player's choice:
       // the summary warns.
       await expect(page.locator('[data-scope="guess-xlm"] .tone-warn')).toHaveText('No spending cap');
-      await expect(page.locator('[data-scope="guess-xlm"]')).toContainText('No spending cap, to any address.');
+      await expect(page.locator('[data-scope="guess-xlm"]')).toContainText(`No spending cap, only to ${GAME}.`);
       await page.locator('#approve').click();
       const { doc } = await stashedDoc(page);
       expect(doc.rules.find((r) => r.name === 'guess-xlm')!.cap).toBeUndefined();

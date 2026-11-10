@@ -29,11 +29,14 @@
 // its `functions` list is given and names none of TOKEN_MOVING_FUNCTIONS
 // (limitNoneHonoured). Otherwise the grant is shown as one without `limit`.
 //
-// `to` (a G… or C… address) restricts whom a grant's `transfer` may pay:
-// the rule carries an `address-eq` on transfer's argument 1, so the key can
-// pay only that address (a muxed M… recipient fails closed on chain). It is
-// accepted only on a grant whose functions are exactly `transfer`. A
-// transfer grant without `to` can pay any address, up to its cap.
+// `to` (a G… or C… address) is whom a grant's `transfer` pays: the rule
+// carries an `address-eq` on transfer's argument 1, so the key can pay only
+// that address (a muxed M… recipient fails closed on chain). A grant that may
+// call `transfer` must name it: its functions are exactly `transfer`, with
+// `to`. Nido refuses a request with a transfer grant that names no
+// recipient, one that allows `transfer` beside other functions (argument 1
+// means something else there, so it cannot be pinned), and one with no
+// `functions` (it may call any function, `transfer` included).
 //
 // One grant (the original format): `target`, `functions`, `limit`,
 // `limit_period`, `to`, and `label` (the rule name, default "session").
@@ -298,6 +301,20 @@ function parseGrant(
     if (functions?.length !== 1 || functions[0] !== 'transfer') {
       return { error: `${where}to= restricts whom transfer pays, so the grant's functions must be exactly transfer.` };
     }
+  }
+  // Every grant that may call transfer pays one named recipient.
+  if (functions === undefined) {
+    return {
+      error: `${where}List the functions the grant may call: one with no functions may call any function, transfer included, and a transfer grant must name its recipient (to=).`,
+    };
+  }
+  if (functions.includes('transfer') && functions.length > 1) {
+    return {
+      error: `${where}A grant that may call transfer may call only transfer, so its recipient (to=) can be pinned.`,
+    };
+  }
+  if (functions.includes('transfer') && to === null) {
+    return { error: `${where}A transfer grant must name its recipient (to=): Nido pins whom it may pay.` };
   }
 
   const label = (get('label') ?? '').trim() || defaultLabel;
