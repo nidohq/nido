@@ -34,9 +34,11 @@
 // that address (a muxed M… recipient fails closed on chain). A grant that may
 // call `transfer` must name it: its functions are exactly `transfer`, with
 // `to`. Nido refuses a request with a transfer grant that names no
-// recipient, one that allows `transfer` beside other functions (argument 1
-// means something else there, so it cannot be pinned), and one with no
-// `functions` (it may call any function, `transfer` included).
+// recipient, and one that allows `transfer` beside other functions
+// (argument 1 means something else there, so it cannot be pinned). A grant
+// with no `functions` may call any function, `transfer` included: the
+// approval page refuses it when its target is a token contract
+// (tokenTarget.ts), and allows it on any other contract.
 //
 // One grant (the original format): `target`, `functions`, `limit`,
 // `limit_period`, `to`, and `label` (the rule name, default "session").
@@ -70,7 +72,7 @@ import {
 import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
 import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
 import { NO_CAP_NO_TOKEN_FUNCTIONS, NO_SPENDING_CAP, canMoveTokens } from './tokenFunctions.js';
-import { canTransfer, capText } from './reviewText.js';
+import { capText } from './reviewText.js';
 
 export const DOC_DURATIONS: Record<string, number | null> = {
   '24h': 17280,
@@ -302,18 +304,14 @@ function parseGrant(
       return { error: `${where}to= restricts whom transfer pays, so the grant's functions must be exactly transfer.` };
     }
   }
-  // Every grant that may call transfer pays one named recipient.
-  if (functions === undefined) {
-    return {
-      error: `${where}List the functions the grant may call: one with no functions may call any function, transfer included, and a transfer grant must name its recipient (to=).`,
-    };
-  }
-  if (functions.includes('transfer') && functions.length > 1) {
+  // Every grant that may call transfer pays one named recipient. (One with
+  // no functions is checked against its target on the page: tokenTarget.ts.)
+  if (functions?.includes('transfer') && functions.length > 1) {
     return {
       error: `${where}A grant that may call transfer may call only transfer, so its recipient (to=) can be pinned.`,
     };
   }
-  if (functions.includes('transfer') && to === null) {
+  if (functions?.includes('transfer') && to === null) {
     return { error: `${where}A transfer grant must name its recipient (to=): Nido pins whom it may pay.` };
   }
 
@@ -343,8 +341,10 @@ export function sessionSignerDraft(
  * will approve it, so the uncapped, pay-anyone and never-expiring cases are
  * stated as plainly as the bounded ones. An uncapped rule that allows a
  * token function is `warn`; one that allows none says no cap applies.
- * `recipient` says whom a rule that may call `transfer` can pay (null when
- * it cannot). (The page lists the functions itself, each shown as a method.)
+ * `recipient` names whom a transfer grant pays (its `to`, which every grant
+ * listing `transfer` carries); null for any other grant. A grant with no
+ * functions reaches approval only on a contract that is not a token
+ * (tokenTarget.ts), so it names none. (The page lists the functions itself, each shown as a method.)
  */
 export function describeSessionScope(scope: {
   cap: DocDelegateCap | null;
@@ -362,8 +362,7 @@ export function describeSessionScope(scope: {
     : warn
       ? NO_SPENDING_CAP
       : NO_CAP_NO_TOKEN_FUNCTIONS;
-  const recipient =
-    scope.to !== undefined ? `only to ${scope.to}` : canTransfer(scope.functions) ? 'to any address' : null;
+  const recipient = scope.to !== undefined ? `only to ${scope.to}` : null;
   const span = DOC_DURATION_LABEL[scope.duration];
   const expiry =
     DOC_DURATIONS[scope.duration] == null

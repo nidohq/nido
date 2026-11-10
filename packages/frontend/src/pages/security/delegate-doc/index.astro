@@ -121,7 +121,9 @@ import Icon from '../../../components/Icon.astro';
   import { contractIdFromHostname, canonicalJson, docCapProblem, docHash, parsePolicyDocJson } from '@nidohq/passkey-sdk';
   import type { PolicyDoc } from '@nidohq/passkey-sdk';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
-  import { NETWORK_PASSPHRASE, latestLedgerSequence } from '../../../lib/network.js';
+  import { rpc } from '@stellar/stellar-sdk';
+  import { NETWORK_PASSPHRASE, RPC_URL, latestLedgerSequence } from '../../../lib/network.js';
+  import { anyFunctionGrantProblem, rpcCodeReader } from '../../../lib/policy/tokenTarget.js';
   import {
     DOC_DURATIONS,
     DOC_DURATION_LABEL,
@@ -133,7 +135,6 @@ import Icon from '../../../components/Icon.astro';
     type DocDelegateGrant,
   } from '../../../lib/policy/docRequest.js';
   import { NO_CAP_NO_TOKEN_FUNCTIONS } from '../../../lib/policy/tokenFunctions.js';
-  import { canTransfer } from '../../../lib/policy/reviewText.js';
   import {
     adminBaseline,
     upsertSessionRules,
@@ -272,7 +273,10 @@ import Icon from '../../../components/Icon.astro';
     functions.append(...functionNodes(grant.functions));
     functions.dataset.field = 'functions';
     card.append(grantRow('Functions', functions));
-    if (canTransfer(grant.functions)) card.append(grantRow('Pays to', payeeNode(grant)));
+    // A transfer grant names its recipient (to=, required by the parser); a
+    // grant with no functions is approved only on a contract that is not a
+    // token (lib/policy/tokenTarget.ts), so it pays no one.
+    if (grant.functions?.includes('transfer')) card.append(grantRow('Pays to', payeeNode(grant)));
 
     if (limitNoneHonoured(grant)) {
       // A call-only rule: say what no cap means here, not "no cap".
@@ -382,6 +386,14 @@ import Icon from '../../../components/Icon.astro';
     docBaselineBlocked = true;
     approveBtn.disabled = true;
   };
+  // A grant with no functions list may call any function, transfer included,
+  // so it could pay anyone: refused when its target is a token contract, or
+  // cannot be checked (lib/policy/tokenTarget.ts).
+  const targetsChecked: Promise<void> = req
+    ? anyFunctionGrantProblem(req.grants, rpcCodeReader(new rpc.Server(RPC_URL))).then((problem) => {
+        if (problem !== undefined) refuse(problem);
+      })
+    : Promise.resolve();
   const baselineReady: Promise<void> = account && req
     ? (async () => {
         try {
@@ -640,6 +652,8 @@ import Icon from '../../../components/Icon.astro';
   approveBtn.addEventListener('click', async () => {
     if (!req || !account) return;
     approveBtn.disabled = true;
+    await targetsChecked;
+    if (docBaselineBlocked) return; // refuse() set the status
     try {
       // Validate the dApp return URL BEFORE any work.
       const successReturn = backToDapp('?delegation=ok');

@@ -62,10 +62,9 @@ describe('parseDocDelegateParams', () => {
     },
   );
 
-  it('refuses a grant with no functions: it may call any function, transfer included', () => {
+  it('parses a grant with no functions as any-function (the page checks its target: tokenTarget.ts)', () => {
     const r = parseDocDelegateParams(params({ functions: null }));
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain('List the functions the grant may call');
+    expect(r.ok && r.req.grants[0]!.functions).toBeUndefined();
   });
 
   describe('every grant that may call transfer names its recipient', () => {
@@ -170,11 +169,16 @@ describe('parseDocDelegateParams', () => {
       expect(limitNoneHonoured(grantOf({ functions: 'transfer', to: TARGET }))).toBe(false);
     });
 
-    // Requests with these are refused (every grant that may call transfer
-    // names its recipient); the rule itself still holds for them.
-    it('does not honour limit=none on transfer beside other functions, or on any function', () => {
+    it('does not honour limit=none on a rule allowing any function', () => {
+      const grant = grantOf({ functions: null });
+      expect(grant.functions).toBeUndefined();
+      expect(limitNoneHonoured(grant)).toBe(false);
+    });
+
+    // A request with this is refused (transfer can only be pinned alone);
+    // the rule itself still holds for it.
+    it('does not honour limit=none on transfer beside other functions', () => {
       expect(limitNoneHonoured({ cap: 'none', functions: ['guess', 'transfer'] })).toBe(false);
-      expect(limitNoneHonoured({ cap: 'none', functions: undefined })).toBe(false);
     });
 
     it('is false for a grant without limit=none', () => {
@@ -461,13 +465,14 @@ describe('describeSessionScope', () => {
       describeSessionScope({
         cap: { stroops: '25000000', period: 'week' },
         functions: ['transfer'],
+        to: TARGET,
         duration: '24h',
         notAfterLedger: 5145276,
       }),
     ).toEqual({
       amount: 'Up to 2.5 XLM per week',
       warn: false,
-      recipient: 'to any address',
+      recipient: `only to ${TARGET}`,
       expiry: 'At ledger 5,145,276 (≈ 24 hours)',
     });
   });
@@ -476,7 +481,9 @@ describe('describeSessionScope', () => {
     expect(describeSessionScope({ ...base, cap: null, functions: undefined, duration: 'none' })).toEqual({
       amount: 'No spending cap',
       warn: true,
-      recipient: 'to any address',
+      // A grant with no functions reaches approval only on a contract that
+      // is not a token (tokenTarget.ts): it names no recipient.
+      recipient: null,
       expiry: 'Never (until revoked)',
     });
   });
@@ -494,14 +501,11 @@ describe('describeSessionScope', () => {
     },
   );
 
-  it('says whom a transfer may pay: only its to, or any address', () => {
+  it('names a transfer grant\'s recipient, its to', () => {
     const cap = { stroops: '20000000', period: 'day' } as const;
-    expect(describeSessionScope({ ...base, cap, functions: ['transfer'], to: TARGET }).recipient).toBe(
-      `only to ${TARGET}`,
-    );
-    expect(describeSessionScope({ ...base, cap, functions: ['transfer'] })).toMatchObject({
+    expect(describeSessionScope({ ...base, cap, functions: ['transfer'], to: TARGET })).toMatchObject({
       amount: 'Up to 2 XLM per day',
-      recipient: 'to any address',
+      recipient: `only to ${TARGET}`,
     });
   });
 
