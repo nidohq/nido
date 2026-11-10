@@ -72,12 +72,14 @@ perch-registry-resolve = { git = "https://github.com/bitswell-hq/stellar-registr
 # M7 account requires of an admin signer's verifier (`verifiers`).
 perch-testkit = { git = "https://github.com/bitswell-hq/stellar-registry__perch", rev = "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1" }
 
-# The branch the Perch pin must be on, and where the stack Nido tests comes
-# from: perch dev has no deployment, so `just perch-infra` builds it from the
-# pinned source (scripts/perch-src.sh --stack).
+# The branch the Perch pin must be on. The stack Nido tests is perch dev's
+# separate testnet deployment in registries of its own (a rehearsal, Perch
+# docs/deploy/README.md): its manifest, path files and build-time pins are in
+# perch-overlay/, laid over the pinned source (scripts/perch-overlay.sh).
+# `stack = "build"` would build the stack from the pinned source instead
+# (scripts/perch-src.sh --stack).
 [workspace.metadata.perch]
 branch = "dev"
-stack = "build"
 
 [profile.release]
 overflow-checks = true

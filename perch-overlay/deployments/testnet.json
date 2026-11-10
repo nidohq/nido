@@ -4,10 +4,10 @@
   "network_passphrase": "Test SDF Network ; September 2015",
   "rpc_url": "https://soroban-testnet.stellar.org",
   "channel": "beta",
-  "deployed_at": "2026-11-05T20:57:33Z",
-  "deployed_ledger": 5577521,
+  "deployed_at": "2026-11-10T01:04:27Z",
+  "deployed_ledger": 5649599,
   "source": {
-    "commit": "a410123cc8a842bfada84004905f005e7497cea2",
+    "commit": "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1",
     "dirty": true
   },
   "toolchain": {
@@ -17,11 +17,34 @@
     "scaffold": "scaffold 0.0.27 (stellar-scaffold-cli-v0.0.27-0-g6f1f06c3e8d2cf82573ec214b20d1550e9ce326b)"
   },
   "registry": {
-    "id": "CBFU6FT66OG4CCQ2HTLG7ZS33TUSPLN3WCVQTJAVEA5S5UVDRQ5HPHSP",
+    "id": "CDFVJKO6FOFL2W4AWBBHYXMK3CMTTPMZZJTLLN2GCB5SRF5URW5MNIQF",
     "wasm_hash": "0acc4da2b0b44b70988fe9a3b64b31e7ace166e5a949e9e6846f72c6ce93c055",
-    "admin": "GDUMH74LTSE2YN7HX4WQGUSU3OTJWFXFMV5WFW4QVSMKAB3NGWTHUES5",
-    "manager": "GDUMH74LTSE2YN7HX4WQGUSU3OTJWFXFMV5WFW4QVSMKAB3NGWTHUES5",
-    "root": "CBFU6FT66OG4CCQ2HTLG7ZS33TUSPLN3WCVQTJAVEA5S5UVDRQ5HPHSP"
+    "admin": "GCOZZFKWRYVYPLZGRBMIQYHNDVPTJD4WWB2PBSGHNA6C3X4X572FKBCQ",
+    "manager": "GCOZZFKWRYVYPLZGRBMIQYHNDVPTJD4WWB2PBSGHNA6C3X4X572FKBCQ",
+    "root": "CDFVJKO6FOFL2W4AWBBHYXMK3CMTTPMZZJTLLN2GCB5SRF5URW5MNIQF"
+  },
+  "verifiers": {
+    "id": "CAOAXMVPCVJNOXDJLXG47XDJ5IIAGKK2JRTFIX2CK5EG72THNAGMIB7P",
+    "wasm_hash": "0acc4da2b0b44b70988fe9a3b64b31e7ace166e5a949e9e6846f72c6ce93c055",
+    "admin": "GCOZZFKWRYVYPLZGRBMIQYHNDVPTJD4WWB2PBSGHNA6C3X4X572FKBCQ",
+    "manager": "GCOZZFKWRYVYPLZGRBMIQYHNDVPTJD4WWB2PBSGHNA6C3X4X572FKBCQ",
+    "root": "CAOAXMVPCVJNOXDJLXG47XDJ5IIAGKK2JRTFIX2CK5EG72THNAGMIB7P",
+    "contracts": {
+      "perch-ed25519-verifier": {
+        "version": "10.0.2",
+        "sha256": "4800ef8b9dbcf5a6e7f84fc1e0a2ecf6489648d6fb3b5601c124c043658f841f",
+        "bytes": 1807,
+        "name": "perch-ed25519-verifier@10.0.2",
+        "address": "CDQFX6AXWAJ75BGRDNM4N3X74HPOCSJQWHMXZ5UDEOT7ZOB35ZHDLUJH"
+      },
+      "perch-webauthn-verifier": {
+        "version": "0.1.2",
+        "sha256": "a28bf9cb173c329c7aee260c9d3beaf100c79cee6b308bdff134b21a8ab29afb",
+        "bytes": 11839,
+        "name": "perch-webauthn-verifier@0.1.2",
+        "address": "CDPT2W5ZYRHKD7ESV4OXPKYBWCCCAZRKRDAI4EAE7ACXE5ZN76F23OZP"
+      }
+    }
   },
   "zk": {
     "circuit_id": "9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a",
@@ -32,11 +55,11 @@
     "perch-doc-compiler": {
       "version": "0.3.5",
       "wasm": "perch_doc_compiler.wasm",
-      "sha256": "0b3078c03e8420488eaad5f093e2d1c1ffeb5ead0c463d20e8c85d992415e864",
-      "bytes": 111469,
+      "sha256": "489cf52fe8b70b7499b8dc57dd6552d32fcb7fb5ab0e8b1a76254ebefe3d33d4",
+      "bytes": 113789,
       "tier": 0,
       "pins": {},
-      "address": "CBGZOAOLGLIHH7IXWKCWU2E2B2L2UNHJE32NQTJMNOZ5AEKYXSN5JKFM"
+      "address": "CDZAF3GIX6Z573FDG64PFFMQMTER57UE5HSFGQRZ3EMTD5KD7IAEGNUY"
     },
     "perch-interpreter": {
       "version": "0.1.6",
@@ -45,7 +68,7 @@
       "bytes": 18975,
       "tier": 0,
       "pins": {},
-      "address": "CCZT3ZDFTTBKGM7ZATHKH4R3TSCFNAFC57XHVPBZSG36FJGD7DUWIA4V"
+      "address": "CA4THHSYJQGZKSZWTH53WCI6JRDEH42I4YYGH6MDF2PQDF2OAW3I3R3T"
     },
     "perch-spending-limit": {
       "version": "0.1.4",
@@ -54,7 +77,7 @@
       "bytes": 13889,
       "tier": 0,
       "pins": {},
-      "address": "CAJKKO7JD4DJHROI4JXGVQW65C3MQOV52L3KYBENGNGPVSRE7MY23J3N"
+      "address": "CB5N4HGJOLEDRMXX7EXXT7HDMC46JZAU7AYOOYDJPFGGEQHYNB5QZSFA"
     },
     "perch-ed25519-verifier": {
       "version": "10.0.2",
@@ -63,7 +86,7 @@
       "bytes": 1807,
       "tier": 0,
       "pins": {},
-      "address": "CCQPX6YQQSUK3OADG2VIMGY2ZWMT3DRGTSBSB6SMXJBIVA5DZILXJGR5"
+      "address": "CCKGSUKHMVHCY6NGIA375Q5W7MV2KQCLUUVN3WSLDRPVPOTK4ADBKB5Q"
     },
     "perch-webauthn-verifier": {
       "version": "0.1.2",
@@ -72,7 +95,7 @@
       "bytes": 11839,
       "tier": 0,
       "pins": {},
-      "address": "CC4VOQWXWKHJK2K6KN6YZQ4TAXTINSI3WOPWHMFVAJSQXCLMKOH7PUIN"
+      "address": "CCDLHVLWLHJQQEI3QJIDV7UP5G42YESCVYGQOEWYO2OJ5DQFJ7AO6KTO"
     },
     "perch-zk-pool": {
       "version": "0.1.4",
@@ -81,7 +104,7 @@
       "bytes": 27007,
       "tier": 0,
       "pins": {},
-      "address": "CCI6XU4PHSWBWO6J6KRVQKEEWUDJWK3QQCBKGA6FXYHVUJ6JLOX3RAWP"
+      "address": "CAUKQRNVQETVQGB52SZ3FJMOHH5VIBVURJIM4TO577YCUM5OIFXC6XTM"
     },
     "perch-zk-adapter": {
       "version": "0.1.4",
@@ -90,25 +113,25 @@
       "bytes": 57023,
       "tier": 0,
       "pins": {},
-      "address": "CAED4MOC2XCO2NGVOBXJ3T3TIYDZQ776VQDXVP4V6SUY27UTFKN4FAX3"
+      "address": "CBSUWADJJVNXTJ6JD2OITAX4BLQ5XCXL4OFZF354U4MASFCTJXYFSQF5"
     },
     "perch-recovery": {
       "version": "0.1.5",
       "wasm": "perch_recovery.wasm",
-      "sha256": "3f89aac07053230c7a2950770b2d6add7f975ad7d7cf662582a1d82917737662",
-      "bytes": 67981,
+      "sha256": "11b3a95d4e3e51930cad8172d1239cf67b877ecfce99ae37a2f5e015960e12b8",
+      "bytes": 68025,
       "tier": 0,
       "pins": {},
-      "address": "CCBNXQZYY5ZU7L4KSLZ2Q5BLIBVIPAYCG5MZXLHWZBNYKQGEZIHZKI5V"
+      "address": "CDHF6CPOICTDIPFEFOCKWVJXUBHH3HZ5NN52DQDEJKYGKKJR6DR6DPCU"
     },
     "perch-account": {
       "version": "0.5.1",
       "wasm": "perch_account.wasm",
-      "sha256": "0bdbdd142c953976056196cc837f84667e0fb64e731b007cc45d8b852c4ce844",
-      "bytes": 106584,
+      "sha256": "7a03f4c29b8a7fe099929d31c1fe87ca4f19d8b791baeb3ae17b7316b9a48220",
+      "bytes": 107868,
       "tier": 1,
       "pins": {
-        "perch-doc-compiler": "0b3078c03e8420488eaad5f093e2d1c1ffeb5ead0c463d20e8c85d992415e864",
+        "perch-doc-compiler": "489cf52fe8b70b7499b8dc57dd6552d32fcb7fb5ab0e8b1a76254ebefe3d33d4",
         "perch-interpreter": "875865665ca6e15d2791e6cf066fe19d6323621a5b1bc41dc712501593204474",
         "perch-spending-limit": "101837e8ececad5c574a495a119d3cf0c15fda0a854720358d66a95e79083b7d"
       }
@@ -116,37 +139,14 @@
     "perch-account-factory": {
       "version": "0.3.1",
       "wasm": "perch_account_factory.wasm",
-      "sha256": "cc99ae58b80920637e16e6fe0e0eb366aa93b66276f1c54c44e98320bb3c7757",
+      "sha256": "44ebcd008a77f1a306c3b14d25c8f3d3f16928a30683fe2eb2ce63385bb9de93",
       "bytes": 4487,
       "tier": 2,
       "pins": {
-        "perch-account": "0bdbdd142c953976056196cc837f84667e0fb64e731b007cc45d8b852c4ce844",
+        "perch-account": "7a03f4c29b8a7fe099929d31c1fe87ca4f19d8b791baeb3ae17b7316b9a48220",
         "perch-webauthn-verifier": "a28bf9cb173c329c7aee260c9d3beaf100c79cee6b308bdff134b21a8ab29afb"
       },
-      "address": "CCWMWUGLT374GMPX5VTPSSOKCKW3OAAIYSEXDZ34WM6AFQMSGJUH324O"
-    }
-  },
-  "verifiers": {
-    "id": "CDQG7KTWPERJ37HRQQCTMPTTQ3EO7OUUCRZBD5W7TMWS6ETPE7GZK4WO",
-    "wasm_hash": "0acc4da2b0b44b70988fe9a3b64b31e7ace166e5a949e9e6846f72c6ce93c055",
-    "admin": "GDUMH74LTSE2YN7HX4WQGUSU3OTJWFXFMV5WFW4QVSMKAB3NGWTHUES5",
-    "manager": "GDUMH74LTSE2YN7HX4WQGUSU3OTJWFXFMV5WFW4QVSMKAB3NGWTHUES5",
-    "root": "CDQG7KTWPERJ37HRQQCTMPTTQ3EO7OUUCRZBD5W7TMWS6ETPE7GZK4WO",
-    "contracts": {
-      "perch-ed25519-verifier": {
-        "version": "10.0.2",
-        "sha256": "4800ef8b9dbcf5a6e7f84fc1e0a2ecf6489648d6fb3b5601c124c043658f841f",
-        "bytes": 1807,
-        "name": "perch-ed25519-verifier@10.0.2",
-        "address": "CDICHGTLSDBZCHH4SPYS22RZ43GHSR3V6VTSD7FP3D3OKAX7TJW4DDRY"
-      },
-      "perch-webauthn-verifier": {
-        "version": "0.1.2",
-        "sha256": "a28bf9cb173c329c7aee260c9d3beaf100c79cee6b308bdff134b21a8ab29afb",
-        "bytes": 11839,
-        "name": "perch-webauthn-verifier@0.1.2",
-        "address": "CA4Q6TWJLLMLHRDQ4ADAVNWKDDDZZXACZPXD4OHPT7VPPTU7HBTZVJQ3"
-      }
+      "address": "CD5PVDOP4KI3U2D65EKFWGQPGPWZUY6R5FARVHMPALIFORU3VVOPVUYG"
     }
   }
 }

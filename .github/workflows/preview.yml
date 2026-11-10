@@ -50,12 +50,13 @@ jobs:
           # new accounts (lib/localSubmitterGate.ts; testnet builds only).
           PUBLIC_NIDO_LOCAL_SUBMITTER: "1"
           # Overrides the Perch deployment (JSON, or `none`). This branch
-          # points its preview at the separate M7 testnet deployment (the
-          # bitswell fork's Perch at a410123, in its own registries) and the
-          # Nido factory built from this branch for its account, 0bdbdd14.
-          # Its WebAuthn verifier is the perch/verifiers instance, which
-          # admin documents name as webauthnVerifierName.
-          PUBLIC_PERCH_DEPLOYMENT: '{"network":"Test SDF Network ; September 2015","factory":"CC32RVTK6YS4ZPJ6JDHLO5LMFILW2BPS3SAYX5TABN4GJJY5QXNMCMU4","webauthnVerifier":"CA4Q6TWJLLMLHRDQ4ADAVNWKDDDZZXACZPXD4OHPT7VPPTU7HBTZVJQ3","webauthnVerifierName":"perch-webauthn-verifier@0.1.2","verifierRegistry":"CDQG7KTWPERJ37HRQQCTMPTTQ3EO7OUUCRZBD5W7TMWS6ETPE7GZK4WO","statelessRegistry":"CBFU6FT66OG4CCQ2HTLG7ZS33TUSPLN3WCVQTJAVEA5S5UVDRQ5HPHSP","docCompiler":"CBGZOAOLGLIHH7IXWKCWU2E2B2L2UNHJE32NQTJMNOZ5AEKYXSN5JKFM","interpreter":"CCZT3ZDFTTBKGM7ZATHKH4R3TSCFNAFC57XHVPBZSG36FJGD7DUWIA4V","spendingLimit":"CAJKKO7JD4DJHROI4JXGVQW65C3MQOV52L3KYBENGNGPVSRE7MY23J3N","recoveryController":"CCBNXQZYY5ZU7L4KSLZ2Q5BLIBVIPAYCG5MZXLHWZBNYKQGEZIHZKI5V","zkPool":"CCI6XU4PHSWBWO6J6KRVQKEEWUDJWK3QQCBKGA6FXYHVUJ6JLOX3RAWP","zkAdapter":"CAED4MOC2XCO2NGVOBXJ3T3TIYDZQ776VQDXVP4V6SUY27UTFKN4FAX3","circuitId":"9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a","treeDepth":32,"accountWasmHash":"0bdbdd142c953976056196cc837f84667e0fb64e731b007cc45d8b852c4ce844"}'
+          # points its preview at perch dev's separate testnet deployment (the
+          # bitswell fork's Perch at fc0fb2b, in its own registries;
+          # perch-overlay/) and the Nido factory built from this branch for
+          # its account, 7a03f4c2. Its WebAuthn verifier is the
+          # perch/verifiers instance, which admin documents name as
+          # webauthnVerifierName. It equals the SDK's perch.TESTNET.
+          PUBLIC_PERCH_DEPLOYMENT: '{"network":"Test SDF Network ; September 2015","factory":"CAFTWZR6EF32LSXBHCZCKXUVHHOKH7ISPZ4F4PGEC4L3Q2FKHAJS6BC4","webauthnVerifier":"CDPT2W5ZYRHKD7ESV4OXPKYBWCCCAZRKRDAI4EAE7ACXE5ZN76F23OZP","webauthnVerifierName":"perch-webauthn-verifier@0.1.2","statelessRegistry":"CDFVJKO6FOFL2W4AWBBHYXMK3CMTTPMZZJTLLN2GCB5SRF5URW5MNIQF","docCompiler":"CDZAF3GIX6Z573FDG64PFFMQMTER57UE5HSFGQRZ3EMTD5KD7IAEGNUY","interpreter":"CA4THHSYJQGZKSZWTH53WCI6JRDEH42I4YYGH6MDF2PQDF2OAW3I3R3T","spendingLimit":"CB5N4HGJOLEDRMXX7EXXT7HDMC46JZAU7AYOOYDJPFGGEQHYNB5QZSFA","recoveryController":"CDHF6CPOICTDIPFEFOCKWVJXUBHH3HZ5NN52DQDEJKYGKKJR6DR6DPCU","zkPool":"CAUKQRNVQETVQGB52SZ3FJMOHH5VIBVURJIM4TO577YCUM5OIFXC6XTM","zkAdapter":"CBSUWADJJVNXTJ6JD2OITAX4BLQ5XCXL4OFZF354U4MASFCTJXYFSQF5","circuitId":"9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a","treeDepth":32,"accountWasmHash":"7a03f4c29b8a7fe099929d31c1fe87ca4f19d8b791baeb3ae17b7316b9a48220"}'
           # infra/invite's base URL + shared x-api-key (lib/demo/config.ts).
           # Empty disables the /demo/start invite check, it doesn't break the
           # build — but without these, every PR preview hard-fails that check

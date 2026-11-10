@@ -2,21 +2,21 @@
   "schema": 1,
   "network": "testnet",
   "network_passphrase": "Test SDF Network ; September 2015",
-  "factory": "CC32RVTK6YS4ZPJ6JDHLO5LMFILW2BPS3SAYX5TABN4GJJY5QXNMCMU4",
-  "wasm_hash": "0e32211ebf181718ae7ae37627b4aab113d753a57deee5c77a4d71f358b25968",
-  "account_wasm_hash": "0bdbdd142c953976056196cc837f84667e0fb64e731b007cc45d8b852c4ce844",
-  "pinned_verifier": "CA4Q6TWJLLMLHRDQ4ADAVNWKDDDZZXACZPXD4OHPT7VPPTU7HBTZVJQ3",
+  "factory": "CAFTWZR6EF32LSXBHCZCKXUVHHOKH7ISPZ4F4PGEC4L3Q2FKHAJS6BC4",
+  "wasm_hash": "e5a2091899339ee88b2c28ab4a2ebd44921790739a18299a08bb4a8086582fcf",
+  "account_wasm_hash": "7a03f4c29b8a7fe099929d31c1fe87ca4f19d8b791baeb3ae17b7316b9a48220",
+  "pinned_verifier": "CDPT2W5ZYRHKD7ESV4OXPKYBWCCCAZRKRDAI4EAE7ACXE5ZN76F23OZP",
   "manager": null,
-  "admin": "GDUMH74LTSE2YN7HX4WQGUSU3OTJWFXFMV5WFW4QVSMKAB3NGWTHUES5",
+  "admin": "GCOZZFKWRYVYPLZGRBMIQYHNDVPTJD4WWB2PBSGHNA6C3X4X572FKBCQ",
   "source": {
-    "commit": "49f5ac74d6eaf9b262730e470efc93273f92b6b8",
+    "commit": "ef02e6a4bf9fe0ee3adb1a87802db94c965cfb05",
     "dirty": true,
-    "perch_commit": "a410123cc8a842bfada84004905f005e7497cea2"
+    "perch_commit": "fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1"
   },
   "toolchain": {
     "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
     "stellar": "stellar 27.0.0 (5a7c5fe76530bf4248477ac812fc757146b98cc4)",
     "scaffold": "stellar-scaffold 0.0.31 (stellar-scaffold-cli-v0.0.31-0-gac6ae5f6ab34f012c8a6a81b6988ccd1b5ace0f7)"
   },
-  "deployed_at": "2026-11-05T21:19:10Z"
+  "deployed_at": "2026-11-10T01:21:41Z"
 }

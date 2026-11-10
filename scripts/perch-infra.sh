@@ -29,8 +29,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-# A stack built from source: the Cargo patch that builds the native Perch
-# crates from the same source (scripts/perch-overlay.sh).
+# A rehearsal deployment's files (perch-overlay/) over the fetched Perch
+# source first, so everything below reads its manifest; and, for it or a
+# stack built from source, the Cargo patch that builds the native Perch
+# crates from that source (scripts/perch-overlay.sh).
 [ -n "${NIDO_PERCH_DIR:-}" ] || "$repo_root/scripts/perch-overlay.sh"
 perch="$("$repo_root/scripts/perch-src.sh")"
 stack="$repo_root/target/wasm32v1-none/contract"

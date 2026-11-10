@@ -17,10 +17,11 @@ import { planAppGrant } from './appScopes.js';
 import { PERIOD_LEDGERS } from '../spendingLimitParams.js';
 
 const FIXTURE = fileURLToPath(new URL('./testdata/app-grant-doc.json', import.meta.url));
-// The integration world's WebAuthn verifier: the wasm of the stack built from
-// this branch's Perch pin (perch dev), at its content address in
-// `perch/verifiers`, where an account requires an admin passkey's verifier.
-const VERIFIER = 'CCSNO7H6AZUJI6ILRX4CACILJLT5RCQI24HMYUGZV4Y2QQT77M7ZMBIK';
+// The integration world's WebAuthn verifier: its wasm at its content address
+// in this branch's `perch/verifiers` (perch-overlay/), where an account
+// requires an admin passkey's verifier, which is also where perch dev's
+// testnet deployment runs it.
+const VERIFIER = 'CDPT2W5ZYRHKD7ESV4OXPKYBWCCCAZRKRDAI4EAE7ACXE5ZN76F23OZP';
 const APP_KEY = '04' + 'cd'.repeat(64);
 const ORIGIN = 'https://game.example';
 

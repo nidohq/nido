@@ -61,9 +61,11 @@ manifest="$(scripts/perch-src.sh --manifest "$network")"
 perch_repo="${perch_git#https://github.com/}"
 perch_repo="${perch_repo%.git}"
 
-# 1. The checkout is the pinned commit, unedited, except, for a stack built
-# from source, the build-time pins the build wrote (crates/*/wasm/*.sha256),
-# which check 3 holds to the built stack.
+# 1. The checkout is the pinned commit, unedited, except perch-overlay/'s
+# files exactly as it holds them (a rehearsal deployment,
+# scripts/perch-overlay.sh) and, for a stack built from source, the
+# build-time pins the build wrote (crates/*/wasm/*.sha256), which check 3
+# holds to the built stack.
 if ! head="$(git -C "$perch" rev-parse HEAD 2>/dev/null)"; then
     problem "$perch is not a Perch git checkout"
 else
@@ -71,7 +73,8 @@ else
     edited=()
     while IFS= read -r f; do
         [ -n "$f" ] || continue
-        [ "$stack" = build ] && [[ "$f" == crates/*/wasm/*.sha256 ]] || edited+=("$f")
+        { [ -f "perch-overlay/$f" ] && cmp -s "perch-overlay/$f" "$perch/$f"; } ||
+            { [ "$stack" = build ] && [[ "$f" == crates/*/wasm/*.sha256 ]]; } || edited+=("$f")
     done < <(git -C "$perch" status --porcelain --untracked-files=no | awk '{print $2}')
     [ ${#edited[@]} -eq 0 ] || problem "$perch has local edits to tracked files: ${edited[*]}"
 fi

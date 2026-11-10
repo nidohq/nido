@@ -7,8 +7,8 @@ import { derivePerchContractId, perchTestnetAddresses, PERCH_STATELESS_REGISTRY_
 // re-pinning PERCH_WASM_HASHES, update these to the new canonical
 // deployment (and DEPLOYED.md) in the same change.
 const PINNED = {
-  interpreter: 'CCZT3ZDFTTBKGM7ZATHKH4R3TSCFNAFC57XHVPBZSG36FJGD7DUWIA4V',
-  docCompiler: 'CBGZOAOLGLIHH7IXWKCWU2E2B2L2UNHJE32NQTJMNOZ5AEKYXSN5JKFM',
+  interpreter: 'CA4THHSYJQGZKSZWTH53WCI6JRDEH42I4YYGH6MDF2PQDF2OAW3I3R3T',
+  docCompiler: 'CDZAF3GIX6Z573FDG64PFFMQMTER57UE5HSFGQRZ3EMTD5KD7IAEGNUY',
 };
 
 describe('perch canonical deployment', () => {

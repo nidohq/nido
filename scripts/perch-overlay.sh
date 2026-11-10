@@ -1,20 +1,34 @@
 #!/usr/bin/env bash
-# When this branch tests a Perch stack built from the pinned source
-# ([workspace.metadata.perch] stack = "build", `just perch-infra`), the
-# native Perch crates must compile in the same build-time pins as that
-# stack's wasm, which perch-infra writes into the fetched source
-# (scripts/perch-src.sh), not the ones Perch commits. This writes
-# target/perch-overlay.toml, a Cargo `[patch]` building every Perch crate
-# Cargo.lock takes from the pinned repository from that source instead. Pass
-# it to the commands that run the Perch stack
+# The native Perch crates must compile in the same build-time pins as the
+# stack's wasm the tests run, which can differ from the ones Perch commits:
+#
+#   - a rehearsal deployment, one deployed in registries of its own (Perch
+#     docs/deploy/README.md, rehearsal mode): perch-overlay/ holds the files
+#     that deployment changed, at the same paths (its manifest, its dev
+#     registry.path and verifiers.path, the build-time pins of its bytes),
+#     and this copies them over Perch's source at the pin
+#     (scripts/perch-src.sh), so `just perch-infra` fetches that deployment
+#     by its manifest's hashes and content addresses and the drift and
+#     factory checks read it;
+#   - a stack built from the pinned source ([workspace.metadata.perch]
+#     stack = "build"): `just perch-infra` writes its pins into that source.
+#
+# Either way it writes target/perch-overlay.toml, a Cargo `[patch]` building
+# every Perch crate Cargo.lock takes from the pinned repository from that
+# source instead. Pass it to the commands that run the Perch stack
 # (`cargo test --workspace $(scripts/perch-overlay-config.sh)`).
 #
-# No-op for a deployed stack. Usage: scripts/perch-overlay.sh
+# No-op for a stack Perch's own commit describes. Usage: scripts/perch-overlay.sh
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
-[ "$(scripts/perch-src.sh --stack)" = build ] || exit 0
+[ -d perch-overlay ] || [ "$(scripts/perch-src.sh --stack)" = build ] || exit 0
 perch="$(scripts/perch-src.sh)"
+if [ -d perch-overlay ]; then
+    (cd perch-overlay && find . -type f) | while IFS= read -r f; do
+        cp "perch-overlay/$f" "$perch/$f"
+    done
+fi
 
 url="$(scripts/perch-src.sh --git)"
 mkdir -p target
