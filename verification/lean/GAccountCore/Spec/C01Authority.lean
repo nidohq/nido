@@ -169,7 +169,7 @@ theorem valid_config_inhabited
       master_weight := 0#u8,
       thresholds := ⟨2#u8, 2#u8, 2#u8⟩,
       signers := alloc.vec.Vec.from
-        [⟨kL, 2#u8⟩, ⟨kS, 1#u8⟩, ⟨kR, 1#u8⟩] (by sorry)
+        [⟨kL, 2#u8⟩, ⟨kS, 1#u8⟩, ⟨kR, 1#u8⟩] (by scalar_tac)
     } := by sorry
 
 /-- Five pairwise-distinct keys exist in the Key type (Array U8 32).
