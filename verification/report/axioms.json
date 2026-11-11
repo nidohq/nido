@@ -1,0 +1,154 @@
+{
+  "axioms": {
+    "clean": [],
+    "assumed": {},
+    "tainted": [
+      "C01Authority::validate_iff_valid_config",
+      "C01Authority::validate_rejects_wrong_profile",
+      "C01Authority::validate_rejects_wrong_kind",
+      "C01Authority::validate_rejects_wrong_master",
+      "C01Authority::validate_rejects_aliased_roles",
+      "C01Authority::roles_distinct_spec",
+      "C01Authority::valid_config_inhabited",
+      "C01Authority::five_distinct_keys_exist",
+      "C01Authority::contains_key_spec",
+      "C01Authority::contains_key_empty",
+      "C01Authority::authorization_weight_exact",
+      "C01Authority::authorization_weight_bounded",
+      "C01Authority::can_authorize_iff",
+      "C01Authority::can_authorize_empty_evidence_denies",
+      "C01Authority::can_authorize_only_service_denies",
+      "C01Authority::rotate_succeeds",
+      "C01Authority::rotate_signer_frame",
+      "C01Authority::rotate_recover_local_succeeds",
+      "C01Authority::rotate_preserves_full_account_ref",
+      "C01Authority::rotate_result_valid_config",
+      "C01Authority::rotate_rejects_wrong_account",
+      "C01Authority::rotate_rejects_wrong_source",
+      "C01Authority::rotate_rejects_wrong_old_key",
+      "C01Authority::rotate_rejects_invalid_new_key",
+      "C01Authority::rotate_rejects_invalid_operations",
+      "C01Authority::rotate_rejects_insufficient_evidence",
+      "C01Authority::coalition_sr_after_replace_local",
+      "C01Authority::coalition_sr_after_recover_local",
+      "C01Authority::new_key_authorizes_after_local_rotation",
+      "C01Authority::retired_key_denial_replace_local",
+      "C01Authority::retired_key_zero_weight",
+      "C01Authority::local_authorizes_after_replace_service",
+      "C01Authority::local_authorizes_after_replace_recovery",
+      "C01Authority::new_sr_coalition_after_replace_service",
+      "C01Authority::new_sr_coalition_after_replace_recovery",
+      "C01Authority::recovery_recover_local",
+      "C01Authority::recovery_replace_service",
+      "C01Authority::recovery_replace_recovery",
+      "C01Authority::unrecoverable_local_service_lost",
+      "C01Authority::unrecoverable_local_recovery_lost",
+      "C01Authority::valid_authority_signer_weight_sum"
+    ],
+    "impl_verified": [],
+    "impl_verified_assumed": [],
+    "surface_only": [],
+    "abstract_only": [],
+    "declared_assumptions": [],
+    "illegitimate_assumptions": [],
+    "refutations": [],
+    "sorry_remaining": 41,
+    "grounding": {
+      "anchors": [
+        "authorization_weight",
+        "can_authorize"
+      ],
+      "grounded": [],
+      "ungrounded": [
+        "authorization_weight",
+        "can_authorize"
+      ]
+    },
+    "statement_drift": {
+      "stable": [
+        "GAccountCore.Spec.C01Authority.contains_key_empty",
+        "GAccountCore.Spec.C01Authority.contains_key_spec",
+        "GAccountCore.Spec.C01Authority.rotate_preserves_full_account_ref",
+        "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_service",
+        "GAccountCore.Spec.C01Authority.validate_rejects_wrong_master",
+        "GAccountCore.Spec.C01Authority.five_distinct_keys_exist",
+        "GAccountCore.Spec.C01Authority.coalition_sr_after_replace_local",
+        "GAccountCore.Spec.C01Authority.retired_key_zero_weight",
+        "GAccountCore.Spec.C01Authority.can_authorize_empty_evidence_denies",
+        "GAccountCore.Spec.C01Authority.validate_rejects_wrong_profile",
+        "GAccountCore.Spec.C01Authority.unrecoverable_local_recovery_lost",
+        "GAccountCore.Spec.C01Authority.rotate_rejects_insufficient_evidence",
+        "GAccountCore.Spec.C01Authority.authorization_weight_bounded",
+        "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_account",
+        "GAccountCore.Spec.C01Authority.valid_authority_signer_weight_sum",
+        "GAccountCore.Spec.C01Authority.recovery_replace_service",
+        "GAccountCore.Spec.C01Authority.rotate_recover_local_succeeds",
+        "GAccountCore.Spec.C01Authority.can_authorize_iff",
+        "GAccountCore.Spec.C01Authority.roles_distinct_spec",
+        "GAccountCore.Spec.C01Authority.validate_iff_valid_config",
+        "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_recovery",
+        "GAccountCore.Spec.C01Authority.retired_key_denial_replace_local",
+        "GAccountCore.Spec.C01Authority.unrecoverable_local_service_lost",
+        "GAccountCore.Spec.C01Authority.valid_config_inhabited",
+        "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_recovery",
+        "GAccountCore.Spec.C01Authority.recovery_recover_local",
+        "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_old_key",
+        "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_source",
+        "GAccountCore.Spec.C01Authority.can_authorize_only_service_denies",
+        "GAccountCore.Spec.C01Authority.coalition_sr_after_recover_local",
+        "GAccountCore.Spec.C01Authority.validate_rejects_aliased_roles",
+        "GAccountCore.Spec.C01Authority.rotate_signer_frame",
+        "GAccountCore.Spec.C01Authority.validate_rejects_wrong_kind",
+        "GAccountCore.Spec.C01Authority.rotate_result_valid_config",
+        "GAccountCore.Spec.C01Authority.new_key_authorizes_after_local_rotation",
+        "GAccountCore.Spec.C01Authority.rotate_succeeds",
+        "GAccountCore.Spec.C01Authority.authorization_weight_exact",
+        "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_new_key",
+        "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_service",
+        "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_operations",
+        "GAccountCore.Spec.C01Authority.recovery_replace_recovery"
+      ],
+      "accounted": [],
+      "unaccounted": []
+    }
+  },
+  "spec_judge": {
+    "defects": []
+  },
+  "overflow_posture": {
+    "deploy_profile": {
+      "overflow-checks": true,
+      "debug-assertions": false,
+      "package": {}
+    },
+    "deploy_source": "/workspace/repo/Cargo.toml",
+    "compiled_profile": {
+      "overflow-checks": true,
+      "debug-assertions": false,
+      "package": {}
+    },
+    "compiled_source": "/workspace/repo/crates/g-account-core/Cargo.toml",
+    "compiled_workspace": "/workspace/repo/crates/g-account-core/Cargo.toml",
+    "compiled_sources": [
+      "/workspace/repo/crates/g-account-core/Cargo.toml"
+    ],
+    "model_checked_ops": true,
+    "could_not_verify": false,
+    "block": false
+  },
+  "target_patterns": [
+    "crate::authority::validate",
+    "crate::authority::authorization_weight",
+    "crate::authority::can_authorize",
+    "crate::authority::rotate",
+    "crate::authority::roles_distinct",
+    "crate::authority::contains_key"
+  ],
+  "opaque_assumptions": [
+    "core.option.Option.Insts.CoreCmpPartialEqOption.eq"
+  ],
+  "holes": [],
+  "lean_path": "lean/GAccountCore.lean",
+  "lean_build_success": true,
+  "sorry_remaining": 41
+}
