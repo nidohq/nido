@@ -87,8 +87,16 @@ def postRotationRoles (kind : authority.RotationKind) (roles : authority.Roles)
   | .ReplaceService => { roles with service := new_key }
   | .ReplaceRecovery => { roles with recovery := new_key }
 
+/-- Element-wise signer replacement: the structural map that rotate's loop applies.
+    Each signer whose key matches the old role key is replaced; all others are
+    preserved in position.  Uses Classical decidability on key equality. -/
+def signerListAfterRotation (signers : List authority.Signer) (old_key new_key : authority.Key)
+    (weight : Std.U8) : List authority.Signer :=
+  signers.map (fun s => if s.key = old_key then ⟨new_key, weight⟩ else s)
+
 -- ═══════════════════════════════════════════════════════════
--- G-02  validate — iff characterisation, refusal variants
+-- G-02  validate — iff characterisation, refusal variants,
+--       positive witness
 -- ═══════════════════════════════════════════════════════════
 
 /-- validate returns Ok(()) **if and only if** ValidConfig holds.
@@ -144,6 +152,33 @@ theorem validate_rejects_aliased_roles
 theorem roles_distinct_spec (r : authority.Roles) :
     authority.roles_distinct r ⦃ (b : Bool) =>
       b = true ↔ RolesAllDistinct r ⦄ := by sorry
+
+/-- Positive witness: ValidConfig is satisfiable from five pairwise-distinct keys.
+    Constructs a concrete Authority value with StellarG, SelfDirected, master 0,
+    thresholds 2, and signer list [local/2, service/1, recovery/1].  (G-02) -/
+@[lusterna_lemma "G-02 positive witness: ValidConfig constructible from structural distinctness"]
+theorem valid_config_inhabited
+    (tenant network : Array Std.U8 32#usize)
+    (kB kL kS kR kF : authority.Key)
+    (hdist : RolesAllDistinct ⟨kB, kL, kS, kR, kF⟩) :
+    let roles : authority.Roles := ⟨kB, kL, kS, kR, kF⟩
+    ValidConfig {
+      account := ⟨tenant, network, authority.AccountKind.StellarG, kB⟩,
+      profile := authority.Profile.SelfDirected,
+      roles := roles,
+      master_weight := 0#u8,
+      thresholds := ⟨2#u8, 2#u8, 2#u8⟩,
+      signers := alloc.vec.Vec.from
+        [⟨kL, 2#u8⟩, ⟨kS, 1#u8⟩, ⟨kR, 1#u8⟩] (by sorry)
+    } := by sorry
+
+/-- Five pairwise-distinct keys exist in the Key type (Array U8 32).
+    Combined with valid_config_inhabited and validate_iff_valid_config,
+    this proves validate can return Ok.  (G-02) -/
+@[lusterna_lemma "G-02 inhabitedness: Key type has at least five distinct values"]
+theorem five_distinct_keys_exist :
+    ∃ kB kL kS kR kF : authority.Key,
+      RolesAllDistinct ⟨kB, kL, kS, kR, kF⟩ := by sorry
 
 -- ═══════════════════════════════════════════════════════════
 -- G-01  contains_key, authorization_weight, can_authorize
@@ -228,12 +263,14 @@ theorem can_authorize_only_service_denies
       r = core.result.Result.Ok false ⦄ := by sorry
 
 -- ═══════════════════════════════════════════════════════════
--- G-03  rotate — success, preservation, rejections
+-- G-03  rotate — success, signer frame, preservation,
+--       rejections
 -- ═══════════════════════════════════════════════════════════
 
 /-- General rotation success for ALL four kinds.  Well-formed request + correct
-    evidence ⟹ Ok with exact post-state: roles updated per kind, account/profile/
-    master_weight/thresholds preserved, result satisfies ValidConfig.  (G-03) -/
+    evidence ⟹ Ok with exact post-state: roles updated per kind, signer list
+    updated by positional map, account/profile/master_weight/thresholds preserved,
+    result satisfies ValidConfig.  (G-03) -/
 @[lusterna]
 theorem rotate_succeeds
     (a : authority.Authority) (request : authority.Rotation)
@@ -249,7 +286,29 @@ theorem rotate_succeeds
         a'.master_weight = a.master_weight ∧
         a'.thresholds = a.thresholds ∧
         a'.roles = postRotationRoles request.kind a.roles request.new_key ∧
+        a'.signers.val = signerListAfterRotation a.signers.val
+          (kindOldKey request.kind a.roles) request.new_key (kindWeight request.kind) ∧
         ValidConfig a' ⦄ := by sorry
+
+/-- Unconditional signer-list frame for any successful rotate — no WellFormedRequest
+    premise.  Preserves original signer positions, unchanged entries and weights.
+    Composition lemmas can use this directly.  (G-03) -/
+@[lusterna]
+theorem rotate_signer_frame
+    (a : authority.Authority) (request : authority.Rotation)
+    (evidence : Slice authority.Key) :
+    authority.rotate a request evidence
+      ⦃ (r : core.result.Result authority.Authority authority.Refusal) =>
+      match r with
+      | core.result.Result.Ok a' =>
+        a'.signers.val = signerListAfterRotation a.signers.val
+          (kindOldKey request.kind a.roles) request.new_key (kindWeight request.kind) ∧
+        a'.account = a.account ∧
+        a'.profile = a.profile ∧
+        a'.master_weight = a.master_weight ∧
+        a'.thresholds = a.thresholds ∧
+        a'.roles = postRotationRoles request.kind a.roles request.new_key
+      | core.result.Result.Err _ => True ⦄ := by sorry
 
 /-- RecoverLocal explicitly: service + recovery evidence suffices;
     extra local-key evidence is NOT forbidden.  (G-03) -/
@@ -380,7 +439,13 @@ theorem rotate_rejects_insufficient_evidence
       r = core.result.Result.Err authority.Refusal.InsufficientEvidence ⦄ := by sorry
 
 -- ═══════════════════════════════════════════════════════════
--- G-04  coalition preservation, recovery, unrecoverability
+-- G-04  coalition preservation, retired-key weight,
+--       recovery, unrecoverability
+--
+-- These are @[lusterna_lemma] because they compose two
+-- target executions (rotate then can_authorize / authorization_weight).
+-- They must eventually be proved and dependency-checked;
+-- they are NOT checked WP triples by label.
 -- ═══════════════════════════════════════════════════════════
 
 /-- After ReplaceLocal the surviving service+recovery coalition still authorizes.  (G-04) -/
@@ -394,8 +459,18 @@ theorem coalition_sr_after_replace_local
     (hrecovery : a.roles.recovery ∈ new_ev.val) :
     authority.can_authorize a' new_ev cat = ok (core.result.Result.Ok true) := by sorry
 
-/-- After any successful rotation the new key authorizes (it becomes a signer
-    with the kind's weight ≥ 1, and for local kinds weight = 2 ≥ threshold).  (G-04) -/
+/-- After RecoverLocal the surviving service+recovery coalition still authorizes.  (G-04) -/
+@[lusterna_lemma "G-04 composition: S+R coalition survives RecoverLocal; two target executions"]
+theorem coalition_sr_after_recover_local
+    (a a' : authority.Authority) (request : authority.Rotation)
+    (rot_ev new_ev : Slice authority.Key) (cat : authority.Category)
+    (hrot : authority.rotate a request rot_ev = ok (core.result.Result.Ok a'))
+    (hkind : request.kind = authority.RotationKind.RecoverLocal)
+    (hservice : a.roles.service ∈ new_ev.val)
+    (hrecovery : a.roles.recovery ∈ new_ev.val) :
+    authority.can_authorize a' new_ev cat = ok (core.result.Result.Ok true) := by sorry
+
+/-- After Replace/RecoverLocal the new local key authorizes (weight 2 ≥ threshold 2).  (G-04) -/
 @[lusterna_lemma "G-04 composition: rotate post-state gives new key signer status"]
 theorem new_key_authorizes_after_local_rotation
     (a a' : authority.Authority) (request : authority.Rotation)
@@ -406,11 +481,12 @@ theorem new_key_authorizes_after_local_rotation
     (hnew : request.new_key ∈ new_ev.val) :
     authority.can_authorize a' new_ev cat = ok (core.result.Result.Ok true) := by sorry
 
-/-- After ReplaceLocal the OLD local key no longer contributes weight.
-    Evidence containing only the old local key (and no surviving signer keys)
-    yields weight 0 and authorization false.  (G-04) -/
-@[lusterna_lemma "G-04 composition: retired key loses signer status"]
-theorem retired_key_no_weight_replace_local
+/-- After ReplaceLocal: evidence containing only the old local key (no post-rotation
+    signer keys) yields authorization denied (weight 0 < threshold 2).
+    Note: this is a threshold-denial result; the exact zero-weight claim is
+    retired_key_zero_weight below.  (G-04) -/
+@[lusterna_lemma "G-04 composition: retired key cannot authorize alone"]
+theorem retired_key_denial_replace_local
     (a a' : authority.Authority) (request : authority.Rotation)
     (rot_ev old_ev : Slice authority.Key) (cat : authority.Category)
     (hrot : authority.rotate a request rot_ev = ok (core.result.Result.Ok a'))
@@ -420,6 +496,26 @@ theorem retired_key_no_weight_replace_local
     (hno_svc : a.roles.service ∉ old_ev.val)
     (hno_rec : a.roles.recovery ∉ old_ev.val) :
     authority.can_authorize a' old_ev cat = ok (core.result.Result.Ok false) := by sorry
+
+/-- Grounded zero-weight claim: after a successful rotation (any kind), evidence
+    containing only the retired key and none of the post-rotation signer role keys
+    yields exactly authorization_weight = Ok(0).  Derived from authorization_weight_exact
+    and the signer frame.  (G-04) -/
+@[lusterna_lemma "G-04 composition: retired key yields exact zero weight via authorization_weight"]
+theorem retired_key_zero_weight
+    (a a' : authority.Authority) (request : authority.Rotation)
+    (rot_ev old_ev : Slice authority.Key)
+    (hrot : authority.rotate a request rot_ev = ok (core.result.Result.Ok a'))
+    (hold : kindOldKey request.kind a.roles ∈ old_ev.val)
+    -- None of the post-rotation signer role keys appear in old_ev
+    (hno_post_local :
+      (postRotationRoles request.kind a.roles request.new_key).local ∉ old_ev.val)
+    (hno_post_service :
+      (postRotationRoles request.kind a.roles request.new_key).service ∉ old_ev.val)
+    (hno_post_recovery :
+      (postRotationRoles request.kind a.roles request.new_key).recovery ∉ old_ev.val) :
+    authority.authorization_weight a' old_ev
+      = ok (core.result.Result.Ok 0#u16) := by sorry
 
 /-- After ReplaceService, local still authorizes alone.  (G-04) -/
 @[lusterna_lemma "G-04 composition: local coalition survives service replacement"]

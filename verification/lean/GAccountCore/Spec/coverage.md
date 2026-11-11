@@ -1,5 +1,7 @@
 # C01Authority — Theorem-to-Requirement Coverage Map
 
+**41 theorems total: 24 checked (`@[lusterna]`) + 17 supporting (`@[lusterna_lemma]`)**
+
 ## G-01: Weight / Authorization
 
 | Theorem | Kind | Requirement covered |
@@ -22,13 +24,16 @@
 | `validate_rejects_wrong_master` | checked | Fourth check: InvalidMaster |
 | `validate_rejects_aliased_roles` | checked | AliasedRoles after thresholds pass |
 | `roles_distinct_spec` | checked | roles_distinct ↔ RolesAllDistinct |
-| `ValidConfig` (def) | helper | Profile, account kind, address=bootstrap, master=0, thresholds=2, distinct roles, 3 signers exactly {L/2, S/1, R/1} |
+| `valid_config_inhabited` | lemma | Positive witness: ValidConfig constructible from five distinct keys via Vec.from |
+| `five_distinct_keys_exist` | lemma | Key type has ≥ 5 distinct values; combined with above proves validate can return Ok |
+| `ValidConfig` (def) | helper | Profile, account kind, address=bootstrap, master=0, thresholds=2, distinct roles, 3 signers with exact entries {L/2, S/1, R/1} ∈ signers.val |
 
 ## G-03: Rotate
 
 | Theorem | Kind | Requirement covered |
 |---|---|---|
-| `rotate_succeeds` | checked | All 4 kinds: well-formed + evidence → Ok with exact post-roles, field preservation, ValidConfig |
+| `rotate_succeeds` | checked | All 4 kinds: well-formed + evidence → Ok with exact post-roles, positional signer frame via `signerListAfterRotation`, field preservation, ValidConfig |
+| `rotate_signer_frame` | checked | Unconditional signer-list frame: any Ok result has `signers.val = signerListAfterRotation ...` + field preservation; no WellFormedRequest premise |
 | `rotate_recover_local_succeeds` | checked | RecoverLocal: S+R evidence suffices; extra local NOT forbidden |
 | `rotate_preserves_full_account_ref` | checked | Unconditional: tenant/network/kind/address preserved |
 | `rotate_result_valid_config` | checked | Unconditional: any Ok result satisfies ValidConfig |
@@ -44,8 +49,10 @@
 | Theorem | Kind | Requirement covered |
 |---|---|---|
 | `coalition_sr_after_replace_local` | lemma | After ReplaceLocal, S+R still authorizes |
+| `coalition_sr_after_recover_local` | lemma | After RecoverLocal, S+R still authorizes |
 | `new_key_authorizes_after_local_rotation` | lemma | After Replace/RecoverLocal, new local key authorizes |
-| `retired_key_no_weight_replace_local` | lemma | Old local key contributes zero weight after replacement |
+| `retired_key_denial_replace_local` | lemma | Old local key cannot authorize alone after replacement (threshold denial) |
+| `retired_key_zero_weight` | lemma | Old role key contributes exact zero weight after any rotation kind |
 | `local_authorizes_after_replace_service` | lemma | After ReplaceService, local still authorizes alone |
 | `local_authorizes_after_replace_recovery` | lemma | After ReplaceRecovery, local still authorizes alone |
 | `new_sr_coalition_after_replace_service` | lemma | After ReplaceService, new service + surviving recovery authorizes |
