@@ -48,6 +48,7 @@ import {
   type DefaultRuleAuthInfo,
 } from './policyChainFetch.js';
 import { signatureExpirationOffset } from './relayerClient';
+import { NO_DEVICE_PASSKEY } from './devicePasskey.js';
 import { deriveMessageChallenge } from './messageSigning.js';
 import { RPC_URL, NETWORK_PASSPHRASE, latestLedgerSequence } from './network.js';
 import {
@@ -186,7 +187,7 @@ export async function signTransactionXdr(args: {
 }): Promise<string> {
   const networkPassphrase = args.networkPassphrase ?? NETWORK_PASSPHRASE;
   const cred = loadCredential(args.account);
-  if (!cred) throw new Error('No passkey registered for this account.');
+  if (!cred) throw new Error(NO_DEVICE_PASSKEY);
 
   const tx = parseSorobanTx(args.txXdr, networkPassphrase);
 
@@ -328,6 +329,15 @@ async function runAssertionCeremony(
   challenge: Uint8Array,
   credentialId?: Uint8Array,
 ): Promise<PasskeySignature> {
+  return (await runIdentifiedAssertionCeremony(challenge, credentialId)).signature;
+}
+
+/** {@link runAssertionCeremony}, also returning the id of the credential the
+ *  authenticator used (in a discoverable ceremony, the one the user picked). */
+export async function runIdentifiedAssertionCeremony(
+  challenge: Uint8Array,
+  credentialId?: Uint8Array,
+): Promise<{ credentialId: Uint8Array; signature: PasskeySignature }> {
   const challengeBuf = new ArrayBuffer(challenge.byteLength);
   new Uint8Array(challengeBuf).set(challenge);
   let assertion: PublicKeyCredential | null;
@@ -355,11 +365,14 @@ async function runAssertionCeremony(
   }
   if (!assertion) throw new Error('Passkey signing was cancelled.');
   const response = assertion.response as AuthenticatorAssertionResponse;
-  return parseAssertionResponse({
-    authenticatorData: response.authenticatorData,
-    clientDataJSON: response.clientDataJSON,
-    signature: response.signature,
-  });
+  return {
+    credentialId: new Uint8Array(assertion.rawId),
+    signature: parseAssertionResponse({
+      authenticatorData: response.authenticatorData,
+      clientDataJSON: response.clientDataJSON,
+      signature: response.signature,
+    }),
+  };
 }
 
 /**
@@ -465,7 +478,7 @@ async function collectMultiPasskeySignatures(args: {
  */
 async function passkeyAssertEnvelope(account: string, challenge32: Uint8Array): Promise<string> {
   const cred = loadCredential(account);
-  if (!cred) throw new Error('No passkey registered for this account.');
+  if (!cred) throw new Error(NO_DEVICE_PASSKEY);
   if (challenge32.byteLength !== 32) throw new Error('challenge must be 32 bytes');
 
   const challengeBuf = new ArrayBuffer(32);
@@ -538,7 +551,7 @@ export async function signMessageRaw(args: { account: string; message: string })
 export async function signAuthEntryXdr(args: { account: string; authEntryXdr: string }): Promise<string> {
   const { hash } = await import('@stellar/stellar-sdk');
   const cred = loadCredential(args.account);
-  if (!cred) throw new Error('No passkey registered for this account.');
+  if (!cred) throw new Error(NO_DEVICE_PASSKEY);
   // Resolve the passkey's actual rule (a recovered account's key is not in
   // rule 0) so the digest binds the correct context_rule_ids.
   const resolved = await resolveSignerRule(args.account, cred.publicKey);

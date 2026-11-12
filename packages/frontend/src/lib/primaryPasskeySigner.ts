@@ -24,6 +24,7 @@ import {
   nidoKey,
 } from '@nidohq/passkey-sdk';
 import { resolveSignerRule } from './policyChainFetch.js';
+import { NO_DEVICE_PASSKEY } from './devicePasskey.js';
 import {
   relayerEnabled,
   signatureExpirationOffset,
@@ -236,7 +237,7 @@ export async function signAndSubmit(args: {
   ruleName?: string;
 }): Promise<rpc.Api.SendTransactionResponse & { authHashHex: string }> {
   const cred = loadCredential(args.account);
-  if (!cred) throw new Error('No passkey registered for this account.');
+  if (!cred) throw new Error(NO_DEVICE_PASSKEY);
 
   // Select the rule this device's passkey signs under, and the verifier its
   // signer names, from the account's configuration() (one read, by name and
@@ -305,7 +306,7 @@ export async function applyDocWithPasskey(args: {
   onProgress?: Progress;
 }): Promise<{ hash: string; revision: bigint }> {
   const cred = loadCredential(args.account);
-  if (!cred) throw new Error('No passkey registered for this account.');
+  if (!cred) throw new Error(NO_DEVICE_PASSKEY);
   // Over the compiler the account pins, which an account minted by an
   // earlier Perch release keeps.
   const reader = await perch.openAccountReader({
