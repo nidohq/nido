@@ -5,17 +5,20 @@
  * the UP/UV flags, but not the relying party or the origin (the browser's
  * job). When the wallet uses an assertion locally, as proof that the user
  * holds a passkey for this account rather than as a transaction signature,
- * nothing on chain runs, so this module checks all of it:
+ * nothing on chain runs, so the wallet checks all of it. This module checks
+ * the context (`checkAssertionContext`):
  *
  * - `clientDataJSON`: `type == "webauthn.get"`, the exact challenge, the
  *   page's origin, and not `crossOrigin`;
  * - `authenticatorData`: at least 37 bytes, `rpIdHash == sha256(rpId)`, and
  *   the User Present and User Verified flags (UV is always required, as on
- *   chain);
- * - the P-256 signature over `authenticatorData || sha256(clientDataJSON)`
- *   (`identifyAssertionSigner`, against the account's candidate keys).
+ *   chain).
  *
- * Every check returns a result rather than throwing, so a caller can say why
+ * The P-256 signature over `authenticatorData || sha256(clientDataJSON)` is
+ * not checked here: `identifyAssertionSigner` (`assertionMatch.ts`) checks it
+ * against the account's candidate keys.
+ *
+ * The check returns a result rather than throwing, so a caller can say why
  * an assertion was refused.
  *
  * Adapted from passkey-kit's `src/kit/webauthn-verify.ts` (`verifyAssertion`),
