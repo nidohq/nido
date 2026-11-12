@@ -13,8 +13,7 @@
  *   the User Present and User Verified flags (UV is always required, as on
  *   chain);
  * - the P-256 signature over `authenticatorData || sha256(clientDataJSON)`
- *   ({@link verifyAssertion}; {@link identifyAssertionSigner} when the key is
- *   one of several).
+ *   (`identifyAssertionSigner`, against the account's candidate keys).
  *
  * Every check returns a result rather than throwing, so a caller can say why
  * an assertion was refused.
@@ -46,7 +45,6 @@
  *   USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-import { identifyAssertionSigner } from './assertionMatch.js';
 import { buf2base64url } from './encoding.js';
 import type { PasskeySignature } from './types.js';
 
@@ -60,8 +58,7 @@ export type AssertionFailure =
   | 'authenticator_data'
   | 'rp_id'
   | 'user_presence'
-  | 'user_verification'
-  | 'signature';
+  | 'user_verification';
 
 export type AssertionCheck =
   | { ok: true }
@@ -89,8 +86,8 @@ function fail(reason: AssertionFailure, detail: string): AssertionCheck {
 
 /**
  * Every check except the signature: the client data and the authenticator
- * data. Use it with {@link identifyAssertionSigner} when the signing key is
- * one of several candidates.
+ * data. Use it with `identifyAssertionSigner`, which checks the signature
+ * against the candidate keys.
  */
 export async function checkAssertionContext(
   sig: PasskeySignature,
@@ -137,22 +134,6 @@ export async function checkAssertionContext(
     return fail('user_verification', 'User Verified flag is not set');
   }
   return { ok: true };
-}
-
-/**
- * {@link checkAssertionContext}, then the P-256 signature under `publicKey`
- * (65-byte SEC1 uncompressed).
- */
-export async function verifyAssertion(
-  sig: PasskeySignature,
-  publicKey: Uint8Array,
-  expected: AssertionExpectation,
-): Promise<AssertionCheck> {
-  const context = await checkAssertionContext(sig, expected);
-  if (!context.ok) return context;
-  return (await identifyAssertionSigner(sig, [publicKey])) === 0
-    ? { ok: true }
-    : fail('signature', 'P-256 signature does not verify under the public key');
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {

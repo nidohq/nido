@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { p256 } from '@noble/curves/nist.js';
 import { buf2base64url } from '@nidohq/passkey-sdk';
 import type { PasskeySignature } from '@nidohq/passkey-sdk';
-import { adoptExistingPasskey, adoptFailureMessage, type AdoptPasskeyDeps } from './adoptPasskey.js';
+import {
+  adoptExistingPasskey,
+  adoptFailureMessage,
+  adoptPasskeyPlace,
+  type AdoptPasskeyDeps,
+} from './adoptPasskey.js';
 
 const ACCOUNT = 'CABC';
 const PAGE = { rpId: 'cabc.test.nido.fyi', origin: 'https://cabc.test.nido.fyi' };
@@ -102,5 +107,35 @@ describe('adoptExistingPasskey', () => {
       ),
     ).rejects.toThrow('rpc down');
     expect(getAssertion).not.toHaveBeenCalled();
+  });
+});
+
+describe('adoptPasskeyPlace', () => {
+  const C = 'C' + 'A'.repeat(55);
+  const at = (host: string) => ({ protocol: 'https:', host, hostname: host.split(':')[0] });
+
+  it("runs the ceremony on the account's own subdomain", () => {
+    expect(adoptPasskeyPlace(C, at(`${C.toLowerCase()}.nido.fyi`))).toEqual({ kind: 'here' });
+    expect(adoptPasskeyPlace(C, at(`${C.toLowerCase()}--10.mysoroban.xyz`))).toEqual({ kind: 'here' });
+  });
+
+  it("links a name subdomain to the account's own subdomain instead", () => {
+    expect(adoptPasskeyPlace(C, at('alice.nido.fyi'))).toEqual({
+      kind: 'elsewhere',
+      url: `https://${C.toLowerCase()}.nido.fyi/account/`,
+    });
+    expect(adoptPasskeyPlace(C, at('alice--10.mysoroban.xyz'))).toEqual({
+      kind: 'elsewhere',
+      url: `https://${C.toLowerCase()}--10.mysoroban.xyz/account/`,
+    });
+    expect(adoptPasskeyPlace(C, { protocol: 'http:', host: 'alice.localhost:4321', hostname: 'alice.localhost' })).toEqual({
+      kind: 'elsewhere',
+      url: `http://${C.toLowerCase()}.localhost:4321/account/`,
+    });
+  });
+
+  it('offers nothing when the name resolved to no account', () => {
+    expect(adoptPasskeyPlace('ALICE', at('alice.nido.fyi'))).toEqual({ kind: 'unavailable' });
+    expect(adoptPasskeyPlace(null, at('nido.fyi'))).toEqual({ kind: 'unavailable' });
   });
 });

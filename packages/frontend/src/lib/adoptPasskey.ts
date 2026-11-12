@@ -22,10 +22,14 @@
  */
 
 import {
+  accountUrl,
   buf2hex,
   checkAssertionContext,
+  contractIdFromHostname,
   identifyAssertionSigner,
+  isContractId,
   saveCredential,
+  stripSubdomain,
 } from '@nidohq/passkey-sdk';
 import type { AssertionFailure, PasskeySignature } from '@nidohq/passkey-sdk';
 import { withPasskeySheet } from './passkeySheet.js';
@@ -63,6 +67,25 @@ export async function readAccountSignerKeys(account: string): Promise<Uint8Array
     }
   }
   return [...keys.values()];
+}
+
+/** Where an account's passkey can be adopted from the page at `page`. */
+export type AdoptPasskeyPlace =
+  /** The page is the account's own subdomain: run the ceremony here. */
+  | { kind: 'here' }
+  /** Another host (a name subdomain): the passkey is bound to the account's
+   *  own subdomain, so adopt on its account page at `url`. */
+  | { kind: 'elsewhere'; url: string }
+  /** No resolved C-address to adopt for. */
+  | { kind: 'unavailable' };
+
+export function adoptPasskeyPlace(
+  account: string | null,
+  page: { protocol: string; host: string; hostname: string },
+): AdoptPasskeyPlace {
+  if (!account || !isContractId(account)) return { kind: 'unavailable' };
+  if (contractIdFromHostname(page.hostname) === account) return { kind: 'here' };
+  return { kind: 'elsewhere', url: `${page.protocol}${accountUrl(stripSubdomain(page.host), account, '/account/')}` };
 }
 
 function browserDeps(): AdoptPasskeyDeps {

@@ -31,7 +31,7 @@ export {
 export type { AuthDigestScheme } from "./auth.js";
 
 export { identifyAssertionSigner } from "./assertionMatch.js";
-export { checkAssertionContext, verifyAssertion } from "./assertionVerify.js";
+export { checkAssertionContext } from "./assertionVerify.js";
 export type { AssertionCheck, AssertionExpectation, AssertionFailure } from "./assertionVerify.js";
 
 export { buildAuthPayloadScVal, webAuthnSigDataBytes } from "./multiSigner.js";

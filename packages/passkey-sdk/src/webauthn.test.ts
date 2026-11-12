@@ -160,6 +160,14 @@ describe('parseRegistration refuses keys that fail their checks', () => {
     spki[20] ^= 0x01; // the curve OID
     expect(() => publicKeyFromSpki(spki)).toThrow(/not a P-256 key/);
   });
+
+  it('refuses an SPKI carrying a compressed point', () => {
+    const compressed = p256.getPublicKey(p256.utils.randomSecretKey(), true);
+    const spki = Uint8Array.from([
+      0x30, 0x39, ...SPKI_HEADER.slice(2, 23), 0x03, 0x22, 0x00, ...compressed,
+    ]);
+    expect(() => publicKeyFromSpki(spki)).toThrow(/not a P-256 key/);
+  });
 });
 
 describe('isOnP256Curve', () => {

@@ -68,30 +68,26 @@ const P256_ALGORITHM_ID = new Uint8Array([
 /**
  * The uncompressed P-256 key in a SubjectPublicKeyInfo: `SEQUENCE {
  * AlgorithmIdentifier { id-ecPublicKey, prime256v1 }, BIT STRING point }`,
- * exactly, with the point on the curve. A compressed point is accepted and
- * returned uncompressed.
+ * exactly, with the point uncompressed and on the curve.
  */
 export function publicKeyFromSpki(spki: Uint8Array): Uint8Array {
   const header = 2 + P256_ALGORITHM_ID.byteLength;
-  const pointLen = spki.byteLength - header - 3;
   if (
-    (pointLen !== 65 && pointLen !== 33) ||
+    spki.byteLength !== header + 3 + 65 ||
     spki[0] !== 0x30 ||
     spki[1] !== spki.byteLength - 2 ||
     !bytesEqual(spki.subarray(2, header), P256_ALGORITHM_ID) ||
     spki[header] !== 0x03 ||
-    spki[header + 1] !== pointLen + 1 ||
+    spki[header + 1] !== 66 ||
     spki[header + 2] !== 0x00
   ) {
     throw new PasskeyRegistrationError("its SubjectPublicKeyInfo is not a P-256 key");
   }
-  let point: InstanceType<typeof p256.Point>;
-  try {
-    point = p256.Point.fromBytes(spki.subarray(header + 3));
-  } catch {
+  const point = spki.slice(header + 3);
+  if (!isOnP256Curve(point)) {
     throw new PasskeyRegistrationError("its SubjectPublicKeyInfo key is not on the P-256 curve");
   }
-  return point.toBytes(false);
+  return point;
 }
 
 /**

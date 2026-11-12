@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { p256 } from '@noble/curves/nist.js';
-import { checkAssertionContext, verifyAssertion } from './assertionVerify.js';
+import { checkAssertionContext } from './assertionVerify.js';
 import { buf2base64url } from './encoding.js';
 import type { PasskeySignature } from './types.js';
 
@@ -44,60 +44,48 @@ async function assertion(
   return { authenticatorData, clientDataJson, signature };
 }
 
-describe('verifyAssertion', () => {
+describe('checkAssertionContext', () => {
   const priv = p256.utils.randomSecretKey();
-  const pub = p256.getPublicKey(priv, false);
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const expected = { challenge, rpId: RP_ID, origin: ORIGIN };
 
   it('accepts a good assertion', async () => {
-    expect(await verifyAssertion(await assertion(priv, { challenge }), pub, expected)).toEqual({ ok: true });
+    expect(await checkAssertionContext(await assertion(priv, { challenge }), expected)).toEqual({ ok: true });
   });
 
   it('refuses an assertion made for another relying party', async () => {
     const sig = await assertion(priv, { challenge, rpId: 'cother.test.nido.fyi' });
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'rp_id' });
+    expect(await checkAssertionContext(sig, expected)).toMatchObject({ ok: false, reason: 'rp_id' });
   });
 
   it('refuses an assertion without user verification', async () => {
     const sig = await assertion(priv, { challenge, flags: UP });
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'user_verification' });
+    expect(await checkAssertionContext(sig, expected)).toMatchObject({ ok: false, reason: 'user_verification' });
   });
 
   it('refuses an assertion without user presence', async () => {
     const sig = await assertion(priv, { challenge, flags: UV });
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'user_presence' });
+    expect(await checkAssertionContext(sig, expected)).toMatchObject({ ok: false, reason: 'user_presence' });
   });
 
   it('refuses an assertion over another challenge', async () => {
     const sig = await assertion(priv, { challenge: new Uint8Array(32).fill(7) });
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'challenge' });
-  });
-
-  it('refuses a signature by another key', async () => {
-    const sig = await assertion(p256.utils.randomSecretKey(), { challenge });
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'signature' });
-  });
-
-  it('refuses a tampered signature', async () => {
-    const sig = await assertion(priv, { challenge });
-    sig.signature[10] ^= 0x01;
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'signature' });
+    expect(await checkAssertionContext(sig, expected)).toMatchObject({ ok: false, reason: 'challenge' });
   });
 
   it('refuses another origin', async () => {
     const sig = await assertion(priv, { challenge, clientData: { origin: 'https://evil.example' } });
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'origin' });
+    expect(await checkAssertionContext(sig, expected)).toMatchObject({ ok: false, reason: 'origin' });
   });
 
   it('refuses a cross-origin frame', async () => {
     const sig = await assertion(priv, { challenge, clientData: { crossOrigin: true } });
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'cross_origin' });
+    expect(await checkAssertionContext(sig, expected)).toMatchObject({ ok: false, reason: 'cross_origin' });
   });
 
   it('refuses a registration (webauthn.create) client data', async () => {
     const sig = await assertion(priv, { challenge, clientData: { type: 'webauthn.create' } });
-    expect(await verifyAssertion(sig, pub, expected)).toMatchObject({ ok: false, reason: 'type' });
+    expect(await checkAssertionContext(sig, expected)).toMatchObject({ ok: false, reason: 'type' });
   });
 
   it('refuses client data that is not JSON', async () => {
