@@ -6,7 +6,7 @@
 //!   - signers:      `[]`  (NONE — the sweep is intentionally permissionless)
 //!   - policies:     `[PreauthSweepPolicy { source: G }]`
 //!
-//! `deploy_smart_account` already creates the passkey Default rule at id 0, so
+//! `deploy_oz_account` already creates the passkey Default rule at id 0, so
 //! the sweep rule installed second lands at id 1 (see [`SWEEP_RULE_ID`]).
 //!
 //! ## The headline: permissionless authorization on the real path
@@ -31,7 +31,7 @@
 //! `transfer_from` actually moves funds G -> C.
 
 use nido_integration_tests::{
-    deploy_smart_account, install_rule_direct, PREAUTH_SWEEP_POLICY_WASM,
+    deploy_oz_account, install_rule_direct, PREAUTH_SWEEP_POLICY_WASM,
 };
 use nido_preauth_sweep_policy::{PreauthSweepParams, SweepError};
 use soroban_sdk::auth::{Context, ContractContext};
@@ -83,7 +83,7 @@ fn setup() -> World {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_client, account, _verifier, _passkey) = deploy_smart_account(&env);
+    let (_client, account, _verifier, _passkey) = deploy_oz_account(&env);
     let sac = env
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();

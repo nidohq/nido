@@ -2,7 +2,7 @@
  * Where to find a Nido account's Perch stack on a network.
  *
  * Perch's release workstream (stellar-registry/perch#99 WS4) publishes one
- * deployment manifest per network (`vendor/perch/deployments/<network>.json`):
+ * deployment manifest per network (Perch's `deployments/<network>.json`):
  * the content-addressed doc compiler, interpreter, spending limit, and
  * WebAuthn verifier, the constructorless recovery controller, ZK pool, and ZK
  * adapter, and the account wasm hash. `fromPerchManifest` reads one;
@@ -11,6 +11,12 @@
  */
 
 import { StrKey } from '@stellar/stellar-sdk';
+
+/** A `verifier-name`, `<name>@<MAJOR>.<MINOR>.<PATCH>`: perch-js's schema
+ *  pattern (`policy.schema.json`). Kept here so this module imports no
+ *  perch-js, which ships as ESM only and which the Playwright suites' CJS
+ *  loader reaches through this file. */
+const VERIFIER_NAME = /^[a-z][a-z0-9-]{0,63}@(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})$/;
 
 export interface PerchDeployment {
   /** The network passphrase every document must name. */
@@ -38,29 +44,35 @@ export interface PerchDeployment {
   treeDepth: number;
   /** `sha256` of the account wasm the factory deploys, 64 lowercase hex. */
   accountWasmHash: string;
+  /** The `verifier-name` (`<name>@<version>`) `webauthnVerifier` is
+   *  registered under in Perch's `perch/verifiers`, for a deployment whose
+   *  compiler resolves verifier names (Perch M7): every admin document and
+   *  recovery member must name it. Absent on a deployment without names. */
+  webauthnVerifierName?: string;
 }
 
-/** Perch's testnet release (`vendor/perch/deployments/testnet.json`, at the
- *  submodule's pin) and Nido's factory, as its record (`factory.testnet.json`,
+/** Perch's testnet release (`deployments/testnet.json` at Nido's
+ *  Perch pin) and Nido's factory, as its record (`factory.testnet.json`,
  *  written by `scripts/deploy-factory.sh`) names it. */
 export const TESTNET: PerchDeployment = {
   network: 'Test SDF Network ; September 2015',
-  factory: 'CDDIW3F63PB6ZKMJN7CCGJSCYXTAVAVEEYNS36K2YFEJH7GQ3ADVZSVS',
-  webauthnVerifier: 'CDEV5YPS5IITPLQPYTKJGWBNZ2YZ7FQZIJNSHUMJRBE4QWYK2IVK4EJT',
-  statelessRegistry: 'CDZGU4AIND6QRCGAN72I7DCS2EKRZ76JSKYY7KKJR4CG5IR2AMFIBZTM',
-  docCompiler: 'CAYCPM5O6SGGAZOCCAUJ27CZZ7SMHU4VYSA25ZHDMGKILP4Z5RGF467E',
-  interpreter: 'CBOGVUQWY5G7BP7OWEJX3Z5PSZLYJXHM54A7OEMXQQ7ZO4GHHM4WCEAP',
-  spendingLimit: 'CAG3IDO3FXE2HQVQHRGRBKWGL2IPAA2V6B3UMHES4ZUNS7OEV646HYV5',
-  recoveryController: 'CBOFO5KWQKCZ7LBS4LDIYXA6LGZSUSA6JKOHHBBL64KQNZLPGDJ252FT',
-  zkPool: 'CASXCXSBIG6ECB3LO4LCEW6SZIFHZDTJ3PFOZJK5JI56VKXLSZY6J67P',
-  zkAdapter: 'CDWVAUSTU2DHBBWANQKGSHCXFK5C46WMUEMWRBOV2LBVXQGK4PGIFBQS',
+  factory: 'CAFTWZR6EF32LSXBHCZCKXUVHHOKH7ISPZ4F4PGEC4L3Q2FKHAJS6BC4',
+  webauthnVerifier: 'CDPT2W5ZYRHKD7ESV4OXPKYBWCCCAZRKRDAI4EAE7ACXE5ZN76F23OZP',
+  webauthnVerifierName: 'perch-webauthn-verifier@0.1.2',
+  statelessRegistry: 'CDFVJKO6FOFL2W4AWBBHYXMK3CMTTPMZZJTLLN2GCB5SRF5URW5MNIQF',
+  docCompiler: 'CDZAF3GIX6Z573FDG64PFFMQMTER57UE5HSFGQRZ3EMTD5KD7IAEGNUY',
+  interpreter: 'CA4THHSYJQGZKSZWTH53WCI6JRDEH42I4YYGH6MDF2PQDF2OAW3I3R3T',
+  spendingLimit: 'CB5N4HGJOLEDRMXX7EXXT7HDMC46JZAU7AYOOYDJPFGGEQHYNB5QZSFA',
+  recoveryController: 'CDHF6CPOICTDIPFEFOCKWVJXUBHH3HZ5NN52DQDEJKYGKKJR6DR6DPCU',
+  zkPool: 'CAUKQRNVQETVQGB52SZ3FJMOHH5VIBVURJIM4TO577YCUM5OIFXC6XTM',
+  zkAdapter: 'CBSUWADJJVNXTJ6JD2OITAX4BLQ5XCXL4OFZF354U4MASFCTJXYFSQF5',
   circuitId: '9e39c41f4f35aad43e64b255dfe3ba13f10e8c9d36d6f56fce23c2d97c0a0b4a',
   treeDepth: 32,
-  accountWasmHash: '2c976bfd98678f3b6fcf5514420a81ef5e5b9fc1c5b6c60ec6f2dd64448479d5',
+  accountWasmHash: '7a03f4c29b8a7fe099929d31c1fe87ca4f19d8b791baeb3ae17b7316b9a48220',
 };
 
-/** Perch's mainnet release (`vendor/perch/deployments/mainnet.json`, at the
- *  submodule's pin) and Nido's factory, as its record (`factory.mainnet.json`,
+/** Perch's mainnet release (`deployments/mainnet.json` at Nido's
+ *  Perch pin) and Nido's factory, as its record (`factory.mainnet.json`,
  *  written by `scripts/deploy-factory.sh`) names it. Built from the same
  *  source commit as `TESTNET` (`c135aca2`), so every pinned address differs
  *  only where mainnet's deploy is necessarily distinct (the factory and the
@@ -88,6 +100,10 @@ export interface PerchManifest {
   registry: { id: string };
   zk: { circuit_id: string; tree_depth: number };
   contracts: Record<string, { sha256: string; address?: string }>;
+  /** `perch/verifiers`, with each verifier it serves: its content address
+   *  there (what the factory pins and a document names) and its
+   *  `verifier-name`. Absent from a manifest that predates it. */
+  verifiers?: { id: string; contracts: Record<string, { address: string; name: string }> };
 }
 
 /** The deployment a Perch manifest describes, with Nido's `factory`. */
@@ -99,10 +115,14 @@ export function fromPerchManifest(manifest: PerchManifest, factory: string): Per
   };
   const hash = manifest.contracts['perch-account']?.sha256;
   if (!hash) throw new Error('perch manifest: no perch-account hash');
+  // The verifier in perch/verifiers, where the manifest records it: the
+  // registry's copy of the same bytes is no admin verifier.
+  const named = manifest.verifiers?.contracts['perch-webauthn-verifier'];
   return parsePerchDeployment({
     network: manifest.network_passphrase,
     factory,
-    webauthnVerifier: address('perch-webauthn-verifier'),
+    webauthnVerifier: named?.address ?? address('perch-webauthn-verifier'),
+    ...(named ? { webauthnVerifierName: named.name } : {}),
     statelessRegistry: manifest.registry.id,
     docCompiler: address('perch-doc-compiler'),
     interpreter: address('perch-interpreter'),
@@ -152,6 +172,9 @@ export function parsePerchDeployment(value: unknown): PerchDeployment {
   }
   if (v.treeDepth !== 32 && v.treeDepth !== 24) {
     throw new Error('perch deployment: treeDepth must be 32 or 24');
+  }
+  if (v.webauthnVerifierName !== undefined && (typeof v.webauthnVerifierName !== 'string' || !VERIFIER_NAME.test(v.webauthnVerifierName))) {
+    throw new Error('perch deployment: webauthnVerifierName is not <name>@<version>');
   }
   return value as PerchDeployment;
 }

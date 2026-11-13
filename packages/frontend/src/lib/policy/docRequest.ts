@@ -56,16 +56,10 @@
 // `grant.*` field rejects the whole request, so a bad cap can never degrade
 // into an uncapped grant.
 
-import { canonicalJson, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { isContractAddress, isStellarAddress } from './policyDraft.js';
-import {
-  parseFunctionsInput,
-  upsertSessionRules,
-  type SessionDocDraft,
-  type SessionSignerDraft,
-} from './docDraft.js';
+import { parseFunctionsInput, type SessionSignerDraft } from './docDraft.js';
 import { PERIOD_LEDGERS, stroopsFromXlm, type LimitPeriod } from '../spendingLimitParams.js';
-import { httpOrigin, validateDappReturn, type OperationDescriptor } from '../signing/signRequest.js';
+import { httpOrigin, validateDappReturn } from '../signing/signRequest.js';
 import { NO_CAP_NO_TOKEN_FUNCTIONS, NO_SPENDING_CAP, canMoveTokens } from './tokenFunctions.js';
 import { canTransfer, capText } from './reviewText.js';
 
@@ -355,39 +349,4 @@ export function describeSessionScope(scope: {
         ? `After ${span}`
         : `At ledger ${scope.notAfterLedger.toLocaleString('en-US')} (≈ ${span})`;
   return { amount, warn, recipient, expiry };
-}
-
-/**
- * The ONE way a session grant becomes a signable operation: upsert the
- * session rules into the loaded baseline and wrap the merged document in an
- * `apply-policy-doc` descriptor. Every policy write is an `apply_doc` — a
- * grant flow must never emit `add_context_rule` (the doc-only contract
- * hard-refuses it outside the recovery-completion window). Both delegate
- * pages (passkey and delegated-key requests) build their /sign/ handoff
- * through this helper, so the invariant is testable in one place. Several
- * grants are one document update, so one approval installs them all.
- *
- * Precondition: `validateSessionDocDraft(draft, limits).ok` for each draft,
- * distinct draft names, and a loaded baseline (the applied doc, or the
- * owner-admin baseline on a first apply).
- */
-export function buildSessionGrantOperation(args: {
-  baseline: PolicyDoc;
-  /** The configuration revision `baseline` was read at. */
-  baselineRevision: bigint;
-  /** True when nothing is applied yet — no prevDocJson (all-new diff). */
-  isFirstApply: boolean;
-  drafts: readonly SessionDocDraft[];
-  networkPassphrase: string;
-  /** Human-readable expiry label (e.g. "24 hours"). */
-  expiryLabel: string;
-}): Extract<OperationDescriptor, { type: 'apply-policy-doc' }> {
-  const doc = upsertSessionRules(args.baseline, args.drafts, args.networkPassphrase);
-  return {
-    type: 'apply-policy-doc',
-    docJson: canonicalJson(doc),
-    ...(args.isFirstApply ? {} : { prevDocJson: canonicalJson(args.baseline) }),
-    expectedRevision: args.baselineRevision.toString(),
-    expiryLabel: args.expiryLabel,
-  };
 }

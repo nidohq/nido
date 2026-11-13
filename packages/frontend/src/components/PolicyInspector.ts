@@ -258,8 +258,8 @@ export function renderDocPolicy(
     <article class="card pol-card pol-doc-head" style="padding:16px;">
       <header class="pol-head">
         <div>
-          <span class="section-label">Policy document</span>
-          <h3 class="pol-name disp">What was approved for this account</h3>
+          <span class="section-label">Admin document</span>
+          <h3 class="pol-name disp">Your account's own rules</h3>
         </div>
         <div class="pol-badges">${tierBadge}${sourceBadge}</div>
       </header>
@@ -267,7 +267,7 @@ export function renderDocPolicy(
         ${
           unapplied
             ? "The account's current effective policy, shown as the document it would become — nothing has been applied as a document yet. Your first policy edit applies exactly this (plus your change)."
-            : 'This is the document itself — names and all — checked byte-for-byte against the hash the account stores on chain.'
+            : "This is the document itself — names and all — checked byte-for-byte against the hash the account stores on chain. Each app's permissions are kept in its own document, under Apps."
         }
       </p>
       <div class="pol-field">

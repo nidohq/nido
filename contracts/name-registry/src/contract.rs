@@ -48,7 +48,7 @@ impl Contract {
     /// on first call (no admin yet) skips the auth check.
     #[allow(clippy::needless_pass_by_value)]
     pub fn __constructor(e: Env, admin: Address) {
-        Self::set_admin(&e, admin);
+        Self::set_admin(&e, &admin);
     }
 
     /// Register a human-readable name for a smart account.

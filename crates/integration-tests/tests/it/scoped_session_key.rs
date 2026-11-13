@@ -3,7 +3,7 @@
 //! verifies the in-scope / out-of-scope / expired / revoked paths.
 
 use nido_integration_tests::{
-    build_contract_assertion, compute_auth_digest, deploy_smart_account, install_rule_direct,
+    build_contract_assertion, compute_auth_digest, deploy_oz_account, install_rule_direct,
     remove_rule_direct, test_key,
 };
 use p256::ecdsa::SigningKey;
@@ -60,7 +60,7 @@ fn context_for(env: &Env, contract: &Address) -> Context {
 fn session_key_authorizes_target_contract() {
     let env = Env::default();
     env.mock_all_auths();
-    let (_client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (_client, account_addr, verifier_addr, _passkey) = deploy_oz_account(&env);
     let target = Address::generate(&env);
     let (key, signer) = session_signer(&env, &verifier_addr);
 
@@ -91,7 +91,7 @@ fn session_key_authorizes_target_contract() {
 fn session_key_rejected_for_other_contract() {
     let env = Env::default();
     env.mock_all_auths();
-    let (_client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (_client, account_addr, verifier_addr, _passkey) = deploy_oz_account(&env);
     let target = Address::generate(&env);
     let other = Address::generate(&env);
     let (key, signer) = session_signer(&env, &verifier_addr);
@@ -126,7 +126,7 @@ fn session_key_rejected_for_other_contract() {
 fn session_key_rejected_after_valid_until() {
     let env = Env::default();
     env.mock_all_auths();
-    let (_client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (_client, account_addr, verifier_addr, _passkey) = deploy_oz_account(&env);
     let target = Address::generate(&env);
     let (key, signer) = session_signer(&env, &verifier_addr);
 
@@ -173,7 +173,7 @@ fn session_key_rejected_after_valid_until() {
 fn session_key_rejected_after_revoke() {
     let env = Env::default();
     env.mock_all_auths();
-    let (_client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (_client, account_addr, verifier_addr, _passkey) = deploy_oz_account(&env);
     let target = Address::generate(&env);
     let (key, signer) = session_signer(&env, &verifier_addr);
 

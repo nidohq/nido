@@ -5,24 +5,25 @@ Build, deploy, operate, and respond. Commands run from the repo root.
 ## 1. Build and test from source
 
 ```bash
-git clone --recurse-submodules https://github.com/nidohq/nido.git && cd nido
-# or, in an existing clone:
-git submodule update --init
+git clone https://github.com/nidohq/nido.git && cd nido
 
 just perch-infra       # Perch's deployed wasm and pin cache, by the hashes in
-                       # vendor/perch/deployments/testnet.json (Stellar CLI,
-                       # curl, jq; endpoint choice: "RPC endpoints" below)
+                       # Perch's deployments/testnet.json at the pin (Stellar
+                       # CLI, curl, git, jq; endpoint choice: "RPC endpoints"
+                       # below). scripts/perch-src.sh fetches Perch's source
+                       # at the root Cargo.toml's Perch rev into
+                       # target/perch-src/ on first use.
 just build-contracts   # Nido's contracts; the factory compiles in the pin
                        # just perch-infra wrote (contracts/factory/wasm/)
 just test              # cargo test --workspace: integration tests replay the
                        # committed proofs
-just check-vendor-drift  # vendor/perch at its pin, consumed wasm = the manifest's
+just check-perch-drift # Cargo's Perch at the pin, consumed wasm = the manifest's
 npm install            # workspaces; postinstall builds the packages
 ```
 
 Regenerate the real proofs after anything that changes a statement (a test's
 setup, the controller, the circuit). The toolchain is checksum-pinned and
-installed under the submodule:
+installed under `target/zk-toolchain/`:
 
 ```bash
 just gen-zk-fixtures
@@ -30,7 +31,7 @@ just gen-zk-fixtures
 git diff --exit-code -- 'crates/integration-tests/fixtures/zk/*/fixture.json'
 ```
 
-To keep the toolchain outside the submodule, set
+To keep the toolchain elsewhere, set
 `PERCH_ZK_TOOLCHAIN_DIR=<dir>` first.
 
 Front end:
@@ -67,7 +68,7 @@ NIDO_E2E_DIRECT_DEPLOY=1 npx playwright test --project=testnet-chromium perch-re
 the chain through the
 endpoint `scripts/stellar-rpc.sh` chooses. It is the one place the fallback
 list lives, and it has the same variables as Perch's helper of the same name
-(and defers to it once vendor/perch carries it):
+(and defers to it once Perch's source at the pin carries it):
 
 | Variable | Meaning |
 | --- | --- |
@@ -106,8 +107,7 @@ manifest (`deployments/<network>.json` in Perch). Nido doesn't deploy them.
 Before using a manifest:
 
 1. Run Perch's
-   [`scripts/verify-deployment.sh`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/scripts/verify-deployment.sh)
-   (`vendor/perch/scripts/verify-deployment.sh`) against it: by hash and
+   [`scripts/verify-deployment.sh`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/scripts/verify-deployment.sh) against it: by hash and
    address only, it checks each contract at its content address, its code
    hash, the registry's records, the account installed, and what consumers
    resolve.
@@ -161,7 +161,7 @@ the factory is redeployed (or upgraded, §3) and the record committed with
 it. `just check-factory` (run in CI) reads the factory's instance
 storage and simulates its `account_wasm_hash` over RPC, and fails unless
 they match the record and the account hash is the manifest's (a factory
-built at an earlier Perch commit than `vendor/perch` is reported instead,
+built at an earlier Perch commit than the pin is reported instead,
 since `deployment.test.ts` already holds it).
 
 Not done by the script:
@@ -532,7 +532,8 @@ user starts a recovery.
 
 ## 7. Moving to a new Perch release
 
-1. Update the submodule to the new revision and run §1, including
+1. Move the pin to the new revision (`just repin-perch <commit>`, which
+   moves every Perch git dependency in `Cargo.toml`) and run §1, including
    `just gen-zk-fixtures`: the proofs change if anything that feeds a
    statement does (the circuit, the document canonicalisation, a test's
    setup), and CI fails on any drift.

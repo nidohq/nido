@@ -1,5 +1,6 @@
 import { Asset, Networks, rpc } from "@stellar/stellar-sdk";
 import { setStorageNetwork } from "@nidohq/passkey-sdk";
+import { localSubmitterEnabled } from "./localSubmitterGate";
 
 /** Single source of truth for the network this build targets. Set
  *  PUBLIC_STELLAR_NETWORK=mainnet at build time to target mainnet; any other
@@ -53,6 +54,13 @@ export const RELAYER_URL: string = (import.meta.env.PUBLIC_RELAYER_URL ?? "").re
  *  Required because recording-mode simulateTransaction needs an existing
  *  source account, and in relayer mode we no longer friendbot-fund one. */
 export const RELAYER_SIM_SOURCE: string = import.meta.env.PUBLIC_RELAYER_SIM_SOURCE ?? "";
+
+/** Local-submitter mode (./localSubmitterGate): testnet builds that set
+ *  PUBLIC_NIDO_LOCAL_SUBMITTER=1 never call the relayer. */
+export const LOCAL_SUBMITTER: boolean = localSubmitterEnabled(
+  import.meta.env.PUBLIC_NIDO_LOCAL_SUBMITTER,
+  NETWORK_NAME,
+);
 
 /** Signature validity in relayer mode: ~10 minutes (120 ledgers ≈ 600s). The
  *  sdk default (10000 ledgers ≈ 14h) is fine when the signed entry never leaves

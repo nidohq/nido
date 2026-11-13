@@ -13,15 +13,16 @@
 # `Account` cache in its instance). Each must equal the record's.
 #
 # The account hash must also equal the manifest's `perch-account`
-# (vendor/perch/deployments/<network>.json) when the record says the factory
-# was built at vendor/perch's commit (`source.perch_commit`). A record from an
+# (deployments/<network>.json in Perch's source at Nido's pin, which
+# scripts/perch-src.sh fetches) when the record says the factory was built at
+# the pinned commit (`source.perch_commit`). A record from an
 # earlier Perch commit was checked against that commit's manifest when it was
 # deployed; the difference is reported, not failed, and
 # packages/passkey-sdk/src/perch/deployment.test.ts holds it until the factory
 # is redeployed.
 #
 # The read goes through scripts/stellar-rpc.sh: RPC_URL/STELLAR_RPC_URL if
-# set, else Perch's manifest's rpc_url (vendor/perch/deployments/<network>.json),
+# set, else Perch's manifest's rpc_url (that deployments/<network>.json),
 # else a guarded fallback while that is down, also mid-run (docs/RUNBOOKS.md
 # "RPC endpoints").
 #
@@ -38,8 +39,14 @@ command -v stellar >/dev/null || die "stellar CLI not found"
 command -v jq >/dev/null || die "jq not found"
 command -v curl >/dev/null || die "curl not found"
 [ -f "$RECORD" ] || die "no factory record at $RECORD"
-MANIFEST="$REPO_ROOT/vendor/perch/deployments/$NETWORK.json"
-[ -f "$MANIFEST" ] || die "no Perch manifest at $MANIFEST (git submodule update --init)"
+if [ "$("$REPO_ROOT/scripts/perch-src.sh" --stack)" = build ]; then
+    # Nothing deploys the pinned Perch: its stack is built from source, so no
+    # factory on the chain is built around it to check.
+    echo "factory record not checked: Perch $("$REPO_ROOT/scripts/perch-src.sh" --rev | cut -c1-7) is built from source, not deployed (the record names $(jq -r .factory "$RECORD"))"
+    exit 0
+fi
+MANIFEST="$("$REPO_ROOT/scripts/perch-src.sh")/deployments/$NETWORK.json"
+[ -f "$MANIFEST" ] || die "no Perch manifest at $MANIFEST"
 
 r() { jq -r "$1" "$RECORD"; }
 # The all-zero account: a valid address nobody holds the key to.
@@ -93,11 +100,11 @@ check "manager" "$(stored Manager)" "$(r '.manager // empty')"
 manifest_account="$(jq -r '.contracts["perch-account"].sha256 // empty' "$MANIFEST")"
 [[ "$manifest_account" =~ ^[0-9a-f]{64}$ ]] || die "$MANIFEST has no perch-account hash"
 built_at="$(r '.source.perch_commit // empty')"
-perch_at="$(git -C "$REPO_ROOT/vendor/perch" rev-parse HEAD)"
+perch_at="$("$REPO_ROOT/scripts/perch-src.sh" --rev)"
 if [ "$account" = "$manifest_account" ]; then
     echo "  account it deploys is the manifest's perch-account"
 elif [ "$built_at" = "$perch_at" ]; then
     die "$FACTORY deploys account $account; $MANIFEST names $manifest_account"
 else
-    echo "  account it deploys is not the manifest's perch-account ($manifest_account): the factory was built at Perch ${built_at:0:7}, vendor/perch is at ${perch_at:0:7}; redeploy it (just deploy-factory)"
+    echo "  account it deploys is not the manifest's perch-account ($manifest_account): the factory was built at Perch ${built_at:0:7}, Nido pins ${perch_at:0:7}; redeploy it (just deploy-factory)"
 fi

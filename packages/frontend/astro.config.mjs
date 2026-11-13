@@ -23,7 +23,7 @@ export default defineConfig({
       // so the prebundled copy 404s and the dev server serves back its HTML
       // fallback instead ("expected magic word ..., found 3c 21 44 4f" --
       // the first bytes of "<!DOCTYPE"). Mirrors Perch's own working
-      // browser setup (vendor/perch/packages/perch-zk/bench/browser/vite.config.js).
+      // browser setup (Perch's packages/perch-zk/bench/browser/vite.config.js).
       exclude: ['@aztec/bb.js', '@noir-lang/noirc_abi', '@noir-lang/acvm_js'],
     },
   },

@@ -10,13 +10,11 @@ deployment is in this file's git history (`git log -p -- DEPLOYED.md`).
 
 Perch deploys its stack; Nido deploys none of it. The record is Perch's
 manifest,
-[`deployments/testnet.json`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/deployments/testnet.json)
-(`vendor/perch/deployments/testnet.json`), at the Perch commit Nido pins: for
+[`deployments/testnet.json`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/deployments/testnet.json), at the Perch commit Nido pins: for
 every contract its version, wasm sha256, and content address under the
 manifest's registry, plus the Perch commit and toolchain that built them and
 the ledger they were deployed at. Perch's
-[`scripts/verify-deployment.sh`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/scripts/verify-deployment.sh)
-(`vendor/perch/scripts/verify-deployment.sh`) checks the manifest against the
+[`scripts/verify-deployment.sh`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/scripts/verify-deployment.sh) checks the manifest against the
 chain by hash and address.
 
 The wallet's deployment, `perch.TESTNET`
@@ -79,7 +77,7 @@ and verifier against the manifest's `perch-account` and
 | Name | Address | Notes |
 |---|---|---|
 | Factory | `CDDIW3F63PB6ZKMJN7CCGJSCYXTAVAVEEYNS36K2YFEJH7GQ3ADVZSVS` | **Setup-key factory (2026-10-22)**, see [Nido's factory](#nidos-factory). `create_account(setup_pk, key, setup_sig)` deploys doc-only Perch accounts by the account wasm hash pinned from the manifest (`2c976bfd…`, reported by `account_wasm_hash`), with Perch's WebAuthn verifier `CDEV5YPS…` pinned at construction and no manager. Admin `GAWIDMB5EIWL4DLYSWG2BADMYMSXESPQC4P2FJ4VMHEHSI2ZLDP76B6K`, a throwaway testnet deploy key, NOT a human-held key (testnet only; mainnet must hand the factory to the admin smart account that enforces the change delay, MAINNET_READINESS B1). Not registry-registered: `perch.TESTNET.factory` in `packages/passkey-sdk/src/perch/deployment.ts` is the source of truth. Previous factories `CAE33LHBXQGBI6QLDHBUOSCLPUD267NRJXANHO65PQ6PU2BMGHOKF6QV` (2026-10-21, 603f7d5 account), `CBJRCUECFC2FSJBSVOVYHWC73A2SN7LIKSLWJBQUNEOWPE4PXG33M54H` (2026-10-12, salt interface, 845c49a account) and `CCJFOM6UGOH7JSAX22C3FAECG5657HKIUYDBTCMUMILKDA6LOA2J2EGG` (pre-redeploy Perch account) remain on chain. |
-| WebAuthn verifier | `CDEV5YPS5IITPLQPYTKJGWBNZ2YZ7FQZIJNSHUMJRBE4QWYK2IVK4EJT` | Perch's redeployed WebAuthn verifier (`perch-webauthn-verifier` in `vendor/perch/deployments/testnet.json`). Constructorless, no admin. Implements `canonicalize_key` / `batch_canonicalize_key`; the factory pins it and passkey signers name it. Previous verifiers `CDRYDB7O2JFLF7FAIIQUQK4BKQT3N6ACFFGZQ7AHKMX52RIWTHBHJY6K` (Perch 603f7d5), `CAL7IEAJO7S3SJI4EXESMUNPOEYW6QNR3PQTO7AVHD75YGURSZ5CW27Z` (Perch 845c49a), and Nido's former `CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY`. |
+| WebAuthn verifier | `CDEV5YPS5IITPLQPYTKJGWBNZ2YZ7FQZIJNSHUMJRBE4QWYK2IVK4EJT` | Perch's redeployed WebAuthn verifier (`perch-webauthn-verifier` in Perch's [`deployments/testnet.json`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/deployments/testnet.json)). Constructorless, no admin. Implements `canonicalize_key` / `batch_canonicalize_key`; the factory pins it and passkey signers name it. Previous verifiers `CDRYDB7O2JFLF7FAIIQUQK4BKQT3N6ACFFGZQ7AHKMX52RIWTHBHJY6K` (Perch 603f7d5), `CAL7IEAJO7S3SJI4EXESMUNPOEYW6QNR3PQTO7AVHD75YGURSZ5CW27Z` (Perch 845c49a), and Nido's former `CACVGSAHYFBXY4LJKWW5B57LAAXHCZVDZOANUTYPLNV6HHQI4Q35EGMY`. |
 | Multisig policy | `CCSDKJYOFCPTCCGQZPF73RJNHFC7TPO532Q36N3M2VBYZFWQOTDB7J7G` | Registered as `unverified/multisig-policy`. Built against soroban-sdk 26 + OZ stellar-contracts main — accepts v0.7 `ContextRule` (with `signer_ids`/`policy_ids`). |
 | Spending-limit policy | `CCJMCPGADKMVKYOIZXMV7UWH62XYDAIT6GJRNJPQSZ2CHPOF4K2AU2QC` | Registered as `unverified/spending-limit-policy`. Built against soroban-sdk 26 + OZ stellar-contracts rev `637c53a` — wraps `policies::spending_limit` (rolling window, meters SAC `transfer`). |
 | Stellar Registry (unverified) | `CDBL7MNO7UI5OAAIC67UIWKQ4P3S6RVQSFCQXUHUW6TOFCXSYRPNHY4S` | The registry the factory queries via `Self::resolve(env, name)`. |
@@ -99,7 +97,7 @@ the registry id plus the pinned wasm hash — the SDK does exactly that
 pins asserted in `deployment.test.ts`) instead of hardcoding addresses at call
 sites. The full redeployed stack (verifier, recovery controller, ZK pool/adapter,
 spending-limit, account wasm hash, and Perch's own factory) is recorded in
-`vendor/perch/deployments/testnet.json` and surfaced to the wallet through
+Perch's [`deployments/testnet.json`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/deployments/testnet.json) and surfaced to the wallet through
 `perch.TESTNET` (`packages/passkey-sdk/src/perch/deployment.ts`, checked field
 by field against that manifest in `perch/deployment.test.ts`). The addresses
 below are the subset the content-addressed derivation re-derives; they match the

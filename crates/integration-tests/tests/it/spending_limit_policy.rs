@@ -6,8 +6,8 @@
 //! window frees up budget once old entries age out.
 
 use nido_integration_tests::{
-    deploy_smart_account, deploy_spending_limit_policy, install_rule_direct, one_sig,
-    session_signer, spending_limit_install_map, SmartAccountClient,
+    deploy_oz_account, deploy_spending_limit_policy, install_rule_direct, one_sig, session_signer,
+    spending_limit_install_map, SmartAccountClient,
 };
 use p256::ecdsa::SigningKey;
 use soroban_sdk::auth::{Context, ContractContext};
@@ -18,7 +18,7 @@ use stellar_accounts::smart_account::{do_check_auth, ContextRule, ContextRuleTyp
 
 const XLM: i128 = 10_000_000; // stroops
 
-/// This rule's id: `deploy_smart_account` creates the passkey Default rule at id
+/// This rule's id: `deploy_oz_account` creates the passkey Default rule at id
 /// 0, so the session-key rule installed second lands at id 1.
 const SESSION_RULE_ID: u32 = 1;
 
@@ -75,7 +75,7 @@ fn setup(
 ) {
     env.mock_all_auths();
     env.ledger().set_sequence_number(1000);
-    let (client, account_addr, verifier_addr, _passkey) = deploy_smart_account(env);
+    let (client, account_addr, verifier_addr, _passkey) = deploy_oz_account(env);
     let admin = Address::generate(env);
     let sac = env.register_stellar_asset_contract_v2(admin).address();
     let policy_addr = deploy_spending_limit_policy(env);
@@ -275,7 +275,7 @@ fn raised_limit_mid_window_keeps_spent_total() {
 
     // Raise the limit to 10 XLM mid-window through the wrapper's entry point.
     // The lib's `smart_account.require_auth()` is satisfied by mock_all_auths.
-    let rule = client.get_context_rule(&1);
+    let rule: ContextRule = nido_integration_tests::twin(&env, &client.get_context_rule(&1));
     SpendingLimitPolicyClient::new(&env, &policy_addr).set_spending_limit(
         &(10 * XLM),
         &rule,

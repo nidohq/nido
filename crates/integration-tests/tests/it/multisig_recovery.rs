@@ -7,7 +7,7 @@
 //!   - scope enforcement: same M signatures cannot move funds.
 
 use nido_integration_tests::{
-    build_contract_assertion, compute_auth_digest, deploy_multisig_policy, deploy_smart_account,
+    build_contract_assertion, compute_auth_digest, deploy_multisig_policy, deploy_oz_account,
     install_rule_direct, multisig_install_map, test_key,
 };
 use p256::ecdsa::SigningKey;
@@ -71,7 +71,7 @@ fn install_two_of_three_recovery(
 #[test]
 fn one_friend_signature_is_rejected() {
     let env = Env::default();
-    let (client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (client, account_addr, verifier_addr, _passkey) = deploy_oz_account(&env);
     let f1 = test_key(2);
     let f2 = test_key(3);
     let f3 = test_key(4);
@@ -116,7 +116,7 @@ fn one_friend_signature_is_rejected() {
 #[test]
 fn two_friend_signatures_pass_for_self_scope() {
     let env = Env::default();
-    let (client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (client, account_addr, verifier_addr, _passkey) = deploy_oz_account(&env);
     let f1 = test_key(2);
     let f2 = test_key(3);
     let f3 = test_key(4);
@@ -155,7 +155,7 @@ fn two_friend_signatures_pass_for_self_scope() {
 #[test]
 fn two_friend_signatures_rejected_for_other_contract() {
     let env = Env::default();
-    let (client, account_addr, verifier_addr, _passkey) = deploy_smart_account(&env);
+    let (client, account_addr, verifier_addr, _passkey) = deploy_oz_account(&env);
     let f1 = test_key(2);
     let f2 = test_key(3);
     let f3 = test_key(4);

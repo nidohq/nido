@@ -10,13 +10,14 @@ Read these before the manifest.
 
 - **Single-commit snapshot.** The handed-over tree is one commit with no git
   history or tags, so the git-based provenance checks below
-  (`git -C vendor/perch diff` against release tags, `scripts/check-perch-drift.sh`,
+  (`git diff` in Perch's source against release tags, `scripts/check-perch-drift.sh`,
   `git rev-parse HEAD`) cannot run as written. Identity is fixed by the recorded
   SHAs and integrity hashes; source-equality by the comparison results attached
   to the handoff.
-- **`vendor/perch` is fork-pinned for the audit.** `.gitmodules` points
-  `vendor/perch` at the audit fork's `audit/integration` branch so the audited Nido
-  head pulls the audited Perch head; it is reverted to upstream `main` before
+- **Perch is fork-pinned for the audit.** The root `Cargo.toml`'s Perch git
+  dependencies point at the audit fork's `audit/integration` head (and
+  `[workspace.metadata.perch]` at that branch) so the audited Nido head pulls
+  the audited Perch head; it is reverted to upstream `main` before
   mainnet. [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md) describes the upstream pin.
 - **perch-js.** The pinned source's `packages/perch-js` is `0.4.0`; the wallet
   runs the published `0.4.0` tarball, built at Perch's `perch-js-v0.4.0` tag.
@@ -30,7 +31,7 @@ The audit covers fixed revisions. No branch is part of the audit identity.
 
 Identity is fixed by the SHAs and integrity hashes recorded below, which an
 auditor checks against the handed-over tree directly. The source-equality
-comparisons this manifest prescribes — the `git -C vendor/perch diff` commands,
+comparisons this manifest prescribes — the `git diff` commands in Perch's source,
 `scripts/check-perch-drift.sh`, `git rev-parse HEAD`, and the published-tarball
 comparisons — additionally need git history or tags. A single-commit snapshot
 carries neither, so when the handoff is a plain tree those comparisons run from
@@ -42,10 +43,10 @@ from `git` against the tree.
 | Item | Identity | How to record or check it |
 | --- | --- | --- |
 | Nido source | The commit that contains this file. | At handoff: `git rev-parse HEAD` (full SHA). |
-| Perch source | The `vendor/perch` gitlink of that commit. Every commit-pinned Perch link in Nido's documents names it. | `git -C vendor/perch rev-parse HEAD`, which must equal `git ls-tree HEAD vendor/perch`. `scripts/check-perch-drift.sh` fails otherwise. |
+| Perch source | The rev of the root `Cargo.toml`'s Perch git dependencies at that commit (`scripts/perch-src.sh --rev`). Every commit-pinned Perch link in Nido's documents names it. | Every Perch git dependency in `Cargo.toml` and every Perch entry in `Cargo.lock` names it, and `scripts/perch-src.sh` checks out exactly it; `scripts/check-perch-drift.sh` fails otherwise. |
 | OZ `stellar-accounts` fork | theahaco/stellar-contracts-OZ at rev `33726766a1fd5e7e3d2977d79f64ee29e1ea3ca9`, the same rev in Nido's and Perch's `Cargo.toml`. | `Cargo.lock` (`source = "git+…?rev=3372676…"`). |
 | `admin-sep` | crates.io `0.27.0`. | `Cargo.lock` checksum `b45f70e98918c7ecfcda164bc45811cfc282be96f38e57e1198f401d9466eb7a`. |
-| Toolchains | `rust-toolchain.toml` at the Nido commit (Nido's wasm and tests); Perch's [`scripts/zk-toolchain.sh`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/scripts/zk-toolchain.sh) (`vendor/perch/scripts/zk-toolchain.sh`) at the Perch commit (`nargo`, `bb`, each download checked against a pinned SHA-256). | Both files at the recorded commits. Pins and known gaps: [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md). |
+| Toolchains | `rust-toolchain.toml` at the Nido commit (Nido's wasm and tests); Perch's [`scripts/zk-toolchain.sh`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/scripts/zk-toolchain.sh) at the Perch commit (`nargo`, `bb`, each download checked against a pinned SHA-256). | Both files at the recorded commits. Pins and known gaps: [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md). |
 | npm packages | `package-lock.json` at the Nido commit. The Perch packages the wallet runs are below. | `npm ci` refuses a tarball whose integrity differs. |
 | Audit date | Recorded with the handoff. | |
 
@@ -55,38 +56,41 @@ Perch packages in the wallet:
 | --- | --- | --- | --- |
 | `@stellar-registry/perch` (Perch's `packages/perch-js`) | npm | 0.4.0 | `sha512-U+jER/hzoVX/AkAYHwE7O9oARAhosf0Ptzr3YbLLTZirJ0kd7KWb7fOjAxKZKVoXNF26mTecmIKhqoGij7JxgQ==` |
 | `@stellar-registry/perch-interpreter` (Perch's `packages/perch-interpreter-js`) | npm | 0.1.0 | `sha512-ZUW1+/ojzTw0tjlfOxjHtWB7b+I6kWEMz5oQIH6wZrpk2H2vsPfdsc5wnQCU8NNWrLqWJlRKG+yxsbHB/p7Vtw==` |
-| `@stellar-registry/perch-zk` | npm workspace link to `vendor/perch/packages/perch-zk` | 0.1.0 | None: its identity is the Perch source commit. |
+| `@stellar-registry/perch-zk` (Perch's [`packages/perch-zk`](https://github.com/bitswell-hq/stellar-registry__perch/tree/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/packages/perch-zk)) | npm | 0.1.0 | `sha512-uhv+ynjGlPZsXmXOM5l6UivEBogVbylA4gcrii7Fo7NAyoaBpGE/OugyJVwcYEE+1B8rNSFXXwQsE6AOO+FEQw==` |
 
-Perch publishes the two npm packages from release tags, not from the Perch
-source commit. The wallet runs the published perch-js `0.4.0` tarball, built at
+Perch publishes the npm packages from release tags, not from the Perch
+source commit. perch-zk `0.1.0` was published from Perch `98fe926`, an ancestor
+of the pinned commit with the same `packages/perch-zk`, and its `dist/`,
+`artifacts/` and `package.json` are byte-identical to a TypeScript 5.9.3 build
+of that package at the pinned commit (the build the wallet ran when perch-zk
+was an npm workspace). The wallet runs the published perch-js `0.4.0` tarball, built at
 tag `perch-js-v0.4.0`; `packages/perch-js` at the pinned commit declares
 `0.4.0`, and Perch's manifest,
-[`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/audit-scope.md)
-(`vendor/perch/docs/audit-scope.md`), records that `src/` at that tag equals
+[`docs/audit-scope.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/audit-scope.md), records that `src/` at that tag equals
 the pinned source. `packages/perch-interpreter-js` declares `0.1.0`, the
 published version. A single-commit snapshot carries no tags, so the published
 tarballs cannot be diffed against the pinned source by tag within it. This audit reviews the
 perch-js and perch-interpreter-js encoders as the source at the pinned commit
-(`vendor/perch/packages/perch-js`, `vendor/perch/packages/perch-interpreter-js`).
+(Perch's [`packages/perch-js`](https://github.com/bitswell-hq/stellar-registry__perch/tree/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/packages/perch-js), Perch's [`packages/perch-interpreter-js`](https://github.com/bitswell-hq/stellar-registry__perch/tree/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/packages/perch-interpreter-js)).
 Establishing that a published `dist` is a reproducible build of an audited
 source is a post-audit release gate
 ([DEFERRED.md](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)),
 not a check runnable against this snapshot; the alternative, having the wallet
-consume perch-js from the workspace as it already does perch-zk, is a Nido code
-change outside this audit.
+consume perch-js built from the pinned source, is a Nido code change outside
+this audit.
 
 ### Deployed artifacts (provenance, not review targets)
 
 | Artifact | Record |
 | --- | --- |
-| Perch's testnet stack | Perch's manifest [`deployments/testnet.json`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/deployments/testnet.json) (`vendor/perch/deployments/testnet.json`) at the Perch source commit: the build commit (`source.commit`, with `dirty`), the build toolchain (`toolchain`), and every contract's version, `sha256`, and address. |
+| Perch's testnet stack | Perch's manifest [`deployments/testnet.json`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/deployments/testnet.json) at the Perch source commit: the build commit (`source.commit`, with `dirty`), the build toolchain (`toolchain`), and every contract's version, `sha256`, and address. |
 | Nido's testnet factory | [DEPLOYED.md](../DEPLOYED.md#nidos-factory): wasm hash, build commit, toolchain, verifier pin, admin. |
 
 The deployed Perch wasm was built from `source.commit`, which can be an
 ancestor of the Perch source commit (for example, when the later commit only
 adds the deployment record). The handoff confirms that the contract sources
 are the same in both:
-`git -C vendor/perch diff --stat <source.commit> HEAD -- crates circuits vendor Cargo.toml Cargo.lock ':!**/test_snapshots/**'`
+`perch="$(scripts/perch-src.sh)" && git -C "$perch" fetch -q --depth 1 origin <source.commit> && git -C "$perch" diff --stat <source.commit> HEAD -- crates circuits vendor Cargo.toml Cargo.lock ':!**/test_snapshots/**'`
 (empty output). Nido's tests run the deployed bytes, fetched by the manifest's
 hashes (`just perch-infra`), not a local build of the Perch source.
 
@@ -109,8 +113,7 @@ ZK verifier delta, the Perch JavaScript source, Perch's artifact selection).
 Perch's two units are a boundary for Perch's audit; a later Perch backend
 still needs its own integration review in Nido. Perch's map of its paths to
 the two units is its audit manifest,
-[`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/audit-scope.md)
-(`vendor/perch/docs/audit-scope.md`).
+[`docs/audit-scope.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/audit-scope.md).
 
 | Item | Path or identity | Stream |
 | --- | --- | --- |
@@ -124,13 +127,13 @@ the two units is its audit manifest,
 | Integration harness | `crates/integration-tests/`: that it runs under enforcing authorization with real proofs and that its fixtures cannot drift silently (`src/zk.rs`) | Nido integration |
 | `@stellar-registry/perch` (perch-js; npm `0.4.0`, pinned source `0.4.0`, see manifest note) | Statement and document encodings, `applyDocument`, rule selection, signing digests. | Source at the pinned commit: explicit dependency review. The published tarball vs an audited source: post-audit release gate ([DEFERRED.md](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients)). The wallet's use of it: Nido integration |
 | `@stellar-registry/perch-interpreter` 0.1.0 | Interpreter install parameters and bindings the SDK uses (`src/policyDoc/params.ts`) | Nido integration; tarball against source: explicit dependency review |
-| `perch-zk` | [`packages/perch-zk`](https://github.com/stellar-registry/perch/tree/2258433aa340428d65676cd269c8e4240674deb1/packages/perch-zk) (`vendor/perch/packages/perch-zk`): in-page proving and the circuit artifact it ships | Source: explicit dependency review; the wallet's use of it: Nido integration |
+| `perch-zk` | [`packages/perch-zk`](https://github.com/bitswell-hq/stellar-registry__perch/tree/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/packages/perch-zk): in-page proving and the circuit artifact it ships | Source: explicit dependency review; the wallet's use of it: Nido integration |
 | Generated Perch clients | `packages/contract-bindings/perch-*`, generated from the deployed wasm (`just bindings-perch`) | Nido integration (provenance) |
-| Artifact selection | `just perch-infra` (runs Perch's [`scripts/fetch-infra-wasm.sh`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/scripts/fetch-infra-wasm.sh) (`vendor/perch/scripts/fetch-infra-wasm.sh`) `--stack`), `scripts/check-perch-drift.sh`, `scripts/deploy-factory.sh`, `packages/passkey-sdk/src/perch/deployment.ts` (`perch.TESTNET`) and its test. Perch's own artifact selection (`fetch-infra-wasm.sh`, `build-stack.sh`, `verify-deployment.sh`) is in Perch's explicit dependency review. | Nido integration |
-| Perch contracts | `perch-account`, `perch-smart-account` (recovery and capability paths), `perch-recovery`, `perch-zk-pool`, `perch-zk-adapter`, `perch-doc-compiler`, `perch-interpreter`, `perch-webauthn-verifier`, in Perch's [`crates/`](https://github.com/stellar-registry/perch/tree/2258433aa340428d65676cd269c8e4240674deb1/crates) (`vendor/perch/crates/`) | Perch core |
-| Circuit | Perch's [`circuits/`](https://github.com/stellar-registry/perch/tree/2258433aa340428d65676cd269c8e4240674deb1/circuits) (`vendor/perch/circuits/`), specialist review: soundness, domain separation, nullifier binding | Perch core |
-| ZK verifier delta | Perch's `UltraKeccakZKFlavor` delta on NethermindEth's UltraHonk verifier, in Perch's `vendor/ultrahonk-soroban-verifier/`: `src/zk.rs` (new), `src/lib.rs` (+3 lines: the module and its re-exports), and visibility-only changes to `src/transcript.rs`, `src/sumcheck.rs`, `src/utils.rs`, and `src/verifier.rs`, as listed in its [`NOTICE`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/vendor/ultrahonk-soroban-verifier/NOTICE) (`vendor/perch/vendor/ultrahonk-soroban-verifier/NOTICE`). Not audited. | Explicit dependency review (cryptographic specialist) |
-| Upstream UltraHonk verifier | The rest of Perch's [`vendor/ultrahonk-soroban-verifier/`](https://github.com/stellar-registry/perch/tree/2258433aa340428d65676cd269c8e4240674deb1/vendor/ultrahonk-soroban-verifier) (`vendor/perch/vendor/ultrahonk-soroban-verifier/`): NethermindEth's verifier at the upstream commit its `NOTICE` names, audited by OpenZeppelin for the non-ZK flavor only. Confirm the vendored bytes are upstream's (`UPSTREAM.sha256`, `CHECKSUMS.sha256`, Perch's `crates/perch-zk-adapter/tests/vendor.rs`). | Explicit dependency review: provenance only |
+| Artifact selection | `just perch-infra` (runs Perch's [`scripts/fetch-infra-wasm.sh`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/scripts/fetch-infra-wasm.sh) `--stack`), `scripts/check-perch-drift.sh`, `scripts/deploy-factory.sh`, `packages/passkey-sdk/src/perch/deployment.ts` (`perch.TESTNET`) and its test. Perch's own artifact selection (`fetch-infra-wasm.sh`, `build-stack.sh`, `verify-deployment.sh`) is in Perch's explicit dependency review. | Nido integration |
+| Perch contracts | `perch-account`, `perch-smart-account` (recovery and capability paths), `perch-recovery`, `perch-zk-pool`, `perch-zk-adapter`, `perch-doc-compiler`, `perch-interpreter`, `perch-webauthn-verifier`, in Perch's [`crates/`](https://github.com/bitswell-hq/stellar-registry__perch/tree/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/crates) | Perch core |
+| Circuit | Perch's [`circuits/`](https://github.com/bitswell-hq/stellar-registry__perch/tree/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/circuits), specialist review: soundness, domain separation, nullifier binding | Perch core |
+| ZK verifier delta | Perch's `UltraKeccakZKFlavor` delta on NethermindEth's UltraHonk verifier, in Perch's `vendor/ultrahonk-soroban-verifier/`: `src/zk.rs` (new), `src/lib.rs` (+3 lines: the module and its re-exports), and visibility-only changes to `src/transcript.rs`, `src/sumcheck.rs`, `src/utils.rs`, and `src/verifier.rs`, as listed in its [`NOTICE`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/vendor/ultrahonk-soroban-verifier/NOTICE). Not audited. | Explicit dependency review (cryptographic specialist) |
+| Upstream UltraHonk verifier | The rest of Perch's [`vendor/ultrahonk-soroban-verifier/`](https://github.com/bitswell-hq/stellar-registry__perch/tree/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/vendor/ultrahonk-soroban-verifier): NethermindEth's verifier at the upstream commit its `NOTICE` names, audited by OpenZeppelin for the non-ZK flavor only. Confirm the vendored bytes are upstream's (`UPSTREAM.sha256`, `CHECKSUMS.sha256`, Perch's `crates/perch-zk-adapter/tests/vendor.rs`). | Explicit dependency review: provenance only |
 | Rule reconciler, install paths, caps, spending limit | `perch-smart-account/src/rules.rs`, the install half of `apply`, the caps in `perch-doc-compiler`, `perch-spending-limit` (all in Perch's `crates/`) | Perch OZ materialization |
 | OZ fork #3: CAP-0071 delegated auth | [theahaco/stellar-contracts-OZ#3](https://github.com/theahaco/stellar-contracts-OZ/pull/3), in the rev above | Explicit dependency review |
 | OZ fork #4: `_no_events` mutations | [theahaco/stellar-contracts-OZ#4](https://github.com/theahaco/stellar-contracts-OZ/pull/4), in the rev above | Explicit dependency review |
@@ -160,8 +163,7 @@ Named exclusions:
    that indexes each threat's STRIDE category, invariants, release gate, and
    status.
 4. Perch's recovery specification,
-   [`docs/recovery/spec.md`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/recovery/spec.md)
-   (`vendor/perch/docs/recovery/spec.md`): the single source of truth for
+   [`docs/recovery/spec.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/recovery/spec.md): the single source of truth for
    recovery semantics.
 5. [SECURITY_INVARIANTS.md](./SECURITY_INVARIANTS.md): each property and the
    test that pins it.
@@ -172,8 +174,7 @@ Named exclusions:
 9. [RUNBOOKS.md](./RUNBOOKS.md) and [MAINNET_READINESS.md](./MAINNET_READINESS.md):
    how it is built, deployed, and operated, and what is still open.
 10. Perch's audit manifest,
-    [`docs/audit-scope.md`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/audit-scope.md)
-    (`vendor/perch/docs/audit-scope.md`), for the Perch streams.
+    [`docs/audit-scope.md`](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/audit-scope.md), for the Perch streams.
 
 Not in the reading order, because they are historical records rather than
 descriptions of current behaviour: `docs/APPLICATION.md` (the funding

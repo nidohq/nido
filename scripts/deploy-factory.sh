@@ -47,7 +47,8 @@
 #
 #   <identity>  A `stellar keys` identity that pays for the deploy.
 #   [network]   Default "testnet". The Perch manifest read is
-#               vendor/perch/deployments/<network>.json.
+#               deployments/<network>.json in Perch's source at Nido's pin
+#               (scripts/perch-src.sh).
 #
 # The endpoint is chosen once, before anything is submitted, by
 # scripts/stellar-rpc.sh: RPC_URL/STELLAR_RPC_URL if set, else the manifest's
@@ -79,7 +80,9 @@ NETWORK="${2:-testnet}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
-MANIFEST="vendor/perch/deployments/$NETWORK.json"
+[ "$(scripts/perch-src.sh --stack)" = deployment ] ||
+    die "Perch $(scripts/perch-src.sh --rev | cut -c1-7) is built from source, not deployed: there is no deployed account or verifier to build a factory around"
+MANIFEST="$(scripts/perch-src.sh)/deployments/$NETWORK.json"
 ACCOUNT_WASM="target/wasm32v1-none/contract/perch_account.wasm"
 FACTORY_WASM="target/wasm32v1-none/contract/nido_factory.wasm"
 RECORD="packages/passkey-sdk/src/perch/factory.$NETWORK.json"
@@ -87,13 +90,17 @@ RECORD="packages/passkey-sdk/src/perch/factory.$NETWORK.json"
 command -v stellar >/dev/null || die "stellar CLI not found"
 command -v jq >/dev/null || die "jq not found"
 command -v curl >/dev/null || die "curl not found"
-[ -f "$MANIFEST" ] || die "no Perch manifest at $MANIFEST (git submodule update --init)"
+[ -f "$MANIFEST" ] || die "no Perch manifest at $MANIFEST"
 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 m() { jq -r "$1" "$MANIFEST"; }
 
 ACCOUNT_HASH="$(m '.contracts["perch-account"].sha256')"
-VERIFIER="$(m '.contracts["perch-webauthn-verifier"].address')"
+# The WebAuthn verifier the factory pins: its content address in
+# perch/verifiers (the manifest's `verifiers` block), which an account's
+# constructor requires of an admin signer; the registry's copy for a
+# manifest from before perch/verifiers.
+VERIFIER="$(m '.verifiers.contracts["perch-webauthn-verifier"].address // .contracts["perch-webauthn-verifier"].address')"
 [[ "$ACCOUNT_HASH" =~ ^[0-9a-f]{64}$ ]] || die "manifest has no perch-account hash"
 [[ "$VERIFIER" =~ ^C[A-Z2-7]{55}$ ]] || die "manifest has no perch-webauthn-verifier address"
 DEPLOYER="$(stellar keys address "$IDENTITY")"
@@ -186,7 +193,7 @@ jq -n \
     --arg admin "$admin" \
     --arg commit "$(git rev-parse HEAD)" \
     --argjson dirty "$dirty" \
-    --arg perch "$(git -C vendor/perch rev-parse HEAD)" \
+    --arg perch "$(scripts/perch-src.sh --rev)" \
     --argjson toolchain "$TOOLCHAIN" \
     --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{schema: 1, network: $network, network_passphrase: $passphrase, factory: $factory,

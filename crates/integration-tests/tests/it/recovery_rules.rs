@@ -395,9 +395,10 @@ fn a_full_tree_rolls_over_and_its_last_member_still_recovers() {
 /// Restoring is not free. Restored entries count as writes, and restoring
 /// everything a recovery touches in one invocation (the shared doc compiler's
 /// and the account's code included) exceeds the network's per-transaction
-/// write limit. So a client first restores in separate invocations — here the
-/// permissionless `renew` calls and views, on a live network `RestoreFootprint`
-/// operations — and then recovers.
+/// write limit. The account's code alone takes nearly all of it, so it is
+/// restored on its own. So a client first restores in separate invocations —
+/// here the permissionless `renew` calls and views, on a live network
+/// `RestoreFootprint` operations — and then recovers.
 #[test]
 fn archived_recovery_state_is_restored_not_reset() {
     let w = world();
@@ -420,6 +421,7 @@ fn archived_recovery_state_is_restored_not_reset() {
     w.pool_client().renew_tree(&0);
     w.pool_client()
         .renew_enrollment(&e.account.address, &enrollment_id);
+    let _ = w.account(&e.account).applied_doc_hash();
     w.account(&e.account).renew(
         &soroban_sdk::Vec::new(&w.env),
         &vec![&w.env, enrollment_id.clone()],

@@ -1,4 +1,5 @@
 import {
+  Account,
   rpc,
   TransactionBuilder,
   Keypair,
@@ -24,6 +25,7 @@ import {
   nidoKey,
 } from '@nidohq/passkey-sdk';
 import { resolveSignerRule } from './policyChainFetch.js';
+import { namedDoc } from './policy/verifierNames.js';
 import {
   relayerEnabled,
   signatureExpirationOffset,
@@ -72,39 +74,60 @@ const NOT_REGISTERED =
 
 type Progress = (p: { phase: "build" | "sign" | "submit" | "confirm"; detail?: string }) => void;
 
-/** An account invocation simulated and assembled, waiting for its
- *  `AuthPayload`: the Soroban signature payload a signer's digest is built
- *  from, and what `submitPrepared` needs afterwards. */
-interface PreparedInvocation {
+/** An invocation simulated and assembled: what `submitPrepared` needs. */
+interface Assembled {
   assembledTx: Transaction;
-  signaturePayload: Uint8Array;
-  lastLedger: number;
-  expirationOffset: number;
   /** Resource fee the simulation asked for, in stroops. */
   fee: bigint;
   submitter: Keypair | null;
   server: rpc.Server;
+  sim: rpc.Api.SimulateTransactionSuccessResponse;
+}
+
+/** An account invocation simulated and assembled, waiting for its
+ *  `AuthPayload`: the Soroban signature payload a signer's digest is built
+ *  from, and what `submitPrepared` needs afterwards. */
+interface PreparedInvocation extends Assembled {
+  signaturePayload: Uint8Array;
+  lastLedger: number;
+  expirationOffset: number;
 }
 
 /** Simulate `operation` against the account (recording mode, which learns
  *  the account's auth entry) and assemble it. */
 async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvocation> {
+  const assembled = await assemble(operation);
+  // The account's auth entry and its Soroban signature payload, at the
+  // expiration the injected payload will carry.
+  const authEntry = getAuthEntry(assembled.sim);
+  const lastLedger = assembled.sim.latestLedger;
+  const expirationOffset = signatureExpirationOffset();
+  const signaturePayload = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger, expirationOffset);
+  return { ...assembled, signaturePayload, lastLedger, expirationOffset };
+}
+
+/** Simulate `operation` (recording mode) and assemble it. */
+async function assemble(operation: xdr.Operation): Promise<Assembled> {
   const server = new rpc.Server(RPC_URL);
 
   // 1. Pick the simulation source account. This is the tx source/fee-payer,
   //    NOT the smart account itself.
   //
-  //    Relayer mode: no ephemeral G is created or funded — recording-mode
-  //    simulation just needs SOME existing on-chain source account, so we use
-  //    the relayer's (public) fund address. It never signs and never pays here.
+  //    Relayer mode: no ephemeral G is created or funded — the simulation
+  //    names the relayer's (public) fund address as its source. It never
+  //    signs and never pays here.
   //    Classic mode: friendbot-funded ephemeral G as before.
   const submitter = relayerEnabled() ? null : await getSubmitter();
   if (relayerEnabled() && !RELAYER_SIM_SOURCE) {
     throw new Error('Relayer misconfigured: PUBLIC_RELAYER_URL is set but PUBLIC_RELAYER_SIM_SOURCE is not.');
   }
-  const sourceAccount = submitter
-    ? await server.getAccount(submitter.publicKey())
-    : await server.getAccount(RELAYER_SIM_SOURCE);
+  //    The simulation reads only the source's address, never its account,
+  //    so it runs at sequence 0 beside the read of the real sequence, which
+  //    only the transaction the submitter signs needs (the relayer takes
+  //    just the host function and auth entries).
+  const sourceAddress = submitter ? submitter.publicKey() : RELAYER_SIM_SOURCE;
+  const sourceAccount = submitter ? server.getAccount(submitter.publicKey()) : null;
+  sourceAccount?.catch(() => {});
 
   // 2. Build & simulate the un-signed tx.
   //
@@ -118,13 +141,15 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   // mutate the caller's operation.
   const opClone = xdr.Operation.fromXDR(operation.toXDR());
   opClone.body().invokeHostFunctionOp().auth([]);
-  const simTx = new TransactionBuilder(sourceAccount, {
-    fee: '10000000',
-    networkPassphrase: NETWORK_PASSPHRASE,
-  })
-    .addOperation(opClone)
-    .setTimeout(0)
-    .build();
+  const buildTx = (source: Account) =>
+    new TransactionBuilder(source, {
+      fee: '10000000',
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(opClone)
+      .setTimeout(0)
+      .build();
+  const simTx = buildTx(new Account(sourceAddress, '0'));
 
   const sim = await server.simulateTransaction(simTx);
   if (rpc.Api.isSimulationError(sim)) {
@@ -132,24 +157,20 @@ async function prepareInvocation(operation: xdr.Operation): Promise<PreparedInvo
   }
   const successSim = sim as rpc.Api.SimulateTransactionSuccessResponse;
 
-  // 3. The account's auth entry and its Soroban signature payload, at the
-  //    expiration the injected payload will carry.
-  const authEntry = getAuthEntry(successSim);
-  const lastLedger = successSim.latestLedger;
-  const expirationOffset = signatureExpirationOffset();
-  const signaturePayload = buildAuthHash(authEntry, NETWORK_PASSPHRASE, lastLedger, expirationOffset);
-
-  // 4. Assemble so auth entries are baked into the tx XDR before signing.
-  const assembledTx = rpc.assembleTransaction(simTx, successSim).build();
+  // 3. Assemble so auth entries are baked into the tx XDR before signing.
+  const assembledTx = rpc.assembleTransaction(sourceAccount ? buildTx(await sourceAccount) : simTx, successSim).build();
   return {
     assembledTx,
-    signaturePayload,
-    lastLedger,
-    expirationOffset,
     fee: BigInt(successSim.minResourceFee ?? '0'),
     submitter,
     server,
+    sim: successSim,
   };
+}
+
+function settledValue<T>(r: PromiseSettledResult<T>): T {
+  if (r.status === 'rejected') throw r.reason;
+  return r.value;
 }
 
 /** A WebAuthn assertion over `challenge` by the stored credential. */
@@ -177,7 +198,7 @@ async function passkeyAssertion(challenge: Uint8Array, credentialId: unknown): P
 /** Submit a prepared invocation whose `AuthPayload` is injected, and wait
  *  for it to land. */
 async function submitPrepared(
-  p: PreparedInvocation,
+  p: Assembled,
   onProgress?: Progress,
 ): Promise<rpc.Api.SendTransactionResponse> {
   onProgress?.({ phase: "submit" });
@@ -234,20 +255,35 @@ export async function signAndSubmit(args: {
    *  rule, scoped to the recovery controller) instead of the rule holding
    *  this passkey that is scoped to the account itself. */
   ruleName?: string;
+  /** Reads that may refuse the operation (`buildOperationChecked`). They
+   *  run beside the reads and the simulation below, and a refusal stops
+   *  the signing before the passkey prompt. */
+  checks?: Promise<void>;
 }): Promise<rpc.Api.SendTransactionResponse & { authHashHex: string }> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
 
-  // Select the rule this device's passkey signs under, and the verifier its
-  // signer names, from the account's configuration() (one read, by name and
-  // key, never an id scan). A recovered account's new passkey sits on a rule
-  // the completion created, so the rule is looked up, not assumed.
-  const resolved = await resolveSignerRule(args.account, cred.publicKey, args.ruleName);
+  args.onProgress?.({ phase: "build" });
+  // Everything before the prompt is independent, so it runs at once: the
+  // caller's checks; the rule this device's passkey signs under and the
+  // verifier its signer names, from the account's configuration() (one
+  // read, by name and key, never an id scan: a recovered account's new
+  // passkey sits on a rule the completion created); the simulation; and the
+  // account's digest dialect (a redeployed account binds its address,
+  // `addr_oz_v1`; one minted before the redeploy does not, `oz_rule_ids`).
+  // A failure is reported in that order, refusals first.
+  const [checked, resolvedR, preparedR, schemeR] = await Promise.allSettled([
+    args.checks,
+    resolveSignerRule(args.account, cred.publicKey, args.ruleName),
+    prepareInvocation(args.operation),
+    perch.authDigestScheme({ account: args.account, rpcUrl: RPC_URL, networkPassphrase: NETWORK_PASSPHRASE }),
+  ]);
+  settledValue(checked);
+  const resolved = settledValue(resolvedR);
   if (!resolved) throw new Error(NOT_REGISTERED);
   const verifierAddress = args.verifierAddress ?? resolved.verifier;
-
-  args.onProgress?.({ phase: "build" });
-  const prepared = await prepareInvocation(args.operation);
+  const prepared = settledValue(preparedR);
+  const scheme = settledValue(schemeR);
 
   //    auth_digest = sha256(bound || context_rule_ids.to_xdr()), where
   //    bound = sha256(AUTH_ADDR_DOMAIN || account_id || signature_payload)
@@ -257,14 +293,6 @@ export async function signAndSubmit(args: {
   //    to `injectPasskeySignature` so the AuthPayload's `context_rule_ids`
   //    and the digest the contract recomputes both refer to the same rule.
   const contextRuleIds = [resolved.ruleId];
-  // Sign in the account's own digest dialect: a redeployed account binds its
-  // address (`addr_oz_v1`); one minted before the redeploy does not
-  // (`oz_rule_ids`). Reading it keeps both signable.
-  const scheme = await perch.authDigestScheme({
-    account: args.account,
-    rpcUrl: RPC_URL,
-    networkPassphrase: NETWORK_PASSPHRASE,
-  });
   const challengeBytes = computeAuthDigest(args.account, prepared.signaturePayload, contextRuleIds, scheme);
   const authHashHex = buf2hex(challengeBytes);
 
@@ -282,6 +310,20 @@ export async function signAndSubmit(args: {
 
   const sent = await submitPrepared(prepared, args.onProgress);
   return { ...sent, authHashHex };
+}
+
+/**
+ * Build, simulate and submit an operation that needs no signature of the
+ * account's: a permissionless call such as `gc_grant`, whose simulation
+ * records no authorization entry for it.
+ */
+export async function submitWithoutAuth(args: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  operation: any;
+  onProgress?: Progress;
+}): Promise<rpc.Api.SendTransactionResponse> {
+  args.onProgress?.({ phase: "build" });
+  return submitPrepared(await assemble(args.operation), args.onProgress);
 }
 
 /**
@@ -306,6 +348,7 @@ export async function applyDocWithPasskey(args: {
 }): Promise<{ hash: string; revision: bigint }> {
   const cred = loadCredential(args.account);
   if (!cred) throw new Error('No passkey registered for this account.');
+  const doc = namedDoc(args.doc);
   // Over the compiler the account pins, which an account minted by an
   // earlier Perch release keeps.
   const reader = await perch.openAccountReader({
@@ -320,12 +363,14 @@ export async function applyDocWithPasskey(args: {
   const transport: perch.ApplyDocTransport = {
     async prepareApplyDoc({ account, approvalValidUntil, expectedRevision }) {
       args.onProgress?.({ phase: "build" });
-      const tx = await buildApplyDocTx(args.doc, {
+      const tx = await buildApplyDocTx(doc, {
         account,
         rpcUrl: RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
         approvalValidUntil,
         expectedRevision,
+        // prepareInvocation simulates it.
+        simulate: false,
       });
       const prepared = await prepareInvocation(tx.operations[0]!);
       return {
@@ -353,7 +398,7 @@ export async function applyDocWithPasskey(args: {
   };
 
   const op = perch.applyDocument(
-    args.doc,
+    doc,
     backend,
     {
       async sign(request) {
@@ -381,7 +426,7 @@ export async function applyDocWithPasskey(args: {
       throw new Error('Your Nido changed after this page read it. Reload the page and make the change again.');
     }
     // perch-js checked the document against the account's own limits.
-    if (err instanceof perch.OverLimits) throw new Error(overLimitsMessage(err, args.doc));
+    if (err instanceof perch.OverLimits) throw new Error(overLimitsMessage(err, doc));
     throw err;
   }
 }

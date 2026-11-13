@@ -3,12 +3,12 @@ import { derivePerchContractId, perchTestnetAddresses, PERCH_STATELESS_REGISTRY_
 
 // The canonical addresses these pins must derive to — the interpreter and
 // doc compiler Perch's testnet deployment manifest records (their `address`
-// fields in vendor/perch/deployments/testnet.json). If this test fails after
+// fields in Perch's deployments/testnet.json). If this test fails after
 // re-pinning PERCH_WASM_HASHES, update these to the new canonical
 // deployment (and DEPLOYED.md) in the same change.
 const PINNED = {
-  interpreter: 'CBOGVUQWY5G7BP7OWEJX3Z5PSZLYJXHM54A7OEMXQQ7ZO4GHHM4WCEAP',
-  docCompiler: 'CAYCPM5O6SGGAZOCCAUJ27CZZ7SMHU4VYSA25ZHDMGKILP4Z5RGF467E',
+  interpreter: 'CA4THHSYJQGZKSZWTH53WCI6JRDEH42I4YYGH6MDF2PQDF2OAW3I3R3T',
+  docCompiler: 'CDZAF3GIX6Z573FDG64PFFMQMTER57UE5HSFGQRZ3EMTD5KD7IAEGNUY',
 };
 
 describe('perch canonical deployment', () => {

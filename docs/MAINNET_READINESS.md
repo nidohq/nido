@@ -8,8 +8,7 @@ stable and cited from the other audit documents; `[x]` is met, `[~]` partly
 met, `[ ]` open.
 
 Perch's specification puts mainnet rollout outside its own scope
-([Perch recovery spec §1](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/recovery/spec.md#1-scope-and-vocabulary)
-(`vendor/perch/docs/recovery/spec.md`)), so a mainnet Perch deployment is a
+([Perch recovery spec §1](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/recovery/spec.md#1-scope-and-vocabulary)), so a mainnet Perch deployment is a
 prerequisite on top of everything here (A1).
 
 ## 1. Audit-entry gates (before handoff)
@@ -61,7 +60,7 @@ Every box here is checked before mainnet.
   `PUBLIC_PERCH_DEPLOYMENT` override included (THREAT_MODEL 9). On testnet
   all of this holds except the override check: `just perch-infra` fetches
   exactly the manifest's bytes and `perch.TESTNET` is checked against the
-  manifest (SECURITY_INVARIANTS W6). Moving Nido's remaining submodule pins to published Perch
+  manifest (SECURITY_INVARIANTS W6). Moving Nido's remaining git-rev pins to published Perch
   packages is [deferred](./DEFERRED.md#npm-publishing-of-perch-zk-and-the-contract-clients);
   such a move needs proof that the consumed code and artifacts are
   unchanged, which a version bump is not.
@@ -186,8 +185,7 @@ Every box here is checked before mainnet.
   (upgrading the relayer and its Channels plugin).
 - [ ] **D9. Proving measured on reference devices.** In-page proving fits
   the client budgets in
-  [Perch's budgets.md §1](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/recovery/budgets.md#1-proving-client)
-  (`vendor/perch/docs/recovery/budgets.md`) on its mid-range phone and
+  [Perch's budgets.md §1](https://github.com/bitswell-hq/stellar-registry__perch/blob/fc0fb2bfb88c2a41ded912da435ad1dbbc3dabc1/docs/recovery/budgets.md#1-proving-client) on its mid-range phone and
   laptop. Only desktop numbers exist.
 
 ### Network and submission

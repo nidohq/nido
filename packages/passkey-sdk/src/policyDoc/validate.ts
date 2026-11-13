@@ -1,6 +1,6 @@
 /**
  * Semantic validation of a parsed PolicyDoc: a TS port of perch-ir's
- * `validate()` (`vendor/perch/crates/perch-ir/src/validate.rs`).
+ * `validate()` (Perch's `crates/perch-ir/src/validate.rs`).
  *
  * The on-chain compiler runs `perch_ir::validate` before lowering, so a
  * document it refuses is never installable. perch's TS package ships the
