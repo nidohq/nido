@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fff8f0"><title>Nido · The local fee-payer lab</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/src/style.css"></head>
 <body><main>
-<header><a class="brand" href="#">nido <span>/ wallet experiments</span></a><span class="pill">Local cryptographic demo · no funds</span></header>
+<header><a class="brand" href="#">nido <span>/ wallet experiments</span></a><a href="/architecture.html">Architecture slides ↗</a><span class="pill">Local cryptographic demo · no funds</span></header>
 <section class="hero"><p class="eyebrow">C approves the action. F pays the fee.</p><h1>One passkey.<br>Two permissions.</h1><p class="lede">The dapp asks. The wallet decides. Its WASI checker verifies the exact transaction before the private fee-signing path can unlock the seed.</p></section>
 <div class="scope"><strong>What runs here:</strong> real WebAuthn assertions, a wallet-owned Rust/WASI checker with Cedar, Stellar transaction XDR and Ed25519 signatures. Accounts, contracts, sequence, ledger expiry and resource data are fixtures. No ledger submission or deployed Perch execution.</div>
 

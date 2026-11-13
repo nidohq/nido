@@ -10,6 +10,15 @@ production wallet or a Turnkey deployment. Nido's root Perch pin, deployment
 manifest, factory and relayer stay as the parent PR defines them. The example's
 own source pin is `perch-source.json`, stacked on the Perch fork's dev branch.
 
+## Architecture slides
+
+The [HTML deck](../../packages/frontend/public/local-fees/index.html) explains
+the transaction path, infrastructure footprint and exact proof scope. It is
+included in the Nido frontend preview at `/local-fees/`, and in this lab at
+`http://localhost:5198/architecture.html` (also included in `npm run build`).
+Both serve the same self-contained HTML source. Arrow keys navigate; Evidence
+opens the source references and assumptions; Print / PDF prints all slides.
+
 ## Run
 
 Requires Node >=22.12, Rust 1.96.0 with wasm32v1-none for contracts, Rust
