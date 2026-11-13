@@ -75,8 +75,9 @@ function exportPage(srcRel, outFile) {
   html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
   html = html.replace(/<script\b[^>]*\/?>/gi, "");
 
-  // 3. Drop the favicon link (404s when opened standalone).
-  html = html.replace(/<link rel="icon"[^>]*>/g, "");
+  // 3. Drop the favicon, manifest and home-screen icon links (404 when
+  //    opened standalone).
+  html = html.replace(/<link rel="(?:icon|manifest|apple-touch-icon)"[^>]*>/g, "");
 
   // 3b. Reveal this page's primary state container(s): strip the `hidden` class
   //     and attribute from the matching element so its design is visible.
