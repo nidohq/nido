@@ -53,6 +53,7 @@ import Icon from "../../../components/Icon.astro";
   import { activityRowHtml } from "../../../lib/activity/rowHtml.js";
   import { EXPLORER_BASE } from "../../../lib/network.js";
   import { resolveAccountAddress } from "../../../lib/resolveAccount.js";
+  import { cachedRead } from "../../../lib/pageCache.js";
 
   const address = await resolveAccountAddress();
   const skel = document.getElementById("activity-skeleton")!;
@@ -73,12 +74,15 @@ import Icon from "../../../components/Icon.astro";
     skel.hidden = false;
     list.hidden = true;
     try {
-      const page = await loadActivityPage({ address: address! });
-      skel.hidden = true;
-      if (page.items.length === 0) { empty.hidden = false; return; }
-      empty.hidden = true;
-      list.innerHTML = page.items.map(activityRowHtml).join("");
-      list.hidden = false;
+      // Cached rows render instantly across page switches (#346); a failed
+      // background refresh keeps them, so the error box is the cold case only.
+      const fetchPage = () => loadActivityPage({ address: address! });
+      await cachedRead(`activity:full:${address}`, fetchPage, (page) => {
+        skel.hidden = true;
+        empty.hidden = page.items.length > 0;
+        list.hidden = page.items.length === 0;
+        list.innerHTML = page.items.map(activityRowHtml).join("");
+      });
     } catch {
       skel.hidden = true;
       errBox.hidden = false;

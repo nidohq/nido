@@ -15,6 +15,7 @@ import {
   waitForConfirmation,
 } from "../relayerClient";
 import { RELAYER_URL, NETWORK_PASSPHRASE } from "../network";
+import { clearPageCache } from "../pageCache";
 
 export { type RelayerStatus };
 
@@ -80,6 +81,9 @@ export async function relayerSubmitAndConfirm(
     return { hash: confirmed.hash };
   } catch (err) {
     throw uncertainSubmitError(err);
+  } finally {
+    // Landed or uncertain, the account's balances and history may have moved.
+    clearPageCache();
   }
 }
 
@@ -123,22 +127,26 @@ export async function classicSubmitAndPoll(
   // with the right footprint AND our signature intact.
   const refitted_tx = refittedBuilder.build();
   refitted_tx.sign(submitter);
-  const sendResult = await server.sendTransaction(refitted_tx);
-  if (sendResult.status === "ERROR") {
-    const detail = sendResult.errorResult?.toXDR("base64") ?? "unknown";
-    throw new Error(`Submit rejected: ${detail}`);
+  try {
+    const sendResult = await server.sendTransaction(refitted_tx);
+    if (sendResult.status === "ERROR") {
+      const detail = sendResult.errorResult?.toXDR("base64") ?? "unknown";
+      throw new Error(`Submit rejected: ${detail}`);
+    }
+    if (sendResult.status === "DUPLICATE" || sendResult.status === "TRY_AGAIN_LATER") {
+      throw new Error(`Submit ${sendResult.status}: ${sendResult.hash}`);
+    }
+    // PENDING — poll until we see SUCCESS or FAILED.
+    let getResult = await server.getTransaction(sendResult.hash);
+    for (let i = 0; getResult.status === "NOT_FOUND" && i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      getResult = await server.getTransaction(sendResult.hash);
+    }
+    if (getResult.status !== "SUCCESS") {
+      throw new Error(`Tx ${sendResult.hash} ${getResult.status}`);
+    }
+    return sendResult;
+  } finally {
+    clearPageCache();
   }
-  if (sendResult.status === "DUPLICATE" || sendResult.status === "TRY_AGAIN_LATER") {
-    throw new Error(`Submit ${sendResult.status}: ${sendResult.hash}`);
-  }
-  // PENDING — poll until we see SUCCESS or FAILED.
-  let getResult = await server.getTransaction(sendResult.hash);
-  for (let i = 0; getResult.status === "NOT_FOUND" && i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1500));
-    getResult = await server.getTransaction(sendResult.hash);
-  }
-  if (getResult.status !== "SUCCESS") {
-    throw new Error(`Tx ${sendResult.hash} ${getResult.status}`);
-  }
-  return sendResult;
 }
