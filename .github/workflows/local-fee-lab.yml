@@ -1,0 +1,26 @@
+name: Local fee wallet lab
+on:
+  pull_request:
+    paths: ['examples/local-fee-payer/**', '.github/workflows/local-fee-lab.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wallet:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: examples/local-fee-payer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: examples/local-fee-payer/package-lock.json
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: wasm32-wasip1
+      - run: npm ci
+      - run: npm run build:runtime
+      - run: npm test

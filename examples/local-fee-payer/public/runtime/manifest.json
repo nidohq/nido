@@ -1,0 +1,47 @@
+{
+  "name": "nido-wallet-checker",
+  "abi": "wasi_snapshot_preview1",
+  "cedar": "4.14.1",
+  "stellarXdr": "28.0.1",
+  "sha256": "67c59cc1adb6666ec11426c1fe6e0a6d78a1fba30c6e4efdeae78412e0286a48",
+  "bytes": 2701573,
+  "maxMemoryBytes": 67108864,
+  "imports": [
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "random_get",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "environ_get",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "environ_sizes_get",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "fd_read",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "fd_write",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "proc_exit",
+      "kind": "function"
+    }
+  ],
+  "sourceSha256": {
+    "runtime/src/main.rs": "1f4ed101821e23e5d4f05e881a9bf2579416c736001f9634918acf90d499325b",
+    "runtime/fee-policy.cedar": "eb1b46ed9796cd2c15a80dac0c373c8cbdea9305a491f356ce57808b7a454486",
+    "runtime/Cargo.toml": "5cab9497e8c84bd3410276ce88aa52af540c8c36f84eb3729962bfb01bde5739",
+    "runtime/Cargo.lock": "367686db17a43e6707059ee81d4de2f3bb05b2e019d4af0128d62ff9a2a5ebf4"
+  }
+}

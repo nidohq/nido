@@ -1,0 +1,7 @@
+node_modules/
+dist/
+qa/
+.local-chain/
+.perch-src/
+**/target/
+**/test_snapshots/

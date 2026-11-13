@@ -1,0 +1,31 @@
+{
+  "name": "nido-local-fee-payer-lab",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5198 --strictPort",
+    "wallet": "vite --host 127.0.0.1 --port 5199 --strictPort",
+    "build": "vite build",
+    "build:runtime": "node scripts/build-runtime.mjs",
+    "proof": "lean proof/SigningBoundary.lean",
+    "proof:refill": "bash scripts/prove-refill.sh",
+    "build:contract": "bash scripts/build-budget-contracts.sh",
+    "test:contract": "node scripts/prepare-perch.mjs && cargo test --manifest-path .perch-src/Cargo.toml --locked -p perch-fee-budget",
+    "local:budget": "node scripts/local-budget-server.mjs",
+    "preview": "vite preview --host 127.0.0.1 --port 5198 --strictPort",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@cedar-policy/cedar-wasm": "4.14.0",
+    "@scure/bip39": "2.4.0",
+    "@stellar/stellar-sdk": "17.4.0",
+    "buffer": "6.0.3"
+  },
+  "devDependencies": {
+    "vite": "8.3.8"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
