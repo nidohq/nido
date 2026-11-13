@@ -5,7 +5,8 @@
  *
  * The caller may only choose *which* address gets funded, never *how much*:
  * the amount is fixed server-side (FUNDER_TOPUP_STROOPS), not read from the
- * request.
+ * request. Each address is funded at most once (fundOnce.ts): a repeat
+ * request answers `alreadyFunded` instead of paying again.
  *
  * Sequence-number workaround: OZ Relayer's own sequence-assignment path
  * (`get_next_sequence`) corrupts large Stellar sequence numbers - a confirmed
@@ -30,7 +31,9 @@ import {
   TransactionBuilder,
   nativeToScVal,
   rpc,
+  scValToNative,
 } from "@stellar/stellar-sdk";
+import { fundOnce, type PreparedTopUp, type TopUpLookup } from "./fundOnce";
 
 const FUND_RELAYER_ID = "fund";
 const TOPUP_STROOPS = Number(process.env.FUNDER_TOPUP_STROOPS ?? "50000000");
@@ -49,7 +52,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function handler({ api, params }: PluginContext<Params>): Promise<unknown> {
+export async function handler({ api, params, kv }: PluginContext<Params>): Promise<unknown> {
   // Kill switch for turning this off after Meridian without touching Caddy
   // or config.json (neither takes live effect post-bootstrap anyway — see
   // "Changing Relayers/Signers After Initial Bootstrap" in README.md, which
@@ -79,52 +82,108 @@ export async function handler({ api, params }: PluginContext<Params>): Promise<u
   const fundAddress = (relayerInfo as { address: string }).address;
 
   const sacId = Asset.native().contractId(networkConfig.passphrase);
-
   const server = new rpc.Server(networkConfig.rpcUrl);
-  const sourceAccount = await server.getAccount(fundAddress);
 
-  const txn = new TransactionBuilder(sourceAccount, {
-    fee: "1000000",
-    networkPassphrase: networkConfig.passphrase,
-  })
-    .addOperation(
-      Operation.invokeContractFunction({
-        contract: sacId,
-        function: "transfer",
-        args: [
-          nativeToScVal(fundAddress, { type: "address" }),
-          nativeToScVal(destination, { type: "address" }),
-          nativeToScVal(TOPUP_STROOPS, { type: "i128" }),
-        ],
-      })
-    )
-    .setTimeout(60)
-    .build();
-
-  const SIM_ATTEMPTS = 6;
-  let sim = await server.simulateTransaction(txn);
-  for (let simAttempt = 1; simAttempt < SIM_ATTEMPTS; simAttempt++) {
-    if (!rpc.Api.isSimulationError(sim) && !rpc.Api.isSimulationRestore(sim)) break;
-    await sleep(1500);
-    sim = await server.simulateTransaction(txn);
-  }
-  if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
-    throw new Error(`Funding simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
+  // The destination's native balance, by simulating the XLM SAC's `balance`.
+  async function nativeBalance(address: string): Promise<bigint> {
+    const sourceAccount = await server.getAccount(fundAddress);
+    const txn = new TransactionBuilder(sourceAccount, {
+      fee: "100",
+      networkPassphrase: networkConfig.passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: sacId,
+          function: "balance",
+          args: [nativeToScVal(address, { type: "address" })],
+        })
+      )
+      .setTimeout(0)
+      .build();
+    const sim = await server.simulateTransaction(txn);
+    if (rpc.Api.isSimulationError(sim) || !sim.result) {
+      throw new Error(`Balance read failed: ${"error" in sim ? sim.error : "no result"}`);
+    }
+    return BigInt(scValToNative(sim.result.retval) as bigint);
   }
 
-  const assembled = rpc.assembleTransaction(txn, sim).build();
-
-  // Relayer only signs (Turnkey-backed, no sequence-assignment code
-  // touched) -- we submit the result ourselves.
-  const signResult = await relayer.signTransaction({ unsigned_xdr: assembled.toXDR() });
-  const signedXdr = (signResult as { signedXdr: string }).signedXdr;
-
-  const signedEnvelope = TransactionBuilder.fromXDR(signedXdr, networkConfig.passphrase);
-
-  const send = await server.sendTransaction(signedEnvelope);
-  if (send.status === "ERROR") {
-    throw new Error(`Funding transaction failed: ${send.errorResult?.toString() ?? "submission error"}`);
+  async function lookupTopUp(hash: string): Promise<TopUpLookup> {
+    const got = await server.getTransaction(hash);
+    if (got.status === rpc.Api.GetTransactionStatus.NOT_FOUND) {
+      return {
+        status: "NOT_FOUND",
+        latestLedgerCloseTime: Number(got.latestLedgerCloseTime),
+        oldestLedgerCloseTime: Number(got.oldestLedgerCloseTime),
+      };
+    }
+    return got.status === rpc.Api.GetTransactionStatus.SUCCESS ? { status: "SUCCESS" } : { status: "FAILED" };
   }
 
-  return { hash: send.hash, status: send.status };
+  async function prepareTopUp(to: string): Promise<PreparedTopUp> {
+    const sourceAccount = await server.getAccount(fundAddress);
+
+    const txn = new TransactionBuilder(sourceAccount, {
+      fee: "1000000",
+      networkPassphrase: networkConfig.passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: sacId,
+          function: "transfer",
+          args: [
+            nativeToScVal(fundAddress, { type: "address" }),
+            nativeToScVal(to, { type: "address" }),
+            nativeToScVal(TOPUP_STROOPS, { type: "i128" }),
+          ],
+        })
+      )
+      .setTimeout(60)
+      .build();
+
+    const SIM_ATTEMPTS = 6;
+    let sim = await server.simulateTransaction(txn);
+    for (let simAttempt = 1; simAttempt < SIM_ATTEMPTS; simAttempt++) {
+      if (!rpc.Api.isSimulationError(sim) && !rpc.Api.isSimulationRestore(sim)) break;
+      await sleep(1500);
+      sim = await server.simulateTransaction(txn);
+    }
+    if (rpc.Api.isSimulationError(sim) || rpc.Api.isSimulationRestore(sim)) {
+      throw new Error(`Funding simulation failed: ${"error" in sim ? sim.error : "restore needed"}`);
+    }
+
+    const assembled = rpc.assembleTransaction(txn, sim).build();
+
+    // Relayer only signs (Turnkey-backed, no sequence-assignment code
+    // touched) -- we submit the result ourselves.
+    const signResult = await relayer.signTransaction({ unsigned_xdr: assembled.toXDR() });
+    const signedXdr = (signResult as { signedXdr: string }).signedXdr;
+
+    const signedEnvelope = TransactionBuilder.fromXDR(signedXdr, networkConfig.passphrase);
+
+    return {
+      hash: signedEnvelope.hash().toString("hex"),
+      validUntil: Number(assembled.timeBounds?.maxTime ?? 0),
+      async send() {
+        const send = await server.sendTransaction(signedEnvelope);
+        // PENDING and DUPLICATE are in the queue; ERROR and TRY_AGAIN_LATER
+        // were turned away and will never land.
+        if (send.status === "ERROR" || send.status === "TRY_AGAIN_LATER") {
+          return {
+            accepted: false,
+            reason: send.status === "ERROR" ? send.errorResult?.toString() ?? "submission error" : "network busy, try again",
+          };
+        }
+        return { accepted: true };
+      },
+    };
+  }
+
+  return fundOnce(destination, {
+    kv,
+    topUpStroops: BigInt(TOPUP_STROOPS),
+    nativeBalance,
+    lookupTopUp,
+    prepareTopUp,
+    now: () => Math.floor(Date.now() / 1000),
+  });
 }
