@@ -1,0 +1,20 @@
+{
+  "perchRevision": "aa598b4d32bd4674adef12f4abf9ee03f490d985",
+  "walletTests": 33,
+  "fundingContractTests": 5,
+  "nativePerchLedger": {
+    "actions": 3,
+    "refills": 3,
+    "spentStroops": 660149,
+    "capStroops": 1500000,
+    "denied": [
+      "wrong selected rule",
+      "direct executor outside owner rule"
+    ],
+    "authenticator": "virtual PRF-capable WebAuthn, real signed assertions"
+  },
+  "scope": "Planner and committed trace formally proved; host, custody and contract integration tested/trusted as documented. Dedicated document-grant UI not included.",
+  "runtimeSha256": "67c59cc1adb6666ec11426c1fe6e0a6d78a1fba30c6e4efdeae78412e0286a48",
+  "contractManifest": "public/contracts/manifest.json",
+  "releaseChecks": "181 checks: 180 passed and 1 optional-tool skip across initial run and corrected-environment/DeploymentState reruns"
+}

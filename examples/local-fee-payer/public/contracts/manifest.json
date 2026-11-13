@@ -1,0 +1,89 @@
+{
+  "perch": {
+    "repository": "https://github.com/bitswell-hq/stellar-registry__perch.git",
+    "revision": "aa598b4d32bd4674adef12f4abf9ee03f490d985",
+    "baseDevRevision": "928fbaf24b1a42c847643ed741422a48b1f1b2a1",
+    "nidoParent": "e9e25188804243d27ee1ca619d388c14981b2c8c",
+    "localVerifierRegistry": {
+      "rootDeployer": "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI",
+      "salt": "nido-local-fee-verifiers-v1"
+    }
+  },
+  "localOnly": true,
+  "artifacts": {
+    "perch_fee_budget": {
+      "sha256": "7bce311b9ff3458f4cfdd5a4ef7cc46a13a4321cad3f2d5d2ccaae92415b1bf5",
+      "bytes": 5442,
+      "exports": [
+        "memory",
+        "__constructor",
+        "pause",
+        "policy_version",
+        "refill",
+        "status",
+        "_",
+        "__data_end",
+        "__heap_base"
+      ]
+    },
+    "demo_perch_budget_account": {
+      "sha256": "6e6604f651a6005d8d5539b0d798525fc52077b9a2c1e93b2ce680c430c2dc15",
+      "bytes": 47092,
+      "exports": [
+        "memory",
+        "__check_auth",
+        "__constructor",
+        "capabilities",
+        "execute",
+        "_",
+        "__data_end",
+        "__heap_base"
+      ]
+    },
+    "nido_demo_action": {
+      "sha256": "ee8cb1600686114e06c260171a918aa46d6c9df49755e3b2a144d0936ca73b19",
+      "bytes": 1236,
+      "exports": [
+        "memory",
+        "__constructor",
+        "refill",
+        "touch",
+        "uses",
+        "_",
+        "__data_end",
+        "__heap_base"
+      ]
+    },
+    "perch_webauthn_verifier": {
+      "sha256": "4fc8a84e356fe649125cae45e4b32a6f9b00d49b3d7bfedb2245b5eaaa210175",
+      "bytes": 11682,
+      "exports": [
+        "memory",
+        "batch_canonicalize_key",
+        "canonicalize_key",
+        "verify",
+        "_",
+        "__data_end",
+        "__heap_base"
+      ]
+    },
+    "local_verifier_registry": {
+      "sha256": "fd9d8b9762ef2ec9aa0a24b36eccbaedbc4d1b33808e5e42506b11623f34f5ff",
+      "bytes": 538,
+      "exports": [
+        "memory",
+        "deploy",
+        "_",
+        "__data_end",
+        "__heap_base"
+      ]
+    }
+  },
+  "sources": {
+    "contracts/Cargo.lock": "54ae35fed00c422b74c3db548e5a16acd33626a4227388b187cc1a5d89222ffc",
+    "contracts/perch-budget-account/src/lib.rs": "c5d388e7640bd7dd2430bc471d846f5989c9350b8de685dc07b15d19ce65d9db",
+    "contracts/fee-budget/src/lib.rs": "1f46b7053daa8c845bbe65be7fb772a37ae4d19ec61047053c27f28c765c9395",
+    "contracts/local-verifier-registry/src/lib.rs": "8e51281c5f4bdf1868360b38e45f16b55553dfca1506a2bbb7fc619dee4d710f",
+    ".perch-src/crates/perch-smart-account/wasm/verifiers.path": "d36db884e73d5c97add58484e66abca9023467c7030bacd9e40e47a1de36a4b9"
+  }
+}

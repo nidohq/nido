@@ -24,3 +24,17 @@ jobs:
       - run: npm ci
       - run: npm run build:runtime
       - run: npm test
+      - run: npm run build
+  funding:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: examples/local-fee-payer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - run: node scripts/prepare-perch.mjs
+      - run: cargo test --manifest-path .perch-src/Cargo.toml --locked -p perch-fee-budget
