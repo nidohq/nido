@@ -3,7 +3,7 @@
 const {chromium}=require(process.env.PLAYWRIGHT_PATH||'playwright');
 const fs=require('node:fs'),path=require('node:path');
 (async()=>{
- const number=process.env.FEE_PREVIEW_NUMBER||'365', app=`https://${number}.test.nido.fyi`, origin=`https://pr-${number}.nido.pages.dev`;
+ const number=process.env.FEE_PREVIEW_NUMBER||'365', app=`https://${number}.test.nido.fyi`, origin=`https://pr-${number}.nido-1am.pages.dev`;
  const browser=await chromium.launch({headless:true});let wallet;
  try {
   fs.mkdirSync('qa',{recursive:true});

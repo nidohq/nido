@@ -36,7 +36,7 @@ No local stack, imported seed, Turnkey credential or hosted signing service is
 needed. Use test XLM only.
 
 The dapp runs on `365.test.nido.fyi`; the wallet runs on the separate
-`pr-365.nido.pages.dev` origin. The WASI binary pins that wallet origin, RP ID
+`pr-365.nido-1am.pages.dev` origin. The WASI binary pins that wallet origin, RP ID
 and testnet network at build time. Dapp messages cannot override these pins.
 Both origins are static builds of this PR; all code delivered on the wallet
 origin is part of the trusted wallet host. PRF/provider compatibility has been

@@ -10,7 +10,7 @@ import {nativeToken,simulate} from '../src/local-chain.mjs';
 import deployment from '../public/testnet/deployment.json' with {type:'json'};
 
 test('preview origins, RP and budget network are fixed by the numeric PR build',()=>{
- const p=demoConfig('365');assert.equal(p.walletOrigin,'https://pr-365.nido.pages.dev');assert.equal(p.walletRpId,new URL(p.walletOrigin).hostname);assert.notEqual(p.appOrigin,p.walletOrigin);assert.equal(p.network,TESTNET_NETWORK);assert.equal(demoConfig().network,LOCAL_NETWORK);
+ const p=demoConfig('365');assert.equal(p.walletOrigin,'https://pr-365.nido-1am.pages.dev');assert.equal(p.walletRpId,new URL(p.walletOrigin).hostname);assert.notEqual(p.appOrigin,p.walletOrigin);assert.equal(p.network,TESTNET_NETWORK);assert.equal(demoConfig().network,LOCAL_NETWORK);
  for(const n of ['https://evil.example','365/../evil','0','-1','365?rpc=evil'])assert.throws(()=>demoConfig(n));
 });
 test('testnet artifacts match the published code hashes; budget core matches local proof-bearing artifact',()=>{
