@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Address, Networks, StrKey, hash, nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import { NATIVE_SAC_ID } from "../network.js";
 import {
   AUTH_ENTRY_MAX_LIFETIME_LEDGERS,
   accountAuthEntry,
@@ -11,7 +12,8 @@ import {
 } from "./authReview.js";
 
 const ACCOUNT = StrKey.encodeContract(Buffer.alloc(32, 1));
-const TOKEN = StrKey.encodeContract(Buffer.alloc(32, 2));
+// A known token (the network's XLM contract), so its transfer reads as one.
+const TOKEN = NATIVE_SAC_ID;
 const ROUTER = StrKey.encodeContract(Buffer.alloc(32, 3));
 const OTHER = StrKey.encodeContract(Buffer.alloc(32, 4));
 

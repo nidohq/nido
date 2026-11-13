@@ -8,9 +8,16 @@
 // modified rules) and signer declarations added / removed. Rule identity is
 // the rule NAME (unique within a valid doc — lowering enforces it); signer
 // identity is the declaration id.
+//
+// Completeness: two documents are identical only when their canonical JSON is
+// (so their doc_hash is), and every difference is shown. Fields the
+// field-level lines do not describe (a cap's `token`, a self-authenticating
+// rule's `policy`, `install-param-hex` and `ack`, the document's `recovery`
+// and `network`, anything newer) are named in an "other changes" line, on
+// the rule, or in `otherChanges` for signers and the document itself.
 
-import type { PolicyDoc, Rule, SignerDecl } from '@nidohq/passkey-sdk';
-import { canTransfer, capText, ruleRecipient } from './reviewText.js';
+import { canonicalJson, type PolicyDoc, type Rule, type SignerDecl } from '@nidohq/passkey-sdk';
+import { canTransfer, capText, capToken, ruleRecipient } from './reviewText.js';
 import { truncate } from './policyView.js';
 
 export interface RuleModification {
@@ -37,8 +44,62 @@ export interface DocDiff {
   rulesModified: RuleModification[];
   /** Rules present in both docs with no changes. */
   unchangedRuleNames: string[];
-  /** True when the documents are canonically identical (no-op apply). */
+  /** Differences outside the rules the lines above describe: signer and
+   *  document fields (e.g. `recovery`, `network`), or an order change. */
+  otherChanges: string[];
+  /** True when the documents' canonical JSON is the same (no-op apply). */
   identical: boolean;
+}
+
+type Json = Record<string, unknown>;
+
+/** The fields, one level into nested objects, as dotted paths, whose
+ *  canonical values differ between `a` and `b`. */
+function differingFields(a: Json, b: Json): string[] {
+  const out: string[] = [];
+  const nested = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
+  for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+    const [va, vb] = [a[key], b[key]];
+    // Absent and present differ; canonical JSON has no null to stand for absent.
+    const form = (v: unknown) => (v === undefined ? undefined : canonicalJson(v));
+    if (form(va) === form(vb)) continue;
+    if (nested(va) && nested(vb)) out.push(...differingFields(va, vb).map((k) => `${key}.${k}`));
+    else out.push(key);
+  }
+  return out;
+}
+
+/** `value` as plain JSON without `drop` (dotted paths, one level deep). */
+function withoutFields(value: object, drop: readonly string[]): Json {
+  const o = JSON.parse(JSON.stringify(value)) as Json;
+  for (const path of drop) {
+    const [head, tail] = path.split('.') as [string, string | undefined];
+    if (tail === undefined) delete o[head];
+    else if (typeof o[head] === 'object' && o[head] !== null) delete (o[head] as Json)[tail];
+  }
+  return o;
+}
+
+/** The rule fields `diffRuleFields` describes. (A cap's `token` is not one:
+ *  the cap line reads the effective token, not whether it is spelled out.) */
+const RENDERED_RULE_FIELDS = [
+  'name',
+  'scope',
+  'principals.type',
+  'principals.signers',
+  'principals.m',
+  'functions',
+  'not-after-ledger',
+  'cap.limit',
+  'cap.period-ledgers',
+  'args',
+];
+
+/** The signer fields `signerKey` compares. */
+const RENDERED_SIGNER_FIELDS = ['id', 'address', 'verifier', 'key'];
+
+function otherChangesLine(fields: string[]): string {
+  return `other changes: ${fields.join(', ')}`;
 }
 
 function signerKey(s: SignerDecl): string {
@@ -89,7 +150,9 @@ export function diffRuleFields(before: Rule, after: Rule): string[] {
   }
 
   const capOf = (r: Rule) =>
-    r.cap === undefined ? 'no cap' : capText(r.cap.limit, r.cap['period-ledgers']).replace(/^Up to/, 'up to');
+    r.cap === undefined
+      ? 'no cap'
+      : capText(r.cap.limit, r.cap['period-ledgers'], capToken(r)).replace(/^Up to/, 'up to');
   if (capOf(before) !== capOf(after)) {
     changes.push(`cap: ${capOf(before)} → ${capOf(after)}`);
   }
@@ -112,6 +175,12 @@ export function diffRuleFields(before: Rule, after: Rule): string[] {
     }
   }
 
+  const unrendered = differingFields(
+    withoutFields(before, RENDERED_RULE_FIELDS),
+    withoutFields(after, RENDERED_RULE_FIELDS),
+  );
+  if (unrendered.length > 0) changes.push(otherChangesLine(unrendered));
+
   return changes;
 }
 
@@ -125,6 +194,7 @@ export function diffPolicyDocs(prev: PolicyDoc | null, next: PolicyDoc): DocDiff
       rulesRemoved: [],
       rulesModified: [],
       unchangedRuleNames: [],
+      otherChanges: [],
       identical: false,
     };
   }
@@ -174,6 +244,28 @@ export function diffPolicyDocs(prev: PolicyDoc | null, next: PolicyDoc): DocDiff
     if (!nextRules.has(r.name)) rulesRemoved.push(r);
   }
 
+  const identical = canonicalJson(prev) === canonicalJson(next);
+  const otherChanges: string[] = [];
+  // Signer fields `signerKey` does not compare, on a declaration that kept
+  // its id and key.
+  for (const s of next.signers) {
+    const old = prevById.get(s.id);
+    if (old === undefined || signerKey(old) !== signerKey(s)) continue;
+    const fields = differingFields(
+      withoutFields(old, RENDERED_SIGNER_FIELDS),
+      withoutFields(s, RENDERED_SIGNER_FIELDS),
+    );
+    if (fields.length > 0) otherChanges.push(`signer "${s.id}": ${otherChangesLine(fields)}`);
+  }
+  // Document fields other than its rules and signers.
+  const docFields = differingFields(withoutFields(prev, ['rules', 'signers']), withoutFields(next, ['rules', 'signers']));
+  if (docFields.length > 0) otherChanges.push(`document: ${otherChangesLine(docFields)}`);
+  // Whatever is left (rules or signers in another order): never "no changes"
+  // for documents that differ.
+  const shown =
+    signers.length + rulesAdded.length + rulesRemoved.length + rulesModified.length + otherChanges.length;
+  if (!identical && shown === 0) otherChanges.push('other changes: the order of rules or signers');
+
   return {
     firstApply: false,
     signers,
@@ -181,10 +273,7 @@ export function diffPolicyDocs(prev: PolicyDoc | null, next: PolicyDoc): DocDiff
     rulesRemoved,
     rulesModified,
     unchangedRuleNames,
-    identical:
-      signers.length === 0 &&
-      rulesAdded.length === 0 &&
-      rulesRemoved.length === 0 &&
-      rulesModified.length === 0,
+    otherChanges,
+    identical,
   };
 }

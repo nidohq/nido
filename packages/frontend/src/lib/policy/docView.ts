@@ -10,7 +10,7 @@
 import type { PolicyDoc, Rule, SignerDecl } from '@nidohq/passkey-sdk';
 import { renameLegacyOwner } from './docDraft.js';
 import { truncate } from './policyView.js';
-import { ruleRecipient } from './reviewText.js';
+import { capToken, ruleRecipient } from './reviewText.js';
 
 /** One declared signer, displayed with the doc's own id as the label. */
 export interface DocSignerView {
@@ -57,8 +57,9 @@ export interface DocRuleView {
   functions: string[] | null;
   /** Exclusive not-after ledger from the doc, or null for no expiry. */
   notAfterLedger: number | null;
-  /** Cumulative cap, if the rule carries one. */
-  cap: { limit: string; periodLedgers: number } | null;
+  /** Cumulative cap, if the rule carries one, with the token it meters
+   *  (`capToken`). */
+  cap: { limit: string; periodLedgers: number; token: string | null } | null;
   /** True when the rule constrains args (rendered as a badge only — arg
    *  predicates have no compact prose form yet). */
   hasArgConstraints: boolean;
@@ -94,7 +95,7 @@ export function describeDocRule(rule: Rule): DocRuleView {
   const notAfterLedger = rule['not-after-ledger'] ?? null;
   const cap =
     rule.cap !== undefined
-      ? { limit: rule.cap.limit, periodLedgers: rule.cap['period-ledgers'] }
+      ? { limit: rule.cap.limit, periodLedgers: rule.cap['period-ledgers'], token: capToken(rule) }
       : null;
 
   const parts = docPermissionParts({ rule, contract, signerIds, functions });

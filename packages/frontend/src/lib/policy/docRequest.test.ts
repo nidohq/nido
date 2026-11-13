@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { NATIVE_SAC_ID } from '../network.js';
 import {
   MAX_DOC_GRANTS,
   buildSessionGrantOperation,
@@ -420,12 +421,14 @@ describe('sessionSignerDraft', () => {
 });
 
 describe('describeSessionScope', () => {
-  const base = { duration: '24h', notAfterLedger: null } as const;
+  // The XLM contract: its caps read in XLM.
+  const base = { target: NATIVE_SAC_ID, duration: '24h', notAfterLedger: null } as const;
 
   it('states a capped, expiring scope exactly', () => {
     expect(
       describeSessionScope({
         cap: { stroops: '25000000', period: 'week' },
+        target: NATIVE_SAC_ID,
         functions: ['transfer'],
         duration: '24h',
         notAfterLedger: 5145276,
