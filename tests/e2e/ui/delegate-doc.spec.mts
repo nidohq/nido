@@ -9,6 +9,7 @@ import {
   type Invocation,
 } from '../../support/perchRpcMock.mts';
 import { createShimPasskey, installPasskeyShim } from '../../support/passkeyShim.mts';
+import { specWasm } from '../../support/specWasm.mts';
 
 // The app-approval page (/security/delegate-doc/) in a browser, against a
 // build with a Perch deployment and a mocked chain
@@ -66,12 +67,23 @@ function grantUrl(extra: Record<string, string | null> = {}): string {
   return `${WALLET}/security/delegate-doc/?${p}`;
 }
 
+/** The grants' targets as the chain has them: XLM is the built-in asset
+ *  contract, the game wasm with no SEP-41 transfer. */
+const CONTRACTS = {
+  [XLM]: { kind: 'stellar-asset' as const },
+  [GAME]: { kind: 'wasm' as const, wasm: specWasm([{ name: 'guess', inputs: ['address', 'u32'] }]) },
+};
+
 async function mockChain(target: Page | BrowserContext): Promise<void> {
-  await mockPerchChain(target, {
-    ...deploymentViews(),
-    ...accountViews(ACCOUNT, { canonical: canonicalJson(applied) }),
-    [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(applied), 'hex'),
-  });
+  await mockPerchChain(
+    target,
+    {
+      ...deploymentViews(),
+      ...accountViews(ACCOUNT, { canonical: canonicalJson(applied) }),
+      [`${ACCOUNT}:applied_doc_hash`]: Buffer.from(docHash(applied), 'hex'),
+    },
+    { contracts: CONTRACTS },
+  );
 }
 
 /** The app: opens the grant page as a popup and records what comes back. */
@@ -338,18 +350,38 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     );
   });
 
-  test('a capped transfer grant without to= says plainly it can pay any address', async ({ page }) => {
+  test('a transfer grant without to= is refused: every grant that may call transfer names its recipient', async ({ page }) => {
     await mockChain(page);
     await page.goto(grantUrl({ 'grant.1.to': null }));
-    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
-    await expect(page.locator('[data-grant="1"] [data-field="pays-to"]')).toHaveText('Any address');
-    await expect(page.locator('[data-scope="guess-xlm"]')).toContainText('Up to 2 XLM per day, to any address.');
-    await expect(page.locator('#doc-preview .pol-preview-rule', { hasText: 'transfer()' }).first()).toContainText(
-      'Pays any address',
+    await expect(page.locator('#status')).toContainText('grant.1: A transfer grant must name its recipient (to=)');
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+
+  test('a grant with no functions on a token contract is refused', async ({ page }) => {
+    await mockChain(page);
+    await page.goto(grantUrl({ 'grant.1.functions': null, 'grant.1.to': null }));
+    await expect(page.locator('#status')).toContainText(
+      `The grant "guess-xlm" may call any function on ${XLM}, a token contract, so it could pay anyone.`,
     );
+    await expect(page.locator('#approve')).toBeDisabled();
+  });
+
+  test('a grant with no functions on a contract that is not a token is allowed', async ({ page }) => {
+    await mockChain(page);
+    await page.goto(grantUrl({ 'grant.0.functions': null }));
+    await expect(page.locator('#doc-hash')).toHaveText(/^[0-9a-f]{64}$/);
+    const play = page.locator('[data-grant="0"]');
+    await expect(play.locator('[data-field="functions"]')).toHaveText('Any function');
+    // Not a token: it pays no one, so no payee is shown. Any function could
+    // still move a token it holds, so the cap choice is the user's.
+    await expect(play.locator('[data-field="pays-to"]')).toHaveCount(0);
+    await play.locator('[data-uncapped-ack]').check();
     await page.locator('#approve').click();
     const { doc } = await stashedDoc(page);
-    expect(doc.rules.find((r) => r.name === 'guess-xlm')!.args).toBeUndefined();
+    expect(doc.rules.find((r) => r.name === 'guess')!.functions).toBeUndefined();
+    expect(doc.rules.find((r) => r.name === 'guess-xlm')!.args).toEqual([
+      { index: 1, pred: { type: 'address-eq', address: GAME } },
+    ]);
   });
 
   test('a grant with no limit hides the cap inputs and asks the user to choose', async ({ page }) => {
@@ -373,15 +405,10 @@ test.describe('app approval page: several grants, one approval @fast', () => {
     expect(doc.rules.find((r) => r.name === 'guess-xlm')!.cap).toBeUndefined();
   });
 
-  for (const [name, functions] of [
-    ['transfer', 'transfer'],
-    ['any function', null],
-  ] as const) {
+  for (const [name, functions] of [['transfer', 'transfer']] as const) {
     test(`limit=none on ${name} still asks the user to choose a cap`, async ({ page }) => {
       await mockChain(page);
-      await page.goto(
-        grantUrl({ 'grant.1.functions': functions, 'grant.1.limit': 'none', 'grant.1.limit_period': null, 'grant.1.to': null }),
-      );
+      await page.goto(grantUrl({ 'grant.1.functions': functions, 'grant.1.limit': 'none', 'grant.1.limit_period': null }));
       const stake = page.locator('[data-grant="1"]');
       await expect(stake.locator('[data-field="cap"]')).not.toContainText('token functions');
       await expect(stake.locator('[data-cap-on]')).not.toBeChecked();
@@ -397,7 +424,7 @@ test.describe('app approval page: several grants, one approval @fast', () => {
       // A rule that can move tokens, left uncapped by the player's choice:
       // the summary warns.
       await expect(page.locator('[data-scope="guess-xlm"] .tone-warn')).toHaveText('No spending cap');
-      await expect(page.locator('[data-scope="guess-xlm"]')).toContainText('No spending cap, to any address.');
+      await expect(page.locator('[data-scope="guess-xlm"]')).toContainText(`No spending cap, only to ${GAME}.`);
       await page.locator('#approve').click();
       const { doc } = await stashedDoc(page);
       expect(doc.rules.find((r) => r.name === 'guess-xlm')!.cap).toBeUndefined();
