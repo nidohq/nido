@@ -50,10 +50,21 @@ import Nest from '../../components/Nest.astro';
                 </div>
                 <Icon name="chevron" size={18} color="var(--mut)" />
               </a>
+              <!-- Shown only while this device has no passkey record for the
+                   account: a passkey synced from another device just needs
+                   finding, not replacing (lib/adoptPasskey.ts). -->
+              <button id="adopt-passkey-btn" type="button" class="navrow" hidden style="font:inherit;color:inherit;border-bottom:none;border-top:1px solid var(--line-soft);">
+                <div style="flex:1;padding-left:50px;">
+                  <div style="font-weight:700;font-size:14px;">New device? Use your synced passkey</div>
+                  <div class="mut" style="font-size:12.5px;">Your passkey syncs with iCloud Keychain or Google Password Manager</div>
+                </div>
+                <Icon name="chevron" size={18} color="var(--mut)" />
+              </button>
+              <div id="adopt-passkey-msg" role="alert" class="mut" hidden style="font-size:12.5px;line-height:1.5;padding:0 16px 14px 66px;"></div>
               <a href="/security/recover/" class="navrow" style="text-decoration:none;color:inherit;border-bottom:none;border-top:1px solid var(--line-soft);">
                 <div style="flex:1;padding-left:50px;">
-                  <div style="font-weight:700;font-size:14px;">Lost your passkey?</div>
-                  <div class="mut" style="font-size:12.5px;">Get back in from a new device</div>
+                  <div style="font-weight:700;font-size:14px;">Lost it? Recover</div>
+                  <div class="mut" style="font-size:12.5px;">No passkey on any device: make a new one and open a recovery</div>
                 </div>
                 <Icon name="chevron" size={18} color="var(--mut)" />
               </a>
@@ -163,6 +174,7 @@ import Nest from '../../components/Nest.astro';
   import { forgetRevokedMaterial, ruleStillExists } from '../../lib/sessionKeyActions.js';
   import { renderSessionKeyCard } from '../../components/SessionKeyCard.js';
   import { toast } from '../../lib/toast.js';
+  import { adoptPasskeyAction } from '../../lib/adoptPasskey.js';
   import { perchDeployment } from '../../lib/recovery/deployment.js';
   import { readRecoveryState } from '../../lib/recovery/chain.js';
   import { MODE_TEXT, PROFILE_TEXT } from '../../lib/recovery/model.js';
@@ -240,18 +252,45 @@ import Nest from '../../components/Nest.astro';
 
   // Passkey details for this device (relocated here from the account page).
   const deviceCred = account ? loadCredential(account) : null;
-  const chip = document.getElementById('passkey-status-chip') as HTMLElement | null;
-  const sub = document.getElementById('passkey-status-sub') as HTMLElement | null;
-  if (deviceCred) {
-    if (chip) { chip.className = 'chip good'; chip.textContent = 'On'; }
-    if (sub) { sub.hidden = false; }
-    (document.getElementById('device-details') as HTMLElement).hidden = false;
-    document.getElementById('device-pubkey')!.textContent = deviceCred.publicKey;
-    document.getElementById('device-cred-id')!.textContent = buf2base64url(deviceCred.credentialId);
-    document.getElementById('device-rp-id')!.textContent = window.location.hostname;
-  } else {
-    if (chip) { chip.className = 'chip warn'; chip.textContent = 'Not set up'; }
-    if (sub) { sub.hidden = true; }
+  renderDeviceCard(deviceCred);
+
+  function renderDeviceCard(cred: ReturnType<typeof loadCredential>): void {
+    const chip = document.getElementById('passkey-status-chip') as HTMLElement | null;
+    const sub = document.getElementById('passkey-status-sub') as HTMLElement | null;
+    if (cred) {
+      if (chip) { chip.className = 'chip good'; chip.textContent = 'On'; }
+      if (sub) { sub.hidden = false; }
+      (document.getElementById('device-details') as HTMLElement).hidden = false;
+      document.getElementById('device-pubkey')!.textContent = cred.publicKey;
+      document.getElementById('device-cred-id')!.textContent = buf2base64url(cred.credentialId);
+      document.getElementById('device-rp-id')!.textContent = window.location.hostname;
+    } else {
+      if (chip) { chip.className = 'chip warn'; chip.textContent = 'Not set up'; }
+      if (sub) { sub.hidden = true; }
+    }
+  }
+
+  // "New device? Use your synced passkey": adopt a passkey this account
+  // already has, then show it on the device card.
+  if (account && !deviceCred) {
+    const adoptAccount = account;
+    const btn = document.getElementById('adopt-passkey-btn') as HTMLButtonElement;
+    const msg = document.getElementById('adopt-passkey-msg') as HTMLElement;
+    btn.hidden = false;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      msg.hidden = true;
+      const result = await adoptPasskeyAction(adoptAccount);
+      btn.disabled = false;
+      if (result.ok) {
+        btn.hidden = true;
+        renderDeviceCard(loadCredential(adoptAccount));
+        toast({ msg: 'This device can now approve for your Nido', icon: 'check' });
+        return;
+      }
+      msg.textContent = result.message;
+      msg.hidden = false;
+    });
   }
 
   const delegationList = document.getElementById('delegation-list')!;

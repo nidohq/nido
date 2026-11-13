@@ -97,9 +97,13 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
       <div id="needs-register" class="hidden">
         <div class="alert warn">
           <Icon name="key" size={18} stroke={2} />
-          <span>No passkey is registered on this device for this account. Open the
-          account page to register it first.</span>
+          <span>This device has no passkey for this Nido yet. New device? Your passkey
+          syncs with iCloud Keychain or Google Password Manager, so it may already be here.
+          Lost it? Recover from the Security page.</span>
         </div>
+        <button id="adopt-passkey-btn" type="button" class="btn" style="width:100%;margin-top:10px;">
+          Use your synced passkey
+        </button>
       </div>
 
       <p id="status" role="status" aria-live="polite" class="status mut"></p>
@@ -232,6 +236,8 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   import { reviewGrant } from '../../lib/policy/grantReview.js';
   import { ruleRecipient } from '../../lib/policy/reviewText.js';
   import { withPasskeySheet, openPasskeySheet, closePasskeySheet } from '../../lib/passkeySheet';
+  import { adoptPasskeyAction } from '../../lib/adoptPasskey';
+  import { NO_DEVICE_PASSKEY } from '../../lib/devicePasskey';
   import { detectPasskeyLabel } from '../../lib/passkeyLabel';
   import { shortAddr } from '../../lib/address';
   import { describeTransaction, describeOperation, type OpSummary } from '../../lib/transfer/txSummary.js';
@@ -944,7 +950,7 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
     if (!isOwnAction && !origin) return 'Invalid app origin / return URL.';
     if (!loadCredential(account)) {
       document.getElementById('needs-register')!.classList.remove('hidden');
-      return 'No passkey registered for this account on this device.';
+      return NO_DEVICE_PASSKEY;
     }
     return null;
   }
@@ -952,6 +958,24 @@ import PasskeySheet from '../../components/PasskeySheet.astro';
   const err = validate();
   if (err) { showError(err); approve.disabled = true; }
   else if (reviewPending || reviewRefusal) approve.disabled = true;
+
+  // "Use your synced passkey": adopt this Nido's passkey on this device
+  // (lib/adoptPasskey.ts), then re-run the checks that gate Approve.
+  {
+    const adoptBtn = document.getElementById('adopt-passkey-btn') as HTMLButtonElement;
+    adoptBtn.addEventListener('click', async () => {
+      if (!account) return;
+      adoptBtn.disabled = true;
+      const result = await adoptPasskeyAction(account);
+      adoptBtn.disabled = false;
+      if (!result.ok) { showError(result.message); return; }
+      document.getElementById('needs-register')!.classList.add('hidden');
+      $err.style.display = 'none';
+      const stillWrong = validate();
+      if (stillWrong) showError(stillWrong);
+      else if (!reviewPending && !reviewRefusal) approve.disabled = false;
+    });
+  }
 
   // The cancel query mirrors the dApp's success contract: a session-grant
   // return uses `?delegation=ok` on success, so cancel must send the matching

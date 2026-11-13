@@ -223,6 +223,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   import { Buffer } from "buffer";
   import {
     parseRegistration,
+    PasskeyRegistrationError,
     buf2hex,
     buf2base64url,
     hex2buf,
@@ -831,9 +832,11 @@ import { NETWORK_LABEL } from "../../lib/network";
     try {
       const credential = (await navigator.credentials.create(options)) as PublicKeyCredential;
       await completeRegistration(credential);
-    } catch {
+    } catch (err) {
       // Rejected (no user activation on iOS Safari), declined, or aborted by a
-      // manual tap — the ready button is already there for the user. Silent.
+      // manual tap — the ready button is already there for the user. Silent,
+      // unless the passkey was made but its key failed its checks.
+      if (err instanceof PasskeyRegistrationError) showError(`Couldn't set up your passkey: ${err.message}`);
     }
   }
 

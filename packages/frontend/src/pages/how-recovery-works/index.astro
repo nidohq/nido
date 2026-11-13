@@ -56,7 +56,7 @@ const steps = [
     actor: "You · New device",
     icon: "key",
     tone: "var(--acc)",
-    body: "On a new device you create a fresh passkey for your Nido and open a recovery that says which passkey it replaces. Anyone can open one, and opening it changes nothing: your Nido keeps working and nothing is frozen until a recovery is approved.",
+    body: "If your passkey synced to the new device, you don't need any of this: use it from Security. Otherwise you create a fresh passkey for your Nido on the new device and open a recovery that says which passkey it replaces. Anyone can open one, and opening it changes nothing: your Nido keeps working and nothing is frozen until a recovery is approved.",
     dev: "begin_lost_key(account, replacements) is permissionless. The controller derives the target on-chain with the account's own compiler: the applied document with exactly the declared credential swapped (same signer slot, same kind, same verifier). Nobody supplies a target hash. A ZK mode must also declare a fresh kit, because completing spends the old one.",
   },
   {

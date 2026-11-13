@@ -265,12 +265,24 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       <section id="register-section" class="hidden pad" style="padding-top:18px;">
         <span class="section-label" style="display:block; margin-bottom:12px;">Set up your passkey</span>
         <div class="card" style="padding:16px;">
-          <p id="register-copy" class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
-            Create a passkey bound to this Nido. It's how you'll prove it's you — no seed phrase, no password.
+          <p id="adopt-passkey-copy" class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            New device? This Nido's passkey syncs with iCloud Keychain or Google Password Manager, so it may already be here.
           </p>
-          <button id="register-btn" class="btn acc">
-            <Icon name="key" size={20} color="#fff" /> <span id="register-label">Set up your passkey</span>
+          <button id="adopt-passkey-btn" class="btn acc" style="margin-bottom:14px;">
+            <Icon name="key" size={20} color="#fff" /> <span>Use your synced passkey</span>
           </button>
+          <a id="adopt-passkey-link" class="btn acc hidden" style="margin-bottom:14px;">
+            <Icon name="key" size={20} color="#fff" /> <span>Use your synced passkey</span>
+          </a>
+          <p id="register-copy" class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            Or create a passkey bound to this Nido. It's how you'll prove it's you — no seed phrase, no password.
+          </p>
+          <button id="register-btn" class="btn">
+            <Icon name="key" size={20} /> <span id="register-label">Set up your passkey</span>
+          </button>
+          <p class="mut" style="font-size:12.5px; line-height:1.5; margin:14px 0 0;">
+            Lost it? <a href="/security/recover/" class="link">Recover your Nido</a>
+          </p>
         </div>
       </section>
       </div>
@@ -329,6 +341,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { formatXlm } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
+  import { adoptPasskeyAction, adoptPasskeyPlace } from "../../lib/adoptPasskey";
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
   // round-trip was broken (bug #3); re-enabled now that the finalize flow signs
@@ -743,6 +756,39 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
     $registerBtn.addEventListener("click", () => {
       void runPasskeyRegistration(shouldRegisterNamePasskey ? { namePasskey: true } : undefined);
+    });
+
+    // "Use your synced passkey": find a passkey this Nido already has
+    // (lib/adoptPasskey.ts) instead of creating one the account doesn't know.
+    // The ceremony only finds the passkey on the account's own subdomain, so
+    // a name subdomain links there instead of prompting.
+    const $adoptBtn = document.getElementById("adopt-passkey-btn") as HTMLButtonElement;
+    const adoptPlace = adoptPasskeyPlace(contractId, window.location);
+    if (adoptPlace.kind !== "here") {
+      $adoptBtn.classList.add("hidden");
+      const $adoptCopy = document.getElementById("adopt-passkey-copy")!;
+      if (adoptPlace.kind === "elsewhere") {
+        $adoptCopy.textContent =
+          "New device? This Nido's passkey syncs with iCloud Keychain or Google Password Manager. It's bound to this Nido's own address, so use it from there.";
+        const $adoptLink = document.getElementById("adopt-passkey-link") as HTMLAnchorElement;
+        $adoptLink.href = adoptPlace.url;
+        $adoptLink.classList.remove("hidden");
+      } else {
+        $adoptCopy.classList.add("hidden");
+      }
+    }
+    $adoptBtn.addEventListener("click", async () => {
+      if (!contractId) return;
+      clearError();
+      $adoptBtn.disabled = true;
+      const result = await adoptPasskeyAction(contractId);
+      $adoptBtn.disabled = false;
+      if (result.ok) {
+        $registerSection.classList.add("hidden");
+        toast({ msg: "This device can now approve for your Nido", icon: "check" });
+      } else {
+        showError(result.message);
+      }
     });
 
     // ?namepasskey=1 + no cred + known name → focused takeover overlay.

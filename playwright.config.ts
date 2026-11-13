@@ -22,26 +22,26 @@ export default defineConfig({
     {
       name: 'chromium',
       testDir: 'tests/e2e/ui',
-      testIgnore: /\.cdp\.spec\.ts$/,
+      testIgnore: /\.cdp\.spec\.m?ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'firefox',
       testDir: 'tests/e2e/ui',
-      testIgnore: /\.cdp\.spec\.ts$/,
+      testIgnore: /\.cdp\.spec\.m?ts$/,
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',
       testDir: 'tests/e2e/ui',
-      testIgnore: /\.cdp\.spec\.ts$/,
+      testIgnore: /\.cdp\.spec\.m?ts$/,
       use: { ...devices['Desktop Safari'] },
     },
     // Chromium-only fidelity lane: real virtual authenticator.
     {
       name: 'chromium-cdp',
       testDir: 'tests/e2e/ui',
-      testMatch: /\.cdp\.spec\.ts$/,
+      testMatch: /\.cdp\.spec\.m?ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
     // Quarantined real-testnet tier — separate dir, extra retries.
