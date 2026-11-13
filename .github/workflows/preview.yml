@@ -12,6 +12,7 @@ on:
       # THIS PR's N.test.nido.fyi — so a dApp-only PR still needs the wallet
       # preview deployed alongside.
       - 'examples/status-message-dapp/**'
+      - 'examples/local-fee-payer/**'
 
 permissions:
   contents: read
@@ -65,6 +66,32 @@ jobs:
           PUBLIC_INVITE_SERVICE_URL: ${{ vars.PUBLIC_INVITE_SERVICE_URL }}
           PUBLIC_INVITE_SERVICE_API_KEY: ${{ secrets.PUBLIC_INVITE_SERVICE_API_KEY }}
         run: npx astro build --root ./packages/frontend
+
+      # Static fee lab: the custom preview domain is the dapp; the Pages branch
+      # alias is its separate wallet origin. No hosted signing key or bootstrap API.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: wasm32-wasip1
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            examples/local-fee-payer/runtime/target
+          key: fee-runtime-rust1971-${{ runner.os }}-${{ hashFiles('examples/local-fee-payer/runtime/Cargo.lock') }}
+
+      - name: Build static testnet fee demo
+        working-directory: examples/local-fee-payer
+        env:
+          FEE_PREVIEW_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          npm ci
+          npm run build:preview
 
       - name: Deploy to Cloudflare Pages
         run: |

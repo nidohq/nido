@@ -7,6 +7,8 @@
     "dev": "vite --host 127.0.0.1 --port 5198 --strictPort",
     "wallet": "vite --host 127.0.0.1 --port 5199 --strictPort",
     "build": "vite build",
+    "build:preview": "node scripts/build-preview.mjs",
+    "deploy:testnet": "node scripts/deploy-testnet.mjs",
     "build:runtime": "node scripts/build-runtime.mjs",
     "proof": "lean proof/SigningBoundary.lean",
     "proof:refill": "bash scripts/prove-refill.sh",

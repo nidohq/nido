@@ -20,6 +20,73 @@ at `/local-fees/`, and in this lab at
 Both serve the same self-contained HTML source. Arrow keys navigate; Evidence
 opens the source references and assumptions; Print / PDF prints all slides.
 
+The deck also explains the proposed **permanent G** mode: G remains the asset
+address, U is replaceable access, C receives token allowances and applies Perch
+spending policy, and F pays native fees separately. The reviewed authority
+kernel supports key rotation and recovery without changing the account
+reference. Permanent-G onboarding and allowance integration are not implemented
+by this fee lab. U's threshold authority still permits direct G spending;
+"approve-only G" is not an established ledger restriction.
+
+## Try the PR preview on testnet
+
+Open **https://365.test.nido.fyi/fee-demo/testnet.html**, allow the popup, and
+register a fresh demo passkey using a browser/provider with WebAuthn PRF support.
+No local stack, imported seed, Turnkey credential or hosted signing service is
+needed. Use test XLM only.
+
+The dapp runs on `365.test.nido.fyi`; the wallet runs on the separate
+`pr-365.nido.pages.dev` origin. The WASI binary pins that wallet origin, RP ID
+and testnet network at build time. Dapp messages cannot override these pins.
+Both origins are static builds of this PR; all code delivered on the wallet
+origin is part of the trusted wallet host. PRF/provider compatibility has been
+exercised with Chromium's virtual authenticator, not claimed for every device.
+
+During explicit enrollment, the wallet creates a fresh PRF-encrypted HD seed.
+Friendbot funds its U account, and U signs a fixed setup sequence: create F with
+1.05 test XLM (including reserve), deploy the Perch account/executor/budget, and
+approve a 0.15 XLM native-token allowance. **U is the demo treasury**, not a
+permanent asset G or a C treasury. F is not used during setup. Normal refill
+and action signatures pass through the existing exact-XDR WASI/Cedar gate.
+
+Press **Approve action**. If F is low, approve the separate refill prompt and
+then the action prompt. The wallet displays settled transactions, F's balance,
+the persistent spent counter and remaining cap. Repeat to observe another
+automatic top-up. Automatic means detection and preparation; each refill still
+requires C's passkey approval.
+
+Interrupted enrollment retains the encrypted vault and deterministic addresses.
+Retry reuses the same budget and original spent counter, including after a
+page reload. Expired/archived state or changed code is refused; no replacement
+budget is silently deployed. Clearing browser storage loses this demo's local
+vault; a fresh seed creates an independent test account, not continuation of the
+old cap. Initial F funding and other deposits are outside the refill cap.
+
+Public artifact hashes, registry/verifier addresses and deployment receipts are
+in `public/testnet/deployment.json`. The testnet registry is an isolated overlay
+on the exact `perch-source.json` pin; the funding WASM is byte-identical to the
+local proof-bearing artifact. Public RPC/Friendbot availability, contract/state
+TTL and testnet resets remain operational dependencies. A bounded retry handles
+explicit RPC preflight-queue congestion; auth failures and submissions are not
+automatically retried.
+
+CI builds the origin-bound runtime and copies the static lab into the normal
+frontend preview. To reproduce this build (Node 24, Rust 1.97.1 + wasm32-wasip1):
+
+```sh
+npm ci
+FEE_PREVIEW_NUMBER=365 FEE_PREVIEW_OUT=/tmp/nido-fee-preview npm run build:preview
+FEE_RUNTIME_DIR=/tmp/nido-fee-preview/runtime node --test test/local-budget-wasi.test.mjs
+# Uses real testnet funds/transactions and a fresh virtual passkey:
+PLAYWRIGHT_PATH=/absolute/path/to/playwright node test/testnet-browser-check.cjs
+```
+
+`build:preview` restores the local runtime artifacts after building. CI performs
+no contract deployment and holds no wallet keys. `npm run deploy:testnet` is a
+separate explicit maintainer operation: it creates a fresh test-only deployer
+in ignored `.testnet-cache` and publishes a new public deployment manifest.
+Do not run it to recover an individual enrollment or to reset a budget.
+
 ## Run
 
 Requires Node >=22.12, Rust 1.96.0 with wasm32v1-none for contracts, Rust

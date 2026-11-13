@@ -4,8 +4,10 @@ import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const pin=JSON.parse(readFileSync('perch-source.json'));
-const destination='.perch-src';
-const marker=JSON.stringify(pin);
+const testnet=process.env.FEE_BUILD_NETWORK==='testnet';
+const registry=testnet?JSON.parse(readFileSync('testnet-source.json')).verifierRegistry:pin.localVerifierRegistry;
+const destination=testnet?'.perch-testnet-src':'.perch-src';
+const marker=JSON.stringify(testnet?{pin,registry}:pin);
 if(existsSync(`${destination}/.fee-pin`) && readFileSync(`${destination}/.fee-pin`,'utf8')===marker)process.exit(0);
 if(existsSync(destination))throw Error('Existing .perch-src differs from pin. Remove that generated directory explicitly before rebuilding.');
 const temp=mkdtempSync(join(tmpdir(),'nido-fee-perch-'));
@@ -19,8 +21,7 @@ try {
  mkdirSync(destination);execFileSync('tar',['-xf',archive,'-C',destination]);
  // Local-chain registry only. Real Perch still checks a verifier's code hash
  // and its derived address; no runtime verifier-check bypass is introduced.
- const registry=pin.localVerifierRegistry;
  writeFileSync(`${destination}/crates/perch-smart-account/wasm/verifiers.path`,
- `# Local fee lab only; production manifest and Nido parent pins unchanged.\nroot-deployer ${registry.rootDeployer}\nroot-salt ${registry.salt}\npath /\n`);
+ `# Fee demo registry; production manifest and Nido parent pins unchanged.\nroot-deployer ${registry.rootDeployer}\nroot-salt ${registry.salt}\npath /\n`);
  writeFileSync(`${destination}/.fee-pin`,marker);
 } finally {rmSync(temp,{recursive:true,force:true});}

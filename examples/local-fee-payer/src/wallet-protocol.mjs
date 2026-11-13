@@ -1,8 +1,9 @@
 import { StrKey } from '@stellar/stellar-sdk';
 import { C_ACCOUNT } from './stellar.mjs';
+import { DEMO } from './demo-config.mjs';
 
-export const APP_ORIGIN = 'http://localhost:5198';
-export const WALLET_ORIGIN = 'http://wallet.localhost:5199';
+export const APP_ORIGIN = DEMO.appOrigin;
+export const WALLET_ORIGIN = DEMO.walletOrigin;
 export function validateWalletRequest(request) {
   if (!request || typeof request !== 'object' || Object.keys(request).sort().join() !== 'account,kind,recipient') throw Error('Unsupported request fields');
   if (request.kind !== 'sponsor-demo-transfer') throw Error('No raw signing or key-export API');

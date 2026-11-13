@@ -10,7 +10,9 @@ use sha2::{Digest, Sha256};
 use stellar_xdr::*;
 
 const NETWORK: &str = "Test SDF Network ; September 2015";
-const ORIGIN: &str = "http://wallet.localhost:5199";
+const ORIGIN: &str = match option_env!("NIDO_FEE_WALLET_ORIGIN") { Some(v) => v, None => "http://wallet.localhost:5199" };
+const RP_ID: &str = match option_env!("NIDO_FEE_WALLET_RP_ID") { Some(v) => v, None => "wallet.localhost" };
+const BUDGET_NETWORK: &str = match option_env!("NIDO_FEE_BUDGET_NETWORK") { Some(v) => v, None => "Standalone Network ; February 2017" };
 const POLICY: &str = include_str!("../fee-policy.cedar");
 type Checked<T> = Result<T, String>;
 fn digest(bytes: impl AsRef<[u8]>) -> Vec<u8> { Sha256::digest(bytes).to_vec() }
@@ -49,7 +51,7 @@ struct Input { request_id: String, network: String, envelope: String, intent: In
 fn check(input: &Input) -> Checked<Value> {
     require(!input.request_id.is_empty() && input.request_id.len() <= 128, "Invalid request ID")?;
     let local = input.local_budget.as_ref();
-    let network = if local.is_some() { "Standalone Network ; February 2017" } else { NETWORK };
+    let network = if local.is_some() { BUDGET_NETWORK } else { NETWORK };
     require(input.network == network, "Wrong network")?;
     require(input.intent.kind == if local.is_some() { "local-budget-action" } else { "sponsor-demo-transfer" }, "Unsupported intent")?;
     let c = account(&input.intent.account)?;
@@ -123,7 +125,7 @@ fn check(input: &Input) -> Checked<Value> {
     let client: Value = serde_json::from_slice(client_raw).map_err(|_| "Invalid client data")?;
     require(client["type"] == "webauthn.get" && client["challenge"] == URL_SAFE_NO_PAD.encode(&challenge), "Wrong passkey challenge")?;
     require(client["origin"] == ORIGIN && (client.get("crossOrigin").is_none() || client["crossOrigin"] == false) && client.get("topOrigin").is_none(), "Wrong passkey origin")?;
-    require(auth.len() >= 37 && auth[..32] == digest("wallet.localhost"), "Wrong RP ID")?;
+    require(auth.len() >= 37 && auth[..32] == digest(RP_ID), "Wrong RP ID")?;
     let flags = auth[32];
     require(flags & 5 == 5 && (flags & 16 == 0 || flags & 8 != 0), "Missing UP/UV or invalid backup flags")?;
     let mut signed = auth.to_vec(); signed.extend(digest(client_raw));
@@ -135,7 +137,7 @@ fn check(input: &Input) -> Checked<Value> {
         "passkey":{"__entity":{"type":"Passkey","id":input.registration.credential_id}},
         "cAccount": input.intent.account, "maxFeeStroops":if local.is_some() {500000} else {1000} }, "parents":[]}]), None).map_err(|e|e.to_string())?;
     let context = Context::from_json_value(json!({"passkeyVerified":true,"cAuthorizationVerified":true,
-        "cAccount":input.intent.account,"network":if local.is_some() {"local"} else {"testnet"},"feeStroops":fb.tx.fee}), None).map_err(|e|e.to_string())?;
+        "cAccount":input.intent.account,"network":if network == NETWORK {"testnet"} else {"local"},"feeStroops":fb.tx.fee}), None).map_err(|e|e.to_string())?;
     let request = Request::new(principal, "Action::\"sponsor\"".parse().unwrap(), resource, context, None).map_err(|e|e.to_string())?;
     let policies = PolicySet::from_str(POLICY).map_err(|e|e.to_string())?;
     let decision = Authorizer::new().is_authorized(&request, &policies, &entities);

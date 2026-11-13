@@ -3,5 +3,8 @@ dist/
 qa/
 .local-chain/
 .perch-src/
+.perch-testnet-src/
+.testnet-contracts/
+.testnet-cache/
 **/target/
 **/test_snapshots/
