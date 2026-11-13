@@ -1,0 +1,50 @@
+{
+  "name": "nido-wallet-checker",
+  "abi": "wasi_snapshot_preview1",
+  "cedar": "4.14.1",
+  "stellarXdr": "28.0.1",
+  "walletOrigin": "http://wallet.localhost:5199",
+  "walletRpId": "wallet.localhost",
+  "budgetNetwork": "Standalone Network ; February 2017",
+  "sha256": "1d81035eefd1ed6eb35bd2fdb904ef5fa87bfceb8e5ee3949236377fb1640c9b",
+  "bytes": 2701573,
+  "maxMemoryBytes": 67108864,
+  "imports": [
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "random_get",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "environ_get",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "environ_sizes_get",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "fd_read",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "fd_write",
+      "kind": "function"
+    },
+    {
+      "module": "wasi_snapshot_preview1",
+      "name": "proc_exit",
+      "kind": "function"
+    }
+  ],
+  "sourceSha256": {
+    "runtime/src/main.rs": "8e28fd7a4555db46f8772c2b8494f25902a4b544e5795fa3a2905d9ba3adef12",
+    "runtime/fee-policy.cedar": "eb1b46ed9796cd2c15a80dac0c373c8cbdea9305a491f356ce57808b7a454486",
+    "runtime/Cargo.toml": "5cab9497e8c84bd3410276ce88aa52af540c8c36f84eb3729962bfb01bde5739",
+    "runtime/Cargo.lock": "367686db17a43e6707059ee81d4de2f3bb05b2e019d4af0128d62ff9a2a5ebf4"
+  }
+}

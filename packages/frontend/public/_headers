@@ -27,3 +27,8 @@
   ! X-Frame-Options
   ! Content-Security-Policy-Report-Only
   Content-Security-Policy: default-src 'none'; script-src 'self'; frame-ancestors https://*.nido.fyi; base-uri 'none'; form-action 'none'
+
+# This testnet wallet is opened directly on the separate PR Pages origin.
+# Permit only its bundled code/WASI and the two public testnet endpoints.
+/fee-demo/budget-wallet*
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://soroban-testnet.stellar.org https://friendbot.stellar.org; worker-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'

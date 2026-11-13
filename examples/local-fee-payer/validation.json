@@ -1,0 +1,42 @@
+{
+  "perchRevision": "aa598b4d32bd4674adef12f4abf9ee03f490d985",
+  "walletTests": 38,
+  "fundingContractTests": 5,
+  "nativePerchLedger": {
+    "actions": 3,
+    "refills": 3,
+    "spentStroops": 660149,
+    "capStroops": 1500000,
+    "denied": [
+      "wrong selected rule",
+      "direct executor outside owner rule"
+    ],
+    "authenticator": "virtual PRF-capable WebAuthn, real signed assertions"
+  },
+  "scope": "Planner and committed trace formally proved; host, custody and contract integration tested/trusted as documented. Dedicated document-grant UI not included.",
+  "runtimeSha256": "1d81035eefd1ed6eb35bd2fdb904ef5fa87bfceb8e5ee3949236377fb1640c9b",
+  "contractManifest": "public/contracts/manifest.json",
+  "releaseChecks": "181 checks: 180 passed and 1 optional-tool skip across initial run and corrected-environment/DeploymentState reruns",
+  "testnetLedger": {
+    "network": "Stellar testnet",
+    "actions": 3,
+    "refills": 3,
+    "spentStroops": 578685,
+    "capStroops": 1500000,
+    "account": "CCAJBRIWL73A4BFCKMP3NKBC5BMDYXSJCACOOBWOJSDTOXV3M73J7CDZ",
+    "fee": "GC5B6D5KEAM4FBHMAIB4PKGGI5BP5HSFWEHKG2QOGEBXT5K7V4KBAA2F",
+    "budget": "CBZZIL6QL2TAAT57PKB2BSBXX4IEMPFUDWLO6NSSZWEQMVZCBQRVPNSP",
+    "runtimeSha256": "dc8ea25c2e312ca7be46d831d371c090063976d6ff31ee54065e53e85d65d338",
+    "reloadPreservedBudget": true,
+    "authenticator": "virtual PRF-capable WebAuthn, real testnet settlement",
+    "staticFiles": "locally routed at real preview origins",
+    "receipts": [
+      "98b0539b42085b2870a78c17c3215d4656155c23e6581765940e54c65703757e",
+      "352caab66bf11fb1ab45cc15d74d93c4ac7b018cfe25b2f6b4b29c631a8cf12a",
+      "f8be8c12a3ad2433ac3acb1dd80fe0ecc5eb7db985584cf56d185de1114b63c4",
+      "406d21bde6fd0f330b52eb96a2d270fb0548ccb131b0ae46da4ba163e8d35404",
+      "34dbf6ad1d9a15bb3bb7a67246c1264124263768538426f2ce854e302c3f5cda",
+      "aa8a41c395fd9eadb8e18d8f543e010112863e4e887751dbc17009eac68672ee"
+    ]
+  }
+}

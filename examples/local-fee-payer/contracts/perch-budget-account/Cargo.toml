@@ -1,0 +1,9 @@
+[package]
+name = "demo-perch-budget-account"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["cdylib", "rlib"]
+[dependencies]
+soroban-sdk = "=29.0.1"
+perch-smart-account = { path = "../../.perch-src/crates/perch-smart-account" }
