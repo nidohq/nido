@@ -1,21 +1,19 @@
 // The SDK's auth digest and AuthPayload against the vectors Perch's Rust
 // suite writes from the account's own types
-// (vendor/perch/testdata/auth/auth-vectors.json, crates/integration-tests/
+// (testdata/auth/auth-vectors.json at Nido's Perch pin, crates/integration-tests/
 // tests/auth_vectors.rs there). `computeAuthDigest` delegates the addr_oz_v1
 // digest to perch-js and computes the unbound oz_rule_ids digest itself;
 // `buildAuthPayloadScVal` delegates to perch-js. This checks the SDK's
 // wrappers reproduce Perch's account-bound digest and payload byte for byte.
 
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { hash } from '@stellar/stellar-sdk';
 import { ruleIdsXdr } from '@stellar-registry/perch';
 import { computeAuthDigest } from './auth.js';
 import { buildAuthPayloadScVal } from './multiSigner.js';
+import { readPerch } from '../../../tests/support/perchSrc.mts';
 
-const vectors = JSON.parse(
-  readFileSync(new URL('../../../vendor/perch/testdata/auth/auth-vectors.json', import.meta.url), 'utf8'),
-) as {
+const vectors = JSON.parse(readPerch('testdata/auth/auth-vectors.json')) as {
   signing_digest: { account: string; signature_payload: string; rule_ids: number[]; digest: string }[];
   auth_payload: {
     rule_ids: number[];

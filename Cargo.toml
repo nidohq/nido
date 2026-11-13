@@ -6,9 +6,7 @@ members = [
 ]
 # examples/* are self-contained stellar-scaffold projects with their own
 # workspace + toolchain; keep them out of this workspace's resolution.
-# vendor/perch is the Perch submodule: its crates belong to Perch's own
-# workspace (Nido consumes them as git dependencies, below).
-exclude = ["examples", "vendor/perch"]
+exclude = ["examples"]
 
 [workspace.package]
 version = "0.1.0"
@@ -23,7 +21,7 @@ soroban-sdk = "27.0.2"
 # verifier, name-registry and factory contracts. Published by theahaco
 # (https://github.com/theahaco/admin-sep); Apache-2.0.
 admin-sep = "0.27.0"
-# Perch's pinned OZ fork, the same rev vendor/perch/Cargo.toml pins:
+# Perch's pinned OZ fork, the same rev Perch's Cargo.toml pins at Nido's Perch rev:
 # theahaco/stellar-contracts-OZ PR #5 (head 3372676), stacked on PR #4 and the
 # CAP-0071 delegated-auth patch (PR #3, on upstream fbfde38). PR #4 adds the
 # `*_no_events` mutations (apply_doc emits one DocApplied instead) and PR #5
@@ -37,13 +35,14 @@ soroban-sdk-tools = "0.1.3"
 
 # The Perch stack (stellar-registry/perch epic #99), as git dependencies on
 # Perch's main. Perch publishes no crates yet; versions replace the rev once it
-# does. The rev is the vendor/perch submodule's commit, which carries the
-# testnet deployment manifest (deployments/testnet.json) the stack is fetched
-# by: scripts/repin-perch.sh moves both together, and
-# scripts/check-perch-drift.sh fails when they differ. The build reads only
-# tracked files (the smart account's build-time pins are committed in Perch),
-# so cargo needs no submodule. All Perch crates come from the one rev so their
-# types unify.
+# does. All Perch crates come from the one rev so their types unify, and that
+# rev is Nido's whole Perch pin: scripts/perch-src.sh fetches Perch's source
+# at it (the deployment manifest, deployments/testnet.json, the stack is
+# fetched by; circuits; testdata) for the scripts and tests that read it,
+# scripts/repin-perch.sh moves it, and scripts/check-perch-drift.sh fails when
+# a Perch crate, Cargo.lock entry, or anything built or fetched from the
+# manifest disagrees with it. The rev must be on the branch
+# [workspace.metadata.perch] declares.
 perch-account = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
 perch-smart-account = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
 perch-recovery = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
@@ -57,6 +56,9 @@ perch-zk-prover = { git = "https://github.com/stellar-registry/perch", rev = "22
 perch-zk-primitives = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
 perch-ir = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
 perch-registry-resolve = { git = "https://github.com/stellar-registry/perch", rev = "2258433aa340428d65676cd269c8e4240674deb1" }
+
+[workspace.metadata.perch]
+branch = "main"
 
 [profile.release]
 overflow-checks = true

@@ -1,7 +1,7 @@
 //! Real ZK evidence for the recovery suites.
 //!
 //! Every proof the suites submit is a real `UltraHonk` proof of Perch's release
-//! circuit (`vendor/perch/circuits/perch_zk_recovery`, depth 32), verified on
+//! circuit (`circuits/perch_zk_recovery` at Nido's Perch pin, depth 32), verified on
 //! chain by the Perch adapter's embedded audited verifier. Nothing here mocks
 //! a verifier or an adapter.
 //!
@@ -179,7 +179,7 @@ fn fixtures_dir() -> PathBuf {
 }
 
 fn circuits_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/perch/circuits")
+    crate::perch_src().join("circuits")
 }
 
 fn proving() -> bool {

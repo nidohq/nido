@@ -1,4 +1,0 @@
- [submodule "vendor/perch"]
-	path = vendor/perch
-	url = https://github.com/stellar-registry/perch.git
-	branch = main

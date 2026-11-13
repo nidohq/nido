@@ -18,8 +18,8 @@ use stellar_accounts::smart_account::Signer;
 // from, pinned by hash at build time from the committed
 // `wasm/perch-account.sha256` (a missing or malformed pin fails the build).
 // `just perch-infra` writes that file from Perch's deployment manifest,
-// `vendor/perch/deployments/<STELLAR_NETWORK>.json` (default testnet), and
-// `just check-vendor-drift` fails when the two differ.
+// `deployments/<STELLAR_NETWORK>.json` (default testnet) at Nido's Perch pin,
+// and `just check-perch-drift` fails when the two differ.
 //
 // The factory carries only the 32-byte hash. `deploy_v2` resolves it against
 // installed code, so the wasm with exactly this hash must be installed on the
@@ -977,10 +977,16 @@ mod test {
         let env = Env::default();
         let client = ContractClient::new(&env, &factory(&env, &Address::generate(&env)));
         let network = std::env::var("STELLAR_NETWORK").unwrap_or_else(|_| "testnet".into());
-        let path = std::format!(
-            "{}/../../vendor/perch/deployments/{network}.json",
-            env!("CARGO_MANIFEST_DIR")
-        );
+        // Perch's source at Nido's pin (scripts/perch-src.sh fetches it).
+        let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/perch-src.sh");
+        let out = std::process::Command::new("bash")
+            .arg(script)
+            .stderr(std::process::Stdio::inherit())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "scripts/perch-src.sh failed");
+        let perch = std::string::String::from_utf8(out.stdout).unwrap();
+        let path = std::format!("{}/deployments/{network}.json", perch.trim());
         let manifest: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let mut pin = std::string::String::new();

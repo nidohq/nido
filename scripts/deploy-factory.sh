@@ -47,7 +47,8 @@
 #
 #   <identity>  A `stellar keys` identity that pays for the deploy.
 #   [network]   Default "testnet". The Perch manifest read is
-#               vendor/perch/deployments/<network>.json.
+#               deployments/<network>.json in Perch's source at Nido's pin
+#               (scripts/perch-src.sh).
 #
 # The endpoint is chosen once, before anything is submitted, by
 # scripts/stellar-rpc.sh: RPC_URL/STELLAR_RPC_URL if set, else the manifest's
@@ -79,7 +80,7 @@ NETWORK="${2:-testnet}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
-MANIFEST="vendor/perch/deployments/$NETWORK.json"
+MANIFEST="$(scripts/perch-src.sh)/deployments/$NETWORK.json"
 ACCOUNT_WASM="target/wasm32v1-none/contract/perch_account.wasm"
 FACTORY_WASM="target/wasm32v1-none/contract/nido_factory.wasm"
 RECORD="packages/passkey-sdk/src/perch/factory.$NETWORK.json"
@@ -87,7 +88,7 @@ RECORD="packages/passkey-sdk/src/perch/factory.$NETWORK.json"
 command -v stellar >/dev/null || die "stellar CLI not found"
 command -v jq >/dev/null || die "jq not found"
 command -v curl >/dev/null || die "curl not found"
-[ -f "$MANIFEST" ] || die "no Perch manifest at $MANIFEST (git submodule update --init)"
+[ -f "$MANIFEST" ] || die "no Perch manifest at $MANIFEST"
 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 m() { jq -r "$1" "$MANIFEST"; }
@@ -186,7 +187,7 @@ jq -n \
     --arg admin "$admin" \
     --arg commit "$(git rev-parse HEAD)" \
     --argjson dirty "$dirty" \
-    --arg perch "$(git -C vendor/perch rev-parse HEAD)" \
+    --arg perch "$(scripts/perch-src.sh --rev)" \
     --argjson toolchain "$TOOLCHAIN" \
     --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{schema: 1, network: $network, network_passphrase: $passphrase, factory: $factory,
