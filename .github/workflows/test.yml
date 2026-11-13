@@ -153,8 +153,9 @@ jobs:
 
   e2e:
     name: E2E (fast UI + CDP)
-    # Pinned: Playwright does not support chromium on ubuntu26.04 yet, which
-    # ubuntu-latest now resolves to on some runners.
+    # Pinned: `playwright install --with-deps` only knows the Ubuntu releases
+    # its version supports, and failed on every run once ubuntu-latest began
+    # moving to Ubuntu 26 (Nov 2026). Unpin once Playwright supports it.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
