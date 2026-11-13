@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#fff8f0">
-<meta name="description" content="Nido PR 364: local wallet signing, native Perch authorization and bounded on-chain fee funding. Architecture, infrastructure and exact proof scope.">
+<meta name="description" content="Nido PR 365: local wallet signing, native Perch authorization and bounded on-chain fee funding. Architecture, infrastructure and exact proof scope.">
 <title>Nido · Local signing, on-chain fee budgets</title>
 <link rel="icon" href="data:,">
 <style>
@@ -21,7 +21,7 @@
 </head>
 <body>
 <a class="skip" href="#deck">Skip to slides</a>
-<div class="mast"><a class="wordmark" href="/">nido<span>.</span></a><span>PR #364 · local fee architecture · review preview</span></div>
+<div class="mast"><a class="wordmark" href="/">nido<span>.</span></a><span>PR #365 · local fee architecture · review preview</span></div>
 <main id="deck" tabindex="-1">
 
 <section class="slide cover" id="overview" data-title="The idea" aria-labelledby="title-1">
@@ -35,7 +35,7 @@
   </svg>
  </div>
  <footer><strong>A working lab on top of Nido #356.</strong> No custom signing server is needed for its normal transaction path. Production wallet integration is the next step.</footer>
- <template class="notes"><p>This deck describes the isolated example in aggregate PR #364. It is not a claim that the production wallet or relayer has been replaced.</p><ul><li><a href="https://github.com/nidohq/nido/pull/364">Aggregate PR and review stack</a></li><li><a href="https://github.com/bitswell-hq/nidohq__nido/blob/3573da33558bc20d01c32c15c0872309db45036d/examples/local-fee-payer/README.md">Implementation, execution flow and scope</a></li></ul></template>
+ <template class="notes"><p>This deck describes the isolated example in aggregate PR #365. It is not a claim that the production wallet or relayer has been replaced.</p><ul><li><a href="https://github.com/nidohq/nido/pull/365">Aggregate PR and review stack</a></li><li><a href="https://github.com/bitswell-hq/nidohq__nido/blob/3573da33558bc20d01c32c15c0872309db45036d/examples/local-fee-payer/README.md">Implementation, execution flow and scope</a></li></ul></template>
 </section>
 
 <section class="slide" id="architecture" data-title="Where each responsibility lives" aria-labelledby="title-2">
@@ -116,9 +116,9 @@
 <section class="slide" id="review" data-title="Review and integration" aria-labelledby="title-9">
  <header><p class="eyebrow">The integration decision</p><h2 id="title-9">Keep the fee path small.<br>Review the boundaries explicitly.</h2></header>
  <div class="two"><div><p class="eyebrow">Implemented in the lab</p><ol class="steps"><li><strong>Separate wallet origin + local U/F</strong><span>Passkey-encrypted seed and a keyless WASI checker.</span></li><li><strong>Native Perch + reusable funding</strong><span>Owner-rule execution, fixed executor, immutable budget and bounded refills.</span></li><li><strong>Planner proof + execution evidence</strong><span>Review source-linked claims and assumptions in this deck.</span></li></ol></div><div><p class="eyebrow">Before production adoption</p><ol class="steps"><li><strong>Wire into Nido’s production account flow</strong><span>Dedicated grant registration, rule discovery and reviewed executor binding.</span></li><li><strong>Make funding and recovery operational</strong><span>Initial XLM/reserves, treasury consent, expiry/state lifetime and key migration.</span></li><li><strong>Harden the actual custody boundary</strong><span>Wallet delivery, device/passkey compatibility and security review.</span></li></ol></div></div>
- <div class="review-links"><p><strong>Nido</strong> · <a href="https://github.com/nidohq/nido/pull/364">aggregate #364</a>, on <a href="https://github.com/nidohq/nido/pull/356">#356</a><br><a href="https://github.com/bitswell-hq/nidohq__nido/pull/126">Signing #126</a> → <a href="https://github.com/bitswell-hq/nidohq__nido/pull/127">Wallet UI #127</a> → <a href="https://github.com/bitswell-hq/nidohq__nido/pull/128">Funding #128</a></p><p><strong>Perch</strong> · native dev dependencies<br><a href="https://github.com/bitswell-hq/stellar-registry__perch/pull/102">Planner + proof #102</a> → <a href="https://github.com/bitswell-hq/stellar-registry__perch/pull/103">Funding #103</a></p></div>
+ <div class="review-links"><p><strong>Nido</strong> · <a href="https://github.com/nidohq/nido/pull/365">aggregate #365</a>, on <a href="https://github.com/nidohq/nido/pull/356">#356</a><br><a href="https://github.com/bitswell-hq/nidohq__nido/pull/126">Signing #126</a> → <a href="https://github.com/bitswell-hq/nidohq__nido/pull/127">Wallet UI #127</a> → <a href="https://github.com/bitswell-hq/nidohq__nido/pull/128">Funding #128</a></p><p><strong>Perch</strong> · native dev dependencies<br><a href="https://github.com/bitswell-hq/stellar-registry__perch/pull/102">Planner + proof #102</a> → <a href="https://github.com/bitswell-hq/stellar-registry__perch/pull/103">Funding #103</a></p></div>
  <footer><strong>Reviewable now; production rollout remains separate.</strong> This HTML ships with the PR preview. The interactive fee lab runs on an isolated local chain; use its README to run it.</footer>
- <template class="notes"><p>The aggregate adds an isolated example and review artifacts. Root production Perch pins, the factory, deployment manifests and relayer configuration remain as defined by the parent PR. The existing stack separates signing, UI and funding review.</p><ul><li><a href="https://github.com/nidohq/nido/pull/364">Aggregate PR</a></li><li><a href="https://github.com/bitswell-hq/nidohq__nido/blob/3573da33558bc20d01c32c15c0872309db45036d/examples/local-fee-payer/README.md#run">Run the isolated lab</a></li></ul></template>
+ <template class="notes"><p>The aggregate adds an isolated example and review artifacts. Root production Perch pins, the factory, deployment manifests and relayer configuration remain as defined by the parent PR. The existing stack separates signing, UI and funding review.</p><ul><li><a href="https://github.com/nidohq/nido/pull/365">Aggregate PR</a></li><li><a href="https://github.com/bitswell-hq/nidohq__nido/blob/3573da33558bc20d01c32c15c0872309db45036d/examples/local-fee-payer/README.md#run">Run the isolated lab</a></li></ul></template>
 </section>
 </main>
 <nav class="controls" aria-label="Slide controls">
