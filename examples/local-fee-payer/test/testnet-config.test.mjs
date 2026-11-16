@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {Keypair} from '@stellar/stellar-sdk';
+import {Keypair,StrKey} from '@stellar/stellar-sdk';
 import {demoConfig,LOCAL_NETWORK,TESTNET_NETWORK} from '../src/demo-config.mjs';
 import {contractAddress,requireContractHash,saltFor} from '../src/contract-address.mjs';
 import {checkTestnetProfile,assertBudgetConfig} from '../src/testnet-enrollment.mjs';
+import {NIDO_ACCOUNT_HASH,NIDO_VERIFIER,nidoAccountAt,ownerRule} from '../src/nido-account.mjs';
 import {nativeToken,simulate} from '../src/local-chain.mjs';
 import deployment from '../public/testnet/deployment.json' with {type:'json'};
 
@@ -27,9 +28,10 @@ test('deployment identity is stable for retry and separated by network, deployer
 });
 test('profile rejects foreign F/treasury/network/code and increased spending limits',()=>{
  const keys={u:Keypair.random().publicKey(),fee:Keypair.random().publicKey()};
- const p={...keys,network:TESTNET_NETWORK,verifier:deployment.verifier,treasury:keys.u,token:nativeToken(TESTNET_NETWORK),cap:'1500000',low:'11000000',target:'11000000',version:3,feeRule:0,wasmHashes:deployment.wasmHashes};
- checkTestnetProfile(p,keys);
- for(const change of [{fee:Keypair.random().publicKey()},{treasury:Keypair.random().publicKey()},{network:LOCAL_NETWORK},{cap:'1500001'},{low:'12000000'},{target:'12000000'},{feeRule:1},{wasmHashes:{...p.wasmHashes,budget:'00'.repeat(32)}}])assert.throws(()=>checkTestnetProfile({...p,...change},keys));
+ const account=StrKey.encodeContract(new Uint8Array(32).fill(9));
+ const p={...keys,account,network:TESTNET_NETWORK,verifier:NIDO_VERIFIER,treasury:keys.u,token:nativeToken(TESTNET_NETWORK),cap:'1500000',low:'11000000',target:'11000000',version:4,feeRule:0,wasmHashes:{...deployment.wasmHashes,account:NIDO_ACCOUNT_HASH}};
+ checkTestnetProfile(p,keys,account);
+ for(const change of [{fee:Keypair.random().publicKey()},{treasury:Keypair.random().publicKey()},{network:LOCAL_NETWORK},{cap:'1500001'},{low:'12000000'},{target:'12000000'},{feeRule:-1},{wasmHashes:{...p.wasmHashes,budget:'00'.repeat(32)}}])assert.throws(()=>checkTestnetProfile({...p,...change},keys,account));
  const config={controller:'C',executor:'E',treasury:p.treasury,token:p.token,fee:p.fee,cap:1500000n,low:11000000n,target:11000000n,expires:100};
  const profile={...p,account:'C',executor:'E',expires:100};assertBudgetConfig(config,profile);
  for(const change of [{fee:keys.u},{cap:1500001n},{controller:'other'},{expires:101}])assert.throws(()=>assertBudgetConfig({...config,...change},profile));
@@ -38,4 +40,21 @@ test('missing or changed deployed code is rejected; simulation auth errors are n
  await assert.rejects(requireContractHash({getLedgerEntries:async()=>({entries:[]})},deployment.verifier,deployment.wasmHashes.verifier));
  await assert.rejects(requireContractHash({getLedgerEntries:async()=>({entries:[{val:{toJSON:()=>({contract_data:{val:{contract_instance:{executable:{wasm:'bad'}}}}})}}]})},deployment.verifier,deployment.wasmHashes.verifier));
  let calls=0;await assert.rejects(simulate({simulateTransaction:async()=>{calls++;return {error:'Error(Contract, #1) auth denied'};}},{}),/auth denied/);assert.equal(calls,1);
+});
+
+test('only the exact checksummed Nido account origin is a wallet',()=>{
+ const c=StrKey.encodeContract(new Uint8Array(32).fill(9)),suffix='--365.test.nido.fyi',origin=`https://${c.toLowerCase()}${suffix}`;
+ assert.equal(nidoAccountAt(origin,suffix),c);
+ for(const bad of ['http://'+new URL(origin).hostname,origin+':444','https://365.test.nido.fyi','https://pr-365.nido-1am.pages.dev',origin+'.evil.example','https://'+c.toLowerCase()+'--366.test.nido.fyi'])assert.equal(nidoAccountAt(bad,suffix),null);
+});
+test('wallet selects only the current native owner bound to this account and passkey',()=>{
+ const account=StrKey.encodeContract(new Uint8Array(32).fill(9)),pk=Buffer.alloc(65,1),rule={id:7,name:'admin',recovery:false,context_type:['CallContract',account],signers:[['External',NIDO_VERIFIER,pk]]};
+ assert.equal(ownerRule({rules:[rule]},account,pk.toString('base64')),7);
+ for(const changes of [{name:'other'},{recovery:true},{context_type:['Default']},{signers:[]},{signers:[['External',NIDO_VERIFIER,Buffer.alloc(65,2)]]}])assert.throws(()=>ownerRule({rules:[{...rule,...changes}]},account,pk.toString('base64')));
+});
+
+test('fee integration pins match Nido’s native deployment, without substituting the fixture shell',()=>{
+ const source=readFileSync(new URL('../../../packages/passkey-sdk/src/perch/deployment.ts',import.meta.url),'utf8');
+ assert.ok(source.includes(NIDO_ACCOUNT_HASH));assert.ok(source.includes(NIDO_VERIFIER));
+ assert.notEqual(NIDO_ACCOUNT_HASH,deployment.wasmHashes.account);
 });

@@ -5,10 +5,11 @@ seed, builds the transaction, and runs Perch/WebAuthn and Cedar checks in a
 keyless WASI guest before signing with local U and F keys. An immutable
 Perch fee-budget component tops up only the registered F within a lifetime cap.
 
-This is an isolated example on top of Nido #356, not a replacement for Nido's
-production wallet or a Turnkey deployment. Nido's root Perch pin, deployment
-manifest, factory and relayer stay as the parent PR defines them. The example's
-own source pin is `perch-source.json`, stacked on the Perch fork's dev branch.
+The testnet preview integrates this fee path into Nido's normal account creation
+and `/fees/` wallet page. It reuses the existing C and passkey; the standalone
+local-chain lab remains a separate fixture. Root Perch pins, factory and
+relayer settings remain those of Nido #356. This does not replace every Nido
+transaction's submitter or implement the permanent-G product mode.
 
 ## Architecture slides
 
@@ -30,24 +31,30 @@ by this fee lab. U's threshold authority still permits direct G spending;
 
 ## Try the PR preview on testnet
 
-Open **https://365.test.nido.fyi/fee-demo/testnet.html**, allow the popup, and
-register a fresh demo passkey using a browser/provider with WebAuthn PRF support.
-No local stack, imported seed, Turnkey credential or hosted signing service is
-needed. Use test XLM only.
+Open **https://365.test.nido.fyi/fee-demo/testnet.html** and continue in Nido.
+Choose an existing Nido or create one with its normal account flow. The wallet
+then enables local fees on the **same C account and account domain**. There is
+no popup, second C, or separate demo passkey. Use test XLM only.
 
-The dapp runs on `365.test.nido.fyi`; the wallet runs on the separate
-`pr-365.nido-1am.pages.dev` origin. The WASI binary pins that wallet origin, RP ID
-and testnet network at build time. Dapp messages cannot override these pins.
-Both origins are static builds of this PR; all code delivered on the wallet
-origin is part of the trusted wallet host. PRF/provider compatibility has been
-exercised with Chromium's virtual authenticator, not claimed for every device.
+Account creation requests the optional WebAuthn PRF extension. Local fee
+activation uses the existing passkey's PRF to encrypt a fresh HD seed; if that
+provider does not support PRF, activation stops without saving an unencrypted
+key. Ordinary Nido remains usable. Virtual-authenticator tests do not establish
+physical device/provider compatibility, and a browser may still show its own
+passkey prompt.
 
-During explicit enrollment, the wallet creates a fresh PRF-encrypted HD seed.
-Friendbot funds its U account, and U signs a fixed setup sequence: create F with
-1.05 test XLM (including reserve), deploy the Perch account/executor/budget, and
-approve a 0.15 XLM native-token allowance. **U is the demo treasury**, not a
-permanent asset G or a C treasury. F is not used during setup. Normal refill
-and action signatures pass through the existing exact-XDR WASI/Cedar gate.
+The dapp can only navigate to the fixed wallet intent. The wallet selects its C
+from its checksummed hostname, loads its normal Nido credential, verifies the
+pinned native account code and current owner rule, constructs the transaction,
+and performs enforcing simulation. WASI derives the exact RP ID and origin from
+C and the build-pinned PR suffix; a different C's origin is refused. All code
+served on the Nido account origin remains part of the trusted wallet host.
+
+Friendbot funds test-only U. During enrollment U creates F with 1.05 test XLM
+(including reserve), deploys the executor/budget, and grants a 0.15 XLM lifetime
+refill allowance. **It does not deploy or replace C. U is the demo treasury**,
+not a permanent asset G or a C treasury. F is unused during setup. Routine
+refill/action signatures pass through exact-XDR WASI/Cedar checks.
 
 Press **Approve action**. If F is low, approve the separate refill prompt and
 then the action prompt. The wallet displays settled transactions, F's balance,
@@ -59,11 +66,13 @@ Interrupted enrollment retains the encrypted vault and deterministic addresses.
 Retry reuses the same budget and original spent counter, including after a
 page reload. Expired/archived state or changed code is refused; no replacement
 budget is silently deployed. Clearing browser storage loses this demo's local
-vault; a fresh seed creates an independent test account, not continuation of the
-old cap. Initial F funding and other deposits are outside the refill cap.
+vault; a fresh seed creates an independent F/budget for the existing C, not continuation
+of the old cap. Initial F funding and other deposits are outside the refill cap.
 
 Public artifact hashes, registry/verifier addresses and deployment receipts are
-in `public/testnet/deployment.json`. The testnet registry is an isolated overlay
+for the funding/executor artifacts are in `public/testnet/deployment.json`. Nido C
+and its verifier use the parent deployment, pinned in `src/nido-account.mjs`.
+The historical fixture registry is an isolated overlay
 on the exact `perch-source.json` pin; the funding WASM is byte-identical to the
 local proof-bearing artifact. Public RPC/Friendbot availability, contract/state
 TTL and testnet resets remain operational dependencies. A bounded retry handles
@@ -78,7 +87,7 @@ npm ci
 FEE_PREVIEW_NUMBER=365 FEE_PREVIEW_OUT=/tmp/nido-fee-preview npm run build:preview
 FEE_RUNTIME_DIR=/tmp/nido-fee-preview/runtime node --test test/local-budget-wasi.test.mjs
 # Uses real testnet funds/transactions and a fresh virtual passkey:
-PLAYWRIGHT_PATH=/absolute/path/to/playwright node test/testnet-browser-check.cjs
+PLAYWRIGHT_PATH=/absolute/path/to/playwright node test/nido-wallet-browser-check.cjs
 ```
 
 `build:preview` restores the local runtime artifacts after building. CI performs

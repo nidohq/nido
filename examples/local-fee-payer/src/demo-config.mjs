@@ -10,10 +10,12 @@ export function demoConfig(previewNumber = '') {
     network: testnet ? TESTNET_NETWORK : LOCAL_NETWORK,
     appOrigin: testnet ? `https://${previewNumber}.test.nido.fyi` : 'http://localhost:5198',
     walletOrigin: testnet ? `https://pr-${previewNumber}.nido-1am.pages.dev` : 'http://wallet.localhost:5199',
+    walletSuffix: testnet ? `--${previewNumber}.test.nido.fyi` : null,
     walletRpId: testnet ? `pr-${previewNumber}.nido-1am.pages.dev` : 'wallet.localhost',
     base: testnet ? '/fee-demo/' : '/',
     rpc: testnet ? 'https://soroban-testnet.stellar.org' : 'http://wallet.localhost:5199/local-rpc',
     label: testnet ? 'Stellar testnet' : 'isolated local chain',
   });
 }
-export const DEMO = demoConfig(import.meta.env?.VITE_FEE_PREVIEW_NUMBER || '');
+export const PREVIEW_NUMBER = import.meta.env?.VITE_FEE_PREVIEW_NUMBER || '';
+export const DEMO = demoConfig(PREVIEW_NUMBER);

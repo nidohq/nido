@@ -12,7 +12,7 @@ const walletHeaders = (req, res, next) => {
 };
 export default defineConfig({
   base: process.env.VITE_FEE_PREVIEW_NUMBER ? '/fee-demo/' : '/',
-  build: { target: 'esnext', rolldownOptions: { input: { app: resolve('index.html'), wallet: resolve('wallet.html'), budget:resolve('budget-wallet.html'), testnet:resolve('testnet.html') } } },
+  build: { target: 'esnext', rolldownOptions: { input: { nidoFees:resolve('src/budget-wallet.mjs'), app: resolve('index.html'), wallet: resolve('wallet.html'), budget:resolve('budget-wallet.html'), testnet:resolve('testnet.html') }, output:{entryFileNames:chunk=>chunk.name==='nidoFees'?'nido-fees.js':'assets/[name]-[hash].js'} } },
   server: { host: '127.0.0.1', port: 5198, strictPort: true,
     proxy: { '/local-rpc': { target:'http://127.0.0.1:8022', rewrite:p=>p.replace('/local-rpc','/soroban/rpc') },
       '/local-budget': { target:'http://127.0.0.1:5200', rewrite:p=>p.replace('/local-budget','') } } },

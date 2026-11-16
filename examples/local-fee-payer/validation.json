@@ -1,6 +1,6 @@
 {
   "perchRevision": "aa598b4d32bd4674adef12f4abf9ee03f490d985",
-  "walletTests": 38,
+  "walletTests": 43,
   "fundingContractTests": 5,
   "nativePerchLedger": {
     "actions": 3,
@@ -14,7 +14,7 @@
     "authenticator": "virtual PRF-capable WebAuthn, real signed assertions"
   },
   "scope": "Planner and committed trace formally proved; host, custody and contract integration tested/trusted as documented. Dedicated document-grant UI not included.",
-  "runtimeSha256": "1d81035eefd1ed6eb35bd2fdb904ef5fa87bfceb8e5ee3949236377fb1640c9b",
+  "runtimeSha256": "626778c4cfd01ea9d09766df7beed75c46c3abd7a83eebd4382cb528a9fd1f1d",
   "contractManifest": "public/contracts/manifest.json",
   "releaseChecks": "181 checks: 180 passed and 1 optional-tool skip across initial run and corrected-environment/DeploymentState reruns",
   "testnetLedger": {
@@ -38,5 +38,21 @@
       "34dbf6ad1d9a15bb3bb7a67246c1264124263768538426f2ce854e302c3f5cda",
       "aa8a41c395fd9eadb8e18d8f543e010112863e4e887751dbc17009eac68672ee"
     ]
+  },
+  "nativeNidoTestnet": {
+    "account": "CD4LPNLIMBZP56E6JXWMJOODAJE4WWHSVZMAVWLAAGDPGPPOULENULVG",
+    "fee": "GAJMI6CWCYGH7U3GDUDDI6TXWAH2UDP6OL3IFSIAD7UDBA2WJ4YKH3ZG",
+    "budget": "CCAQWNQXFKVUWMTVEAKTCMGWEC67VMZ3MLDPD3L74VXUQS5WOZKX2TDM",
+    "spent": "0.0551469 / 0.15 XLM",
+    "refills": "2",
+    "actions": "2",
+    "passkeys": 1,
+    "pages": 1,
+    "reloadPreservedBudget": true,
+    "staticFiles": "locally routed",
+    "physicalAuthenticator": false,
+    "runtimeSha256": "9f74df862266ac5f962a08e22c18acd2aa2b789748121551028d9978a963d9fa",
+    "date": "2026-11-16",
+    "scope": "Normal Nido onboarding and native Perch C; local U/F signing and real testnet settlement. Not physical authenticator certification."
   }
 }

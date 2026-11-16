@@ -3,6 +3,7 @@ import { DEMO } from './demo-config.mjs';
 let current;
 const status=document.getElementById('local-budget-message');
 document.getElementById('open-budget-wallet').onclick=()=>{
+  if(DEMO.testnet){location.assign(`${APP_ORIGIN}/fees/`);return;}
   if(location.origin!==APP_ORIGIN){status.textContent=`Open the dapp at ${APP_ORIGIN}${DEMO.base}testnet.html`;return;}
   if(current&&!current.window.closed){current.window.focus();return;}
   const requestId=crypto.randomUUID();

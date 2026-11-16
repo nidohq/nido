@@ -6,31 +6,33 @@ import { withAccessKey } from './hd-vault.mjs';
 import { build, simulate, submit, read, nativeToken, sc } from './local-chain.mjs';
 import { contractAddress, contractInstance, requireContractHash, saltFor } from './contract-address.mjs';
 
+import { nidoAccountAt, NIDO_ACCOUNT_HASH, NIDO_VERIFIER, verifyNidoOwner } from './nido-account.mjs';
+const hashes={account:NIDO_ACCOUNT_HASH,budget:deployment.wasmHashes.budget,executor:deployment.wasmHashes.executor};
 const CAP='1500000', LOW='11000000', TARGET='11000000';
-export function checkTestnetProfile(profile, keys) {
+export function checkTestnetProfile(profile, keys, expectedAccount = nidoAccountAt(location.origin)) {
   if(deployment.network!==TESTNET_NETWORK||profile.network!==TESTNET_NETWORK||profile.u!==keys.u||profile.fee!==keys.fee||
-    profile.verifier!==deployment.verifier||profile.treasury!==keys.u||profile.token!==nativeToken(TESTNET_NETWORK)||
-    profile.cap!==CAP||profile.low!==LOW||profile.target!==TARGET||profile.version!==3||profile.feeRule!==0||
-    Object.entries(deployment.wasmHashes).some(([k,v])=>profile.wasmHashes?.[k]!==v))throw Error('Testnet enrollment differs from wallet pins');
+    profile.verifier!==NIDO_VERIFIER||profile.treasury!==keys.u||profile.token!==nativeToken(TESTNET_NETWORK)||
+    profile.cap!==CAP||profile.low!==LOW||profile.target!==TARGET||profile.version!==4||(!Number.isInteger(profile.feeRule)||profile.feeRule<0)||expectedAccount!==profile.account||
+    Object.entries(hashes).some(([k,v])=>profile.wasmHashes?.[k]!==v))throw Error('Testnet enrollment differs from wallet pins');
 }
 export async function verifyTestnetContracts(chain,profile) {
   await Promise.all([
-    requireContractHash(chain,profile.account,deployment.wasmHashes.account),
+    requireContractHash(chain,profile.account,NIDO_ACCOUNT_HASH),
     requireContractHash(chain,profile.executor,deployment.wasmHashes.executor),
     requireContractHash(chain,profile.budget,deployment.wasmHashes.budget),
-    requireContractHash(chain,deployment.verifier,deployment.wasmHashes.verifier),
   ]);
 }
 
 // A wallet-internal setup flow. F is never unlocked or used here. The source U
 // authorizes only this fixed enrollment, with fresh testnet funds from Friendbot.
 export async function enrollTestnet(chain,keys,passkey,phrase,onProgress,storage=localStorage) {
-  if(!DEMO.testnet||location.origin!==DEMO.walletOrigin)throw Error('Testnet wallet origin required');
+  const account=nidoAccountAt(location.origin);
+  if(!DEMO.testnet||!account)throw Error('Nido account wallet origin required');
   const net=await chain.getNetwork();
   if(net.passphrase!==TESTNET_NETWORK||net.protocolVersion<29)throw Error('Wrong testnet or unsupported protocol');
   const raw=Buffer.from(passkey,'base64');if(raw.length!==65||raw[0]!==4)throw Error('P256 public key required');
-  const identity=hash(Buffer.from(JSON.stringify(['nido-fee-testnet-v1',keys.u,keys.fee,passkey,deployment.wasmHashes]))).toString('hex');
-  const salts=Object.fromEntries(['account','executor','budget'].map(role=>[role,saltFor(`${identity}/${role}`)]));
+  const identity=hash(Buffer.from(JSON.stringify(['nido-fee-native-v1',account,keys.u,keys.fee,passkey,hashes]))).toString('hex');
+  const salts=Object.fromEntries(['executor','budget'].map(role=>[role,saltFor(`${identity}/${role}`)]));
   const addresses=Object.fromEntries(Object.entries(salts).map(([role,salt])=>[role,contractAddress(TESTNET_NETWORK,keys.u,salt)]));
   const planKey=`nido-fee-testnet-enrollment/${identity}`;
   let plan=JSON.parse(storage.getItem(planKey)||'null');
@@ -42,14 +44,15 @@ export async function enrollTestnet(chain,keys,passkey,phrase,onProgress,storage
     const response=await fetch(`https://friendbot.stellar.org/?addr=${keys.u}`);
     if(!response.ok)throw Error(`Testnet faucet unavailable (${response.status}). Retry enrollment later; the same keys and plan are retained.`);
   }
-  const base={version:3,policyType:'perch-fee-budget-v2',feeRule:0,...keys,passkey,...addresses,verifier:deployment.verifier,token:nativeToken(TESTNET_NETWORK),treasury:keys.u,network:TESTNET_NETWORK,cap:CAP,low:LOW,target:TARGET,expires:plan.expires,wasmHashes:deployment.wasmHashes};
+  const feeRule=await verifyNidoOwner(chain,keys.u,account,passkey);
+  const base={version:4,policyType:'perch-fee-budget-v2',feeRule,...keys,passkey,...addresses,account,verifier:NIDO_VERIFIER,token:nativeToken(TESTNET_NETWORK),treasury:keys.u,network:TESTNET_NETWORK,cap:CAP,low:LOW,target:TARGET,expires:plan.expires,wasmHashes:hashes};
   // Reuse an existing deployment, including its original expiry. Never reset spent.
   if(await contractInstance(chain,base.budget)){
     await requireContractHash(chain,base.budget,deployment.wasmHashes.budget);
     const old=await read(chain,keys.u,base.budget,'status');base.expires=old.config.expires;
     assertBudgetConfig(old.config,base);
   }
-  await requireContractHash(chain,deployment.verifier,deployment.wasmHashes.verifier);
+
   return withAccessKey(phrase,async key=>{
     if(key.publicKey!==keys.u)throw Error('Setup U mismatch');
     async function send(op,smart=true){
@@ -72,7 +75,7 @@ export async function enrollTestnet(chain,keys,passkey,phrase,onProgress,storage
     const config={controller:sc.address(base.account),executor:sc.address(base.executor),treasury:sc.address(keys.u),token:sc.address(base.token),fee:sc.address(keys.fee),cap:sc.u64(CAP),low:sc.u64(LOW),target:sc.u64(TARGET),expires:sc.u32(base.expires)};
     await deploy('budget',[sc.map(config)]);
     await deploy('executor',[sc.address(base.account),sc.address(base.budget)]);
-    await deploy('account',[sc.vec([sc.vec([sc.symbol('External'),sc.address(base.verifier),sc.bytes(raw)])])]);
+
     const state=await read(chain,keys.u,base.budget,'status');assertBudgetConfig(state.config,base);
     const allowance=await read(chain,keys.u,base.token,'allowance',[sc.address(keys.u),sc.address(base.budget)]);
     if(allowance===0n&&state.spent===0n){
@@ -80,7 +83,7 @@ export async function enrollTestnet(chain,keys,passkey,phrase,onProgress,storage
       await send(Operation.invokeContractFunction({contract:base.token,function:'approve',args:[sc.address(keys.u),sc.address(base.budget),sc.i128(CAP),sc.u32(base.expires)]}));
     }
     const caps=await read(chain,keys.u,base.account,'capabilities');
-    if(caps.auth_digest!=='addr_oz_v1'||caps.fee_rule!==0)throw Error('Wrong native Perch route');
+    if(caps.auth_digest!=='addr_oz_v1')throw Error('Wrong native Perch route');
     checkTestnetProfile(base,keys);await verifyTestnetContracts(chain,base);return base;
   });
 }

@@ -12,12 +12,14 @@ import manifest from '../public/runtime/manifest.json';
 import { DEMO } from './demo-config.mjs';
 import { enrollTestnet, checkTestnetProfile, verifyTestnetContracts } from './testnet-enrollment.mjs';
 
+import { nidoAccountAt, nidoRegistration, verifyNidoOwner } from './nido-account.mjs';
+const nidoAccount=DEMO.testnet?nidoAccountAt(location.origin):null;
 const $=id=>document.getElementById(id);
 const chain=server(DEMO.rpc);
-const vaultKey=DEMO.testnet?'nido-testnet-fee-prf-vault-v1':'nido-fee-lab-prf-vault-v1', profileKey=DEMO.testnet?'nido-testnet-budget-profile-v1':'nido-local-budget-profile-v3';
+const vaultKey=DEMO.testnet?`nido.${nidoAccount}.fee-vault-v1`:'nido-fee-lab-prf-vault-v1', profileKey=DEMO.testnet?`nido.${nidoAccount}.fee-budget-v1`:'nido-local-budget-profile-v3';
 const requestId=location.hash.slice(1);
 const binding=id=>JSON.stringify(['nido/demo-seed-v1',WALLET_ORIGIN,DEMO.testnet?DEMO.network:C_ACCOUNT,id]);
-let vault=JSON.parse(localStorage.getItem(vaultKey)||'null'), profile=JSON.parse(localStorage.getItem(profileKey)||'null'), busy=false, accepted=false;
+let vault=JSON.parse(localStorage.getItem(vaultKey)||'null'), profile=JSON.parse(localStorage.getItem(profileKey)||'null'), busy=false, accepted=!!nidoAccount;
 const reg=()=>({...vault.registration,spki:unb64(vault.registration.spki)});
 function message(text,bad=false){$('budget-message').textContent=text;$('budget-message').className=`notice ${bad?'bad':'good'}`;}
 function controls(){ $('budget-enroll').disabled=busy||!accepted||!!profile; $('budget-run').disabled=busy||!profile||!accepted; }
@@ -44,10 +46,10 @@ async function enroll(){
   if(busy||profile||!accepted)return;busy=true;controls();let prf,phrase;
   try{
     if(!vault){
-      message('Create a demo passkey, then verify it to encrypt a fresh wallet seed.');
-      const registration=await registerPasskey({prf:{}}), salt=crypto.getRandomValues(new Uint8Array(32)), challenge=await sha256(crypto.getRandomValues(new Uint8Array(32)));
+      message(nidoAccount?'Use your existing Nido passkey to protect a local fee key.':'Create a demo passkey, then verify it to encrypt a fresh wallet seed.');
+      const registration=nidoAccount?await nidoRegistration(nidoAccount):await registerPasskey({prf:{}}), salt=crypto.getRandomValues(new Uint8Array(32)), challenge=await sha256(crypto.getRandomValues(new Uint8Array(32)));
       const assertion=await requestAssertion(registration,challenge,{prf:{eval:{first:salt}}});await verifyAssertion(assertion,registration,challenge);prf=assertion.prf;
-      if(!prf)throw Error('PRF required; no fallback');
+      if(!prf)throw Error('This passkey provider does not support PRF for local fees. Your Nido wallet still works normally. Try a PRF-capable browser/provider; no unencrypted fee key was saved.');
       const phrase=newMnemonic();vault={version:1,registration:{...registration,spki:b64(registration.spki)},salt:b64(salt),sealed:await sealMnemonic(phrase,prf,binding(registration.credentialId)),publicKeys:await derivePublicAccounts(phrase)};
       localStorage.setItem(vaultKey,JSON.stringify(vault));
     }
@@ -55,12 +57,12 @@ async function enroll(){
     const publicKey=await crypto.subtle.exportKey('raw',key);
     let result;
     if (DEMO.testnet) {
-      message('Approve the fixed testnet setup: fund U via Friendbot, create C and F, and grant a 0.15 XLM refill budget.');
+      message('Approve the fixed testnet setup: fund U via Friendbot, keep your Nido C and create local F, and grant a 0.15 XLM refill budget.');
       if (!prf) {
         const challenge=await sha256(new TextEncoder().encode(JSON.stringify(['nido/testnet-enroll-v1',DEMO.network,vault.publicKeys])));
         const assertion=await requestAssertion(reg(),challenge,{prf:{eval:{first:unb64(vault.salt)}}});
         await verifyAssertion(assertion,reg(),challenge);prf=assertion.prf;
-        if(!prf)throw Error('PRF required; no fallback');
+        if(!prf)throw Error('This passkey provider does not support PRF for local fees. Your Nido wallet still works normally. Try a PRF-capable browser/provider; no unencrypted fee key was saved.');
       }
       phrase=await openMnemonic(vault.sealed,prf,binding(vault.registration.credentialId));
       result=await enrollTestnet(chain,vault.publicKeys,Buffer.from(publicKey).toString('base64'),phrase,text=>{message(text);record('Setup',text);});
@@ -69,7 +71,7 @@ async function enroll(){
       const response=await fetch('/local-budget/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:vault.publicKeys.u,fee:vault.publicKeys.fee,passkey:Buffer.from(publicKey).toString('base64')})});
       result=await response.json();if(!response.ok)throw Error(result.error);
     }
-    if(result.version!==3||result.policyType!=='perch-fee-budget-v2'||result.feeRule!==0||result.network!==DEMO.network||result.u!==vault.publicKeys.u||result.fee!==vault.publicKeys.fee)throw Error('Invalid enrollment response');
+    if(result.version!==(DEMO.testnet?4:3)||result.policyType!=='perch-fee-budget-v2'||!Number.isInteger(result.feeRule)||result.network!==DEMO.network||result.u!==vault.publicKeys.u||result.fee!==vault.publicKeys.fee)throw Error('Invalid enrollment response');
     profile=result;localStorage.setItem(profileKey,JSON.stringify(profile));await refresh();
     message('Registered. The next approved action will automatically refill F if its balance is low.');
   }catch(error){message(error.message,true);}finally{prf?.fill(0);phrase=undefined;busy=false;controls();}
@@ -77,7 +79,7 @@ async function enroll(){
 async function execute(action){
   let prf,phrase;
   try{
-    const ruleIds=[0];
+    const ruleIds=[DEMO.testnet?await verifyNidoOwner(chain,profile.u,profile.account,profile.passkey):0];
     const call={contract:profile.account,function:'execute',args:[sc.address(profile.executor),sc.symbol(action),sc.vec([])]};
     let tx=await build(chain,profile.u,Operation.invokeContractFunction(call));
     const initial=await simulate(chain,tx,'record');
@@ -107,7 +109,7 @@ async function execute(action){
     const signed=await signing.sign({requestId:crypto.randomUUID(),network:DEMO.network,envelope:envelope.toXdr(),
       intent:{kind:'local-budget-action',account:profile.account,recipient:profile.fee},
       registration:{credentialId:vault.registration.credentialId,spki:Buffer.from(reg().spki).toString('base64')},assertedCredentialId:assertion.credentialId,feeAccount:profile.fee,
-      localBudget:{contract:profile.executor,verifier:profile.verifier,source:profile.u,action,latestLedger:latest,expires:profile.expires}});
+      localBudget:{contract:profile.executor,verifier:profile.verifier,source:profile.u,action,ruleId:ruleIds[0],latestLedger:latest,expires:profile.expires}});
     message(`Submitting ${action} to ${DEMO.label}…`);
     const receipt=await submit(chain,signed);record(action,{hash:receipt.txHash||receipt.hash,ledger:receipt.ledger,result:jsonSafe(receipt.returnValue? (await import('@stellar/stellar-sdk')).scValToNative(receipt.returnValue):null)});
     return receipt;
@@ -125,27 +127,30 @@ async function run(){
     await execute('touch');await refresh();
     message(`Confirmed on ${DEMO.label}. F paid the fees; treasury spending stays in the registered budget.`);
     $('budget-message').dataset.confirmed='true';
-    window.opener?.postMessage({kind:'budget-result',requestId,ok:true,account:profile.account,fee:profile.fee,budget:profile.budget},APP_ORIGIN);
+    if(!DEMO.testnet)window.opener?.postMessage({kind:'budget-result',requestId,ok:true,account:profile.account,fee:profile.fee,budget:profile.budget},APP_ORIGIN);
   }catch(error){message(error.message,true);record('Refused / failed',{reason:error.message});try{await refresh();}catch{}}
   finally{busy=false;controls();}
 }
 if(location.origin!==WALLET_ORIGIN||window.top!==window.self)throw Error('Wallet origin and top-level window required');
-if(vault&&(vault.version!==1||vault.registration.origin!==WALLET_ORIGIN||vault.registration.rpId!==DEMO.walletRpId))throw Error('Unexpected vault binding');
+if(vault&&(vault.version!==1||vault.registration.origin!==WALLET_ORIGIN||vault.registration.rpId!==(nidoAccount?location.hostname:DEMO.walletRpId)))throw Error('Unexpected vault binding');
 if(profile&&(!vault||profile.network!==DEMO.network||profile.fee!==vault.publicKeys.fee||profile.u!==vault.publicKeys.u))throw Error('Profile does not belong to this vault');
-if(manifest.walletOrigin!==WALLET_ORIGIN||manifest.budgetNetwork!==DEMO.network)throw Error('Runtime does not match this wallet deployment');
+if((nidoAccount?manifest.walletSuffix!==DEMO.walletSuffix:manifest.walletOrigin!==WALLET_ORIGIN)||manifest.budgetNetwork!==DEMO.network)throw Error('Runtime does not match this wallet deployment');
+if(DEMO.testnet&&!nidoAccount)throw Error('Open local fees inside your Nido account at /fees/. The standalone testnet wallet has been retired.');
+if(nidoAccount&&profile)refresh().then(()=>message('Your Nido fee budget is ready. Approve an action below.')).catch(e=>message(e.message,true));
 $('budget-enroll').onclick=enroll;$('budget-run').onclick=run;
 window.addEventListener('message',event=>{
   if(accepted||!expectedMessage(event,APP_ORIGIN,window.opener,requestId)||event.data.kind!=='wallet-request')return;
   if(JSON.stringify(event.data.request)!==JSON.stringify({kind:'try-local-budget'})){message('Only the fixed demo intent is accepted',true);return;}
   accepted=true;controls();refresh().catch(e=>message(e.message,true));
 });
-window.opener?.postMessage({kind:'wallet-ready',requestId},APP_ORIGIN);controls();
+if(!DEMO.testnet)window.opener?.postMessage({kind:'wallet-ready',requestId},APP_ORIGIN);controls();
 document.documentElement.dataset.walletReady='true';
 
 if(DEMO.testnet){
  document.title='Nido · Testnet fee wallet';
  $('network-label').textContent='Stellar testnet · test XLM only';
  $('network-scope').textContent='This wallet signs locally and submits directly to Stellar testnet. Friendbot funds your test-only U treasury during setup. No local server, hosted signing key or Turnkey integration is involved.';
- $('enrollment-copy').textContent='Create a fresh passkey-encrypted demo seed. This wallet uses U to deploy C and the funding component, seed F with 1.05 test XLM, and approve a 0.15 XLM lifetime refill budget. F never leaves this origin.';
+ $('enrollment-copy').textContent='Use this Nido account and its existing passkey. Enable a local PRF-encrypted fee seed, fund F with 1.05 test XLM, and approve a 0.15 XLM lifetime refill budget. C is unchanged. F never leaves your Nido wallet.';
+ if(!profile)message('Your Nido wallet is ready to enable local fees. No second wallet or passkey is created.');
  $('wallet-footer').textContent='Testnet demonstration · do not import real keys or send real funds · U and F stay in this wallet origin';
 }

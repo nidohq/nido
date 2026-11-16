@@ -568,7 +568,7 @@ import { NETWORK_LABEL } from "../../lib/network";
             accountUrl(
               window.location.host,
               cAddress,
-              `/new-account/?autopass=1${thenQuery}#salt=${encodeURIComponent(saltHex!)}`,
+              `/new-account/?autopass=1${thenQuery}${params.get("fees") === "1" ? "&fees=1" : ""}#salt=${encodeURIComponent(saltHex!)}`,
             ),
           );
         },
@@ -734,6 +734,7 @@ import { NETWORK_LABEL } from "../../lib/network";
         user: { id: userId, name: contractId!, displayName: `Account ${contractId}` },
         pubKeyCredParams: [{ alg: -7, type: "public-key" }],
         authenticatorSelection: { residentKey: "required", userVerification: "required" },
+        extensions: { prf: {} } as AuthenticationExtensionsClientInputs,
         attestation: "none",
         timeout: 60000,
       },
@@ -1023,7 +1024,7 @@ import { NETWORK_LABEL } from "../../lib/network";
       const host = window.location.host;
       const accountUrl = setUpRecoveryAfter
         ? `${protocol}//${host}/security/recovery/`
-        : `${protocol}//${host}/account/`;
+        : `${protocol}//${host}/${params.get("fees") === "1" ? "fees" : "account"}/`;
 
       // Brief beat so the final check lands before the reveal.
       await new Promise((r) => setTimeout(r, 700));

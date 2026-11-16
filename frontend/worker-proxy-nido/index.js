@@ -100,6 +100,11 @@ export default {
       );
       return response;
     }
+    // Native Nido fee wallet: keyless WASI, RPC and the existing storage bridge.
+    // Keep in sync with packages/frontend/public/_headers /fees/*.
+    if (url.pathname.startsWith("/fees/")) {
+      response.headers.set("Content-Security-Policy", "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://*.nido.fyi https://soroban-testnet.stellar.org https://friendbot.stellar.org; worker-src 'self'; img-src 'self' data:; frame-src https://*.nido.fyi; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    }
     // Block framing (this is a signing surface -- no clickjacking).
     response.headers.set("X-Frame-Options", "DENY");
 

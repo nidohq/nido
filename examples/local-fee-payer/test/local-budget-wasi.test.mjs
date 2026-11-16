@@ -15,6 +15,7 @@ const check=input=>runWasi(binary,JSON.stringify(input));
 async function fixture(options={}){
  const auth=await fakeAuthenticator();auth.registration.origin=pins.walletOrigin;auth.registration.rpId=pins.walletRpId;
  const c=StrKey.encodeContract(new Uint8Array(32).fill(4)),budget=StrKey.encodeContract(new Uint8Array(32).fill(5)),verifier=StrKey.encodeContract(new Uint8Array(32).fill(6));
+ if(pins.walletSuffix){auth.registration.rpId=c.toLowerCase()+pins.walletSuffix;auth.registration.origin='https://'+auth.registration.rpId;}
  const u=Keypair.random(),f=Keypair.random().publicKey(),action=options.action||'refill';
  const ruleIds=options.rules||[0];
  const args=[sc.address(budget),sc.symbol(action),sc.vec(options.args||[])];
@@ -28,7 +29,7 @@ async function fixture(options={}){
  entry.credentials.address.signature=externalPayload(ruleIds,verifier,auth.publicKey,signature);
  const tx=new TransactionBuilder(new Account(u.publicKey(),'10'),{fee:options.fee||'100',networkPassphrase:budgetNetwork}).addOperation(Operation.invokeContractFunction({contract:target,function:fn,args,auth:[entry]})).setSorobanData(new SorobanDataBuilder().setResources(100000,1000,1000).setResourceFee('0').build()).setTimeout(100).build();
  const envelope=TransactionBuilder.buildFeeBumpTransaction(f,options.fee||'100',tx,budgetNetwork);
- return {requestId:crypto.randomUUID(),network:budgetNetwork,envelope:envelope.toXdr(),intent:{kind:'local-budget-action',account:c,recipient:f},registration:{credentialId:auth.registration.credentialId,spki:Buffer.from(auth.registration.spki).toString('base64')},assertedCredentialId:assertion.credentialId,feeAccount:f,localBudget:{contract:budget,verifier,source:u.publicKey(),action,latestLedger:100,expires:1000}};
+ return {requestId:crypto.randomUUID(),network:budgetNetwork,envelope:envelope.toXdr(),intent:{kind:'local-budget-action',account:c,recipient:f},registration:{credentialId:auth.registration.credentialId,spki:Buffer.from(auth.registration.spki).toString('base64')},assertedCredentialId:assertion.credentialId,feeAccount:f,localBudget:{contract:budget,verifier,source:u.publicKey(),action,ruleId:options.expectedRule||0,latestLedger:100,expires:1000}};
 }
 test('WASI accepts exact local Perch refill and touch with fixed budget and empty arguments',async()=>{
  for(const action of ['refill','touch']){const result=await check(await fixture({action}));assert.equal(result.allowed,true,result.reason);}
@@ -39,4 +40,15 @@ test('WASI refuses validly signed destination/amount injection, unsupported acti
 test('local wallet pinning rejects different U, F, budget, verifier and network',async()=>{
  const input=await fixture();
  for(const edit of [{feeAccount:Keypair.random().publicKey()},{network:'Public Global Stellar Network ; September 2015'},{localBudget:{...input.localBudget,source:Keypair.random().publicKey()}},{localBudget:{...input.localBudget,contract:StrKey.encodeContract(new Uint8Array(32).fill(7))}},{localBudget:{...input.localBudget,verifier:StrKey.encodeContract(new Uint8Array(32).fill(8))}}])assert.equal((await check({...input,...edit})).allowed,false);
+});
+
+test('native owner rule changes are bound into both assertion and checked payload',async()=>{
+ assert.equal((await check(await fixture({rules:[7],expectedRule:7}))).allowed,true);
+ assert.equal((await check(await fixture({rules:[7],expectedRule:8}))).allowed,false);
+});
+test('another valid C wallet origin cannot authorize this C',async()=>{
+ if(!pins.walletSuffix)return;
+ const other=StrKey.encodeContract(new Uint8Array(32).fill(8)).toLowerCase()+pins.walletSuffix;
+ const input=await fixture({assertion:{rpId:other,client:{origin:'https://'+other}}});
+ assert.equal((await check(input)).allowed,false);
 });
