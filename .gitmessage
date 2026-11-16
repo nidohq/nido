@@ -2,10 +2,12 @@
 # type(scope): imperative summary, lower-case, no full stop (72 chars max)
 #   types:  feat fix perf refactor revert test docs build ci chore style
 #   scopes: frontend passkey-sdk factory relayer perch infra docs deps
-#   (.github/pr-checks.json is the list; scope is optional)
+#   (.github/review-conventions.json is the list; scope is optional)
 #
 # The same structure as the PR description, in miniature. Wrap at 72.
-# feat/fix/perf/refactor/revert commits need the Why paragraph.
+# Every commit, whatever its type, has a body with a Why: paragraph; add
+# What changes: and Evidence: where they say something the subject does
+# not. A one-line Why: is enough for a small, obvious change.
 #
 # Why: the problem with the current code, and why this approach rather
 # than the obvious alternative. Numbers for any cost or size claim.

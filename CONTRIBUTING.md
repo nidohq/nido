@@ -22,7 +22,7 @@ Add `!` before the colon for a breaking change.
   `frontend`, `passkey-sdk`, `factory`, `relayer`, `perch`, `infra`, `docs`,
   `deps`.
 
-The lists live in [`.github/pr-checks.json`](./.github/pr-checks.json).
+The scope list lives in [`.github/review-conventions.json`](./.github/review-conventions.json).
 Use a draft PR rather than "WIP" or "DO NOT MERGE" in the title.
 
 ### Description
@@ -72,8 +72,9 @@ git config commit.template .gitmessage
 ```
 
 [`.gitmessage`](./.gitmessage) gives the shape: a subject in the title's
-format, then `Why:` (required for `feat`, `fix`, `perf`, `refactor` and
-`revert`), `What changes:`, and an `Evidence:` line, then trailers:
+format, then a body with a `Why:` paragraph (every commit type; one line is
+enough for a small change), `What changes:` and `Evidence:` where they add
+something, then trailers:
 
 - `Refs: #123` for issues.
 - `Security: F2, W3` with [invariant IDs](./docs/SECURITY_INVARIANTS.md), or
@@ -87,25 +88,41 @@ refactor, a behaviour change with its tests, regenerated output (name the
 command), docs. Fold fixups into the commit they fix before asking for
 review (`git commit --fixup=<sha>`, then `git rebase -i --autosquash`).
 
-Check messages locally before pushing:
+Check messages locally before pushing, with the same shared checker CI runs
+(use the ref the workflow pins):
 
 ```sh
-npx @commitlint/cli@21.2.3 --from origin/main    # this branch's commits
-node scripts/pr-lint/check-pr.mjs --title "fix(factory): ..." --body-file body.md --base origin/main
+rc="npx --yes github:bitswell-hq/review-conventions#<ref>"
+$rc commits --base origin/main                      # this branch's commits
+$rc body --body-file body.md --base origin/main     # a description
+$rc title --title "fix(factory): ..."
 ```
 
 ### What CI checks
 
-[`.github/workflows/pr-description.yml`](./.github/workflows/pr-description.yml)
-runs on every PR open, push, and edit. It checks the title format, leftover
-comments, process headings, missing or empty template sections, the contract
-sections when a security-relevant path changes, invariant IDs that
-SECURITY_INVARIANTS.md does not define, and each commit message.
+[`.github/workflows/review-conventions.yml`](./.github/workflows/review-conventions.yml)
+runs on every PR open, push, and edit. It calls the shared
+[bitswell-hq/review-conventions](https://github.com/bitswell-hq/review-conventions)
+workflow, whose README lists every rule:
+
+- the title format;
+- leftover comments, process headings, and missing or empty template
+  sections;
+- each commit message.
+
+Nido adds four rules in
+[`.github/review-conventions.json`](./.github/review-conventions.json):
+
+- `contract-sections`: the contract sections when a security-relevant path
+  changes (not for mechanical PRs such as re-pins);
+- `invariant-ids`: the invariant IDs a description cites must exist in
+  SECURITY_INVARIANTS.md;
+- `evidence-kind`: an evidence kind in `## Invariants`;
+- `security-trailer`: valid IDs in a commit's `Security:` trailer.
 
 The checks **warn only**: findings show as annotations and in the job
-summary, and the check passes. Setting `"blocking": true` in
-[`.github/pr-checks.json`](./.github/pr-checks.json) makes them fail (for
-the description, only once the PR is ready for review).
+summary, and the check passes. Changing `mode: warn` to `mode: block` in the
+workflow makes any finding fail, except on a draft PR.
 
 ### Generated files
 
@@ -115,15 +132,10 @@ collapses them in the diff. If you edit one of those files by hand, list the
 edit under the mechanical template's `## Hand edits`. Never mark a
 hand-written source file as generated: a collapsed file escapes review.
 
-### Shared and Nido-specific pieces
+### Where the rules live
 
-The checking is split so the generic part can move to a shared repository:
-
-- **Generic:** `scripts/pr-lint/core.mjs`, `scripts/pr-lint/check-pr.mjs`,
-  `scripts/pr-lint/core.test.mjs`, `commitlint.config.mjs`,
-  `.github/workflows/pr-description.yml`, and the generic keys of
-  `.github/pr-checks.json` (`blocking`, `types`, `scopes`,
-  `headerMaxLength`, `whyTypes`, `helpUrl`, `rules`).
-- **Nido-specific:** the templates under `.github/`, `.gitmessage`,
-  `.gitattributes`, `scripts/pr-lint/nido-rules.mjs` and its test, and the
-  `repo` block of `.github/pr-checks.json`.
+The checker is shared with other repositories, so Nido does not change it
+here. A generic rule that is missing or wrong is fixed in
+bitswell-hq/review-conventions. Nido owns its templates under `.github/`,
+`.gitmessage`, `.gitattributes`, and the scopes and rules in
+`.github/review-conventions.json`.

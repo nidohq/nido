@@ -1,0 +1,28 @@
+name: Review conventions
+
+# The squash commit takes this PR's title as its subject and its body as its
+# message (CONTRIBUTING.md "Pull requests and commits"), so both, and the
+# PR's commits, are checked against the templates in .github/ and the rules
+# in .github/review-conventions.json. The checks live in the shared
+# bitswell-hq/review-conventions repository; Nido keeps only its config and
+# templates. `edited` re-runs the check when the title or body is fixed; the
+# job is seconds long and builds nothing.
+#
+# Pinned to the shared repository's PR 1 head until it tags v1; then pin @v1.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-conventions-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review-conventions:
+    uses: bitswell-hq/review-conventions/.github/workflows/review-conventions.yml@055e7ddb029c2fd050086ddaa27b784ba0edbf00
+    with:
+      mode: warn # the one switch: `block` fails the check on any finding (drafts never fail)
