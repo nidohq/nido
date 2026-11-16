@@ -1,0 +1,18 @@
+{
+  "blocking": false,
+  "types": ["feat", "fix", "perf", "refactor", "revert", "test", "docs", "build", "ci", "chore", "style"],
+  "scopes": ["frontend", "passkey-sdk", "factory", "relayer", "perch", "infra", "docs", "deps"],
+  "headerMaxLength": 72,
+  "whyTypes": ["feat", "fix", "perf", "refactor", "revert"],
+  "helpUrl": "https://github.com/nidohq/nido/blob/main/CONTRIBUTING.md#pull-requests-and-commits",
+  "rules": "scripts/pr-lint/nido-rules.mjs",
+  "repo": {
+    "contractPaths": [
+      "contracts/",
+      "packages/passkey-sdk/src/perch/",
+      "infra/relayer/",
+      "crates/integration-tests/"
+    ],
+    "contractSections": ["Security impact", "Invariants"]
+  }
+}
