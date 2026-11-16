@@ -253,21 +253,40 @@ jobs:
           PUSHED: ${{ steps.push.outputs.pushed }}
         run: |
           body="$RUNNER_TEMP/repin/body.md"
+          # The mechanical PR template's sections
+          # (.github/PULL_REQUEST_TEMPLATE/mechanical.md), which the PR
+          # description check expects; the body becomes the squash commit.
           {
+            echo "## Why"
+            echo
             echo "Re-pins \`vendor/perch\` to Perch \`$PERCH_SHA\`, whose \`deployments/$NETWORK.json\` Perch announced (\`perch-deployed\` dispatch)."
+            echo
+            echo "## What was generated, moved or vendored"
             echo
             cat "$RUNNER_TEMP/repin/summary.md"
             echo
-            echo "### What this regenerated"
+            echo "\`scripts/repin-perch.sh\`: the Perch git dependencies in \`Cargo.toml\` moved to the same commit, the stack fetched by the manifest's hashes and content addresses (\`just perch-infra\`), Nido's contracts rebuilt around it, the \`perch-*\` bindings, the SDK's Perch pins (\`perch.TESTNET\` except \`factory\`, the policyDoc registry and wasm-hash pins), \`package-lock.json\`, \`Cargo.lock\`, and the Soroban test snapshots."
             echo
-            echo "\`scripts/repin-perch.sh\`: the Perch git dependencies in \`Cargo.toml\` moved to the same commit, the stack fetched by the manifest's hashes and content addresses (\`just perch-infra\`), Nido's contracts rebuilt around it, the \`perch-*\` bindings, the SDK's Perch pins (\`perch.TESTNET\` except \`factory\`, the policyDoc registry and wasm-hash pins), \`package-lock.json\`, \`Cargo.lock\`, and the Soroban test snapshots; \`just check-vendor-drift\` passed."
+            echo "## Reproduce"
             echo
-            echo "### Before merging"
+            echo "From a clean checkout of the base: \`scripts/repin-perch.sh $PERCH_SHA --network $NETWORK\`. Expected: no \`git diff\` against the App's commit."
             echo
-            echo "This PR does not redeploy Nido's factory. If the manifest moved \`perch-account\` or \`perch-webauthn-verifier\`, the SDK's \`deployment.test.ts\` fails until the factory record (\`packages/passkey-sdk/src/perch/factory.$NETWORK.json\`) names them, so new accounts are never minted with the previous account wasm. On this branch:"
+            echo "## Hand edits"
+            echo
+            echo "None from the App. This PR does not redeploy Nido's factory. If the manifest moved \`perch-account\` or \`perch-webauthn-verifier\`, the SDK's \`deployment.test.ts\` fails until the factory record (\`packages/passkey-sdk/src/perch/factory.$NETWORK.json\`) names them, so new accounts are never minted with the previous account wasm. Before merging, on this branch:"
             echo
             echo "1. \`just deploy-factory <identity> $NETWORK\`, which writes the record."
             echo "2. Set \`perch.TESTNET.factory\` (\`packages/passkey-sdk/src/perch/deployment.ts\`) to the new address, update \`DEPLOYED.md\`, and push the record with them."
+            echo
+            echo "Those commits are the lines to review closely; name them here when you push them."
+            echo
+            echo "## Provenance"
+            echo
+            echo "Every fetched wasm matched the manifest's sha256 and content address (\`just perch-infra\`), and \`just check-vendor-drift\` passed."
+            echo
+            echo "## After merge"
+            echo
+            echo "Nothing beyond the factory record above."
           } > "$body"
           title="chore(perch): re-pin to Perch ${PERCH_SHA:0:7} ($NETWORK)"
           url="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
