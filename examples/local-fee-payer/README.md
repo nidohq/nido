@@ -69,8 +69,7 @@ budget is silently deployed. Clearing browser storage loses this demo's local
 vault; a fresh seed creates an independent F/budget for the existing C, not continuation
 of the old cap. Initial F funding and other deposits are outside the refill cap.
 
-Public artifact hashes, registry/verifier addresses and deployment receipts are
-for the funding/executor artifacts are in `public/testnet/deployment.json`. Nido C
+Public funding/executor hashes and deployment receipts are in `public/testnet/deployment.json`. Nido C
 and its verifier use the parent deployment, pinned in `src/nido-account.mjs`.
 The historical fixture registry is an isolated overlay
 on the exact `perch-source.json` pin; the funding WASM is byte-identical to the
@@ -162,12 +161,14 @@ enrollment service. It never accepts a wallet secret.
 
 ## Perch policy versus settlement
 
-Perch dev evaluates document rules natively, without OZ policy hooks. This
-example uses the same owner passkey and rule 0 in a fixed native account shell.
-A production account can instead apply a dedicated grant scoped to the fixed
+Perch dev evaluates document rules natively, without OZ policy hooks. The
+testnet wallet resolves the current owner rule on the existing Nido account.
+Only the isolated local-chain fixture uses owner rule 0 in a fixed shell.
+A dedicated grant can instead be scoped to the fixed
 executor's `refill`, with an exact authorization root and expiry. See the
-pinned Perch `docs/fee-budget.md` recipe. Grant creation and rule-ID discovery
-are not yet wired into this fixed-shell UI. No new JSON policy field is claimed.
+pinned Perch `docs/fee-budget.md` recipe. Dedicated grant creation is a follow-up;
+the implemented route uses native owner authorization. No new JSON policy field
+is claimed.
 
 The persistent funding cap belongs to the reusable Perch component, so replacing
 rules or renewing a token allowance cannot reset it. Turnkey can authorize the
