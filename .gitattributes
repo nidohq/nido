@@ -1,0 +1,16 @@
+# Generated files GitHub collapses in PR diffs (linguist-generated), so review
+# time goes to hand-written code. Each line names what produces the files; a
+# PR that hand-edits one says so under "## Hand edits"
+# (.github/PULL_REQUEST_TEMPLATE/mechanical.md). Never mark a hand-written
+# source file here: a collapsed file escapes review.
+
+# npm and cargo
+package-lock.json linguist-generated=true
+Cargo.lock linguist-generated=true
+
+# Real UltraHonk proofs replayed by the ZK tests (`just gen-zk-fixtures`)
+crates/integration-tests/fixtures/zk/** linguist-generated=true
+
+# TypeScript contract clients (`just bindings <name>` / `just bindings-perch`,
+# then scripts/fix-bindings.sh). package.json and README stay reviewable.
+packages/contract-bindings/*/src/** linguist-generated=true
