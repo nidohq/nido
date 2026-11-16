@@ -1,0 +1,7 @@
+{
+  "network": "Test SDF Network ; September 2015",
+  "verifierRegistry": {
+    "rootDeployer": "GDSMESVCEKCZCRA2MVSFDKK72URXSWSNT3IDTUI3MVYVYNBAHEBLLRRU",
+    "salt": "nido-fee-preview-v1"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "network": "Test SDF Network ; September 2015",
+  "rpc": "https://soroban-testnet.stellar.org",
+  "perchRevision": "aa598b4d32bd4674adef12f4abf9ee03f490d985",
+  "registry": "CCNJUPTDV54FTGQNKYGWKWVUQYZRY6HWKZRUXWXBPGFY7ZKHW3W5HC72",
+  "verifier": "CDLGLKD3QUKISRTCXVMJU7VBO4XQIMBDVZJEQZ3H3SDQJO2EPEJR2OTY",
+  "wasmHashes": {
+    "budget": "7bce311b9ff3458f4cfdd5a4ef7cc46a13a4321cad3f2d5d2ccaae92415b1bf5",
+    "executor": "ee8cb1600686114e06c260171a918aa46d6c9df49755e3b2a144d0936ca73b19",
+    "account": "0b0ef53e24d19cf154eddccf3d9a708e5e04e271d4846e06ca8c3f9133078956",
+    "verifier": "4fc8a84e356fe649125cae45e4b32a6f9b00d49b3d7bfedb2245b5eaaa210175",
+    "registry": "fd9d8b9762ef2ec9aa0a24b36eccbaedbc4d1b33808e5e42506b11623f34f5ff"
+  },
+  "uploadedAtLedger": 5716745,
+  "receipts": [
+    "d824d4c8baed3952d77f94e62d11673bc4e4458515fcd728b2a114965cef3858",
+    "d6bdd9e08e4612d1df9c88d468333246f0c307a21cce910d1c3783ef56350291",
+    "a088b3d324eef72e7b638eac95d2a2c347010b7bdfe790759b5588f653147618",
+    "e2594c3c445c5b81829308b5ae639f90c3606a04247fc446079c77211b6495dc",
+    "046e5f8fa27d510fc74bd793bec7fb73ebc35cfc870fed10fd0f0a6dcebe8cfe",
+    "17b35513fc4fd456fd7d342aa424915be7eed85fb5940f705313f69c55f6c2a8",
+    "8524b5ca577f711c318b73cb6bf888b8b917ec3721f0cfc321c3903334e14330"
+  ]
+}

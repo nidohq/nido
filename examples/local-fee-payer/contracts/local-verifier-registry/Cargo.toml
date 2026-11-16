@@ -1,0 +1,9 @@
+[package]
+name = "local-verifier-registry"
+version = "0.1.0"
+edition = "2021"
+publish = false
+[lib]
+crate-type = ["cdylib", "rlib"]
+[dependencies]
+soroban-sdk = "=29.0.1"

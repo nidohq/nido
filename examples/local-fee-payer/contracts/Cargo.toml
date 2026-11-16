@@ -1,0 +1,11 @@
+[workspace]
+members = ["fee-budget", "perch-budget-account", "local-verifier-registry"]
+resolver = "2"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

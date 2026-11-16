@@ -11,6 +11,7 @@ import { NETWORK_NAME } from "../lib/network";
 
 const githubRepository = import.meta.env.PUBLIC_GITHUB_REPOSITORY as string | undefined;
 const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : undefined;
+const localFeePreview = import.meta.env.PUBLIC_NIDO_LOCAL_SUBMITTER === "1";
 
 ---
 
@@ -74,6 +75,17 @@ const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : 
             <span><Icon name="bolt" size={15} color="var(--mut)" /> Ready in seconds</span>
             <span><Icon name="shieldcheck" size={15} color="var(--mut)" /> Never locked out</span>
           </div>
+          {localFeePreview && (
+            <p style="margin-top: 24px; font-size: 14px; line-height: 1.6;">
+              <a href="/local-fees/" style="color: var(--good-ink); font-weight: 700; text-underline-offset: 3px;">
+                Local fee architecture — view slides →
+              </a>
+              <br />
+              <a href="/fee-demo/testnet.html" style="color: var(--good-ink); font-weight: 700; text-underline-offset: 3px;">
+                Try local signing and automatic top-ups on testnet →
+              </a>
+            </p>
+          )}
         </div>
 
         <div class="lp-preview">

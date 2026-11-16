@@ -245,7 +245,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
-  import { LOCAL_SUBMITTER, RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL } from "../../lib/network";
+  import { LOCAL_FEES_ENABLED, LOCAL_SUBMITTER, RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL } from "../../lib/network";
   import { fundWithFriendbot, localSubmitter, simulationAccount } from "../../lib/localSubmitter";
   import { classicSubmitAndPoll, sendAndPoll } from "../../lib/signing/submit";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
@@ -568,7 +568,7 @@ import { NETWORK_LABEL } from "../../lib/network";
             accountUrl(
               window.location.host,
               cAddress,
-              `/new-account/?autopass=1${thenQuery}#salt=${encodeURIComponent(saltHex!)}`,
+              `/new-account/?autopass=1${thenQuery}${LOCAL_FEES_ENABLED && params.get("fees") === "1" ? "&fees=1" : ""}#salt=${encodeURIComponent(saltHex!)}`,
             ),
           );
         },
@@ -734,6 +734,7 @@ import { NETWORK_LABEL } from "../../lib/network";
         user: { id: userId, name: contractId!, displayName: `Account ${contractId}` },
         pubKeyCredParams: [{ alg: -7, type: "public-key" }],
         authenticatorSelection: { residentKey: "required", userVerification: "required" },
+        ...(LOCAL_FEES_ENABLED ? { extensions: { prf: {} } as AuthenticationExtensionsClientInputs } : {}),
         attestation: "none",
         timeout: 60000,
       },
@@ -1023,7 +1024,7 @@ import { NETWORK_LABEL } from "../../lib/network";
       const host = window.location.host;
       const accountUrl = setUpRecoveryAfter
         ? `${protocol}//${host}/security/recovery/`
-        : `${protocol}//${host}/account/`;
+        : `${protocol}//${host}/${LOCAL_FEES_ENABLED && params.get("fees") === "1" ? "fees" : "account"}/`;
 
       // Brief beat so the final check lands before the reveal.
       await new Promise((r) => setTimeout(r, 700));

@@ -1,0 +1,9 @@
+[package]
+name = "nido-demo-action"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["cdylib", "rlib"]
+[dependencies]
+soroban-sdk = "=29.0.1"
+perch-fee-budget = { path = "../../.perch-src/crates/perch-fee-budget", default-features = false }

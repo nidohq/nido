@@ -23,7 +23,7 @@ import Icon from "../../components/Icon.astro";
 import Qr from "../../components/Qr.astro";
 import Logo from "../../components/Logo.astro";
 import Nest from "../../components/Nest.astro";
-import { NETWORK_LABEL } from "../../lib/network";
+import { NETWORK_LABEL, LOCAL_FEES_ENABLED } from "../../lib/network";
 import RecentActivityCard from "../../components/RecentActivityCard.astro";
 import AssetsCard from "../../components/AssetsCard.astro";
 import MyNidoMenu from "../../components/MyNidoMenu.astro";
@@ -202,6 +202,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         <div id="name-result" role="status" aria-live="polite" class="mut mono" style="display:none; font-size:12.5px; margin-top:8px; line-height:1.5;"></div>
       </div>
 
+      {LOCAL_FEES_ENABLED && <a href="/fees/" class="btn ghost sm" style="margin:12px 0;">Local fees · manage your testnet budget</a>}
+
       <!-- The XLM-only inline Send panel was retired here: "Send" now opens the
            dedicated multi-asset transfer view at /transfer/ (the .js-send
            buttons navigate there in initHomeMode). -->
@@ -323,7 +325,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { shouldShowBackupBanner, snoozeBackupPrompt } from "../../lib/recoveryBackupPrompt";
   import { toast } from "../../lib/toast";
   import { stashSignRequest, type SignRequest } from "../../lib/signing/signRequest";
-  import { EXPLORER_BASE, RPC_URL, NETWORK_PASSPHRASE } from "../../lib/network";
+  import { EXPLORER_BASE, RPC_URL, NETWORK_PASSPHRASE, LOCAL_FEES_ENABLED } from "../../lib/network";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { detectPasskeyLabel } from "../../lib/passkeyLabel";
   import { formatXlm } from "../../lib/money";
@@ -431,6 +433,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           residentKey: "required",
           userVerification: "required",
         },
+        ...(LOCAL_FEES_ENABLED ? { extensions: { prf: {} } as AuthenticationExtensionsClientInputs } : {}),
         attestation: "none",
         timeout: 60000,
       },

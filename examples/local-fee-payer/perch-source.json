@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/bitswell-hq/stellar-registry__perch.git",
+  "revision": "aa598b4d32bd4674adef12f4abf9ee03f490d985",
+  "baseDevRevision": "928fbaf24b1a42c847643ed741422a48b1f1b2a1",
+  "nidoParent": "e9e25188804243d27ee1ca619d388c14981b2c8c",
+  "localVerifierRegistry": {
+    "rootDeployer": "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI",
+    "salt": "nido-local-fee-verifiers-v1"
+  }
+}

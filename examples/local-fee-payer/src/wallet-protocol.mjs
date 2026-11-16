@@ -1,0 +1,20 @@
+import { StrKey } from '@stellar/stellar-sdk';
+import { C_ACCOUNT } from './stellar.mjs';
+import { DEMO } from './demo-config.mjs';
+
+export const APP_ORIGIN = DEMO.appOrigin;
+const hostAccount = typeof location !== 'undefined' && DEMO.walletSuffix && location.hostname.endsWith(DEMO.walletSuffix)
+  ? location.hostname.slice(0,-DEMO.walletSuffix.length).toUpperCase() : '';
+export const WALLET_ORIGIN = StrKey.isValidContract(hostAccount) && location.origin === `https://${hostAccount.toLowerCase()}${DEMO.walletSuffix}`
+  ? location.origin : DEMO.walletOrigin;
+export function validateWalletRequest(request) {
+  if (!request || typeof request !== 'object' || Object.keys(request).sort().join() !== 'account,kind,recipient') throw Error('Unsupported request fields');
+  if (request.kind !== 'sponsor-demo-transfer') throw Error('No raw signing or key-export API');
+  if (request.account !== C_ACCOUNT) throw Error('Wallet policy: wrong C account');
+  if (typeof request.recipient !== 'string' || !StrKey.isValidEd25519PublicKey(request.recipient)) throw Error('Invalid recipient');
+  // The caller cannot choose a derivation path, network, token, function, amount or fee.
+  return Object.freeze({ kind: request.kind, account: C_ACCOUNT, recipient: request.recipient });
+}
+export function expectedMessage(event, expectedOrigin, expectedSource, requestId) {
+  return event.origin === expectedOrigin && event.source === expectedSource && event.data?.requestId === requestId;
+}

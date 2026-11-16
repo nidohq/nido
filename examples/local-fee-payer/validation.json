@@ -1,0 +1,68 @@
+{
+  "perchRevision": "aa598b4d32bd4674adef12f4abf9ee03f490d985",
+  "walletTests": 43,
+  "fundingContractTests": 5,
+  "nativePerchLedger": {
+    "actions": 3,
+    "refills": 3,
+    "spentStroops": 660149,
+    "capStroops": 1500000,
+    "denied": [
+      "wrong selected rule",
+      "direct executor outside owner rule"
+    ],
+    "authenticator": "virtual PRF-capable WebAuthn, real signed assertions"
+  },
+  "scope": "Planner and committed trace formally proved; host, custody and contract integration tested/trusted as documented. Dedicated document-grant UI not included.",
+  "runtimeSha256": "626778c4cfd01ea9d09766df7beed75c46c3abd7a83eebd4382cb528a9fd1f1d",
+  "contractManifest": "public/contracts/manifest.json",
+  "releaseChecks": "181 checks: 180 passed and 1 optional-tool skip across initial run and corrected-environment/DeploymentState reruns",
+  "testnetLedger": {
+    "network": "Stellar testnet",
+    "actions": 3,
+    "refills": 3,
+    "spentStroops": 578685,
+    "capStroops": 1500000,
+    "account": "CCAJBRIWL73A4BFCKMP3NKBC5BMDYXSJCACOOBWOJSDTOXV3M73J7CDZ",
+    "fee": "GC5B6D5KEAM4FBHMAIB4PKGGI5BP5HSFWEHKG2QOGEBXT5K7V4KBAA2F",
+    "budget": "CBZZIL6QL2TAAT57PKB2BSBXX4IEMPFUDWLO6NSSZWEQMVZCBQRVPNSP",
+    "runtimeSha256": "dc8ea25c2e312ca7be46d831d371c090063976d6ff31ee54065e53e85d65d338",
+    "reloadPreservedBudget": true,
+    "authenticator": "virtual PRF-capable WebAuthn, real testnet settlement",
+    "staticFiles": "locally routed at real preview origins",
+    "receipts": [
+      "98b0539b42085b2870a78c17c3215d4656155c23e6581765940e54c65703757e",
+      "352caab66bf11fb1ab45cc15d74d93c4ac7b018cfe25b2f6b4b29c631a8cf12a",
+      "f8be8c12a3ad2433ac3acb1dd80fe0ecc5eb7db985584cf56d185de1114b63c4",
+      "406d21bde6fd0f330b52eb96a2d270fb0548ccb131b0ae46da4ba163e8d35404",
+      "34dbf6ad1d9a15bb3bb7a67246c1264124263768538426f2ce854e302c3f5cda",
+      "aa8a41c395fd9eadb8e18d8f543e010112863e4e887751dbc17009eac68672ee"
+    ]
+  },
+  "nativeNidoTestnet": {
+    "account": "CD4LPNLIMBZP56E6JXWMJOODAJE4WWHSVZMAVWLAAGDPGPPOULENULVG",
+    "fee": "GAJMI6CWCYGH7U3GDUDDI6TXWAH2UDP6OL3IFSIAD7UDBA2WJ4YKH3ZG",
+    "budget": "CCAQWNQXFKVUWMTVEAKTCMGWEC67VMZ3MLDPD3L74VXUQS5WOZKX2TDM",
+    "spent": "0.0551469 / 0.15 XLM",
+    "refills": "2",
+    "actions": "2",
+    "passkeys": 1,
+    "pages": 1,
+    "reloadPreservedBudget": true,
+    "staticFiles": "locally routed",
+    "physicalAuthenticator": false,
+    "runtimeSha256": "9f74df862266ac5f962a08e22c18acd2aa2b789748121551028d9978a963d9fa",
+    "date": "2026-11-16",
+    "scope": "Normal Nido onboarding and native Perch C; local U/F signing and real testnet settlement. Not physical authenticator certification."
+  },
+  "nativeNidoNoPrf": {
+    "account": "CCNSLNZGIASVRY7FIINZF5FB46GIPYJNHZZGTGEOOMP7UXNJLDONBSDR",
+    "normalNidoCreated": true,
+    "feeActivationRefused": true,
+    "unencryptedFallback": false,
+    "passkeys": 1,
+    "pages": 1,
+    "physicalAuthenticator": false,
+    "message": "This passkey provider does not support PRF for local fees. Your Nido wallet still works normally. Try a PRF-capable browser/provider; no unencrypted fee key was saved."
+  }
+}

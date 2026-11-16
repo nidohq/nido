@@ -4,6 +4,7 @@
 import Logo from "./Logo.astro";
 import Avatar from "./Avatar.astro";
 import Icon from "./Icon.astro";
+import { LOCAL_FEES_ENABLED } from "../lib/network";
 import MyNidoMenu from "./MyNidoMenu.astro";
 
 const path = Astro.url.pathname;
@@ -16,6 +17,7 @@ const NAV = [
   { href: "/account/", label: "Home", icon: "home" },
   { href: "/transfer/", label: "Send", icon: "send" },
   { href: "/account/activity/", label: "Activity", icon: "activity" },
+  ...(LOCAL_FEES_ENABLED ? [{ href: "/fees/", label: "Local fees", icon: "send" } as const] : []),
   { href: "/security/", label: "Security", icon: "shield" },
 ] as const;
 ---

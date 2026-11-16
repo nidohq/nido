@@ -1,0 +1,942 @@
+{
+  "reviewedResult": "43819be4bd7336a8f0ae7175087440c7f620eb87",
+  "proofCommit": "250f708b382b846895a784c04a117c06d309ea28",
+  "scope": "Pure Rust G-account authority kernel; separate from this fee demo",
+  "established": 41,
+  "open": 0,
+  "unchangedOriginalStatements": 41,
+  "sourceAuditSha256": "162aeb395caf253a14ff22b7aced1fb6436dfcd04222a7638c8f53a0d876ed57",
+  "groups": {
+    "G01": 8,
+    "G02": 8,
+    "G03": 11,
+    "G04": 14
+  },
+  "conditions": [
+    "Validated SelfDirected StellarG profile; master 0, all thresholds 2; distinct U/S/R with weights 2/1/1",
+    "Rotation success assumes initial successful validation, WellFormedRequest and KindEvidenceMet",
+    "Evidence is already-verified key identity; refusal theorems retain ordered preconditions"
+  ],
+  "excluded": [
+    "Cryptography and passkey verification",
+    "Wallet/Turnkey integration and ledger submission",
+    "G-to-C allowances, Cedar and fees",
+    "Deployed recovery lifecycle or approve-only G enforcement"
+  ],
+  "cleanTheorems": [
+    "GAccountCore.Spec.C01Authority.contains_key_empty",
+    "GAccountCore.Spec.C01Authority.contains_key_spec",
+    "GAccountCore.Spec.C01Authority.rotate_preserves_full_account_ref",
+    "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_service",
+    "GAccountCore.Spec.C01Authority.validate_rejects_wrong_master",
+    "GAccountCore.Spec.C01Authority.five_distinct_keys_exist",
+    "GAccountCore.Spec.C01Authority.coalition_sr_after_replace_local",
+    "GAccountCore.Spec.C01Authority.retired_key_zero_weight",
+    "GAccountCore.Spec.C01Authority.can_authorize_empty_evidence_denies",
+    "GAccountCore.Spec.C01Authority.validate_rejects_wrong_profile",
+    "GAccountCore.Spec.C01Authority.unrecoverable_local_recovery_lost",
+    "GAccountCore.Spec.C01Authority.rotate_rejects_insufficient_evidence",
+    "GAccountCore.Spec.C01Authority.authorization_weight_bounded",
+    "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_account",
+    "GAccountCore.Spec.C01Authority.valid_authority_signer_weight_sum",
+    "GAccountCore.Spec.C01Authority.recovery_replace_service",
+    "GAccountCore.Spec.C01Authority.rotate_recover_local_succeeds",
+    "GAccountCore.Spec.C01Authority.can_authorize_iff",
+    "GAccountCore.Spec.C01Authority.roles_distinct_spec",
+    "GAccountCore.Spec.C01Authority.validate_iff_valid_config",
+    "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_recovery",
+    "GAccountCore.Spec.C01Authority.retired_key_denial_replace_local",
+    "GAccountCore.Spec.C01Authority.unrecoverable_local_service_lost",
+    "GAccountCore.Spec.C01Authority.valid_config_inhabited",
+    "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_recovery",
+    "GAccountCore.Spec.C01Authority.recovery_recover_local",
+    "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_old_key",
+    "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_source",
+    "GAccountCore.Spec.C01Authority.can_authorize_only_service_denies",
+    "GAccountCore.Spec.C01Authority.coalition_sr_after_recover_local",
+    "GAccountCore.Spec.C01Authority.validate_rejects_aliased_roles",
+    "GAccountCore.Spec.C01Authority.rotate_signer_frame",
+    "GAccountCore.Spec.C01Authority.validate_rejects_wrong_kind",
+    "GAccountCore.Spec.C01Authority.rotate_result_valid_config",
+    "GAccountCore.Spec.C01Authority.new_key_authorizes_after_local_rotation",
+    "GAccountCore.Spec.C01Authority.rotate_succeeds",
+    "GAccountCore.Spec.C01Authority.authorization_weight_exact",
+    "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_new_key",
+    "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_service",
+    "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_operations",
+    "GAccountCore.Spec.C01Authority.recovery_replace_recovery"
+  ],
+  "auditRecords": [
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.contains_key_empty",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.contains_key_spec",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_preserves_full_account_ref",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_service",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_master",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.five_distinct_keys_exist",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.coalition_sr_after_replace_local",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.retired_key_zero_weight",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_empty_evidence_denies",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_profile",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.unrecoverable_local_recovery_lost",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_insufficient_evidence",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.authorization_weight_bounded",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_account",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.valid_authority_signer_weight_sum",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_replace_service",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_recover_local_succeeds",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_iff",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.roles_distinct_spec",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_iff_valid_config",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_recovery",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.retired_key_denial_replace_local",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.unrecoverable_local_service_lost",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.valid_config_inhabited",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_recovery",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_recover_local",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_old_key",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_source",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_only_service_denies",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.coalition_sr_after_recover_local",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_aliased_roles",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_signer_frame",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_kind",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_result_valid_config",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.new_key_authorizes_after_local_rotation",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_succeeds",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.authorization_weight_exact",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_new_key",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_service",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_operations",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "axioms",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_replace_recovery",
+      "status": "clean",
+      "used": []
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.contains_key_empty",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.contains_key_spec",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_preserves_full_account_ref",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_service",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_master",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.five_distinct_keys_exist",
+      "kind": "surface"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.coalition_sr_after_replace_local",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.retired_key_zero_weight",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_empty_evidence_denies",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_profile",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.unrecoverable_local_recovery_lost",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_insufficient_evidence",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.authorization_weight_bounded",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_account",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.valid_authority_signer_weight_sum",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_replace_service",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_recover_local_succeeds",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_iff",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.roles_distinct_spec",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_iff_valid_config",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_recovery",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.retired_key_denial_replace_local",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.unrecoverable_local_service_lost",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.valid_config_inhabited",
+      "kind": "surface"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_recovery",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_recover_local",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_old_key",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_source",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_only_service_denies",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.coalition_sr_after_recover_local",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_aliased_roles",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_signer_frame",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_kind",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_result_valid_config",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.new_key_authorizes_after_local_rotation",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_succeeds",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.authorization_weight_exact",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_new_key",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_service",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_operations",
+      "kind": "function"
+    },
+    {
+      "check": "impl_ref",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_replace_recovery",
+      "kind": "function"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.contains_key_empty",
+      "hash": "325868485",
+      "type": "\u2200 (keys : Aeneas.Std.Slice g_account_core.authority.Key) (key : g_account_core.authority.Key),   keys.length = 0 \u2192 Aeneas.Std.WP.spec (g_account_core.authority.contains_key keys key) fun r => r = false"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.contains_key_spec",
+      "hash": "594874389",
+      "type": "\u2200 (keys : Aeneas.Std.Slice g_account_core.authority.Key) (key : g_account_core.authority.Key),   Aeneas.Std.WP.spec (g_account_core.authority.contains_key keys key) fun r => r = true \u2194 key \u2208 \u2191keys"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.KindEvidenceMet.eq_2",
+      "hash": "1509474694",
+      "type": "\u2200 (roles : g_account_core.authority.Roles) (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.KindEvidenceMet g_account_core.authority.RotationKind.RecoverLocal roles evidence =  ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.postRotationRoles.eq_2",
+      "hash": "2288316755",
+      "type": "\u2200 (roles : g_account_core.authority.Roles) (new_key : g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.postRotationRoles g_account_core.authority.RotationKind.RecoverLocal roles new_key =     { bootstrap : ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_preserves_full_account_ref",
+      "hash": "3281013543",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   Aeneas.Std.WP.spec (g_account_core.authority.rotate a request evide ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindWeight.eq_1",
+      "hash": "3303350264",
+      "type": "GAccountCore.Spec.C01Authority.kindWeight g_account_core.authority.RotationKind.ReplaceLocal = 2#u8"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.KindEvidenceMet.eq_1",
+      "hash": "2585198263",
+      "type": "\u2200 (roles : g_account_core.authority.Roles) (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.KindEvidenceMet g_account_core.authority.RotationKind.ReplaceLocal roles evidence =  ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_service",
+      "hash": "2567628847",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev new_ev : Aeneas.Std.Slice g_account_core.authority.Key) (cat : g_account_core.authority.Category),   g_account_core.au ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_master",
+      "hash": "74786174",
+      "type": "\u2200 (a : g_account_core.authority.Authority),   a.profile = g_account_core.authority.Profile.SelfDirected \u2192     a.account.kind = g_account_core.authority.AccountKind.StellarG \u2192       a.account.address = a.roles.bootstrap \u2192 ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.five_distinct_keys_exist",
+      "hash": "122558890",
+      "type": "\u2203 kB kL kS kR kF,   GAccountCore.Spec.C01Authority.RolesAllDistinct     { bootstrap := kB, \u00ablocal\u00bb := kL, service := kS, recovery := kR, fee := kF }"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.coalition_sr_after_replace_local",
+      "hash": "3061370338",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev new_ev : Aeneas.Std.Slice g_account_core.authority.Key) (cat : g_account_core.authority.Category),   g_account_core.au ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.retired_key_zero_weight",
+      "hash": "2882479246",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev old_ev : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.rotate a request rot_ev = Aeneas.S ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindWeight.eq_2",
+      "hash": "1769829981",
+      "type": "GAccountCore.Spec.C01Authority.kindWeight g_account_core.authority.RotationKind.RecoverLocal = 2#u8"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Helpers3.authority.rotate_loop_spec.mvcgen_spec",
+      "hash": "2234173800",
+      "type": "\u2200 (old_key : g_account_core.authority.Key) (weight : Aeneas.Std.U8) (new_key : g_account_core.authority.Key)   (v : Aeneas.Std.alloc.vec.Vec g_account_core.authority.Signer) (i : Aeneas.Std.Usize),   \u2191i \u2264 v.length \u2192      ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.KindEvidenceMet.eq_4",
+      "hash": "1484651188",
+      "type": "\u2200 (roles : g_account_core.authority.Roles) (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.KindEvidenceMet g_account_core.authority.RotationKind.ReplaceRecovery roles evidence ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_empty_evidence_denies",
+      "hash": "986221298",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (evidence : Aeneas.Std.Slice g_account_core.authority.Key)   (category : g_account_core.authority.Category),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_profile",
+      "hash": "2176579208",
+      "type": "\u2200 (a : g_account_core.authority.Authority),   a.profile \u2260 g_account_core.authority.Profile.SelfDirected \u2192     Aeneas.Std.WP.spec (g_account_core.authority.validate a) fun r =>       r = Aeneas.Std.core.result.Result.Err  ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.unrecoverable_local_recovery_lost",
+      "hash": "1753665538",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_insufficient_evidence",
+      "hash": "666459978",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindOldKey.eq_1",
+      "hash": "3332490827",
+      "type": "\u2200 (roles : g_account_core.authority.Roles),   GAccountCore.Spec.C01Authority.kindOldKey g_account_core.authority.RotationKind.ReplaceLocal roles = roles.local"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.authorization_weight_bounded",
+      "hash": "3656703903",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   Aeneas.Std.WP.spec (g_account_core.authority.authorization_weight a evidence) fun r =>     match r with     | Aenea ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.signerListAfterRotation.eq_1",
+      "hash": "3793581130",
+      "type": "\u2200 (signers : List g_account_core.authority.Signer) (old_key new_key : g_account_core.authority.Key)   (weight : Aeneas.Std.U8),   GAccountCore.Spec.C01Authority.signerListAfterRotation signers old_key new_key weight =    ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindWeight.match_1.congr_eq_3",
+      "hash": "157692831",
+      "type": "\u2200 (motive : g_account_core.authority.RotationKind \u2192 Sort u_1) (k : g_account_core.authority.RotationKind)   (h_1 : Unit \u2192 motive g_account_core.authority.RotationKind.ReplaceLocal)   (h_2 : Unit \u2192 motive g_account_core.a ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_account",
+      "hash": "2107891453",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.valid_authority_signer_weight_sum",
+      "hash": "3565419434",
+      "type": "\u2200 (a : g_account_core.authority.Authority),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas.Std.core.result.Result.Ok ()) \u2192     List.foldl (fun acc s => acc + \u2191s.weight) 0 \u2191a.signers = 4"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.KindEvidenceMet.eq_3",
+      "hash": "1458778905",
+      "type": "\u2200 (roles : g_account_core.authority.Roles) (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.KindEvidenceMet g_account_core.authority.RotationKind.ReplaceService roles evidence  ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_replace_service",
+      "hash": "4107254384",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_recover_local_succeeds",
+      "hash": "1407761402",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_iff",
+      "hash": "1254964403",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (evidence : Aeneas.Std.Slice g_account_core.authority.Key)   (category : g_account_core.authority.Category),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.roles_distinct_spec",
+      "hash": "3698852594",
+      "type": "\u2200 (r : g_account_core.authority.Roles),   Aeneas.Std.WP.spec (g_account_core.authority.roles_distinct r) fun b =>     b = true \u2194 GAccountCore.Spec.C01Authority.RolesAllDistinct r"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindOldKey.eq_3",
+      "hash": "1364778465",
+      "type": "\u2200 (roles : g_account_core.authority.Roles),   GAccountCore.Spec.C01Authority.kindOldKey g_account_core.authority.RotationKind.ReplaceService roles = roles.service"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_iff_valid_config",
+      "hash": "1823492121",
+      "type": "\u2200 (a : g_account_core.authority.Authority),   Aeneas.Std.WP.spec (g_account_core.authority.validate a) fun r =>     r = Aeneas.Std.core.result.Result.Ok () \u2194 GAccountCore.Spec.C01Authority.ValidConfig a"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.local_authorizes_after_replace_recovery",
+      "hash": "443252419",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev new_ev : Aeneas.Std.Slice g_account_core.authority.Key) (cat : g_account_core.authority.Category),   g_account_core.au ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.retired_key_denial_replace_local",
+      "hash": "864077098",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev old_ev : Aeneas.Std.Slice g_account_core.authority.Key) (cat : g_account_core.authority.Category),   g_account_core.au ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "Aeneas.Std.core.result.Result.is_ok.match_1.congr_eq_2",
+      "hash": "1739713438",
+      "type": "\u2200 {T : Type u_1} {E : Type u_2} (motive : Aeneas.Std.core.result.Result T E \u2192 Sort u_3)   (x : Aeneas.Std.core.result.Result T E) (h_1 : (a : T) \u2192 motive (Aeneas.Std.core.result.Result.Ok a))   (h_2 : (a : E) \u2192 motive (A ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.unrecoverable_local_service_lost",
+      "hash": "4146520193",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.valid_config_inhabited",
+      "hash": "3041927101",
+      "type": "\u2200 (tenant network : Aeneas.Std.Array Aeneas.Std.U8 32#usize) (kB kL kS kR kF : g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.RolesAllDistinct       { bootstrap := kB, \u00ablocal\u00bb := kL, service := kS, recov ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindWeight.eq_4",
+      "hash": "373951254",
+      "type": "GAccountCore.Spec.C01Authority.kindWeight g_account_core.authority.RotationKind.ReplaceRecovery = 1#u8"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindOldKey.eq_4",
+      "hash": "3444846078",
+      "type": "\u2200 (roles : g_account_core.authority.Roles),   GAccountCore.Spec.C01Authority.kindOldKey g_account_core.authority.RotationKind.ReplaceRecovery roles = roles.recovery"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.ExpectedOps.eq_1",
+      "hash": "3415045343",
+      "type": "\u2200 (new_key old_key : g_account_core.authority.Key) (weight : Aeneas.Std.U8),   GAccountCore.Spec.C01Authority.ExpectedOps new_key old_key weight =     [{ source := none, body := g_account_core.authority.OperationBody.Set ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindOldKey.eq_2",
+      "hash": "2297087080",
+      "type": "\u2200 (roles : g_account_core.authority.Roles),   GAccountCore.Spec.C01Authority.kindOldKey g_account_core.authority.RotationKind.RecoverLocal roles = roles.local"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindWeight.match_1.congr_eq_4",
+      "hash": "1607478785",
+      "type": "\u2200 (motive : g_account_core.authority.RotationKind \u2192 Sort u_1) (k : g_account_core.authority.RotationKind)   (h_1 : Unit \u2192 motive g_account_core.authority.RotationKind.ReplaceLocal)   (h_2 : Unit \u2192 motive g_account_core.a ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_recovery",
+      "hash": "2299445184",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev new_ev : Aeneas.Std.Slice g_account_core.authority.Key) (cat : g_account_core.authority.Category),   g_account_core.au ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_recover_local",
+      "hash": "2797887045",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "Aeneas.Std.core.result.Result.is_ok.match_1.congr_eq_1",
+      "hash": "3540051206",
+      "type": "\u2200 {T : Type u_1} {E : Type u_2} (motive : Aeneas.Std.core.result.Result T E \u2192 Sort u_3)   (x : Aeneas.Std.core.result.Result T E) (h_1 : (a : T) \u2192 motive (Aeneas.Std.core.result.Result.Ok a))   (h_2 : (a : E) \u2192 motive (A ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindWeight.match_1.congr_eq_2",
+      "hash": "2510766936",
+      "type": "\u2200 (motive : g_account_core.authority.RotationKind \u2192 Sort u_1) (k : g_account_core.authority.RotationKind)   (h_1 : Unit \u2192 motive g_account_core.authority.RotationKind.ReplaceLocal)   (h_2 : Unit \u2192 motive g_account_core.a ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Helpers4.validate_total.mvcgen_spec",
+      "hash": "1936256243",
+      "type": "\u2200 (a : g_account_core.authority.Authority),   \u2983\u231cTrue\u231d\u2984 g_account_core.authority.validate a \u2983Std.Do.PostCond.noThrow fun r => \u231cTrue\u231d\u2984"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_old_key",
+      "hash": "4236000381",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_wrong_source",
+      "hash": "2462278202",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.postRotationRoles.eq_4",
+      "hash": "3494760722",
+      "type": "\u2200 (roles : g_account_core.authority.Roles) (new_key : g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.postRotationRoles g_account_core.authority.RotationKind.ReplaceRecovery roles new_key =     { bootstra ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.can_authorize_only_service_denies",
+      "hash": "3925755255",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (evidence : Aeneas.Std.Slice g_account_core.authority.Key)   (category : g_account_core.authority.Category),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.coalition_sr_after_recover_local",
+      "hash": "3276886890",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev new_ev : Aeneas.Std.Slice g_account_core.authority.Key) (cat : g_account_core.authority.Category),   g_account_core.au ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.NewKeyFresh.eq_1",
+      "hash": "3168392484",
+      "type": "\u2200 (new_key : g_account_core.authority.Key) (roles : g_account_core.authority.Roles),   GAccountCore.Spec.C01Authority.NewKeyFresh new_key roles =     (new_key \u2260 roles.bootstrap \u2227       new_key \u2260 roles.local \u2227 new_key \u2260 r ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.postRotationRoles.eq_3",
+      "hash": "2586025021",
+      "type": "\u2200 (roles : g_account_core.authority.Roles) (new_key : g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.postRotationRoles g_account_core.authority.RotationKind.ReplaceService roles new_key =     { bootstrap ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_aliased_roles",
+      "hash": "881851089",
+      "type": "\u2200 (a : g_account_core.authority.Authority),   a.profile = g_account_core.authority.Profile.SelfDirected \u2192     a.account.kind = g_account_core.authority.AccountKind.StellarG \u2192       a.account.address = a.roles.bootstrap \u2192 ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.postRotationRoles.eq_1",
+      "hash": "894930183",
+      "type": "\u2200 (roles : g_account_core.authority.Roles) (new_key : g_account_core.authority.Key),   GAccountCore.Spec.C01Authority.postRotationRoles g_account_core.authority.RotationKind.ReplaceLocal roles new_key =     { bootstrap : ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_signer_frame",
+      "hash": "2389107611",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   Aeneas.Std.WP.spec (g_account_core.authority.rotate a request evide ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.RolesAllDistinct.eq_1",
+      "hash": "4192933335",
+      "type": "\u2200 (r : g_account_core.authority.Roles),   GAccountCore.Spec.C01Authority.RolesAllDistinct r =     (r.bootstrap \u2260 r.local \u2227       r.bootstrap \u2260 r.service \u2227         r.bootstrap \u2260 r.recovery \u2227           r.bootstrap \u2260 r.fee  ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.validate_rejects_wrong_kind",
+      "hash": "3710180711",
+      "type": "\u2200 (a : g_account_core.authority.Authority),   a.profile = g_account_core.authority.Profile.SelfDirected \u2192     a.account.kind \u2260 g_account_core.authority.AccountKind.StellarG \u2192       Aeneas.Std.WP.spec (g_account_core.auth ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindWeight.match_1.congr_eq_1",
+      "hash": "143109874",
+      "type": "\u2200 (motive : g_account_core.authority.RotationKind \u2192 Sort u_1) (k : g_account_core.authority.RotationKind)   (h_1 : Unit \u2192 motive g_account_core.authority.RotationKind.ReplaceLocal)   (h_2 : Unit \u2192 motive g_account_core.a ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_result_valid_config",
+      "hash": "1383486935",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   Aeneas.Std.WP.spec (g_account_core.authority.rotate a request evide ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.new_key_authorizes_after_local_rotation",
+      "hash": "2460473248",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev new_ev : Aeneas.Std.Slice g_account_core.authority.Key) (cat : g_account_core.authority.Category),   g_account_core.au ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Helpers4.validate_total_eq.mvcgen_spec",
+      "hash": "648397919",
+      "type": "\u2200 (a : g_account_core.authority.Authority),   \u2983\u231cTrue\u231d\u2984     g_account_core.authority.validate       a \u2983Std.Do.PostCond.noThrow fun r => \u231cg_account_core.authority.validate a = Aeneas.Std.Result.ok r\u231d\u2984"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.kindWeight.eq_3",
+      "hash": "1202602124",
+      "type": "GAccountCore.Spec.C01Authority.kindWeight g_account_core.authority.RotationKind.ReplaceService = 1#u8"
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_succeeds",
+      "hash": "3976492091",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.authorization_weight_exact",
+      "hash": "810889530",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas.Std.core.result.Result.Ok ()) \u2192     Aeneas.Std.W ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_new_key",
+      "hash": "721569536",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.new_sr_coalition_after_replace_service",
+      "hash": "3357115289",
+      "type": "\u2200 (a a' : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (rot_ev new_ev : Aeneas.Std.Slice g_account_core.authority.Key) (cat : g_account_core.authority.Category),   g_account_core.au ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.rotate_rejects_invalid_operations",
+      "hash": "2288908490",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    },
+    {
+      "check": "statement_type",
+      "theorem": "GAccountCore.Spec.C01Authority.recovery_replace_recovery",
+      "hash": "3702681297",
+      "type": "\u2200 (a : g_account_core.authority.Authority) (request : g_account_core.authority.Rotation)   (evidence : Aeneas.Std.Slice g_account_core.authority.Key),   g_account_core.authority.validate a = Aeneas.Std.Result.ok (Aeneas. ..."
+    }
+  ]
+}
