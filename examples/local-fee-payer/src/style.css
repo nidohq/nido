@@ -9,3 +9,5 @@
 .vulnerable-comparison{margin-top:44px;border:1px solid var(--line);border-radius:16px;padding:16px 20px}.vulnerable-comparison>summary{font-size:15px;color:var(--muted)}.vulnerable-comparison[open]>summary{color:var(--ink)}
 
 .fee-policy-flow{display:block}.fee-policy-flow text{font-size:22px}.fee-policy-flow text[font-size="18"]{font-size:18px}.fee-policy-mobile{display:none}@media(max-width:720px){.fee-policy-flow{display:none}.fee-policy-mobile{display:block;width:100%;height:auto}.fee-policy-mobile text{font-size:16px}.fee-policy-mobile .fee-title{font-size:18px;font-weight:700}}
+
+.addresses dt{font-weight:700;margin-top:16px}.addresses dd{margin:6px 0 0}.addresses code{font-size:13px}button.copy{padding:4px 10px;margin-left:8px;font-size:12px;border-radius:8px}

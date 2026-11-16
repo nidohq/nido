@@ -13,6 +13,7 @@ import { DEMO } from './demo-config.mjs';
 import { enrollTestnet, checkTestnetProfile, verifyTestnetContracts } from './testnet-enrollment.mjs';
 
 import { nidoAccountAt, nidoRegistration, verifyNidoOwner } from './nido-account.mjs';
+import { renderWalletAddresses } from './wallet-addresses.mjs';
 const nidoAccount=DEMO.testnet?nidoAccountAt(location.origin):null;
 const $=id=>document.getElementById(id);
 const chain=server(DEMO.rpc);
@@ -32,6 +33,7 @@ async function refresh(){
   const balance=await read(chain,profile.u,profile.token,'balance',[sc.address(profile.fee)]);
   const allowance=await read(chain,profile.u,profile.token,'allowance',[sc.address(profile.treasury),sc.address(profile.budget)]);
   $('budget-c').textContent=profile.account;$('budget-f').textContent=profile.fee;$('budget-contract').textContent=profile.budget;
+  renderWalletAddresses($('wallet-addresses'),profile);
   $('budget-balance').textContent=`${(Number(balance)/1e7).toFixed(7)} XLM`;
   $('budget-spent').textContent=`${(Number(s.spent)/1e7).toFixed(7)} / ${(Number(s.config.cap)/1e7).toFixed(2)} XLM`;
   $('budget-remaining').textContent=`${(Number(s.config.cap-s.spent)/1e7).toFixed(7)} XLM`;
