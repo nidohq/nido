@@ -36,11 +36,11 @@ code,pre {overflow-wrap:anywhere;white-space:pre-wrap;font-size:12px;}details{ma
 <script>
 import { accountUrl, contractIdFromHostname, loadAccounts, loadAccountName, isContractId } from '@nidohq/passkey-sdk';
 import { createNido } from '../../lib/createNido';
-import { NETWORK_NAME } from '../../lib/network';
+import { LOCAL_FEES_ENABLED } from '../../lib/network';
 import { syncNidoStorageViaBridge } from '../../lib/nidoSharedStorage';
 const status=document.getElementById('fee-select-status')!;
 async function init() {
- if(NETWORK_NAME!=='testnet')throw Error('Local fees are currently available in the testnet preview only.');
+ if(!LOCAL_FEES_ENABLED)throw Error('Local fees are currently available in the testnet preview only.');
  const account=contractIdFromHostname(location.hostname);
  if(account){
   document.getElementById('fee-selector')!.hidden=true;

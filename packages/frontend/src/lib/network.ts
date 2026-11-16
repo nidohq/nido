@@ -74,3 +74,6 @@ export const LOCAL_SUBMITTER: boolean = localSubmitterEnabled(
  *  the auth digest won't verify. Shared here so every relayer-submitting signing
  *  path (primaryPasskeySigner, walletSign) uses the same bound. */
 export const RELAYER_EXPIRATION_OFFSET = 120;
+
+/** Fee assets are supplied by the PR preview build, never implicitly on mainnet. */
+export const LOCAL_FEES_ENABLED = NETWORK_NAME === "testnet" && import.meta.env.PUBLIC_NIDO_LOCAL_FEES === "1";

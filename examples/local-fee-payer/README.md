@@ -79,6 +79,9 @@ TTL and testnet resets remain operational dependencies. A bounded retry handles
 explicit RPC preflight-queue congestion; auth failures and submissions are not
 automatically retried.
 
+The preview enables `PUBLIC_NIDO_LOCAL_FEES=1`; ordinary builds do not expose
+fee navigation or request the PRF extension. Mainnet cannot enable this testnet path.
+
 CI builds the origin-bound runtime and copies the static lab into the normal
 frontend preview. To reproduce this build (Node 24, Rust 1.97.1 + wasm32-wasip1):
 
@@ -88,6 +91,8 @@ FEE_PREVIEW_NUMBER=365 FEE_PREVIEW_OUT=/tmp/nido-fee-preview npm run build:previ
 FEE_RUNTIME_DIR=/tmp/nido-fee-preview/runtime node --test test/local-budget-wasi.test.mjs
 # Uses real testnet funds/transactions and a fresh virtual passkey:
 PLAYWRIGHT_PATH=/absolute/path/to/playwright node test/nido-wallet-browser-check.cjs
+# Also test ordinary Nido creation with a provider that has no PRF:
+FEE_DISABLE_PRF=1 PLAYWRIGHT_PATH=/absolute/path/to/playwright node test/nido-wallet-browser-check.cjs
 ```
 
 `build:preview` restores the local runtime artifacts after building. CI performs

@@ -54,5 +54,15 @@
     "runtimeSha256": "9f74df862266ac5f962a08e22c18acd2aa2b789748121551028d9978a963d9fa",
     "date": "2026-11-16",
     "scope": "Normal Nido onboarding and native Perch C; local U/F signing and real testnet settlement. Not physical authenticator certification."
+  },
+  "nativeNidoNoPrf": {
+    "account": "CCNSLNZGIASVRY7FIINZF5FB46GIPYJNHZZGTGEOOMP7UXNJLDONBSDR",
+    "normalNidoCreated": true,
+    "feeActivationRefused": true,
+    "unencryptedFallback": false,
+    "passkeys": 1,
+    "pages": 1,
+    "physicalAuthenticator": false,
+    "message": "This passkey provider does not support PRF for local fees. Your Nido wallet still works normally. Try a PRF-capable browser/provider; no unencrypted fee key was saved."
   }
 }

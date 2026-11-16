@@ -50,6 +50,7 @@ jobs:
           # source and fee payer of every transaction, and friendbot funds
           # new accounts (lib/localSubmitterGate.ts; testnet builds only).
           PUBLIC_NIDO_LOCAL_SUBMITTER: "1"
+          PUBLIC_NIDO_LOCAL_FEES: "1"
           # Overrides the Perch deployment (JSON, or `none`). This branch
           # points its preview at perch dev's separate testnet deployment (the
           # bitswell fork's Perch at fc0fb2b, in its own registries;

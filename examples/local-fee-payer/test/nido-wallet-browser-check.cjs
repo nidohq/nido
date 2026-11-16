@@ -16,7 +16,7 @@ const fs=require('node:fs'),path=require('node:path');
    await route.fulfill({path:file,contentType:type});
   });
   page=await context.newPage();const cdp=await context.newCDPSession(page);await cdp.send('WebAuthn.enable');
-  const {authenticatorId}=await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',ctap2Version:'ctap2_1',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true,hasPrf:true}});
+  const {authenticatorId}=await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',ctap2Version:'ctap2_1',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true,hasPrf:!process.env.FEE_DISABLE_PRF}});
   page.on('request',r=>{if(r.url().includes('soroban-testnet'))requests.push(r.url());});
   await page.goto(`${app}/fee-demo/testnet.html`);await page.locator('#open-budget-wallet').click();await page.locator('#fee-create').click();
   await page.locator('#preparing-continue:not([disabled])').waitFor({timeout:90000});await page.locator('#preparing-continue').click();
@@ -24,6 +24,17 @@ const fs=require('node:fs'),path=require('node:path');
   await page.waitForURL(/\/fees\//,{timeout:180000});
   const account=new URL(page.url()).hostname.split('--')[0].toUpperCase();
   await page.locator('html[data-wallet-ready="true"]').waitFor();await page.locator('#budget-enroll').click();
+  if(process.env.FEE_DISABLE_PRF){
+   await page.locator('#budget-message.bad').waitFor({timeout:60000});
+   const message=await page.locator('#budget-message').textContent();
+   if(!message.includes('does not support PRF'))throw Error(message);
+   const persisted=await page.evaluate(c=>({credential:!!localStorage.getItem(`passkey:${c}:credentialId`),vault:localStorage.getItem(`nido.${c}.fee-vault-v1`),budget:localStorage.getItem(`nido.${c}.fee-budget-v1`)}),account);
+   const {credentials}=await cdp.send('WebAuthn.getCredentials',{authenticatorId});
+   if(!persisted.credential||persisted.vault||persisted.budget||credentials.length!==1)throw Error('Unsupported PRF changed the wallet or saved a fee key');
+   if(errors.length)throw Error(errors.join('\n'));
+   const result={account,normalNidoCreated:true,feeActivationRefused:true,unencryptedFallback:false,passkeys:credentials.length,pages:context.pages().length,physicalAuthenticator:false,message};
+   fs.mkdirSync('qa',{recursive:true});fs.writeFileSync('qa/nido-wallet-no-prf.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));return;
+  }
   async function settled(timeout){await page.waitForFunction(()=>!document.getElementById('budget-run').disabled||document.getElementById('budget-message').classList.contains('bad'),null,{timeout});if(await page.locator('#budget-run').isDisabled())throw Error(await page.locator('#budget-message').textContent());}
   await settled(300000);console.log('Native Nido enrollment confirmed');
   for(let i=0;i<2;i++){
