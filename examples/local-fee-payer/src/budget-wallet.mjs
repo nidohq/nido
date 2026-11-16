@@ -1,11 +1,12 @@
-import { Address, Operation, TransactionBuilder, rpc, xdr } from '@stellar/stellar-sdk';
+import { TransactionBuilder } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
 import { APP_ORIGIN, WALLET_ORIGIN, expectedMessage } from './wallet-protocol.mjs';
-import { C_ACCOUNT, cChallenge, externalPayload } from './stellar.mjs';
-import { b64, unb64, registerPasskey, requestAssertion, sha256, verifyAssertion, derToCompact } from './webauthn.mjs';
+import { C_ACCOUNT } from './stellar.mjs';
+import { authorizeBudgetAction } from './budget-authorization.mjs';
+import { b64, unb64, registerPasskey, requestAssertion, sha256, verifyAssertion } from './webauthn.mjs';
 import { newMnemonic, derivePublicAccounts, sealMnemonic, openMnemonic } from './hd-vault.mjs';
 import { signPreparedLocalEnvelope } from './local-fee-signing.mjs';
-import { LOCAL_NETWORK, server, build, simulate, submit, read, sc, jsonSafe } from './local-chain.mjs';
+import { LOCAL_NETWORK, server, submit, read, sc, jsonSafe } from './local-chain.mjs';
 import { createSigningBoundary } from './signing-boundary.mjs';
 import { evaluateInWallet } from './wasi-client.mjs';
 import manifest from '../public/runtime/manifest.json';
@@ -82,23 +83,12 @@ async function execute(action){
   let prf,phrase;
   try{
     const ruleIds=[DEMO.testnet?await verifyNidoOwner(chain,profile.u,profile.account,profile.passkey):0];
-    const call={contract:profile.account,function:'execute',args:[sc.address(profile.executor),sc.symbol(action),sc.vec([])]};
-    let tx=await build(chain,profile.u,Operation.invokeContractFunction(call));
-    const initial=await simulate(chain,tx,'record');
-    if(initial.result.auth.length!==1)throw Error('Expected one C authorization');
-    const entry=xdr.SorobanAuthorizationEntry.fromXdr(initial.result.auth[0].toXdr());
-    if(entry.credentials.type!=='sorobanCredentialsAddress'||Address.fromScAddress(entry.credentials.address.address).toString()!==profile.account)throw Error('Unexpected authorization');
-    const latest=(await chain.getLatestLedger()).sequence;
-    entry.credentials.address.signatureExpirationLedger=Math.min(latest+100,profile.expires);
-    const challenge=cChallenge(entry,profile.account,DEMO.network,ruleIds);
-    message(action==='refill'?'F is low. Approve C’s exact refill request; Perch checks C’s passkey; the funding contract fixes the destination and amount.':'Approve C’s demo action. F will pay its native network fee.');
-    const assertion=await requestAssertion(reg(),challenge,{prf:{eval:{first:unb64(vault.salt)}}});
-    const publicKey=await verifyAssertion(assertion,reg(),challenge);prf=assertion.prf;if(!prf)throw Error('PRF unavailable');
-    const sig=sc.map({authenticator_data:sc.bytes(assertion.authenticatorData),client_data:sc.bytes(assertion.clientDataJSON),signature:sc.bytes(derToCompact(assertion.signature,true))}).toXdr();
-    entry.credentials.address.signature=externalPayload(ruleIds,profile.verifier,publicKey,sig);
-    tx=await build(chain,profile.u,Operation.invokeContractFunction({...call,auth:[entry]}));
-    const enforced=await simulate(chain,tx,'enforce');
-    tx=rpc.assembleTransaction(tx,enforced).build();
+    const {tx,latest,assertion}=await authorizeBudgetAction({chain,profile,action,ruleIds,network:DEMO.network,approve:async challenge=>{
+      message(action==='refill'?'F is low. Approve C’s exact refill request; Perch checks C’s passkey; the funding contract fixes the destination and amount.':'Approve C’s demo action. F will pay its native network fee.');
+      const assertion=await requestAssertion(reg(),challenge,{prf:{eval:{first:unb64(vault.salt)}}});
+      const publicKey=await verifyAssertion(assertion,reg(),challenge);prf=assertion.prf;if(!prf)throw Error('PRF unavailable');
+      return {assertion,publicKey};
+    }});
     const envelope=TransactionBuilder.buildFeeBumpTransaction(profile.fee,'100',tx,DEMO.network);
     record('Prepared',{action,maximumFeeStroops:envelope.fee});
     const signing=createSigningBoundary(evaluateInWallet,async(encoded,fee,decision)=>{
