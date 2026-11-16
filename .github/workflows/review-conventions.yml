@@ -8,7 +8,8 @@ name: Review conventions
 # templates. `edited` re-runs the check when the title or body is fixed; the
 # job is seconds long and builds nothing.
 #
-# Pinned to the shared repository's PR 1 head until it tags v1; then pin @v1.
+# @v1 follows the newest v1.x.y; a new required section or default finding
+# is a major version, so it cannot start failing this repository unasked.
 
 on:
   pull_request:
@@ -23,6 +24,6 @@ concurrency:
 
 jobs:
   review-conventions:
-    uses: bitswell-hq/review-conventions/.github/workflows/review-conventions.yml@17ea86093a5ed173356383cdb73c0cf965f21dbb
+    uses: bitswell-hq/review-conventions/.github/workflows/review-conventions.yml@v1
     with:
       mode: warn # the one switch: `block` fails the check on any finding (drafts never fail)

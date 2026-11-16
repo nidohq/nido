@@ -88,11 +88,10 @@ refactor, a behaviour change with its tests, regenerated output (name the
 command), docs. Fold fixups into the commit they fix before asking for
 review (`git commit --fixup=<sha>`, then `git rebase -i --autosquash`).
 
-Check messages locally before pushing, with the same shared checker CI runs
-(use the ref the workflow pins):
+Check messages locally before pushing, with the same shared checker CI runs:
 
 ```sh
-rc="npx --yes github:bitswell-hq/review-conventions#<ref>"
+rc="npx --yes github:bitswell-hq/review-conventions#v1"
 $rc commits --base origin/main                      # this branch's commits
 $rc body --body-file body.md --base origin/main     # a description
 $rc title --title "fix(factory): ..."
