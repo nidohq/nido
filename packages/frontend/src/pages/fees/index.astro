@@ -33,7 +33,8 @@ button {padding:12px 18px;border-radius:12px;background:var(--acc,#0a6b75);color
 code,pre {overflow-wrap:anywhere;white-space:pre-wrap;font-size:12px;}details{margin-top:16px;}summary{cursor:pointer;} .small,footer{font-size:13px;color:var(--mut,#706259);}footer{margin:24px 0;}
 .notice {margin:16px 0;padding:12px;border-radius:10px;background:var(--chip,#f9eee0);}.bad{color:#a22;}.good{color:#145953;}
 #fee-accounts {display:grid;gap:12px;margin:24px 0;}
-.addresses dt{font-weight:700;margin-top:16px;} .addresses dd{margin:6px 0 0;} .addresses code{font-size:13px;} button.copy{padding:4px 10px;margin-left:8px;font-size:12px;border-radius:8px;}#fee-selector h1{font-size:36px;} [hidden]{display:none!important;}
+/* Rendered at runtime by wallet-addresses.mjs, so outside Astro's scoped styles. */
+.addresses :global(dt){font-weight:700;margin-top:16px;} .addresses :global(dd){margin:6px 0 0;} .addresses :global(code){font-size:13px;} .addresses :global(button.copy){padding:4px 10px;margin-left:8px;font-size:12px;border-radius:8px;background:var(--acc,#0a6b75);color:white;border:0;font-weight:700;cursor:pointer;}#fee-selector h1{font-size:36px;} [hidden]{display:none!important;}
 </style>
 <script>
 import { accountUrl, contractIdFromHostname, loadAccounts, loadAccountName, isContractId } from '@nidohq/passkey-sdk';
