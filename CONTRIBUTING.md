@@ -110,7 +110,7 @@ workflow, whose README lists every rule:
   sections;
 - each commit message.
 
-Nido adds four rules in
+Nido adds five rules in
 [`.github/review-conventions.json`](./.github/review-conventions.json):
 
 - `contract-sections`: the contract sections when a security-relevant path
@@ -118,7 +118,11 @@ Nido adds four rules in
 - `invariant-ids`: the invariant IDs a description cites must exist in
   SECURITY_INVARIANTS.md;
 - `evidence-kind`: an evidence kind in `## Invariants`;
-- `security-trailer`: valid IDs in a commit's `Security:` trailer.
+- `security-trailer`: valid IDs in a commit's `Security:` trailer;
+- `security-trailer-missing`: a commit that changes a security-relevant path
+  carries a `Security:` trailer (IDs, or `none`). It reads the commit's
+  files, so it is code:
+  [`scripts/review-conventions-rules.mjs`](./scripts/review-conventions-rules.mjs).
 
 The checks **warn only**: findings show as annotations and in the job
 summary, and the check passes. Changing `mode: warn` to `mode: block` in the
@@ -137,5 +141,5 @@ hand-written source file as generated: a collapsed file escapes review.
 The checker is shared with other repositories, so Nido does not change it
 here. A generic rule that is missing or wrong is fixed in
 bitswell-hq/review-conventions. Nido owns its templates under `.github/`,
-`.gitmessage`, `.gitattributes`, and the scopes and rules in
-`.github/review-conventions.json`.
+`.gitmessage`, `.gitattributes`, the scopes and rules in
+`.github/review-conventions.json`, and `scripts/review-conventions-rules.mjs`.

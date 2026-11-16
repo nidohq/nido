@@ -1,26 +1,51 @@
 {
   "$comment": "Nido's PR and commit conventions for bitswell-hq/review-conventions (see its README \"Config reference\"); CONTRIBUTING.md \"Pull requests and commits\" explains them.",
   "header": {
-    "scopes": ["frontend", "passkey-sdk", "factory", "relayer", "perch", "infra", "docs", "deps"]
+    "scopes": [
+      "frontend",
+      "passkey-sdk",
+      "factory",
+      "relayer",
+      "perch",
+      "infra",
+      "docs",
+      "deps"
+    ]
   },
   "skip": {
-    "authors": ["dependabot[bot]"]
+    "authors": [
+      "dependabot[bot]"
+    ]
   },
   "help": "See CONTRIBUTING.md \"Pull requests and commits\".",
+  "module": "scripts/review-conventions-rules.mjs",
   "rules": [
     {
       "id": "contract-sections",
       "message": "A security-relevant path changed; use the contract template (gh pr create --template contract.md)",
       "when": {
-        "paths": ["contracts/", "packages/passkey-sdk/src/perch/", "infra/relayer/", "crates/integration-tests/"],
-        "notTemplate": ["mechanical.md"]
+        "paths": [
+          "contracts/",
+          "packages/passkey-sdk/src/perch/",
+          "infra/relayer/",
+          "crates/integration-tests/"
+        ],
+        "notTemplate": [
+          "mechanical.md"
+        ]
       },
-      "requireSections": ["Security impact", "Invariants"]
+      "requireSections": [
+        "Security impact",
+        "Invariants"
+      ]
     },
     {
       "id": "invariant-ids",
       "message": "Cite only IDs that docs/SECURITY_INVARIANTS.md defines",
-      "section": ["Invariants", "Security impact"],
+      "section": [
+        "Invariants",
+        "Security impact"
+      ],
       "allowNone": true,
       "references": {
         "file": "docs/SECURITY_INVARIANTS.md",
@@ -32,7 +57,11 @@
     {
       "id": "evidence-kind",
       "message": "Name the evidence kind from docs/SECURITY_INVARIANTS.md \"Evidence kinds\"",
-      "when": { "sections": { "Invariants": "\\S" } },
+      "when": {
+        "sections": {
+          "Invariants": "\\S"
+        }
+      },
       "section": "Invariants",
       "allowNone": true,
       "match": "\\b(Mocked|Enforcing|Real-proof|Unit \\((CI|local)\\)|Browser|Testnet|Review)\\b"

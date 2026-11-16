@@ -23,6 +23,6 @@ concurrency:
 
 jobs:
   review-conventions:
-    uses: bitswell-hq/review-conventions/.github/workflows/review-conventions.yml@055e7ddb029c2fd050086ddaa27b784ba0edbf00
+    uses: bitswell-hq/review-conventions/.github/workflows/review-conventions.yml@17ea86093a5ed173356383cdb73c0cf965f21dbb
     with:
       mode: warn # the one switch: `block` fails the check on any finding (drafts never fail)
