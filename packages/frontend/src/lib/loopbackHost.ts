@@ -7,7 +7,7 @@
  *  context, so a remote attacker cannot point one at their server on a
  *  victim's machine — http there is exactly as safe as bare `localhost`.
  *  Nido's whole dev topology is `.localhost` subdomains (the wallet at
- *  `<contractid>.localhost:<port>`, a dApp at `dapp.localhost:<port>`), so the
+ *  `<contractid>.nido.localhost:<port>`, a dApp at `dapp.localhost:<port>`), so the
  *  bare-`localhost` check alone wrongly refused legitimate local dApp origins.
  *  Callers still require an `http:`/`https:` protocol, so `javascript:`/`data:`/
  *  `blob:`/opaque schemes and real remote-http origins stay rejected. */

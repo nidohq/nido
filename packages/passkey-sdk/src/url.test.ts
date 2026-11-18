@@ -223,9 +223,13 @@ describe('splitHost', () => {
     ['alice.test.nido.fyi', { apex: 'test.nido.fyi', preview: null, label: 'alice' }],
     ['alice--126.test.nido.fyi', { apex: 'test.nido.fyi', preview: '126', label: 'alice' }],
     ['status-message.test.nido.fyi', { apex: 'test.nido.fyi', preview: null, label: 'status-message' }],
+    ['nido.localhost:4321', { apex: 'nido.localhost:4321', preview: null, label: null }],
+    [`${c}.nido.localhost:4321`, { apex: 'nido.localhost:4321', preview: null, label: c }],
+    ['alice--24.nido.localhost:4321', { apex: 'nido.localhost:4321', preview: '24', label: 'alice' }],
+    // Bare `localhost` is not Nido's dev apex: it has no registrable domain, so
+    // its subdomains would be separate sites (see README "Local development").
     ['localhost:4321', { apex: 'localhost:4321', preview: null, label: null }],
-    [`${c}.localhost:4321`, { apex: 'localhost:4321', preview: null, label: c }],
-    ['alice--24.localhost:4321', { apex: 'localhost:4321', preview: '24', label: 'alice' }],
+    [`${c}.localhost:4321`, { apex: `${c}.localhost:4321`, preview: null, label: null }],
     ['127.0.0.1:4321', { apex: '127.0.0.1:4321', preview: null, label: null }],
     ['mysoroban.xyz', { apex: 'mysoroban.xyz', preview: null, label: null }],
     ['alice.mysoroban.xyz', { apex: 'mysoroban.xyz', preview: null, label: 'alice' }],
@@ -248,6 +252,22 @@ describe('splitHost', () => {
       preview: null,
       label: 'alice',
     });
+  });
+});
+
+describe('host helpers on the local development apex', () => {
+  const c = C.toLowerCase();
+  it('builds siblings one label below nido.localhost from any of its hosts', () => {
+    expect(accountUrl('nido.localhost:4321', 'CBOB')).toBe('//cbob.nido.localhost:4321/');
+    expect(accountUrl(`${c}.nido.localhost:4321`, 'CBOB')).toBe('//cbob.nido.localhost:4321/');
+    expect(accountUrl('alice.nido.localhost:4321', 'CBOB')).toBe('//cbob.nido.localhost:4321/');
+    expect(dappUrl(`${c}.nido.localhost:4321`, 'status-message')).toBe('//status-message.nido.localhost:4321/');
+    expect(stripSubdomain(`${c}.nido.localhost:4321`)).toBe('nido.localhost:4321');
+  });
+  it('reads accounts and names below nido.localhost', () => {
+    expect(contractIdFromHostname(`${c}.nido.localhost:4321`)).toBe(C);
+    expect(nameFromHostname('alice.nido.localhost:4321')).toBe('alice');
+    expect(contractIdFromHostname('nido.localhost:4321')).toBe(null);
   });
 });
 
@@ -278,7 +298,7 @@ describe('host helpers on the testnet apex', () => {
   it('no apex is read as a name', () => {
     expect(nameFromHostname('test.nido.fyi')).toBe(null);
     expect(nameFromHostname('nido.fyi')).toBe(null);
-    expect(nameFromHostname('localhost:4321')).toBe(null);
+    expect(nameFromHostname('nido.localhost:4321')).toBe(null);
   });
   it('names and contracts below the testnet apex', () => {
     expect(nameFromHostname('alice.test.nido.fyi')).toBe('alice');

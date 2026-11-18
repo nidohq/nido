@@ -26,7 +26,7 @@ export interface PasskeySupport {
 }
 
 const INSECURE_CONTEXT_MESSAGE =
-  "Passkeys need a secure connection. Open Nido at its https:// address (or on localhost) and try again.";
+  "Passkeys need a secure connection. Open Nido at its https:// address (or, in local development, on nido.localhost) and try again.";
 const UNSUPPORTED_MESSAGE =
   "This browser can't use passkeys here. Try opening Nido in Safari or Chrome.";
 

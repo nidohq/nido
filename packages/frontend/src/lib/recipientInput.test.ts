@@ -16,8 +16,8 @@ describe('normalizeRecipientInput', () => {
   it('strips the whole testnet suffix, not just .nido.fyi', () => {
     expect(normalizeRecipientInput('alice.test.nido.fyi')).toBe('alice');
   });
-  it('strips a trailing .localhost suffix (dev)', () => {
-    expect(normalizeRecipientInput('alice.localhost')).toBe('alice');
+  it('strips a trailing .nido.localhost suffix (dev)', () => {
+    expect(normalizeRecipientInput('alice.nido.localhost')).toBe('alice');
   });
   it('lowercases when stripping a suffix', () => {
     expect(normalizeRecipientInput('ALICE.NIDO')).toBe('alice');

@@ -169,7 +169,7 @@ export function safeRouteUrl(url: string | null | undefined, base: string): stri
 
     // Same account root as the current host. `stripSubdomain` reduces a host to
     // its account root (apex in prod, the `<N>.<apex>` preview root in previews,
-    // `localhost:<port>` in dev), so preview siblings like `<name>--24.<apex>`
+    // `nido.localhost:<port>` in dev), so preview siblings like `<name>--24.<apex>`
     // share their root and production never reaches into a preview.
     const root = hostnameOf(stripSubdomain(baseUrl.host));
     return hostnameOf(stripSubdomain(u.host)) === root ? u.href : null;
