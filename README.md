@@ -138,6 +138,39 @@ npm test -w packages/stellar-wallets-kit-module
 npm run test -w packages/frontend
 ```
 
+### Local development
+
+`just dev` serves Nido at **http://nido.localhost:4321**. An account lives one
+label below it, at `http://<c-address>.nido.localhost:4321`, as `nido.fyi` and
+`<c-address>.nido.fyi` do in production. The dev server redirects
+`localhost:4321`, `127.0.0.1:4321` and `<c-address>.localhost:4321` to the same
+path on `nido.localhost`.
+
+Plain `localhost` doesn't work as the apex. It has no registrable domain, so
+each `<c-address>.localhost` is a site of its own. Chrome and Firefox partition
+the storage bridge's iframe by site, so an account set up on its own address
+never reaches the main site's list, which keeps showing "Finishing setup…".
+`nido.localhost` and its subdomains are one site. Chrome and Firefox resolve
+every `*.localhost` name to loopback without DNS and treat it as a secure
+context, so passkeys work over plain http.
+
+Nothing carries over from plain `localhost`. Browser storage is per origin, so
+accounts and setup keys made on `localhost` or `<c-address>.localhost` stay
+there. A passkey belongs to the hostname it was created on (its relying party
+is the account's own hostname, now `<c-address>.nido.localhost`), so dev
+passkeys made on `<c-address>.localhost` can't sign on the new address. Create
+new testnet accounts.
+
+Safari resolves host names through the operating system. On macOS 26.5 the
+system resolver answers every `*.localhost` name with loopback, and Safari
+needs no setup. Where `dscacheutil -q host -a name nido.localhost` returns
+nothing, list the hosts you open in `/etc/hosts`, which has no wildcards:
+
+```text
+127.0.0.1  nido.localhost <c-address>.nido.localhost
+::1        nido.localhost <c-address>.nido.localhost
+```
+
 ## Run the Example dApp
 
 The status-message example demonstrates a third-party dApp connecting through
