@@ -2,7 +2,9 @@ import { defineConfig } from "astro/config";
 import { devRedirectHost } from "./src/lib/devHost.ts";
 
 // Local development lives on `nido.localhost:<port>` (src/lib/devHost.ts says
-// why); a request for bare `localhost` or `<c>.localhost` is sent there.
+// why); the dev server sends a request for bare `localhost` or
+// `<c-address>.localhost` there. `astro preview` loads no plugin from this
+// file, so it does not redirect.
 const nidoLocalhost = {
   name: "nido-localhost",
   configureServer(server) {

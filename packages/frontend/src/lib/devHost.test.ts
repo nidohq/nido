@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { devRedirectHost } from "./devHost";
 
+const C = `c${"a".repeat(55)}`;
+
 describe("devRedirectHost", () => {
   it("moves bare loopback hosts to nido.localhost, keeping the port", () => {
     expect(devRedirectHost("localhost:4321")).toBe("nido.localhost:4321");
@@ -9,14 +11,23 @@ describe("devRedirectHost", () => {
     expect(devRedirectHost("localhost")).toBe("nido.localhost");
   });
 
-  it("moves an old-topology subdomain under nido.localhost", () => {
-    expect(devRedirectHost("cabc.localhost:4321")).toBe("cabc.nido.localhost:4321");
-    expect(devRedirectHost("Status-Message.LOCALHOST:4321")).toBe("status-message.nido.localhost:4321");
+  it("moves an old-topology account host under nido.localhost", () => {
+    expect(devRedirectHost(`${C}.localhost:4321`)).toBe(`${C}.nido.localhost:4321`);
+    expect(devRedirectHost(`${C.toUpperCase()}.LOCALHOST:4321`)).toBe(`${C}.nido.localhost:4321`);
+  });
+
+  it("leaves every other .localhost label where it is", () => {
+    expect(devRedirectHost("dapp.localhost:4321")).toBeNull();
+    expect(devRedirectHost("status-message.localhost:4321")).toBeNull();
+    expect(devRedirectHost("alice--24.localhost:4321")).toBeNull();
+    expect(devRedirectHost("cabc.localhost:4321")).toBeNull();
+    expect(devRedirectHost(`${C}a.localhost:4321`)).toBeNull();
+    expect(devRedirectHost(`dapp.${C}.localhost:4321`)).toBeNull();
   });
 
   it("leaves the dev topology alone", () => {
     expect(devRedirectHost("nido.localhost:4321")).toBeNull();
-    expect(devRedirectHost("cabc.nido.localhost:4321")).toBeNull();
+    expect(devRedirectHost(`${C}.nido.localhost:4321`)).toBeNull();
     expect(devRedirectHost("alice--24.nido.localhost:4321")).toBeNull();
   });
 

@@ -9,21 +9,20 @@
  *
  * The dev server sends a request for that old topology to the same path on
  * the new one: `localhost`, `127.0.0.1` and `[::1]` move to `nido.localhost`,
- * and `<label>.localhost` to `<label>.nido.localhost`. Returns the host to
- * redirect to, or null when `host` (a `Host` header, port included) is already
- * on `nido.localhost` or is not a loopback name at all.
+ * and an account's `<c-address>.localhost` to `<c-address>.nido.localhost`.
+ * Every other `<label>.localhost` stays where it is: `dapp.localhost` is a
+ * local dApp, and moving it under `nido.localhost` would make it the same site
+ * as the wallet. Returns the host to redirect to, or null when `host` (a
+ * `Host` header, port included) is not one of those.
  */
 export function devRedirectHost(host: string): string | null {
   const portAt = host.startsWith("[") ? host.indexOf("]:") + 1 : host.lastIndexOf(":");
   const port = portAt > 0 ? host.slice(portAt) : "";
   const hostname = (portAt > 0 ? host.slice(0, portAt) : host).toLowerCase();
 
-  if (hostname === "nido.localhost" || hostname.endsWith(".nido.localhost")) return null;
   if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
     return `nido.localhost${port}`;
   }
-  if (hostname.endsWith(".localhost")) {
-    return `${hostname.slice(0, -".localhost".length)}.nido.localhost${port}`;
-  }
-  return null;
+  const account = /^(c[a-z2-7]{55})\.localhost$/.exec(hostname);
+  return account ? `${account[1]}.nido.localhost${port}` : null;
 }

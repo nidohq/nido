@@ -144,7 +144,11 @@ npm run test -w packages/frontend
 label below it, at `http://<c-address>.nido.localhost:4321`, as `nido.fyi` and
 `<c-address>.nido.fyi` do in production. The dev server redirects
 `localhost:4321`, `127.0.0.1:4321` and `<c-address>.localhost:4321` to the same
-path on `nido.localhost`.
+path on `nido.localhost`. It redirects nothing else: a name-style address on
+the old layout, such as `alice--24.localhost:4321`, is not moved, and
+`dapp.localhost:4321` stays a different site from the wallet. `astro preview`
+doesn't redirect at all, so open `nido.localhost:4321` yourself when you
+preview a build.
 
 Plain `localhost` doesn't work as the apex. It has no registrable domain, so
 each `<c-address>.localhost` is a site of its own. Chrome and Firefox partition
