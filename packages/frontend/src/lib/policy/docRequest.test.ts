@@ -62,9 +62,35 @@ describe('parseDocDelegateParams', () => {
     },
   );
 
-  it('treats absent functions as any-function', () => {
+  it('parses a grant with no functions as any-function (the page checks its target: tokenTarget.ts)', () => {
     const r = parseDocDelegateParams(params({ functions: null }));
     expect(r.ok && r.req.grants[0]!.functions).toBeUndefined();
+  });
+
+  describe('every grant that may call transfer names its recipient', () => {
+    it('refuses a transfer grant without to=', () => {
+      const r = parseDocDelegateParams(params({ functions: 'transfer' }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain('A transfer grant must name its recipient (to=)');
+    });
+
+    it('refuses transfer beside other functions, with or without to=', () => {
+      const bare = parseDocDelegateParams(params({ functions: 'guess,transfer' }));
+      expect(bare.ok).toBe(false);
+      if (!bare.ok) expect(bare.error).toContain('may call only transfer');
+      const pinned = parseDocDelegateParams(params({ functions: 'guess,transfer', to: TARGET }));
+      expect(pinned.ok).toBe(false);
+    });
+
+    it('takes a transfer grant with to=, which the rule pins', () => {
+      const r = parseDocDelegateParams(params({ functions: 'transfer', to: TARGET }));
+      expect(r.ok && r.req.grants[0]).toMatchObject({ functions: ['transfer'], to: TARGET });
+    });
+
+    it('needs no recipient on a grant that cannot call transfer', () => {
+      expect(parseDocDelegateParams(params({ functions: 'approve' })).ok).toBe(true);
+      expect(parseDocDelegateParams(params({ functions: 'guess' })).ok).toBe(true);
+    });
   });
 
   it('requests no cap only when limit and limit_period are both absent', () => {
@@ -132,17 +158,27 @@ describe('parseDocDelegateParams', () => {
       expect(limitNoneHonoured(grantOf({ functions: 'guess,reveal' }))).toBe(true);
     });
 
-    it.each(['transfer', 'approve', 'transfer_from', 'burn', 'clawback', 'guess,transfer', 'approve,guess'])(
+    it.each(['approve', 'transfer_from', 'burn', 'clawback', 'approve,guess'])(
       'does not honour limit=none on functions %j (token-moving)',
       (functions) => {
         expect(limitNoneHonoured(grantOf({ functions }))).toBe(false);
       },
     );
 
+    it('does not honour limit=none on a transfer grant', () => {
+      expect(limitNoneHonoured(grantOf({ functions: 'transfer', to: TARGET }))).toBe(false);
+    });
+
     it('does not honour limit=none on a rule allowing any function', () => {
       const grant = grantOf({ functions: null });
       expect(grant.functions).toBeUndefined();
       expect(limitNoneHonoured(grant)).toBe(false);
+    });
+
+    // A request with this is refused (transfer can only be pinned alone);
+    // the rule itself still holds for it.
+    it('does not honour limit=none on transfer beside other functions', () => {
+      expect(limitNoneHonoured({ cap: 'none', functions: ['guess', 'transfer'] })).toBe(false);
     });
 
     it('is false for a grant without limit=none', () => {
@@ -261,6 +297,7 @@ function multi(overrides: Record<string, string | null> = {}): URLSearchParams {
     'grant.1.functions': 'transfer',
     'grant.1.limit': '2',
     'grant.1.limit_period': 'day',
+    'grant.1.to': TARGET,
   };
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries({ ...base, ...overrides })) {
@@ -280,7 +317,7 @@ describe('parseDocDelegateParams — several grants (grant.<i>.*)', () => {
       duration: '24h',
       grants: [
         { label: 'guess', target: TARGET, functions: ['guess'], cap: 'none' },
-        { label: 'guess-xlm', target: XLM, functions: ['transfer'], cap: { stroops: '20000000', period: 'day' } },
+        { label: 'guess-xlm', target: XLM, functions: ['transfer'], cap: { stroops: '20000000', period: 'day' }, to: TARGET },
       ],
       returnUrl: 'https://game.example/play',
     });
@@ -313,6 +350,7 @@ describe('parseDocDelegateParams — several grants (grant.<i>.*)', () => {
     for (let i = 2; i < MAX_DOC_GRANTS; i++) {
       p.set(`grant.${i}.label`, `rule-${i}`);
       p.set(`grant.${i}.target`, TARGET);
+      p.set(`grant.${i}.functions`, 'guess');
       p.set(`grant.${i}.limit`, 'none');
     }
     const ok = parseDocDelegateParams(p);
@@ -427,13 +465,14 @@ describe('describeSessionScope', () => {
       describeSessionScope({
         cap: { stroops: '25000000', period: 'week' },
         functions: ['transfer'],
+        to: TARGET,
         duration: '24h',
         notAfterLedger: 5145276,
       }),
     ).toEqual({
       amount: 'Up to 2.5 XLM per week',
       warn: false,
-      recipient: 'to any address',
+      recipient: `only to ${TARGET}`,
       expiry: 'At ledger 5,145,276 (≈ 24 hours)',
     });
   });
@@ -442,7 +481,9 @@ describe('describeSessionScope', () => {
     expect(describeSessionScope({ ...base, cap: null, functions: undefined, duration: 'none' })).toEqual({
       amount: 'No spending cap',
       warn: true,
-      recipient: 'to any address',
+      // A grant with no functions reaches approval only on a contract that
+      // is not a token (tokenTarget.ts): it names no recipient.
+      recipient: null,
       expiry: 'Never (until revoked)',
     });
   });
@@ -460,14 +501,11 @@ describe('describeSessionScope', () => {
     },
   );
 
-  it('says whom a transfer may pay: only its to, or any address', () => {
+  it('names a transfer grant\'s recipient, its to', () => {
     const cap = { stroops: '20000000', period: 'day' } as const;
-    expect(describeSessionScope({ ...base, cap, functions: ['transfer'], to: TARGET }).recipient).toBe(
-      `only to ${TARGET}`,
-    );
-    expect(describeSessionScope({ ...base, cap, functions: ['transfer'] })).toMatchObject({
+    expect(describeSessionScope({ ...base, cap, functions: ['transfer'], to: TARGET })).toMatchObject({
       amount: 'Up to 2 XLM per day',
-      recipient: 'to any address',
+      recipient: `only to ${TARGET}`,
     });
   });
 

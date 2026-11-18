@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import type { BrowserContext, Page, Route } from '@playwright/test';
@@ -142,6 +143,48 @@ export interface ChainOptions {
   classicAccounts?: string[];
   /** Filled with the invocation of every transaction sent; each lands. */
   submitted?: Invocation[];
+  /** Contracts whose code `getLedgerEntries` finds: the built-in asset
+   *  contract, or wasm (its instance and its code by hash). */
+  contracts?: Record<string, { kind: 'stellar-asset' } | { kind: 'wasm'; wasm: Buffer }>;
+}
+
+/** The instance entry and, for wasm, the code entry of each of `contracts`. */
+function contractEntries(contracts: NonNullable<ChainOptions['contracts']>): { key: string; xdr: string; lastModifiedLedgerSeq: number }[] {
+  return Object.entries(contracts).flatMap(([id, code]) => {
+    const hash = code.kind === 'wasm' ? createHash('sha256').update(code.wasm).digest() : null;
+    const instanceKey = new xdr.LedgerKeyContractData({
+      contract: new Address(id).toScAddress(),
+      key: xdr.ScVal.scvLedgerKeyContractInstance(),
+      durability: xdr.ContractDataDurability.persistent(),
+    });
+    const executable = hash
+      ? xdr.ContractExecutable.contractExecutableWasm(hash)
+      : xdr.ContractExecutable.contractExecutableStellarAsset();
+    const instance = {
+      key: xdr.LedgerKey.contractData(instanceKey).toXDR('base64'),
+      xdr: xdr.LedgerEntryData.contractData(
+        new xdr.ContractDataEntry({
+          ext: new xdr.ExtensionPoint(0),
+          contract: instanceKey.contract(),
+          key: instanceKey.key(),
+          durability: instanceKey.durability(),
+          val: xdr.ScVal.scvContractInstance(new xdr.ScContractInstance({ executable, storage: null })),
+        }),
+      ).toXDR('base64'),
+      lastModifiedLedgerSeq: 1,
+    };
+    if (hash === null || code.kind !== 'wasm') return [instance];
+    return [
+      instance,
+      {
+        key: xdr.LedgerKey.contractCode(new xdr.LedgerKeyContractCode({ hash })).toXDR('base64'),
+        xdr: xdr.LedgerEntryData.contractCode(
+          new xdr.ContractCodeEntry({ ext: new xdr.ContractCodeEntryExt(0), hash, code: code.wasm }),
+        ).toXDR('base64'),
+        lastModifiedLedgerSeq: 1,
+      },
+    ];
+  });
 }
 
 /**
@@ -168,7 +211,10 @@ export async function mockPerchChain(
       if (body.method === 'getLatestLedger') return reply({ id: 'mock', protocolVersion: 23, sequence: ledger });
       if (body.method === 'getLedgerEntries') {
         const keys = body.params.keys as string[];
-        const entries = (chain.classicAccounts ?? []).map(classicAccountEntry).filter((e) => keys.includes(e.key));
+        const entries = [
+          ...(chain.classicAccounts ?? []).map(classicAccountEntry),
+          ...contractEntries(chain.contracts ?? {}),
+        ].filter((e) => keys.includes(e.key));
         return reply({ entries, latestLedger: ledger });
       }
       if (body.method === 'sendTransaction') {
