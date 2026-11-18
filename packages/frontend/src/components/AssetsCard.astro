@@ -49,6 +49,7 @@
   import { resolveTomlIcon } from "../lib/assets/icons.js";
   import { EXPLORER_BASE } from "../lib/network.js";
   import { resolveAccountAddress } from "../lib/resolveAccount.js";
+  import { cachedRead } from "../lib/pageCache.js";
   import type { AssetHolding } from "../lib/assets/types.js";
 
   function onIconError(img: HTMLImageElement) {
@@ -101,13 +102,15 @@
     explorer.href = `${EXPLORER_BASE}/contract/${address}`;
     explorer.hidden = false;
     try {
-      const holdings = await loadAssets(address);
-      skel.hidden = true;
-      if (holdings.length === 0) { empty.hidden = false; return; }
-      list.innerHTML = holdings.map(assetRowHtml).join("");
-      list.hidden = false;
-      list.querySelectorAll<HTMLImageElement>("img.asset-icon").forEach(onIconError);
-      patchTomlIcons(list, holdings);
+      // Cached holdings render instantly across page switches (#346).
+      await cachedRead(`assets:${address}`, () => loadAssets(address), (holdings) => {
+        skel.hidden = true;
+        empty.hidden = holdings.length > 0;
+        list.hidden = holdings.length === 0;
+        list.innerHTML = holdings.map(assetRowHtml).join("");
+        list.querySelectorAll<HTMLImageElement>("img.asset-icon").forEach(onIconError);
+        patchTomlIcons(list, holdings);
+      });
     } catch {
       // Update only the text node so the explorer link stays usable.
       skel.hidden = true;

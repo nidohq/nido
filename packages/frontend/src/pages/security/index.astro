@@ -183,7 +183,7 @@ import Nest from '../../components/Nest.astro';
       try {
         const resolved = await resolveNameCached(
           RPC_URL,
-          await fetchRegistryAddress('name-registry'),
+          () => fetchRegistryAddress('name-registry'),
           detectedName,
           NETWORK_PASSPHRASE,
         );
