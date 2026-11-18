@@ -188,11 +188,14 @@ jobs:
       # deployment and the recovery pages say so (recovery-pages.spec.ts).
       - name: Build frontend
         env:
+          PUBLIC_STELLAR_NETWORK: testnet
           PUBLIC_PERCH_DEPLOYMENT: none
         run: npx astro build --root ./packages/frontend
       # The same pages against a fixture deployment, for the specs that
       # drive a recovery page over a mocked chain (tests/support/perchRpcMock.mts).
       - name: Build frontend (fixture Perch deployment)
+        env:
+          PUBLIC_STELLAR_NETWORK: testnet
         run: |
           PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.json)" \
             npx astro build --root ./packages/frontend --outDir ./dist-perch

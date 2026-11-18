@@ -515,7 +515,7 @@ export function requestBridgeSync(): Promise<BridgeSyncResult> {
   if (syncInFlight) return syncInFlight;
   window.clearTimeout(retryTimer);
   attachWakeListeners();
-  if (bridgeSyncNeeded()) setStatus(status === "unconfirmed" ? "unconfirmed" : "syncing");
+  if (bridgeSyncNeeded()) setStatus("syncing");
   syncInFlight = syncNidoStorageViaBridge().then((result) => {
     syncInFlight = null;
     if (!bridgeSyncNeeded()) {

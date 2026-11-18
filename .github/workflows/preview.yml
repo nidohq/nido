@@ -47,6 +47,7 @@ jobs:
 
       - name: Build frontend
         env:
+          PUBLIC_STELLAR_NETWORK: testnet
           # Gas abstraction via the self-hosted OZ Relayer (#72). SIM_SOURCE is
           # the relayer's public fund address (simulation-only tx source).
           PUBLIC_RELAYER_URL: https://nido.fly.dev

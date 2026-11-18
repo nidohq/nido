@@ -136,6 +136,23 @@ describe("the sign-in list's one-time migration (mainnet build)", () => {
     expect(store.getItem("nido:testnet:accounts")).toBeNull();
   });
 
+  it("keeps an account the storage bridge lists while the probes are in flight", async () => {
+    const ADDED = StrKey.encodeContract(Buffer.alloc(32, 5));
+    const store = new MemoryStore({ "nido:testnet:accounts": [MAIN], "nido:mainnet:accounts": [VISITED] });
+    const { deps } = world(store, [MAIN], [MAIN, VISITED]);
+    const result = await migrateAccountList({
+      ...deps,
+      hasPasskey: async (c) => {
+        // Another tab's account page hands its account to the apex meanwhile.
+        if (c === VISITED) store.setItem("nido:mainnet:accounts", JSON.stringify([VISITED, ADDED]));
+        return deps.hasPasskey(c);
+      },
+    });
+    expect(result).toEqual({ ran: true, kept: [MAIN], dropped: [VISITED], undecided: [] });
+    expect(JSON.parse(store.getItem("nido:mainnet:accounts")!)).toEqual([ADDED, MAIN]);
+    expect(store.getItem("nido:mainnet:accounts:migrated:v1")).not.toBeNull();
+  });
+
   it("treats a failed probe or chain read as undecided, never as a drop", async () => {
     const store = new MemoryStore({ "nido:testnet:accounts": [MAIN] });
     const result = await migrateAccountList({

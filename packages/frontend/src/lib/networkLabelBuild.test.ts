@@ -83,6 +83,24 @@ function scriptBytes(network: string, path: string): number {
 
 const chips = (doc: Document) => Array.from(doc.querySelectorAll(".chip"), (c) => c.textContent!.trim());
 
+describe("a build with no network", () => {
+  it("fails instead of building for testnet", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "nido-unset-"));
+    outDirs.set("unset", outDir);
+    const env = { ...process.env };
+    delete env.PUBLIC_STELLAR_NETWORK;
+    let output = "";
+    try {
+      execFileSync(process.execPath, [ASTRO_BIN, "build", "--outDir", outDir], { cwd: FRONTEND, env, stdio: "pipe" });
+    } catch (err) {
+      const { stdout, stderr } = err as { stdout: Buffer; stderr: Buffer };
+      output = `${stdout}${stderr}`;
+    }
+    expect(output).toContain('PUBLIC_STELLAR_NETWORK must be "mainnet" or "testnet"');
+    expect(existsSync(join(outDir, "account", "index.html"))).toBe(false);
+  }, 180_000);
+});
+
 describe.each(NETWORKS)("a $network build", ({ network, label, other, appName }) => {
   it.each(["new-account", "account"])("labels /%s/ with its own network", (path) => {
     const shown = chips(page(network, path));

@@ -12,7 +12,7 @@ import { deployAccountDirect } from '../../support/directDeploy';
  * It runs against `perch.TESTNET`, Perch's testnet release
  * (stellar-registry/perch#99 WS4) and Nido's factory around its account:
  *
- *   PUBLIC_RELAYER_URL=… PUBLIC_RELAYER_SIM_SOURCE=… npx astro build --root ./packages/frontend
+ *   PUBLIC_STELLAR_NETWORK=testnet PUBLIC_RELAYER_URL=… PUBLIC_RELAYER_SIM_SOURCE=… npx astro build --root ./packages/frontend
  *   npx playwright test --project=testnet-chromium perch-recovery
  *
  * Accounts are created through the onboarding UI, which the hosted relayer

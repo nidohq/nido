@@ -6,7 +6,7 @@ const ENV = import.meta.env as Record<string, string | undefined>;
 describe("perchDeployment()", () => {
   afterEach(() => {
     delete ENV.PUBLIC_PERCH_DEPLOYMENT;
-    delete ENV.PUBLIC_STELLAR_NETWORK;
+    ENV.PUBLIC_STELLAR_NETWORK = "testnet";
     vi.resetModules();
   });
 

@@ -50,11 +50,6 @@ export function setStorageNetwork(network: StorageNetwork): void {
   storageNetwork = network;
 }
 
-/** The network {@link setStorageNetwork} chose, or `null` before it was called. */
-export function storageNetworkOrNull(): StorageNetwork | null {
-  return storageNetwork;
-}
-
 /**
  * Move every legacy `nido:<rest>` key to `nido:testnet:<rest>`. A key whose
  * namespaced copy already exists is left where it is rather than overwrite

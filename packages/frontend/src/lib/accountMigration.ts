@@ -90,13 +90,9 @@ const safely = async (read: () => Promise<boolean | null>): Promise<boolean | nu
   }
 };
 
-export function accountMigrationDone(store: MigrationStore): boolean {
-  return store.getItem(DONE_KEY()) !== null;
-}
-
 export async function migrateAccountList(deps: AccountMigrationDeps): Promise<AccountMigrationResult> {
   const { store, network } = deps;
-  if (accountMigrationDone(store)) return { ran: false, kept: [], dropped: [], undecided: [] };
+  if (store.getItem(DONE_KEY()) !== null) return { ran: false, kept: [], dropped: [], undecided: [] };
 
   const accountsKey = nidoKey("accounts");
   const current = readList(store, accountsKey);
@@ -113,9 +109,12 @@ export async function migrateAccountList(deps: AccountMigrationDeps): Promise<Ac
   const dropped = candidates.filter((_, i) => verdicts[i] === false);
   const undecided = candidates.filter((_, i) => verdicts[i] === null);
 
-  // Undecided entries of this network's own list stay listed until decided;
-  // undecided legacy entries stay in the legacy list until then.
-  const list = candidates.filter((c) => kept.includes(c) || (undecided.includes(c) && current.includes(c)));
+  // The list is read again here: the storage bridge may have added an account
+  // while the probes ran. Only dropped entries leave it, so undecided entries
+  // of this network's own list stay listed until decided; undecided legacy
+  // entries stay in the legacy list until then.
+  const listed = readList(store, accountsKey).filter((c) => !dropped.includes(c));
+  const list = [...listed, ...kept.filter((c) => !listed.includes(c))];
   store.setItem(accountsKey, JSON.stringify(list));
   for (const contractId of kept.filter((c) => legacy.includes(c))) {
     const name = store.getItem(`${LEGACY}names:${contractId}`);

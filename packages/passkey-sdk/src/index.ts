@@ -84,7 +84,6 @@ export type {
 export {
   nidoKey,
   setStorageNetwork,
-  storageNetworkOrNull,
   moveLegacyNidoKeys,
   saveCredential,
   loadCredential,
