@@ -504,6 +504,9 @@ user starts a recovery.
 
 ### User support
 
+- **New device, no passkey on it:** if the passkey synced (iCloud Keychain,
+  Google Password Manager), open `/security/` on the account's address and
+  choose "New device? Use your synced passkey". No recovery is needed.
 - **Lost passkey:** from a new device, open `/security/recover/` on the
   account's address and follow it.
 - **A recovery the owner didn't start:** `Loss` owners cancel it on
