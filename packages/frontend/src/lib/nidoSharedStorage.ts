@@ -394,7 +394,8 @@ export function bridgeSyncNeeded(
  * iframe of `<apex>/nido-storage-bridge/`): send this origin's snapshot, which
  * the apex merges into its sign-in list, and merge back what it answers. The
  * iframe stays until the bridge answers or `timeoutMs` passes; on an answer,
- * this origin records what the apex now holds for its own account. Resolves
+ * this origin records what the answer shows the apex holding for its own
+ * account. Resolves
  * `{ answered: false }` on the apex itself, where there is nothing to sync.
  */
 export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): Promise<BridgeSyncResult> {
@@ -412,7 +413,6 @@ export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): P
     const iframe = document.createElement("iframe");
     const own = ownAccount(window.location);
     let settled = false;
-    let sentStatus: OwnStatus | null = null;
     let resend: number | undefined;
 
     function finish(result: BridgeSyncResult) {
@@ -426,10 +426,8 @@ export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): P
     }
 
     function send() {
-      const snapshot = localNidoSnapshot();
-      sentStatus = own ? ownStatus(snapshot, own) : null;
       iframe.contentWindow?.postMessage(
-        { type: NIDO_STORAGE_REQUEST, id, snapshot } satisfies NidoStorageRequest,
+        { type: NIDO_STORAGE_REQUEST, id, snapshot: localNidoSnapshot() } satisfies NidoStorageRequest,
         bridge.origin,
       );
     }
@@ -439,8 +437,12 @@ export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): P
       const data = event.data;
       if (data?.type !== NIDO_STORAGE_RESPONSE || data.id !== id) return;
       const changed = mergeNidoSnapshot(data.snapshot);
+      // Record what the answer shows the apex holding, not what this origin
+      // sent last: resends share one id, so the answer can be to an earlier
+      // send that still carried the account as pending.
+      const confirmed = own ? ownStatus(normalizeSnapshot(data.snapshot), own) : null;
       const store = storageOrNull();
-      if (own && sentStatus && store) store.setItem(confirmedKey(own), sentStatus);
+      if (own && confirmed && store) store.setItem(confirmedKey(own), confirmed);
       finish({ answered: true, changed });
     }
 
