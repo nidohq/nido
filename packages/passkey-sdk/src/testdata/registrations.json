@@ -1,8 +1,8 @@
 {
   "_sources": {
     "chrome": "Chromium 148.0.7778.96 WebAuthn virtual authenticator (ctap2, internal, resident key, UV), attestation \"none\"; generated for this repo.",
-    "apple": "Apple platform authenticator, \"apple\" attestation format, from SimpleWebAuthn (https://github.com/MasterKale/SimpleWebAuthn, packages/server/src/registration/verifications/verifyAttestationApple.test.ts), MIT License, Copyright (c) 2020 Matthew Miller. spki is the attestation leaf certificate's SubjectPublicKeyInfo, which certifies the credential key.",
-    "android": "Android Keystore on a Pixel 8a (January 2025), \"android-key\" attestation format, from SimpleWebAuthn (verifyAttestationAndroidKey.test.ts), MIT License, Copyright (c) 2020 Matthew Miller. spki is the attestation leaf certificate's SubjectPublicKeyInfo, which certifies the credential key."
+    "apple": "Apple platform authenticator, \"apple\" attestation format, from SimpleWebAuthn (https://github.com/MasterKale/SimpleWebAuthn, packages/server/src/registration/verifications/verifyAttestationApple.test.ts), MIT License, Copyright (c) 2020 Matthew Miller; licence text in ../webauthn.test.ts. spki is the attestation leaf certificate's SubjectPublicKeyInfo, which certifies the credential key.",
+    "android": "Android Keystore on a Pixel 8a (January 2025), \"android-key\" attestation format, from SimpleWebAuthn (verifyAttestationAndroidKey.test.ts), MIT License, Copyright (c) 2020 Matthew Miller; licence text in ../webauthn.test.ts. spki is the attestation leaf certificate's SubjectPublicKeyInfo, which certifies the credential key."
   },
   "chrome": {
     "rawId": "_VhOlNPyhbOLlU0MSXo53dVd-A9PzPAu3qKUtGKX8yI",
