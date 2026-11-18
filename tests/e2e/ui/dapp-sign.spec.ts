@@ -4,12 +4,12 @@ import { Address, StrKey, hash, xdr } from '@stellar/stellar-sdk';
 
 const PORT = Number(process.env.E2E_PORT || 4399);
 const FAKE_CONTRACT_ID = 'CDLZFC2SYJYDZT7K7VJRL2CU7LQV6AFZ2K2QJLY7QV53KIGWXJOANPYY';
-const host = `${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}`;
+const host = `${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}`;
 const DAPP = `http://dapp.localhost:${PORT}`;
 
 async function gotoSign(page: import('@playwright/test').Page, query: string, account = FAKE_CONTRACT_ID) {
   // Land on the account origin first to seed the credential, then load /sign/.
-  const accountHost = `${account.toLowerCase()}.localhost:${PORT}`;
+  const accountHost = `${account.toLowerCase()}.nido.localhost:${PORT}`;
   await page.goto(`http://${accountHost}/account/`, { waitUntil: 'load' });
   await seedCredential(page, account, SEED_HEX, 'default');
   const ret = `${DAPP}/cb`;
@@ -104,7 +104,7 @@ test.describe('@fast dapp sign refusals', () => {
 
   test('an ?sm-sign= link on the account page opens no signing request', async ({ page }) => {
     await page.goto(
-      `http://${host}/account/?sm-sign=AAAA&sm-return=${encodeURIComponent(`http://status-message.localhost:${PORT}/`)}`,
+      `http://${host}/account/?sm-sign=AAAA&sm-return=${encodeURIComponent(`http://status-message.nido.localhost:${PORT}/`)}`,
       { waitUntil: 'load' },
     );
     await page.waitForTimeout(1000);

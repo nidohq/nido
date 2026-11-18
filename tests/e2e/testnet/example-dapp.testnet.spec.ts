@@ -40,7 +40,7 @@ import {
  *        PUBLIC_STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015" \
  *        PUBLIC_STELLAR_RPC_URL="https://soroban-testnet.stellar.org" \
  *        PUBLIC_STELLAR_HORIZON_URL="https://horizon-testnet.stellar.org" \
- *        PUBLIC_NIDO_BASE="http://localhost:4399" npx vite build
+ *        PUBLIC_NIDO_BASE="http://nido.localhost:4399" npx vite build
  *   3. Serve the example:  node tests/support/example-server.mjs &   (port 4400)
  *   4. set -a; . ./tests/.env.testnet; set +a
  *      npx playwright test tests/e2e/testnet/example-dapp.testnet.spec.ts \
@@ -126,7 +126,7 @@ test.describe('@testnet example status-message dApp — Nido delegation + in-pag
     });
 
     // -------- PART A — create + deploy a v0.7 account (wallet frontend) --------
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#create-btn').click();
     await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
     const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
@@ -134,7 +134,7 @@ test.describe('@testnet example status-message dApp — Nido delegation + in-pag
 
     const setupHref = await page.locator('#setup-link').getAttribute('href');
     const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-    const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
+    const host = `${cAddress.toLowerCase()}.nido.localhost:${PORT}`;
     await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
       waitUntil: 'domcontentloaded',
     });

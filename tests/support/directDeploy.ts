@@ -66,7 +66,7 @@ export async function deployAccountDirect(
   }
   const cAddress = scValToNative(done.returnValue!) as string;
 
-  const host = `${cAddress.toLowerCase()}.localhost:${port}`;
+  const host = `${cAddress.toLowerCase()}.nido.localhost:${port}`;
   await page.goto(`http://${host}/account/`, { waitUntil: 'domcontentloaded' });
   await seedCredential(page, cAddress, SEED_HEX, label);
   await page.evaluate((account) => {

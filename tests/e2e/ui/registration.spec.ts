@@ -2,7 +2,7 @@ import { test, expect } from '../../support/fixtures';
 
 // Deterministic fake C-address (valid strkey). The new-account page derives the
 // contractId from the subdomain via contractIdFromHostname() and uppercases it,
-// so visiting `<lower>.localhost` yields exactly FAKE_CONTRACT_ID and the
+// so visiting `<lower>.nido.localhost` yields exactly FAKE_CONTRACT_ID and the
 // localStorage keys are `passkey:${FAKE_CONTRACT_ID}:*`.
 const FAKE_CONTRACT_ID = 'CDLZFC2SYJYDZT7K7VJRL2CU7LQV6AFZ2K2QJLY7QV53KIGWXJOANPYY';
 const PORT = process.env.E2E_PORT || 4399;
@@ -13,7 +13,7 @@ const PORT = process.env.E2E_PORT || 4399;
 // is fire-and-forget and needs the network, so it harmlessly fails afterward.
 // We assert on the persisted credential, which lands no-chain.
 const NEW_ACCOUNT_URL =
-  `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/new-account/` +
+  `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/new-account/` +
   `?key=SDTEST7777777777777777777777777777777777777777777777`;
 
 test.describe('passkey registration (shim) @fast', () => {

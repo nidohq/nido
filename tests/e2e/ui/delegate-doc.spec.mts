@@ -28,7 +28,7 @@ const GAME = contract(40);
 const XLM = contract(41);
 const ADMIN_KEY = '04' + 'ab'.repeat(64);
 const APP_KEY = '04' + 'cd'.repeat(64);
-const WALLET = `http://${ACCOUNT.toLowerCase()}.localhost:4397`;
+const WALLET = `http://${ACCOUNT.toLowerCase()}.nido.localhost:4397`;
 const DAPP = 'http://dapp.localhost:4397';
 
 /** An account's applied document: its admin passkey only. */
