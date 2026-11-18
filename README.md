@@ -146,9 +146,12 @@ label below it, at `http://<c-address>.nido.localhost:4321`, as `nido.fyi` and
 `localhost:4321`, `127.0.0.1:4321` and `<c-address>.localhost:4321` to the same
 path on `nido.localhost`. It redirects nothing else: a name-style address on
 the old layout, such as `alice--24.localhost:4321`, is not moved, and
-`dapp.localhost:4321` stays a different site from the wallet. `astro preview`
-doesn't redirect at all, so open `nido.localhost:4321` yourself when you
-preview a build.
+`dapp.localhost:4321` stays a different site from the wallet.
+
+`astro preview` doesn't redirect at all. A local build opened on plain
+`localhost:<port>` shows the mainnet invite gate instead of account creation,
+and an account address, `<c-address>.localhost:<port>`, is read as a main site
+with no account. If you see either, open `nido.localhost:<port>` instead.
 
 Plain `localhost` doesn't work as the apex. It has no registrable domain, so
 each `<c-address>.localhost` is a site of its own. Chrome and Firefox partition
