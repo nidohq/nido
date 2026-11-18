@@ -331,6 +331,8 @@ export function sessionSignerDraft(
  */
 export function describeSessionScope(scope: {
   cap: DocDelegateCap | null;
+  /** The contract the grant calls, which its cap meters. */
+  target: string;
   /** The rule's functions (undefined = any). */
   functions: string[] | undefined;
   /** The only address its `transfer` may pay (the request's `to`). */
@@ -341,7 +343,7 @@ export function describeSessionScope(scope: {
 }): { amount: string; warn: boolean; recipient: string | null; expiry: string } {
   const warn = scope.cap === null && canMoveTokens(scope.functions);
   const amount = scope.cap
-    ? capText(scope.cap.stroops, PERIOD_LEDGERS[scope.cap.period])
+    ? capText(scope.cap.stroops, PERIOD_LEDGERS[scope.cap.period], scope.target)
     : warn
       ? NO_SPENDING_CAP
       : NO_CAP_NO_TOKEN_FUNCTIONS;

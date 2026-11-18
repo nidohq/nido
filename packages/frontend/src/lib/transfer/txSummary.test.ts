@@ -11,11 +11,14 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { describeHostFunction, describeOperation, describeTransaction } from "./txSummary";
+import { NATIVE_SAC_ID } from "../network.js";
 import { buildSendOperation } from "./buildSend";
 
 const SMART = StrKey.encodeContract(Buffer.alloc(32, 0xaa));
 const DEST = StrKey.encodeContract(Buffer.alloc(32, 0xbb));
-const TOKEN = StrKey.encodeContract(Buffer.alloc(32, 0xee));
+// A known token: the network's XLM contract (a bare `transfer` is summarized
+// as a transfer only on a known token).
+const TOKEN = NATIVE_SAC_ID;
 const REGISTRY = StrKey.encodeContract(Buffer.alloc(32, 0x12));
 const G = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x11));
 
@@ -106,6 +109,56 @@ describe("describeOperation", () => {
       from: SMART,
       to: DEST,
       amount: 123n,
+    });
+  });
+
+  // The bare-`transfer` summary names an effect ("moves N of token X from A
+  // to B"), so it needs SEP-41's argument types and a known token: anything
+  // else reads as a generic call.
+  describe("a bare transfer that is not a known token's SEP-41 transfer", () => {
+    const NOT_A_TOKEN = StrKey.encodeContract(Buffer.alloc(32, 0x42));
+    const VICTIM = "GCKVNXCRHFIQMWNUNIJ52HMF4H6TKZFKC66GLA5YT4GDCPK2UBUGMHIR";
+    const ATTACKER = "GC53QNH7274V5ZN5MED4OMJKGHXWXG5KS4KMM4UBIJQZDSV4Q3DSMABF";
+    const stringArgs = [xdr.ScVal.scvString(VICTIM), xdr.ScVal.scvString(ATTACKER), xdr.ScVal.scvString("1000")];
+    const op = (contract: string, args: xdr.ScVal[]) =>
+      Operation.invokeContractFunction({ contract, function: "transfer", args });
+    const sep41Args = [
+      Address.fromString(SMART).toScVal(),
+      Address.fromString(DEST).toScVal(),
+      nativeToScVal(123n, { type: "i128" }),
+    ];
+
+    // Appendix B's repro: String arguments on a contract that is no token.
+    it("is a generic call when its arguments are strings on an unknown contract", () => {
+      expect(describeOperation(op(NOT_A_TOKEN, stringArgs))).toEqual({
+        kind: "invoke",
+        contract: NOT_A_TOKEN,
+        fn: "transfer",
+        argsCount: 3,
+      });
+    });
+
+    it("is a generic call when its arguments are strings, even on a known token", () => {
+      expect(describeOperation(op(TOKEN, stringArgs))).toMatchObject({ kind: "invoke", fn: "transfer" });
+    });
+
+    it("is a generic call when the amount is not an integer", () => {
+      const args = [sep41Args[0]!, sep41Args[1]!, xdr.ScVal.scvString("123")];
+      expect(describeOperation(op(TOKEN, args))).toMatchObject({ kind: "invoke", fn: "transfer" });
+    });
+
+    it("is a generic call on a contract not known to be a token, whatever its arguments", () => {
+      expect(describeOperation(op(NOT_A_TOKEN, sep41Args))).toMatchObject({ kind: "invoke", fn: "transfer" });
+    });
+
+    it("is a transfer on a token the caller knows", () => {
+      expect(describeOperation(op(NOT_A_TOKEN, sep41Args), undefined, undefined, (c) => c === NOT_A_TOKEN)).toEqual({
+        kind: "transfer",
+        token: NOT_A_TOKEN,
+        from: SMART,
+        to: DEST,
+        amount: 123n,
+      });
     });
   });
 

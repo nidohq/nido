@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { canTransfer, capText, ruleRecipient } from './reviewText.js';
+import { NATIVE_SAC_ID } from '../network.js';
+import { canTransfer, capText, capToken, ruleRecipient } from './reviewText.js';
+
+const USDC = 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75';
 
 describe('capText', () => {
   it.each([
@@ -7,8 +10,29 @@ describe('capText', () => {
     ['25000000', 120960, 'Up to 2.5 XLM per week'],
     ['1', 518400, 'Up to 0.0000001 XLM per 30 days'],
     ['50000000', 1000, 'Up to 5 XLM per 1,000 ledgers'],
-  ])('reads %s stroops / %i ledgers as %j', (stroops, ledgers, text) => {
-    expect(capText(stroops, ledgers)).toBe(text);
+  ])('reads %s stroops / %i ledgers of the XLM contract as %j', (stroops, ledgers, text) => {
+    expect(capText(stroops, ledgers, NATIVE_SAC_ID)).toBe(text);
+  });
+
+  // A cap meters its own token: another token's limit is not XLM, and its
+  // decimals are not known here.
+  it("names another token's limit in its smallest units, never as XLM", () => {
+    const text = capText('20000000', 17280, USDC);
+    expect(text).toBe('Up to 20000000 (smallest units) of token CCW67T…SJMI75 per day');
+    expect(text).not.toContain('XLM');
+  });
+
+  it('names no unit for a cap with no token', () => {
+    expect(capText('20000000', 17280, null)).toBe('Up to 20000000 (smallest units) per day');
+  });
+});
+
+describe('capToken', () => {
+  it("is the cap's token, else the rule's contract", () => {
+    const scope = { type: 'contract', address: USDC } as const;
+    expect(capToken({ scope, cap: { limit: '1', 'period-ledgers': 1 } })).toBe(USDC);
+    expect(capToken({ scope, cap: { token: NATIVE_SAC_ID, limit: '1', 'period-ledgers': 1 } })).toBe(NATIVE_SAC_ID);
+    expect(capToken({ scope: { type: 'self-admin' }, cap: { limit: '1', 'period-ledgers': 1 } })).toBeNull();
   });
 });
 

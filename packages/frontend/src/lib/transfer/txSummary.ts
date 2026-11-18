@@ -1,4 +1,18 @@
 import { Address, TransactionBuilder, scValToNative, xdr } from "@stellar/stellar-sdk";
+import { NATIVE_SAC_ID } from "../network.js";
+
+/** Whether `contract` is a token whose `transfer(from, to, amount)` is
+ *  SEP-41's, so a call to it may be summarized as a token transfer. */
+export type KnownToken = (contract: string) => boolean;
+
+/** The tokens every summary knows: the network's XLM contract. A caller that
+ *  knows more (a curated asset list, a token check it already ran) passes
+ *  its own `KnownToken`. */
+export const nativeTokenOnly: KnownToken = (contract) => contract === NATIVE_SAC_ID;
+
+const INTEGER_SCVALS = new Set([
+  "scvU32", "scvI32", "scvU64", "scvI64", "scvU128", "scvI128", "scvU256", "scvI256",
+]);
 
 /**
  * A human-readable summary of a single operation. Recognizes token transfers
@@ -28,7 +42,9 @@ export interface TxSummary {
  * behaviour we actually know. Each such branch is gated on provenance:
  *   - the `execute`-transfer wrapper and the context-rule calls → the SELECTED
  *     account (`account`), whose own entry points these are;
- *   - `register` → the CONFIGURED name registry (`nameRegistry`).
+ *   - `register` → the CONFIGURED name registry (`nameRegistry`);
+ *   - a bare `transfer` → a KNOWN token (`isKnownToken`), with SEP-41's
+ *     argument types (two addresses and an integer amount).
  * A same-named method on any other contract is decoded as a generic `invoke`
  * (rendered as an unverified "Calls <fn> on <contract>" line), so a foreign
  * contract cannot borrow a benign-looking preview for an authorization that
@@ -38,6 +54,7 @@ export function describeInvokeContract(
   ic: xdr.InvokeContractArgs,
   account?: string,
   nameRegistry?: string,
+  isKnownToken: KnownToken = nativeTokenOnly,
 ): OpSummary {
   const contract = Address.fromScAddress(ic.contractAddress()).toString();
   const fn = ic.functionName().toString();
@@ -76,8 +93,20 @@ export function describeInvokeContract(
       }
     }
 
-    // bare token transfer(from, to, amount)
-    if (fn === "transfer" && args.length === 3) {
+    // Bare token transfer(from, to, amount). SECURITY: only on a KNOWN
+    // token, whose `transfer` is SEP-41's, and only when the arguments are
+    // what SEP-41's are: `from` and `to` addresses, an integer `amount`.
+    // Any other contract's `transfer`, or one taking strings or other types,
+    // decodes generically below; it cannot borrow a "moves N of token"
+    // line for whatever it does.
+    if (
+      fn === "transfer" &&
+      args.length === 3 &&
+      isKnownToken(contract) &&
+      args[0]!.switch().name === "scvAddress" &&
+      args[1]!.switch().name === "scvAddress" &&
+      INTEGER_SCVALS.has(args[2]!.switch().name)
+    ) {
       const [from, to, amount] = args.map((a) => scValToNative(a));
       return {
         kind: "transfer",
@@ -141,30 +170,33 @@ export function describeInvokeContract(
 /** Summarize a Soroban host function (the payload of an InvokeHostFunction op).
  *  `account` binds the `execute`-transfer-wrapper and context-rule decodes to
  *  the selected account; `nameRegistry` binds the `register` decode to the
- *  configured name registry (see `describeInvokeContract`). */
+ *  configured name registry; `isKnownToken` the bare-`transfer` decode to a
+ *  known token (see `describeInvokeContract`). */
 export function describeHostFunction(
   fn: xdr.HostFunction,
   account?: string,
   nameRegistry?: string,
+  isKnownToken: KnownToken = nativeTokenOnly,
 ): OpSummary {
   if (fn.switch() !== xdr.HostFunctionType.hostFunctionTypeInvokeContract()) {
     return { kind: "other", type: fn.switch().name };
   }
-  return describeInvokeContract(fn.invokeContract(), account, nameRegistry);
+  return describeInvokeContract(fn.invokeContract(), account, nameRegistry, isKnownToken);
 }
 
-/** Summarize a single classic/Soroban operation. `account` and `nameRegistry`
- *  gate the semantic decodes (see `describeInvokeContract`). */
+/** Summarize a single classic/Soroban operation. `account`, `nameRegistry`
+ *  and `isKnownToken` gate the semantic decodes (see `describeInvokeContract`). */
 export function describeOperation(
   op: xdr.Operation,
   account?: string,
   nameRegistry?: string,
+  isKnownToken: KnownToken = nativeTokenOnly,
 ): OpSummary {
   const body = op.body();
   if (body.switch() !== xdr.OperationType.invokeHostFunction()) {
     return { kind: "other", type: body.switch().name };
   }
-  return describeHostFunction(body.invokeHostFunctionOp().hostFunction(), account, nameRegistry);
+  return describeHostFunction(body.invokeHostFunctionOp().hostFunction(), account, nameRegistry, isKnownToken);
 }
 
 /**
@@ -178,18 +210,21 @@ export function describeOperation(
  * rendered as a verified account action. `nameRegistry` is the configured name
  * registry id; it gates the `register` decode the same way. Omit either and the
  * corresponding semantic decode is withheld (the op reads as a generic call).
+ * `isKnownToken` (default: the XLM contract only) gates the bare-`transfer`
+ * decode.
  */
 export function describeTransaction(
   txXdr: string,
   networkPassphrase: string,
   account?: string,
   nameRegistry?: string,
+  isKnownToken: KnownToken = nativeTokenOnly,
 ): TxSummary {
   const tx = TransactionBuilder.fromXDR(txXdr, networkPassphrase);
   const inner = "innerTransaction" in tx ? tx.innerTransaction : tx;
   const ops: OpSummary[] = inner.operations.map((op) =>
     op.type === "invokeHostFunction"
-      ? describeHostFunction(op.func, account, nameRegistry)
+      ? describeHostFunction(op.func, account, nameRegistry, isKnownToken)
       : { kind: "other", type: op.type },
   );
   return { fee: tx.fee, ops };

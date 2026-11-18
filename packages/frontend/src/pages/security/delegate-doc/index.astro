@@ -509,6 +509,7 @@ import Icon from '../../../components/Icon.astro';
       const capControls = capFromControls(v);
       const scope = describeSessionScope({
         cap: capControls === 'invalid' ? null : capControls,
+        target: v.grant.target,
         functions: v.grant.functions,
         ...(v.grant.to !== undefined ? { to: v.grant.to } : {}),
         duration: durationSel.value,
