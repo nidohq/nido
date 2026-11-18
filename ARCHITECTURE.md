@@ -124,7 +124,9 @@ their own Nido's subdomain, signing through their own account. The apex origin
 holds no passkey. A storage bridge (`/nido-storage-bridge/`,
 `packages/frontend/src/pages/nido-storage-bridge/`) shares the
 browser's account list, names, and the setup keys of accounts still being
-created across the apex and account origins.
+created across the apex and account origins. The apex also frames an account
+origin's copy of that page to ask whether this browser holds the account's
+passkey record ([THREAT_MODEL](docs/THREAT_MODEL.md) 15).
 
 Hosts are read against a list of known apexes, never by counting labels:
 `splitHost` and `NIDO_APEXES` in `packages/passkey-sdk/src/url.ts` (`test.nido.fyi`
