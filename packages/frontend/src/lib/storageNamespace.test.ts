@@ -17,6 +17,7 @@ describe("legacy wallet storage", () => {
     localStorage.setItem(`nido:names:${A}`, "alpha");
     localStorage.setItem("nido:walletSession", JSON.stringify({ walletId: "g2c", walletAddress: A }));
 
+    await import("./networkName.js"); // as every page does first
     const { localNidoSnapshot } = await import("./nidoSharedStorage.js");
     expect(localNidoSnapshot(localStorage)).toEqual({
       accounts: [A],
@@ -31,6 +32,7 @@ describe("legacy wallet storage", () => {
 
   it("the SDK's account helpers read the moved list", async () => {
     localStorage.setItem("nido:accounts", JSON.stringify([A]));
+    await import("./networkName.js");
     const { loadAccounts, loadAccountName } = await import("@nidohq/passkey-sdk");
     expect(loadAccounts()).toEqual([A]);
     expect(loadAccountName(A)).toBeNull();

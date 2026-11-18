@@ -6,9 +6,10 @@
 // deploy-production.yml and deploy-testnet.yml build them, and the emitted
 // HTML is what's checked. The same builds back the installed-app checks:
 // every page links a valid web app manifest and home-screen icons, and the
-// app's name says which network it is.
+// app's name says which network it is. They also back the storage bridge's
+// size check: the page must answer within moments on a slow phone.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -61,6 +62,25 @@ function pngSize(network: string, src: string): string {
   return `${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`;
 }
 
+/** Bytes of script a page loads: its module scripts and every chunk they
+ *  import, transitively. */
+function scriptBytes(network: string, path: string): number {
+  const dir = outDirs.get(network)!;
+  const html = readFileSync(join(dir, path, "index.html"), "utf8");
+  const queue = [...html.matchAll(/<script[^>]*\ssrc="(\/_astro\/[^"]+\.js)"/g)].map((m) => m[1]!);
+  const seen = new Set<string>();
+  let bytes = 0;
+  while (queue.length > 0) {
+    const file = queue.shift()!;
+    if (seen.has(file) || !existsSync(join(dir, file))) continue;
+    seen.add(file);
+    const src = readFileSync(join(dir, file), "utf8");
+    bytes += src.length;
+    for (const m of src.matchAll(/(?:from|import)\s*"\.\/([^"]+\.js)"/g)) queue.push(`/_astro/${m[1]}`);
+  }
+  return bytes;
+}
+
 const chips = (doc: Document) => Array.from(doc.querySelectorAll(".chip"), (c) => c.textContent!.trim());
 
 describe.each(NETWORKS)("a $network build", ({ network, label, other, appName }) => {
@@ -106,6 +126,12 @@ describe.each(NETWORKS)("a $network build", ({ network, label, other, appName })
     const sizes = (purpose: string) => manifest.icons.filter((i: { purpose: string }) => i.purpose === purpose).map((i: { sizes: string }) => i.sizes);
     expect(sizes("any")).toEqual(expect.arrayContaining(["192x192", "512x512"]));
     expect(sizes("maskable")).toContain("512x512");
+  });
+
+  it("keeps the storage bridge page small (it never loads the SDK's main chunk)", () => {
+    // The SDK's main chunk alone is about 2 MB; the bridge needs a few KB.
+    expect(scriptBytes(network, "nido-storage-bridge")).toBeLessThan(64 * 1024);
+    expect(scriptBytes(network, "connect")).toBeGreaterThan(1024 * 1024);
   });
 
   it(network === "testnet" ? "calls the landing page a demo with no real funds" : "never calls itself a demo with no real funds", () => {

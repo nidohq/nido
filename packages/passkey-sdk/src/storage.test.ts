@@ -1,11 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   saveFriendNickname, loadFriendNicknames,
   saveSessionKeyMaterial, loadSessionKeyMaterial, forgetSessionKeyMaterial,
   saveBlockLabel, loadBlockLabels,
-  savePendingAccount, loadPendingAccounts, removePendingAccount, purgeExpiredPendingAccounts,
+  savePendingAccount, loadPendingAccounts, removePendingAccount, purgeExpiredPendingAccounts, activateAccount,
   moveLegacyNidoKeys, nidoKey, saveAccount, loadAccounts, saveAccountName, setStorageNetwork,
+  loadUnfinishedAccounts, PENDING_TTL_MS,
 } from './storage.js';
+
+// These tests read and write the testnet namespace; a page sets its build's
+// network the same way before it touches storage.
+setStorageNetwork('testnet');
 
 const ACC = 'C' + 'A'.repeat(55); // Just an identifier here — never validated.
 
@@ -64,30 +69,41 @@ describe('policy storage', () => {
 
   it('updates pending setup keys and migrates old secret-key rows', () => {
     localStorage.setItem("nido:testnet:pending", JSON.stringify([{ contractId: ACC, secretKey: "SOLD" }]));
-    expect(loadPendingAccounts()).toEqual([{ contractId: ACC, secretKey: "SOLD", setupKey: "SOLD" }]);
+    expect(loadPendingAccounts()).toEqual([{ contractId: ACC, setupKey: "SOLD" }]);
 
     savePendingAccount(ACC, "salt-1");
     expect(loadPendingAccounts()).toEqual([{ contractId: ACC, setupKey: "salt-1" }]);
   });
 
-  it('purges a pending salt once the setup window has elapsed', () => {
+  it('deletes a pending secret once the setup window has elapsed, and keeps the address', () => {
     savePendingAccount(ACC, 'salt-1');
-    // Still inside the 30-minute window: kept.
-    expect(purgeExpiredPendingAccounts(Date.now() + 29 * 60 * 1000).map((p) => p.contractId)).toEqual([ACC]);
-    // Past the window: purged, and the sidecar timestamp is cleared.
-    expect(purgeExpiredPendingAccounts(Date.now() + 31 * 60 * 1000)).toEqual([]);
-    expect(loadPendingAccounts()).toEqual([]);
+    // Still inside the 30-minute window: the secret is kept.
+    expect(purgeExpiredPendingAccounts(Date.now() + 29 * 60 * 1000)).toEqual([{ contractId: ACC, setupKey: 'salt-1' }]);
+    // Past the window: the secret and its sidecar timestamp are gone, the address is not.
+    expect(purgeExpiredPendingAccounts(Date.now() + 31 * 60 * 1000)).toEqual([{ contractId: ACC }]);
+    expect(localStorage.getItem('nido:testnet:pending')).toBe(JSON.stringify([{ contractId: ACC }]));
     expect(localStorage.getItem('nido:testnet:pending:ts')).toBe('{}');
+    // A setup with no secret can't be resumed from its secret, but it is still unfinished.
+    expect(loadPendingAccounts()).toEqual([]);
+    expect(loadUnfinishedAccounts()).toEqual([{ contractId: ACC }]);
   });
 
-  it('eventually expires a legacy pending entry that has no timestamp', () => {
+  it('eventually expires the secret of a legacy pending entry that has no timestamp', () => {
     localStorage.setItem('nido:testnet:pending', JSON.stringify([{ contractId: ACC, setupKey: 'legacy' }]));
     const t0 = 1_000_000;
     // First sight stamps the undated legacy row and keeps it.
     expect(purgeExpiredPendingAccounts(t0).map((p) => p.contractId)).toEqual([ACC]);
     expect(JSON.parse(localStorage.getItem('nido:testnet:pending:ts')!)[ACC]).toBe(t0);
-    // 30 minutes after it was first stamped, it is purged.
-    expect(purgeExpiredPendingAccounts(t0 + 30 * 60 * 1000 + 1)).toEqual([]);
+    // 30 minutes after it was first stamped, its secret is deleted.
+    expect(purgeExpiredPendingAccounts(t0 + PENDING_TTL_MS + 1)).toEqual([{ contractId: ACC }]);
+  });
+
+  it('activating an unfinished setup whose secret expired removes it', () => {
+    savePendingAccount(ACC, 'salt-1');
+    purgeExpiredPendingAccounts(Date.now() + PENDING_TTL_MS + 1);
+    activateAccount(ACC);
+    expect(loadUnfinishedAccounts()).toEqual([]);
+    expect(loadAccounts()).toEqual([ACC]);
   });
 
   it('removePendingAccount clears the sidecar timestamp', () => {
@@ -121,6 +137,15 @@ describe('network-namespaced keys', () => {
 
   it('builds nido:<network>:<rest>', () => {
     expect(nidoKey('walletSession')).toBe('nido:testnet:walletSession');
+  });
+
+  it('refuses to build a key before the network is set', async () => {
+    vi.resetModules();
+    const fresh = await import('./storage.js');
+    expect(() => fresh.nidoKey('accounts')).toThrow(/never set/);
+    expect(() => fresh.loadAccounts()).toThrow(/never set/);
+    fresh.setStorageNetwork('mainnet');
+    expect(fresh.nidoKey('accounts')).toBe('nido:mainnet:accounts');
   });
 
   it('refuses to switch networks once keys have been built', () => {

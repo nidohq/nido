@@ -233,13 +233,16 @@ and infrastructure bring.
     them over plain http — must not read those keys or plant entries. Every
     response carries `Strict-Transport-Security` with `includeSubDomains`.
     The bridge page alone may be framed, under an enforced
-    `frame-ancestors https://*.nido.fyi`, and its handler answers only a
-    message from the window embedding it, from an https origin one label
-    below the apex whose label is a valid contract address or name-shaped
-    (the built-in dApps and `relay` excluded). It returns the account list,
-    cached names, and at most one setup key, the requester's own; it accepts
-    only the requester's own entries; ids are checked as contract StrKeys and
-    escaped where rendered (`packages/frontend/src/lib/nidoSharedStorage.ts`,
+    `frame-ancestors https://*.nido.fyi https://nido.fyi`, and its handler
+    answers only a message from the window embedding it. On the apex, that is
+    an https origin one label below the apex whose label is a valid contract
+    address or name-shaped (the built-in dApps and `relay` excluded). It
+    returns the account list, cached names, and at most one setup key, the
+    requester's own; it accepts only the requester's own entries; ids are
+    checked as contract StrKeys and escaped where rendered. On an account
+    origin, the same page answers only its own apex, and only whether that
+    origin holds the account's passkey record (the sign-in list's migration
+    asks) (`packages/frontend/src/lib/nidoSharedStorage.ts`,
     `public/_headers`, `frontend/worker-proxy-nido/index.js`;
     `tests/e2e/ui/storage-bridge.spec.ts` runs it under the production
     headers). A name-shaped label is indistinguishable from a registered

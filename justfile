@@ -170,8 +170,13 @@ test-support:
     npx vitest run --config vitest.support.config.ts
 
 # Fast UI e2e tier (shim) across all browsers; builds the frontend first
+# (and the mainnet build the account-setup specs run on, tests/support/setupFlowMock.ts)
 test-e2e:
     PUBLIC_PERCH_DEPLOYMENT=none npx astro build --root ./packages/frontend
+    PUBLIC_STELLAR_NETWORK=mainnet PUBLIC_RELAYER_URL=https://relayer.nido.test \
+      PUBLIC_RELAYER_SIM_SOURCE=GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL \
+      PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.mainnet.json)" \
+      npx astro build --root ./packages/frontend --outDir ./dist-mainnet
     npx playwright test --grep @fast
 
 # Chromium CDP virtual-authenticator fidelity lane; builds the frontend first

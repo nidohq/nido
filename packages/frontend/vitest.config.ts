@@ -7,5 +7,6 @@ export default defineConfig({
     // themselves exercise the pure logic with injected fakes.
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],
+    setupFiles: ['./src/test/storageNetwork.ts'],
   },
 });
