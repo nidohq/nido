@@ -58,7 +58,7 @@ a Claude.ai artifact) or browse the whole site's styling offline via
 `design-export/_index.html`.
 
 ```bash
-cd packages/frontend && npm run build && node scripts/export-design.mjs
+cd packages/frontend && PUBLIC_STELLAR_NETWORK=testnet npm run build && node scripts/export-design.mjs
 ```
 
 It's a static snapshot of *design*, not a running app: the landing page
