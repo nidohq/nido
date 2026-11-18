@@ -156,7 +156,7 @@ jobs:
       - name: Wallet storage and sign-in list
         run: |
           npx vitest run --root packages/passkey-sdk src/storage.test.ts
-          npx vitest run --root packages/frontend src/lib/nidoSharedStorage.test.ts src/lib/accountMigration.test.ts src/lib/storageNamespace.test.ts src/lib/accountLinks.test.ts
+          npx vitest run --root packages/frontend src/lib/nidoSharedStorage.test.ts src/lib/accountMigration.test.ts src/lib/runAccountMigration.test.ts src/lib/storageNamespace.test.ts src/lib/accountLinks.test.ts
 
   e2e:
     name: E2E (fast UI + CDP)
