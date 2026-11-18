@@ -675,14 +675,19 @@ import { NETWORK_LABEL } from "../../lib/network";
   // the page. An address that can't be read in a few seconds falls through
   // to the passkey step (the passkey prompt must not wait on a slow RPC);
   // deploy() reads it again before submitting anything. This needs no setup
-  // secret, so it also finishes a setup whose secret expired.
+  // secret, so it also finishes a setup whose secret expired; there no
+  // passkey step follows, so the read is waited for, and one that fails
+  // rejects and is not remembered (finishWithoutSecret offers another try).
   let existingAccountCheck: Promise<boolean> | null = null;
   function takeOverIfDeployed(): Promise<boolean> {
     if (!existingAccountCheck) {
-      existingAccountCheck = (async (): Promise<boolean> => {
+      const check = (async (): Promise<boolean> => {
         if (!contractId || isSetupReservation) return false;
-        const unread = sleep(4000).then(() => false);
-        if (!(await Promise.race([accountDeployed(contractId).catch(() => false), unread]))) return false;
+        const read = accountDeployed(contractId);
+        const deployed = resumingWithoutSecret
+          ? await read
+          : await Promise.race([read.catch(() => false), sleep(4000).then(() => false)]);
+        if (!deployed) return false;
         const stored = loadCredential(contractId);
         if (!stored) {
           refuseSetup(newAccountRefusal("key").message);
@@ -695,8 +700,22 @@ import { NETWORK_LABEL } from "../../lib/network";
         proceedToDeploy();
         return true;
       })();
+      existingAccountCheck = check;
+      check.catch(() => {
+        existingAccountCheck = null;
+      });
     }
     return existingAccountCheck;
+  }
+
+  // A setup whose secret expired: finish the account if it exists, say so if
+  // it doesn't, and leave the button for another try if the chain can't be read.
+  async function finishWithoutSecret() {
+    try {
+      if (!(await takeOverIfDeployed())) showError(missingSetupData);
+    } catch {
+      showError("We couldn't check on your Nido. Check your connection, then tap the button to try again.");
+    }
   }
 
   async function reserveNidoAddress(): Promise<string> {
@@ -808,6 +827,11 @@ import { NETWORK_LABEL } from "../../lib/network";
       return;
     }
 
+    if (resumingWithoutSecret) {
+      await finishWithoutSecret();
+      return;
+    }
+
     // Refuse a hostname/salt-mismatched setup link BEFORE creating a passkey.
     const mismatch = await checkSetupConsistency();
     if (mismatch) {
@@ -849,7 +873,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   // button for a manual tap. No sheet here, so the fallback doesn't flicker; the
   // OS dialog is the prompt on browsers that allow it.
   async function attemptAutoPasskey() {
-    if (!contractId || !checkPasskeySupport().ok) return;
+    if (!contractId || resumingWithoutSecret || !checkPasskeySupport().ok) return;
     // Silently skip the auto-prompt on a mismatched setup link; the manual tap
     // surfaces the error. (Guard before any passkey is created.)
     if (await checkSetupConsistency()) return;
@@ -1084,7 +1108,6 @@ import { NETWORK_LABEL } from "../../lib/network";
 
   // A resumed setup whose address already holds a contract is settled before
   // the passkey step is offered (see takeOverIfDeployed).
-  void takeOverIfDeployed().then((tookOver) => {
-    if (!tookOver && resumingWithoutSecret) showError(missingSetupData);
-  });
+  if (resumingWithoutSecret) void finishWithoutSecret();
+  else void takeOverIfDeployed();
 </script>

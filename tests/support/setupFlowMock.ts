@@ -50,6 +50,8 @@ export interface SetupChainOptions {
   /** Accounts already deployed on the mocked chain, whatever passkey they
    *  hold (the recorded account's configuration). */
   deployed?: string[];
+  /** Hold the first `getLedgerEntries` answer this long. */
+  firstChainReadDelayMs?: number;
 }
 
 export interface SetupChain {
@@ -107,6 +109,7 @@ function configurationFor(key: Buffer): string {
 export async function mockSetupChain(context: BrowserContext, opts: SetupChainOptions = {}): Promise<SetupChain> {
   const state: SetupChain = { bridgeLoads: 0, bridgeDown: false };
   const deployed = new Set(opts.deployed ?? []);
+  let firstChainReadDelayMs = opts.firstChainReadDelayMs ?? 0;
   const adminKeys = new Map<string, Buffer>();
   const ledger = 1_000;
 
@@ -147,6 +150,11 @@ export async function mockSetupChain(context: BrowserContext, opts: SetupChainOp
 
     if (body.method === 'getLatestLedger') return reply({ id: 'mock', protocolVersion: 23, sequence: ledger });
     if (body.method === 'getLedgerEntries') {
+      if (firstChainReadDelayMs) {
+        const delay = firstChainReadDelayMs;
+        firstChainReadDelayMs = 0;
+        await new Promise((r) => setTimeout(r, delay));
+      }
       const entries = (body.params.keys as string[]).flatMap((key) => {
         const k = xdr.LedgerKey.fromXDR(key, 'base64');
         if (k.switch() === xdr.LedgerEntryType.account()) {

@@ -134,6 +134,24 @@ test.describe('@fast sign-in list after account setup (mainnet build)', () => {
     await expect(page.locator('#unfinished-list .account-row')).toHaveCount(0);
   });
 
+  test('a setup whose secret expired is finished on a chain read slower than the passkey-step cap', async ({
+    context,
+    page,
+  }) => {
+    await mockSetupChain(context, { deployed: [ACCOUNT], firstChainReadDelayMs: 6_000 });
+    await page.goto(`${accountOrigin(ACCOUNT)}/__blank`);
+    await page.evaluate(
+      ({ id, key }) => {
+        localStorage.setItem(`passkey:${id}:credentialId`, 'Y3JlZA');
+        localStorage.setItem(`passkey:${id}:publicKey`, key);
+      },
+      { id: ACCOUNT, key: reads.ownerKey },
+    );
+
+    await page.goto(`${accountOrigin(ACCOUNT)}/new-account/`);
+    await page.waitForURL(`${accountOrigin(ACCOUNT)}/account/`, { timeout: 60_000 });
+  });
+
   test('an unfinished setup is shown with a way to finish it, and is not offered', async ({ context, page }) => {
     await mockSetupChain(context);
     await page.goto(`https://${APEX}/new-account/?setup=1#salt=${SALT}`);
