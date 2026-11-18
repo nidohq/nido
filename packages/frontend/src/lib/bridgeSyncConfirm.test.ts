@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   answerBridgeRequest,
   bridgeSyncNeeded,
+  onBridgeSyncStatus,
+  requestBridgeSync,
   syncNidoStorageViaBridge,
+  type BridgeSyncStatus,
   type NidoStorageRequest,
 } from "./nidoSharedStorage.js";
 
@@ -49,7 +52,7 @@ function startSync() {
 }
 
 /** The apex's bridge page answers `request`, as the deployed page does. */
-function bridgeAnswers(iframe: HTMLIFrameElement, request: NidoStorageRequest, apexStore: Storage) {
+function bridgeAnswers(iframe: HTMLIFrameElement, request: NidoStorageRequest, apexStore: Storage | null) {
   const answer = answerBridgeRequest({ origin: window.location.origin, data: request, fromParent: true }, "nido.fyi", apexStore);
   window.dispatchEvent(new MessageEvent("message", { data: answer, origin: APEX, source: iframe.contentWindow }));
 }
@@ -100,5 +103,37 @@ describe("what an account origin records the apex has confirmed", () => {
     expect(JSON.parse(apexStore.getItem("nido:testnet:accounts")!)).toEqual([OWN]);
     expect(localStorage.getItem(`nido:testnet:bridge:confirmed:${OWN}`)).toBe("active");
     expect(bridgeSyncNeeded()).toBe(false);
+  });
+});
+
+describe("background sync when the apex never holds the account", () => {
+  it("backs off instead of reloading the bridge in a loop", async () => {
+    localStorage.setItem("nido:testnet:accounts", JSON.stringify([OWN]));
+    let status: BridgeSyncStatus | undefined;
+    const stopFollowing = onBridgeSyncStatus((next) => (status = next));
+
+    // The apex's bridge frame cannot use its storage: it stores nothing and
+    // answers every request with an empty snapshot.
+    const answered = new Set<HTMLIFrameElement>();
+    void requestBridgeSync();
+    for (let elapsed = 0; elapsed < 5_000; elapsed += 100) {
+      const iframe = document.querySelector("iframe");
+      if (iframe && !answered.has(iframe)) {
+        answered.add(iframe);
+        const sent: NidoStorageRequest[] = [];
+        vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation((data: unknown) => {
+          sent.push(structuredClone(data) as NidoStorageRequest);
+        });
+        iframe.dispatchEvent(new Event("load"));
+        bridgeAnswers(iframe, sent[0]!, null);
+      }
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    stopFollowing();
+
+    expect(answered.size).toBeGreaterThanOrEqual(2);
+    expect(answered.size).toBeLessThanOrEqual(4);
+    expect(status).toBe("unconfirmed");
+    expect(localStorage.getItem(`nido:testnet:bridge:confirmed:${OWN}`)).toBeNull();
   });
 });

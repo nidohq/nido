@@ -466,16 +466,17 @@ export type BridgeSyncStatus =
   | "confirmed"
   /** A sync is running and this origin's own account is not confirmed yet. */
   | "syncing"
-  /** The last sync got no answer; another is scheduled. */
+  /** The last sync did not confirm the account; another is scheduled. */
   | "unconfirmed";
 
-/** Delays between unanswered syncs while this origin's own account is
- *  unconfirmed; the last one repeats for as long as the page stays open. */
+/** Delays between syncs that left this origin's own account unconfirmed;
+ *  the last one repeats for as long as the page stays open. */
 const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
 
 let syncInFlight: Promise<BridgeSyncResult> | null = null;
 let retryTimer: number | undefined;
 let failedSyncs = 0;
+let resyncedOnAnswer = false;
 let status: BridgeSyncStatus = "confirmed";
 const statusListeners = new Set<(status: BridgeSyncStatus) => void>();
 let wakeListenersAttached = false;
@@ -522,9 +523,13 @@ export function requestBridgeSync(): Promise<BridgeSyncResult> {
     syncInFlight = null;
     if (!bridgeSyncNeeded()) {
       failedSyncs = 0;
+      resyncedOnAnswer = false;
       setStatus("confirmed");
-    } else if (result.answered) {
-      // Answered, but this origin's own state moved on meanwhile.
+    } else if (result.answered && !resyncedOnAnswer) {
+      // Answered, but this origin's own state may have moved on meanwhile:
+      // sync again at once, once. An answer that still does not confirm the
+      // account after that waits like an unanswered sync.
+      resyncedOnAnswer = true;
       void requestBridgeSync();
     } else {
       setStatus("unconfirmed");
