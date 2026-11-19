@@ -19,6 +19,7 @@ import { createShimPasskey, installPasskeyShim } from '../../support/passkeyShim
 // /sign/ to the one apply_doc it submits.
 //
 // Needs `packages/frontend/dist-perch`:
+//   PUBLIC_STELLAR_NETWORK=testnet \
 //   PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.json)" \
 //     npx astro build --root ./packages/frontend --outDir ./dist-perch
 

@@ -1,11 +1,9 @@
 import { Asset, Networks, rpc } from "@stellar/stellar-sdk";
-import { setStorageNetwork } from "@nidohq/passkey-sdk";
+import { NETWORK_NAME } from "./networkName";
 
-/** Single source of truth for the network this build targets. Set
- *  PUBLIC_STELLAR_NETWORK=mainnet at build time to target mainnet; any other
- *  value (including unset, e.g. local dev) defaults to testnet. */
-const rawNetwork = (import.meta.env.PUBLIC_STELLAR_NETWORK ?? "testnet").toLowerCase();
-export const NETWORK_NAME: "testnet" | "mainnet" = rawNetwork === "mainnet" ? "mainnet" : "testnet";
+/** Single source of truth for the network this build targets (see
+ *  `networkName.ts`, which also sets the wallet's storage namespace). */
+export { NETWORK_NAME };
 
 /** The network as the wallet shows it (the header chips). Pages render this,
  *  never a literal, so a mainnet build never labels itself testnet. */
@@ -14,10 +12,6 @@ export const NETWORK_LABEL = NETWORK_NAME === "mainnet" ? "Mainnet" : "Testnet";
 /** The installed app's name on a home screen (manifest + iOS title). Testnet
  *  says so, so a testnet install can't pass for the mainnet wallet. */
 export const APP_NAME = NETWORK_NAME === "mainnet" ? "Nido" : "Nido Testnet";
-
-// Wallet state in localStorage lives under `nido:<network>:*` (passkey-sdk
-// `nidoKey`), so a build for one network never reads another's.
-setStorageNetwork(NETWORK_NAME);
 
 export const NETWORK_PASSPHRASE = NETWORK_NAME === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
 export const RPC_URL =

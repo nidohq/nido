@@ -1,4 +1,8 @@
-import { isReservedName, nidoKey, splitHost, stripSubdomain } from "@nidohq/passkey-sdk";
+// The storage bridge page imports this module, so it imports only the SDK's
+// storage and url modules, never the SDK's main entry: the bridge must answer
+// within moments on a slow phone, and the main entry is a 2 MB chunk.
+import { nidoKey } from "@nidohq/passkey-sdk/storage";
+import { accountUrl, isReservedName, splitHost, stripSubdomain } from "@nidohq/passkey-sdk/url";
 import type { PendingAccount } from "./myNidoModel";
 import { isContractStrKey } from "./address";
 import { isLoopbackHttpHost } from "./loopbackHost";
@@ -77,9 +81,10 @@ function normalizePending(values: unknown, active = new Set<string>()): PendingA
         : typeof record.secretKey === "string" && record.secretKey.length > 0
           ? record.secretKey
           : null;
-    if (!setupKey) continue;
     seen.add(contractId);
-    pending.push({ contractId, setupKey });
+    // An entry without a secret is a setup whose secret expired: the address
+    // stays so the setup can still be shown and finished.
+    pending.push(setupKey ? { contractId, setupKey } : { contractId });
   }
   return pending;
 }
@@ -158,6 +163,8 @@ export function mergeNidoSnapshot(
   const pendingById = new Map<string, PendingAccount>();
 
   for (const pending of [...before.pending, ...next.pending]) {
+    // This origin's own entry wins: one whose secret expired here stays
+    // secret-less rather than take another origin's copy of the secret.
     if (active.has(pending.contractId) || pendingById.has(pending.contractId)) continue;
     pendingById.set(pending.contractId, pending);
   }
@@ -327,51 +334,333 @@ function bridgeTarget(location: Pick<Location, "protocol" | "host">): { origin: 
   return { origin, url: `${origin}/nido-storage-bridge/` };
 }
 
-export function syncNidoStorageViaBridge(timeoutMs = 1000): Promise<boolean> {
+/** How long a sync waits for the bridge to answer. The bridge page is small,
+ *  but a phone on a weak connection can still take seconds to fetch it. */
+export const BRIDGE_ANSWER_BUDGET_MS = 10_000;
+/** Once the bridge page has loaded, the request is sent again at this
+ *  interval until it answers, in case the first message arrived before the
+ *  page was listening. The bridge answers repeats idempotently. */
+const BRIDGE_RESEND_MS = 1_000;
+
+export interface BridgeSyncResult {
+  /** The apex answered, which it does only after storing what was sent. */
+  answered: boolean;
+  /** This origin's own list changed from what the apex sent back. */
+  changed: boolean;
+}
+
+// --- What the apex has confirmed ---------------------------------------------
+//
+// An account origin records what the apex last confirmed holding for its own
+// account ("pending" or "active"). While its own state differs from that, the
+// account is missing from (or stale in) the apex's sign-in list, and syncing
+// keeps retrying until the apex answers.
+
+type OwnStatus = "pending" | "active";
+const confirmedKey = (contractId: string) => nidoKey(`bridge:confirmed:${contractId}`);
+
+/** This origin's own account, when this is an account origin under an apex. */
+function ownAccount(location: Pick<Location, "host">): string | null {
+  if (apexHostForHost(location.host) === location.host) return null;
+  const { label } = splitHost(location.host);
+  if (!label || !ACCOUNT_LABEL_RE.test(label)) return null;
+  const contractId = label.toUpperCase();
+  return isContractStrKey(contractId) ? contractId : null;
+}
+
+function ownStatus(snapshot: NidoAccountSnapshot, contractId: string): OwnStatus | null {
+  if (snapshot.accounts.includes(contractId)) return "active";
+  if (snapshot.pending.some((p) => p.contractId === contractId)) return "pending";
+  return null;
+}
+
+/**
+ * Whether this origin holds its own account in a state the apex has not yet
+ * confirmed: the account is not (or not yet as active) in the sign-in list.
+ */
+export function bridgeSyncNeeded(
+  location: Pick<Location, "host"> = window.location,
+  store: StorageLike | null = storageOrNull(),
+): boolean {
+  if (!store) return false;
+  const own = ownAccount(location);
+  if (!own) return false;
+  const status = ownStatus(localNidoSnapshot(store), own);
+  return status !== null && store.getItem(confirmedKey(own)) !== status;
+}
+
+/**
+ * Exchange account lists with the apex through its storage bridge (a hidden
+ * iframe of `<apex>/nido-storage-bridge/`): send this origin's snapshot, which
+ * the apex merges into its sign-in list, and merge back what it answers. The
+ * iframe stays until the bridge answers or `timeoutMs` passes; on an answer,
+ * this origin records what the answer shows the apex holding for its own
+ * account. Resolves
+ * `{ answered: false }` on the apex itself, where there is nothing to sync.
+ */
+export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): Promise<BridgeSyncResult> {
+  const unanswered: BridgeSyncResult = { answered: false, changed: false };
   if (typeof window === "undefined" || typeof document === "undefined") {
-    return Promise.resolve(false);
+    return Promise.resolve(unanswered);
   }
 
   const target = bridgeTarget(window.location);
-  if (!target) return Promise.resolve(false);
+  if (!target) return Promise.resolve(unanswered);
   const bridge = target;
 
   return new Promise((resolve) => {
     const id = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
     const iframe = document.createElement("iframe");
+    const own = ownAccount(window.location);
     let settled = false;
+    let resend: number | undefined;
 
-    function finish(changed: boolean) {
+    function finish(result: BridgeSyncResult) {
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
+      window.clearInterval(resend);
       window.removeEventListener("message", onMessage);
       iframe.remove();
-      resolve(changed);
+      resolve(result);
+    }
+
+    function send() {
+      iframe.contentWindow?.postMessage(
+        { type: NIDO_STORAGE_REQUEST, id, snapshot: localNidoSnapshot() } satisfies NidoStorageRequest,
+        bridge.origin,
+      );
     }
 
     function onMessage(event: MessageEvent<NidoStorageResponse>) {
       if (event.origin !== bridge.origin || event.source !== iframe.contentWindow) return;
       const data = event.data;
       if (data?.type !== NIDO_STORAGE_RESPONSE || data.id !== id) return;
-      finish(mergeNidoSnapshot(data.snapshot));
+      const changed = mergeNidoSnapshot(data.snapshot);
+      // Record what the answer shows the apex holding, not what this origin
+      // sent last: resends share one id, so the answer can be to an earlier
+      // send that still carried the account as pending.
+      const confirmed = own ? ownStatus(normalizeSnapshot(data.snapshot), own) : null;
+      const store = storageOrNull();
+      if (own && confirmed && store) store.setItem(confirmedKey(own), confirmed);
+      finish({ answered: true, changed });
     }
 
-    const timer = window.setTimeout(() => finish(false), timeoutMs);
+    const timer = window.setTimeout(() => finish(unanswered), timeoutMs);
     iframe.hidden = true;
     iframe.style.display = "none";
     iframe.src = bridge.url;
     iframe.addEventListener("load", () => {
-      iframe.contentWindow?.postMessage(
-        {
-          type: NIDO_STORAGE_REQUEST,
-          id,
-          snapshot: localNidoSnapshot(),
-        } satisfies NidoStorageRequest,
-        bridge.origin,
-      );
+      send();
+      resend = window.setInterval(send, BRIDGE_RESEND_MS);
     });
-    iframe.addEventListener("error", () => finish(false));
+    window.addEventListener("message", onMessage);
+    document.body.appendChild(iframe);
+  });
+}
+
+// --- Syncing until the apex confirms ------------------------------------------
+
+export type BridgeSyncStatus =
+  /** Nothing of this origin's own is waiting for the apex. */
+  | "confirmed"
+  /** A sync is running and this origin's own account is not confirmed yet. */
+  | "syncing"
+  /** The last sync did not confirm the account; another is scheduled. */
+  | "unconfirmed";
+
+/** Delays between syncs that left this origin's own account unconfirmed;
+ *  the last one repeats for as long as the page stays open. */
+const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
+
+let syncInFlight: Promise<BridgeSyncResult> | null = null;
+let retryTimer: number | undefined;
+let failedSyncs = 0;
+let resyncedOnAnswer = false;
+let status: BridgeSyncStatus = "confirmed";
+const statusListeners = new Set<(status: BridgeSyncStatus) => void>();
+let wakeListenersAttached = false;
+
+function setStatus(next: BridgeSyncStatus) {
+  if (next === status) return;
+  status = next;
+  statusListeners.forEach((listener) => listener(next));
+}
+
+/** Follow this page's sync status; `listener` is called now and on each change.
+ *  Returns a function that stops following. */
+export function onBridgeSyncStatus(listener: (status: BridgeSyncStatus) => void): () => void {
+  statusListeners.add(listener);
+  listener(status);
+  return () => statusListeners.delete(listener);
+}
+
+function attachWakeListeners() {
+  if (wakeListenersAttached) return;
+  wakeListenersAttached = true;
+  // Coming back online, or back to the tab, is a good moment to try again.
+  const retryNow = () => {
+    if (status === "unconfirmed") void requestBridgeSync();
+  };
+  window.addEventListener("online", retryNow);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") retryNow();
+  });
+}
+
+/**
+ * Sync with the apex now (joining a sync already running), and keep syncing in
+ * the background, with growing delays, until the apex has confirmed this
+ * origin's own account. Every page load that calls it retries an account the
+ * apex never confirmed. Follow progress with {@link onBridgeSyncStatus}.
+ */
+export function requestBridgeSync(): Promise<BridgeSyncResult> {
+  if (syncInFlight) return syncInFlight;
+  window.clearTimeout(retryTimer);
+  attachWakeListeners();
+  if (bridgeSyncNeeded()) setStatus("syncing");
+  syncInFlight = syncNidoStorageViaBridge().then((result) => {
+    syncInFlight = null;
+    if (!bridgeSyncNeeded()) {
+      failedSyncs = 0;
+      resyncedOnAnswer = false;
+      setStatus("confirmed");
+    } else if (result.answered && !resyncedOnAnswer) {
+      // Answered, but this origin's own state may have moved on meanwhile:
+      // sync again at once, once. An answer that still does not confirm the
+      // account after that waits like an unanswered sync.
+      resyncedOnAnswer = true;
+      void requestBridgeSync();
+    } else {
+      setStatus("unconfirmed");
+      const delay = RETRY_DELAYS_MS[Math.min(failedSyncs, RETRY_DELAYS_MS.length - 1)];
+      failedSyncs++;
+      retryTimer = window.setTimeout(() => void requestBridgeSync(), delay);
+    }
+    return result;
+  });
+  return syncInFlight;
+}
+
+// --- Ownership probe (apex -> account origin) ----------------------------------
+//
+// The passkey record for an account (`passkey:<C>:*`) lives in its own
+// origin's storage, which the apex can't read. The apex learns whether this
+// browser holds one by framing the account origin's bridge page, which answers
+// its apex parent, and nobody else, with yes or no.
+
+export const NIDO_OWNER_REQUEST = "nido:owner:request:v1";
+export const NIDO_OWNER_RESPONSE = "nido:owner:response:v1";
+
+export interface NidoOwnerRequest {
+  type: typeof NIDO_OWNER_REQUEST;
+  id: string;
+}
+
+export interface NidoOwnerResponse {
+  type: typeof NIDO_OWNER_RESPONSE;
+  id: string;
+  contractId: string;
+  hasPasskey: boolean;
+}
+
+/** Whether `origin` is the apex this account `host` belongs to, over https
+ *  (plain http only on a loopback dev host). */
+function isOwnApex(origin: string, host: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackHttpHost(url.hostname))) {
+    return false;
+  }
+  return url.host === apexHostForHost(host) && url.host !== host;
+}
+
+/**
+ * The account origin's half of the ownership probe, minus the DOM: answer a
+ * well-formed request from the embedding window, when that window is this
+ * account's own apex, with whether this origin holds the account's passkey
+ * record. Returns null to ignore the message.
+ */
+export function answerOwnerProbe(
+  message: { origin: string; data: unknown; fromParent: boolean },
+  host: string,
+  store: Pick<Storage, "getItem"> | null = storageOrNull(),
+): NidoOwnerResponse | null {
+  if (!message.fromParent || !store) return null;
+  const contractId = ownAccount({ host });
+  if (!contractId || !isOwnApex(message.origin, host)) return null;
+  const data = message.data as Partial<NidoOwnerRequest> | null;
+  if (data?.type !== NIDO_OWNER_REQUEST || typeof data.id !== "string") return null;
+  const hasPasskey =
+    !!store.getItem(`passkey:${contractId}:credentialId`) && !!store.getItem(`passkey:${contractId}:publicKey`);
+  return { type: NIDO_OWNER_RESPONSE, id: data.id, contractId, hasPasskey };
+}
+
+/**
+ * What the bridge page answers, whichever host serves it: on the apex it is
+ * the storage bridge for account and name origins; on an account origin it
+ * answers its apex's ownership probe. Returns the message to post back to
+ * `origin`, or null to stay silent.
+ */
+export function answerBridgePageMessage(
+  message: { origin: string; data: unknown; fromParent: boolean },
+  host: string,
+): NidoStorageResponse | NidoOwnerResponse | null {
+  return apexHostForHost(host) === host ? answerBridgeRequest(message, host) : answerOwnerProbe(message, host);
+}
+
+/**
+ * From the apex: whether this browser holds the passkey record for
+ * `contractId` on that account's own origin. Resolves `null` when the account
+ * origin did not answer within `timeoutMs`.
+ */
+export function probeAccountOwnership(
+  contractId: string,
+  timeoutMs = BRIDGE_ANSWER_BUDGET_MS,
+): Promise<boolean | null> {
+  if (typeof window === "undefined" || typeof document === "undefined") return Promise.resolve(null);
+  const url = `${window.location.protocol}${accountUrl(window.location.host, contractId, "/nido-storage-bridge/")}`;
+  const origin = new URL(url).origin;
+
+  return new Promise((resolve) => {
+    const id = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement("iframe");
+    let settled = false;
+    let resend: number | undefined;
+
+    function finish(answer: boolean | null) {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      window.clearInterval(resend);
+      window.removeEventListener("message", onMessage);
+      iframe.remove();
+      resolve(answer);
+    }
+
+    function send() {
+      iframe.contentWindow?.postMessage({ type: NIDO_OWNER_REQUEST, id } satisfies NidoOwnerRequest, origin);
+    }
+
+    function onMessage(event: MessageEvent<NidoOwnerResponse>) {
+      if (event.origin !== origin || event.source !== iframe.contentWindow) return;
+      const data = event.data;
+      if (data?.type !== NIDO_OWNER_RESPONSE || data.id !== id || data.contractId !== contractId) return;
+      finish(data.hasPasskey === true);
+    }
+
+    const timer = window.setTimeout(() => finish(null), timeoutMs);
+    iframe.hidden = true;
+    iframe.style.display = "none";
+    iframe.src = url;
+    iframe.addEventListener("load", () => {
+      send();
+      resend = window.setInterval(send, BRIDGE_RESEND_MS);
+    });
     window.addEventListener("message", onMessage);
     document.body.appendChild(iframe);
   });

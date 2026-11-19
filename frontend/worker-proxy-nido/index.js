@@ -86,17 +86,24 @@ export default {
     response.headers.set("Referrer-Policy", "no-referrer");
 
     // The storage bridge is the one page meant to be framed: account and name
-    // origins embed it to share the account list. It gets an enforced policy
-    // of its own admitting only the wallet's own hosts over https; its message
-    // handler narrows that to account and name labels. Every other page is a
+    // origins embed the apex's copy to share the account list, and the apex
+    // embeds an account origin's copy to ask whether this browser holds that
+    // account's passkey. It gets an enforced policy of its own admitting only
+    // the wallet's own hosts over https: CSP_SITE_HOSTS and the bare apex each
+    // wildcard stands for (`https://*.nido.fyi` does not match `nido.fyi`
+    // itself). Its message handler narrows that to account and name labels,
+    // and an account origin answers only its own apex. Every other page is a
     // signing surface and stays unframeable. Keep identical to the
     // /nido-storage-bridge/ rule in packages/frontend/public/_headers.
     if (url.pathname === "/nido-storage-bridge/") {
+      const apexes = CSP_SITE_HOSTS.split(/\s+/)
+        .filter((host) => host.includes("://*."))
+        .map((host) => host.replace("://*.", "://"));
       response.headers.delete("X-Frame-Options");
       response.headers.delete("Content-Security-Policy-Report-Only");
       response.headers.set(
         "Content-Security-Policy",
-        `default-src 'none'; script-src 'self'; frame-ancestors ${CSP_SITE_HOSTS}; base-uri 'none'; form-action 'none'`,
+        `default-src 'none'; script-src 'self'; frame-ancestors ${[CSP_SITE_HOSTS, ...apexes].join(" ")}; base-uri 'none'; form-action 'none'`,
       );
       return response;
     }
