@@ -176,15 +176,63 @@ and infrastructure bring.
     succeed (L6, D1).
 12. **Supply-chain attacker.** Swaps a dependency, the Perch submodule, or the
     proving toolchain. See [SUPPLY_CHAIN.md](./SUPPLY_CHAIN.md).
-13. **The ZK verifier.** Proofs are Barretenberg's zero-knowledge flavor
-    (`UltraKeccakZKFlavor`), so a published proof hides the secret, and the
-    adapter refuses any other flavor. The verifier is NethermindEth's audited
-    UltraHonk verifier plus Perch's delta for that flavor (one new file and
-    visibility-only changes). **The delta is not audited**; Perch lists its
-    audit as a release criterion
-    ([Perch ZK README](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/zk/README.md)
-    (`vendor/perch/docs/zk/README.md`); MAINNET_READINESS D5). Until then,
-    recovery's ZK factor rests on that unaudited code.
+13. **The ZK verifier.** A ZK recovery proof travels in the arguments of a
+    public transaction, so anyone can read it. It proves knowledge of the
+    recovery secret. The circuit's private inputs are the secret, the
+    account, the enrollment id, the statement digest, and the Merkle path
+    ([Perch circuit](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/zk/circuit.md#relation)
+    (`vendor/perch/docs/zk/circuit.md`)). Every one of them except the
+    secret is public or readable from the chain. The secret is 253 uniformly
+    random bits: the wallet draws it with `newZkCredential`
+    (`packages/passkey-sdk/src/perch/zk.ts`), which calls `randomSecret` in Perch's
+    [`packages/perch-zk/src/field.ts`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/packages/perch-zk/src/field.ts).
+    Perch's spec §3.1 requires at least 128 bits, because its commitment is
+    public and a guessable secret can be found offline.
+
+    **Why the zero-knowledge flavor.** Proofs are Barretenberg's
+    zero-knowledge flavor, `UltraKeccakZKFlavor`. Before committing to each
+    witness polynomial, it adds random values to the polynomial, which
+    Barretenberg does for "ensuring the commitment and evaluation of a
+    polynomial don't leak information about the coefficients"
+    ([`Polynomial::mask`](https://github.com/AztecProtocol/aztec-packages/blob/v0.87.0/barretenberg/cpp/src/barretenberg/polynomials/polynomial.hpp#L267-L281),
+    called only when `Flavor::HasZK` in
+    [`OinkProver`](https://github.com/AztecProtocol/aztec-packages/blob/v0.87.0/barretenberg/cpp/src/barretenberg/ultra_honk/oink_prover.cpp#L259-L262)).
+    It also masks the sumcheck round univariates with random Libra
+    polynomials
+    ([`sumcheck.hpp`](https://github.com/AztecProtocol/aztec-packages/blob/v0.87.0/barretenberg/cpp/src/barretenberg/sumcheck/sumcheck.hpp#L259-L260);
+    [Libra, ePrint 2019/317](https://eprint.iacr.org/2019/317)). The
+    audited verifier implements only the non-ZK `UltraKeccakFlavor`, which
+    applies no masking. Its proof carries commitments to the witness
+    polynomials and their evaluations as computed, and those polynomials hold
+    the secret and every hash state computed from it. A non-ZK proof is sound
+    but not hiding. It is a deterministic function of the witness (Perch's
+    `lost_key` non-ZK fixture reproduces byte for byte), and nothing bounds
+    what it reveals about the secret. No specific attack that recovers the
+    secret from one is claimed here. The same secret backs cancellation,
+    reconfiguration, and upgrade proofs until a completion spends its
+    nullifier, so one credential can publish several proofs.
+
+    **What is checked.** The adapter accepts only ZK proofs. It rejects any
+    proof that is not 16,224 bytes long and verifies with
+    `UltraHonkZkVerifier` alone (Perch's
+    [`crates/perch-zk-adapter/src/contract.rs`](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/crates/perch-zk-adapter/src/contract.rs#L22-L24),
+    `verify` and `verify_proof`). A valid non-ZK proof of the same statement
+    is refused, as is one re-encoded in the ZK layout without masking
+    (`non_zk_proofs_are_refused` in `crates/perch-zk-adapter/tests/zk_verifier.rs`).
+    The verifier is NethermindEth's UltraHonk verifier, audited by
+    OpenZeppelin for the non-ZK flavor only, plus Perch's delta for the ZK
+    flavor: one new file and visibility-only changes, itemized in
+    AUDIT_SCOPE.md. A test checks that every other byte is upstream's.
+
+    **The trade-off.** **The delta is not audited**, and recovery's ZK factor
+    rests on it: a bug in it could let a forged proof pass as the recovery
+    factor. The audited non-ZK verifier is not a drop-in alternative. It
+    would remove the unaudited code but publish proofs that do not hide the
+    secret. The choice is between an unaudited verifier delta and proofs that
+    are not hiding. Nido keeps the ZK flavor and puts the delta in audit scope
+    (AUDIT_SCOPE question 2). Perch lists its audit as a release criterion
+    ([Perch ZK README](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/zk/README.md#open-release-criteria)
+    (`vendor/perch/docs/zk/README.md`); MAINNET_READINESS D5).
 14. **Malicious dApp or link.** Anyone can send the user a link into their
     own account's wallet pages, or open `/sign/` from a dApp, with whatever
     parameters they like. The requesting dApp's origin is itself only a URL
