@@ -1,5 +1,5 @@
 /**
- * "Use a passkey you already have": set up this device to sign for an account
+ * "Use your synced passkey": set up this device to sign for an account
  * with a passkey the user already holds, without creating a new one.
  *
  * An account's passkey is resident and bound to the account's own subdomain,
