@@ -347,6 +347,22 @@ test.describe('@fast sign-in list in a browser that keeps a framed page\'s stora
     await page.waitForURL(`${accountOrigin(ACCOUNT)}/account/`, { timeout: 30_000 });
     expect(chain.handoffLoads).toBe(1);
     await expect(notice).toBeHidden({ timeout: 10_000 });
+    // The apex's answer came back with this origin's nonce: it is recorded,
+    // and the nonce is spent.
+    const bridgeState = () =>
+      page.evaluate(() =>
+        Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('nido:mainnet:bridge:'))),
+      );
+    expect(await bridgeState()).toEqual({ [`nido:mainnet:bridge:confirmed:${ACCOUNT}`]: 'active' });
+
+    // A later visit: the bridge is as separated as before, and the notice
+    // stays away.
+    const loads = chain.bridgeLoads;
+    await page.goto(`${accountOrigin(ACCOUNT)}/__blank`);
+    await page.goto(`${accountOrigin(ACCOUNT)}/account/`);
+    await expect.poll(() => chain.bridgeLoads, { timeout: 30_000 }).toBeGreaterThan(loads);
+    await expect(page.locator('iframe[src*="/nido-storage-bridge/"]')).toHaveCount(0, { timeout: 30_000 });
+    await expect(notice).toBeHidden();
 
     const rows = await chooserRows(page);
     await expect(rows).toHaveCount(1);
@@ -404,7 +420,7 @@ test.describe('@fast sign-in list in a browser that keeps a framed page\'s stora
     expect(JSON.parse((await apexStorage(page))['nido:mainnet:accounts'] ?? '[]')).toEqual([]);
   });
 
-  test('a crafted "not listed" link stores nothing and does not hide "Add it" on the next visit', async ({
+  test('a crafted "listed" or "not listed" link stores nothing and never hides "Add it"', async ({
     context,
     page,
   }) => {
@@ -418,22 +434,32 @@ test.describe('@fast sign-in list in a browser that keeps a framed page\'s stora
           .filter(([key]) => key.startsWith('nido:mainnet:bridge:'))
           .sort(),
       );
+    const visit = async (fragment: string) => {
+      await page.goto(`${accountOrigin(ACCOUNT)}/__blank`);
+      await page.goto(`${accountOrigin(ACCOUNT)}/account/${fragment}`);
+    };
 
     // A plain visit first, so what the page itself stores is already there.
-    await page.goto(`${accountOrigin(ACCOUNT)}/account/`);
+    await visit('');
     const notice = page.locator('.signin-notice');
     const add = notice.locator('button');
     await expect(add).toHaveText('Add it', { timeout: 30_000 });
     const before = await stored();
 
-    // Any site can link here with the hand-off's answer; the apex gave none.
-    await page.goto(`${accountOrigin(ACCOUNT)}/__blank`);
-    await page.goto(`${accountOrigin(ACCOUNT)}/account/#nido-signin-list=not-listed`);
-    await expect(notice).toContainText("can't be added to the main Nido site's list", { timeout: 30_000 });
-    expect(await stored()).toEqual(before);
+    // Any site can link here with an answer the apex never gave; this origin
+    // started no hand-off, so no nonce can match.
+    for (const outcome of ['listed', 'not-listed']) {
+      for (const nonce of ['', `&nido-signin-nonce=${'0'.repeat(32)}`]) {
+        await visit(`#nido-signin-list=${outcome}${nonce}`);
+        await expect(add).toHaveText('Add it', { timeout: 30_000 });
+        await expect(add).toBeVisible();
+        await expect(notice).not.toContainText("can't be added");
+        expect(new URL(page.url()).hash).toBe('');
+        expect(await stored()).toEqual(before);
+      }
+    }
 
-    await page.goto(`${accountOrigin(ACCOUNT)}/__blank`);
-    await page.goto(`${accountOrigin(ACCOUNT)}/account/`);
+    await visit('');
     await expect(add).toHaveText('Add it', { timeout: 30_000 });
     await expect(add).toBeVisible();
     expect(chain.handoffLoads).toBe(0);

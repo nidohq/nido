@@ -113,7 +113,7 @@ function normalizeSnapshot(snapshot: Partial<NidoAccountSnapshot> | null | undef
   };
 }
 
-function storageOrNull(): StorageLike | null {
+function storageOrNull(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
@@ -464,8 +464,7 @@ export interface BridgeSyncResult {
 type OwnStatus = "pending" | "active";
 const confirmedKey = (contractId: string) => nidoKey(`bridge:confirmed:${contractId}`);
 /** The hand-off this page load returned from answered that the apex will not
- *  list this origin's account. Never stored: the return parameter is anyone's
- *  to forge, so it speaks for this page only. */
+ *  list this origin's account. Never stored: it speaks for this page only. */
 let handoffRefused = false;
 
 /** This origin's own account, when this is an account origin under an apex. */
@@ -503,28 +502,49 @@ export function bridgeSyncNeeded(
  *  `not-listed` when the apex will not list it (this browser did not reserve
  *  the address there), `unverified` when the chain check did not pass. */
 export const SIGNIN_LIST_RETURN_PARAM = "nido-signin-list";
+/** The hash parameter the hand-off returns the account origin's nonce in. */
+export const SIGNIN_LIST_NONCE_PARAM = "nido-signin-nonce";
+
+/** The nonce of the one hand-off this origin has started for its account and
+ *  not yet seen return. */
+const handoffNonceKey = (contractId: string) => nidoKey(`bridge:handoff:${contractId}`);
 
 /**
- * On a page the sign-in list hand-off returned to: drop its parameter from
- * the URL and, when the apex reports this origin's own active account
- * listed, record that as confirmed, which a separated bridge never can. When
- * the apex reports it will not list this origin's account, this page stops
- * offering the hand-off ({@link signInListRefused}); nothing is stored. Any
- * site can link here with the parameter; the most a forged one does is hide
- * the "Not in your sign-in list yet" notice for an account this origin
- * already holds as active, or the notice's "Add it" button until the next
- * page load.
+ * On an account origin about to start a hand-off for `contractId`: a fresh
+ * random nonce, kept in this origin's storage. The apex returns it with the
+ * outcome, and {@link takeSignInListReturn} accepts the outcome only with it,
+ * once.
+ */
+export function issueHandoffNonce(contractId: string, store: Pick<Storage, "setItem">): string {
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  store.setItem(handoffNonceKey(contractId), nonce);
+  return nonce;
+}
+
+/**
+ * On a page the sign-in list hand-off returned to: drop its parameters from
+ * the URL and, when they carry the nonce this origin issued for its own
+ * account's hand-off, spend the nonce and take the outcome. `listed` for an
+ * account this origin holds as active is recorded as confirmed, which a
+ * separated bridge never can; after `not-listed` this page stops offering
+ * the hand-off ({@link signInListRefused}), and nothing is stored. Any site
+ * can link here with the parameters, but not with the nonce: an outcome
+ * without it changes nothing.
  */
 export function takeSignInListReturn(
   win: Pick<Window, "location" | "history"> = window,
-  store: StorageLike | null = storageOrNull(),
+  store: (StorageLike & Pick<Storage, "removeItem">) | null = storageOrNull(),
 ): void {
   const hash = win.location.hash.replace(/^#/, "");
   if (!hash) return;
   const params = new URLSearchParams(hash);
   const result = params.get(SIGNIN_LIST_RETURN_PARAM);
   if (result === null) return;
+  const nonce = params.get(SIGNIN_LIST_NONCE_PARAM);
   params.delete(SIGNIN_LIST_RETURN_PARAM);
+  params.delete(SIGNIN_LIST_NONCE_PARAM);
   const rest = params.toString();
   win.history.replaceState(
     win.history.state,
@@ -532,9 +552,12 @@ export function takeSignInListReturn(
     `${win.location.pathname}${win.location.search}${rest ? `#${rest}` : ""}`,
   );
   const own = ownAccount(win.location);
-  if (!own) return;
+  if (!own || !store) return;
+  const issued = store.getItem(handoffNonceKey(own));
+  if (issued === null || nonce !== issued) return;
+  store.removeItem(handoffNonceKey(own));
   if (result === "not-listed") handoffRefused = true;
-  else if (result === "listed" && store && ownStatus(localNidoSnapshot(store), own) === "active") {
+  else if (result === "listed" && ownStatus(localNidoSnapshot(store), own) === "active") {
     store.setItem(confirmedKey(own), "active");
   }
 }

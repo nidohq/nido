@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { StrKey } from "@stellar/stellar-sdk";
 import {
+  canHandOffOwn,
   completeHandoff,
   handoffReturnUrl,
   handoffUrl,
@@ -39,38 +40,86 @@ const handoff = (over: Partial<Handoff> = {}): Handoff => ({
   publicKey: new Uint8Array(65).fill(4),
   next: "account",
   claimName: null,
+  nonce: null,
   ...over,
 });
 
+/** An account origin's storage: what it holds, and what a hand-off link adds. */
+function originStore(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    values,
+    getItem: (k: string) => values.get(k) ?? null,
+    setItem: (k: string, v: string) => void values.set(k, v),
+  };
+}
+const NONCE_KEY = `nido:testnet:bridge:handoff:${C}`;
+
 describe("the hand-off link an account origin opens", () => {
   it("goes to the apex's hand-off page with the account, its key and where to return", () => {
-    const url = handoffUrl({ protocol: "https:", host: `${c}.nido.fyi` }, { contractId: C, publicKeyHex: KEY, next: "recovery" });
-    expect(url).toBe(`https://nido.fyi/new-account/finish/#c=${C}&pk=${KEY}&next=recovery`);
+    const store = originStore();
+    const url = handoffUrl(
+      { protocol: "https:", host: `${c}.nido.fyi` },
+      { contractId: C, publicKeyHex: KEY, next: "recovery" },
+      store,
+    );
+    const nonce = store.values.get(NONCE_KEY)!;
+    expect(nonce).toMatch(/^[0-9a-f]{32}$/);
+    expect(url).toBe(`https://nido.fyi/new-account/finish/#c=${C}&pk=${KEY}&next=recovery&n=${nonce}`);
     expect(parseHandoff(new URL(url!).hash)).toEqual({
       contractId: C,
       publicKey: Uint8Array.from(Buffer.from(KEY, "hex")),
       next: "recovery",
       claimName: null,
+      nonce,
     });
+  });
+
+  it("carries a new nonce each time, the origin keeping only the latest", () => {
+    const store = originStore();
+    const open = () =>
+      parseHandoff(
+        new URL(handoffUrl({ protocol: "https:", host: `${c}.nido.fyi` }, { contractId: C, publicKeyHex: KEY, next: "account" }, store)!)
+          .hash,
+      )!.nonce;
+    const first = open();
+    const second = open();
+    expect(second).not.toBe(first);
+    expect(store.values.get(NONCE_KEY)).toBe(second);
   });
 
   it("stays under a preview's own root", () => {
     expect(
-      handoffUrl({ protocol: "https:", host: `${c}--362.test.nido.fyi` }, { contractId: C, publicKeyHex: KEY, next: "account" }),
+      handoffUrl(
+        { protocol: "https:", host: `${c}--362.test.nido.fyi` },
+        { contractId: C, publicKeyHex: KEY, next: "account" },
+        originStore(),
+      ),
     ).toMatch(/^https:\/\/362\.test\.nido\.fyi\/new-account\/finish\/#/);
   });
 
   it("is not made on the apex itself", () => {
-    expect(handoffUrl(APEX, { contractId: C, publicKeyHex: KEY, next: "account" })).toBeNull();
+    const store = originStore();
+    expect(handoffUrl(APEX, { contractId: C, publicKeyHex: KEY, next: "account" }, store)).toBeNull();
+    expect(store.values.size).toBe(0);
   });
 
   it("is made from this origin's own passkey record, or not at all", () => {
-    const store = { getItem: (k: string) => (k === `passkey:${C}:publicKey` ? KEY : null) };
-    expect(ownHandoffUrl({ protocol: "https:", host: `${c}.nido.fyi` }, store)).toBe(
-      `https://nido.fyi/new-account/finish/#c=${C}&pk=${KEY}&next=account`,
+    const own = { protocol: "https:", host: `${c}.nido.fyi` };
+    const store = originStore({ [`passkey:${C}:publicKey`]: KEY });
+    // Asking whether it can be made issues no nonce.
+    expect(canHandOffOwn(own, store)).toBe(true);
+    expect(store.values.has(NONCE_KEY)).toBe(false);
+    expect(ownHandoffUrl(own, store)).toBe(
+      `https://nido.fyi/new-account/finish/#c=${C}&pk=${KEY}&next=account&n=${store.values.get(NONCE_KEY)}`,
     );
-    expect(ownHandoffUrl({ protocol: "https:", host: `${c}.nido.fyi` }, { getItem: () => null })).toBeNull();
+
+    const empty = originStore();
+    expect(canHandOffOwn(own, empty)).toBe(false);
+    expect(ownHandoffUrl(own, empty)).toBeNull();
+    expect(canHandOffOwn({ host: "alice.nido.fyi" }, store)).toBe(false);
     expect(ownHandoffUrl({ protocol: "https:", host: "alice.nido.fyi" }, store)).toBeNull();
+    expect(empty.values.size).toBe(0);
   });
 });
 
@@ -83,7 +132,9 @@ describe("reading a hand-off link (untrusted)", () => {
 
   it("keeps only a well-formed passkey key, a known return page and a claimable name", () => {
     const h = parseHandoff(`#c=${c}&pk=zz&next=https://evil.example/&then=claim:Ab`);
-    expect(h).toEqual({ contractId: C, publicKey: null, next: "account", claimName: "ab" });
+    expect(h).toEqual({ contractId: C, publicKey: null, next: "account", claimName: "ab", nonce: null });
+    expect(parseHandoff(`#c=${C}&n=${"0".repeat(31)}`)?.nonce).toBeNull();
+    expect(parseHandoff(`#c=${C}&n=${"g".repeat(32)}`)?.nonce).toBeNull();
     expect(parseHandoff(`#c=${C}&then=https://evil.example/`)?.claimName).toBeNull();
     expect(parseHandoff(`#c=${C}&then=claim:www`)?.claimName).toBeNull();
   });
@@ -129,6 +180,13 @@ describe("where the hand-off returns", () => {
     );
     expect(handoffReturnUrl({ protocol: "https:", host: "362.test.nido.fyi" }, handoff(), "listed")).toBe(
       `https://${c}--362.test.nido.fyi/account/#nido-signin-list=listed`,
+    );
+  });
+
+  it("with the account origin's nonce beside the outcome", () => {
+    const nonce = "0123456789abcdef".repeat(2);
+    expect(handoffReturnUrl(APEX, handoff({ nonce }), "listed")).toBe(
+      `https://${c}.nido.fyi/account/#nido-signin-list=listed&nido-signin-nonce=${nonce}`,
     );
   });
 

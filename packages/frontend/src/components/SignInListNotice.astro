@@ -45,7 +45,7 @@ const { style, handoff = true } = Astro.props;
     requestBridgeSync,
     signInListRefused,
   } from "../lib/nidoSharedStorage";
-  import { ownHandoffUrl } from "../lib/signInListHandoff";
+  import { canHandOffOwn, ownHandoffUrl } from "../lib/signInListHandoff";
 
   const RETRYING = "Apps can't offer this Nido when you connect until it is. We'll keep trying while this page is open.";
   const ADD = "Apps can't offer this Nido when you connect until it is. Adding it opens the Nido home page for a moment, then brings you back.";
@@ -58,11 +58,11 @@ const { style, handoff = true } = Astro.props;
     const retry = notice.querySelector<HTMLButtonElement>(".signin-notice-retry")!;
     const viaHandoff = notice.dataset.handoff === "on";
     // Where a separated bridge leaves this page: the apex refused the
-    // account, or the hand-off is still to be made, at this URL.
+    // account, or the hand-off is still to be made.
     const separatedState = () => {
-      if (!viaHandoff || !bridgeSeparated()) return { refused: false, viaApex: null };
+      if (!viaHandoff || !bridgeSeparated()) return { refused: false, viaApex: false };
       const refused = signInListRefused();
-      return { refused, viaApex: refused ? null : ownHandoffUrl(window.location) };
+      return { refused, viaApex: !refused && canHandOffOwn(window.location) };
     };
     let shown = false;
     onBridgeSyncStatus((status) => {
@@ -81,8 +81,8 @@ const { style, handoff = true } = Astro.props;
       retry.textContent = viaApex ? "Add it" : status === "syncing" ? "Trying…" : "Try again";
     });
     retry.addEventListener("click", () => {
-      const { viaApex } = separatedState();
-      if (viaApex) window.location.assign(viaApex);
+      const url = separatedState().viaApex ? ownHandoffUrl(window.location) : null;
+      if (url) window.location.assign(url);
       else void requestBridgeSync();
     });
   }

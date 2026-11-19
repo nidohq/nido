@@ -15,6 +15,7 @@ import {
   mergeNidoSnapshot,
   NIDO_STORAGE_REQUEST,
   snapshotForRequester,
+  issueHandoffNonce,
   signInListRefused,
   takeSignInListReturn,
 } from "./nidoSharedStorage.js";
@@ -363,43 +364,107 @@ describe("the sign-in list hand-off's return", () => {
   }
   const active = () => new MemoryStorage({ "nido:testnet:accounts": JSON.stringify([B]) });
 
-  it("records the account as confirmed when the apex listed it, and drops the parameter", () => {
-    const { win, replaced } = page(`https://${b}.nido.fyi/account/?x=1#nido-signin-list=listed&tab=send`);
+  const own = { host: `${b}.nido.fyi` };
+  const CONFIRMED = `nido:testnet:bridge:confirmed:${B}`;
+  const entries = (store: MemoryStorage) =>
+    JSON.stringify([...Array(store.length).keys()].map((i) => [store.key(i), store.getItem(store.key(i)!)]).sort());
+
+  it("records the account as confirmed when the apex listed it for this origin's nonce, and drops the parameters", () => {
     const store = active();
+    const nonce = issueHandoffNonce(B, store);
+    const { win, replaced } = page(
+      `https://${b}.nido.fyi/account/?x=1#nido-signin-list=listed&nido-signin-nonce=${nonce}&tab=send`,
+    );
     takeSignInListReturn(win, store);
     expect(replaced).toEqual(["/account/?x=1#tab=send"]);
-    expect(store.getItem(`nido:testnet:bridge:confirmed:${B}`)).toBe("active");
-    expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(false);
+    expect(store.getItem(CONFIRMED)).toBe("active");
+    expect(bridgeSyncNeeded(own, store)).toBe(false);
   });
 
-  it("stores nothing when the apex did not list it, and refuses only on the account's own page", () => {
+  it("takes an outcome once: a replayed nonce changes nothing", () => {
     const store = active();
-    const stored = () => JSON.stringify([...Array(store.length).keys()].map((i) => store.key(i)).sort());
-    const before = stored();
+    const nonce = issueHandoffNonce(B, store);
+    const link = `https://${b}.nido.fyi/account/#nido-signin-list=listed&nido-signin-nonce=${nonce}`;
+    takeSignInListReturn(page(link).win, store);
+    expect(store.getItem(CONFIRMED)).toBe("active");
 
-    const unverified = page(`https://${b}.nido.fyi/account/#nido-signin-list=unverified`);
-    takeSignInListReturn(unverified.win, store);
-    expect(unverified.replaced).toEqual(["/account/"]);
-    takeSignInListReturn(page("https://alice.nido.fyi/account/#nido-signin-list=not-listed").win, store);
+    // The account drops out of the apex's list later; the old link is tried again.
+    store.removeItem(CONFIRMED);
+    const before = entries(store);
+    const replay = page(link);
+    takeSignInListReturn(replay.win, store);
+    expect(replay.replaced).toEqual(["/account/"]);
+    expect(entries(store)).toBe(before);
+    expect(bridgeSyncNeeded(own, store)).toBe(true);
+  });
+
+  it("ignores a crafted outcome: without the nonce this origin issued, nothing is stored or refused", () => {
+    const store = active();
+    const issued = issueHandoffNonce(B, store);
+    const before = entries(store);
+    const wrong = issued.replace(/^./, (ch) => (ch === "0" ? "1" : "0"));
+    for (const fragment of [
+      "nido-signin-list=listed",
+      "nido-signin-list=not-listed",
+      `nido-signin-list=listed&nido-signin-nonce=${wrong}`,
+      `nido-signin-list=not-listed&nido-signin-nonce=${wrong}`,
+      "nido-signin-list=listed&nido-signin-nonce=",
+    ]) {
+      const { win, replaced } = page(`https://${b}.nido.fyi/account/#${fragment}`);
+      takeSignInListReturn(win, store);
+      expect(replaced).toEqual(["/account/"]);
+    }
+    expect(entries(store)).toBe(before);
     expect(signInListRefused()).toBe(false);
+    expect(bridgeSyncNeeded(own, store)).toBe(true);
 
-    // Anyone can craft this link: it changes this page load and nothing else.
-    const { win, replaced } = page(`https://${b}.nido.fyi/account/#nido-signin-list=not-listed`);
-    takeSignInListReturn(win, store);
-    expect(replaced).toEqual(["/account/"]);
-    expect(signInListRefused()).toBe(true);
-    expect(stored()).toBe(before);
-    expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(true);
+    // With no hand-off started at all, neither does a link that names a nonce.
+    const idle = active();
+    const idleBefore = entries(idle);
+    takeSignInListReturn(page(`https://${b}.nido.fyi/account/#nido-signin-list=listed&nido-signin-nonce=null`).win, idle);
+    expect(entries(idle)).toBe(idleBefore);
   });
 
   it("records nothing for an account this origin doesn't hold as active, or on another origin", () => {
     const pending = new MemoryStorage({ "nido:testnet:pending": JSON.stringify([{ contractId: B, setupKey: "s" }]) });
-    takeSignInListReturn(page(`https://${b}.nido.fyi/account/#nido-signin-list=listed`).win, pending);
-    expect(pending.getItem(`nido:testnet:bridge:confirmed:${B}`)).toBeNull();
+    const nonce = issueHandoffNonce(B, pending);
+    takeSignInListReturn(
+      page(`https://${b}.nido.fyi/account/#nido-signin-list=listed&nido-signin-nonce=${nonce}`).win,
+      pending,
+    );
+    expect(pending.getItem(CONFIRMED)).toBeNull();
 
     const store = active();
-    takeSignInListReturn(page("https://alice.nido.fyi/account/#nido-signin-list=listed").win, store);
-    expect(store.getItem(`nido:testnet:bridge:confirmed:${B}`)).toBeNull();
+    const other = issueHandoffNonce(B, store);
+    const before = entries(store);
+    takeSignInListReturn(
+      page(`https://alice.nido.fyi/account/#nido-signin-list=listed&nido-signin-nonce=${other}`).win,
+      store,
+    );
+    expect(entries(store)).toBe(before);
+  });
+
+  it("stores nothing when the apex did not list it, and stops offering the hand-off on this page", () => {
+    const store = active();
+    const before = entries(store);
+
+    const unverified = issueHandoffNonce(B, store);
+    takeSignInListReturn(
+      page(`https://${b}.nido.fyi/account/#nido-signin-list=unverified&nido-signin-nonce=${unverified}`).win,
+      store,
+    );
+    expect(signInListRefused()).toBe(false);
+    expect(entries(store)).toBe(before);
+
+    const refused = issueHandoffNonce(B, store);
+    const { win, replaced } = page(
+      `https://${b}.nido.fyi/account/#nido-signin-list=not-listed&nido-signin-nonce=${refused}`,
+    );
+    takeSignInListReturn(win, store);
+    expect(replaced).toEqual(["/account/"]);
+    expect(signInListRefused()).toBe(true);
+    expect(entries(store)).toBe(before);
+    expect(bridgeSyncNeeded(own, store)).toBe(true);
   });
 
   it("leaves a page without the parameter alone", () => {
