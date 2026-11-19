@@ -5,8 +5,8 @@
 // (nidoSharedStorage.ts `requestBridgeSync`), or this browser keeps the
 // bridge's storage apart from the apex's, and only a top-level visit to the
 // apex can list it (lib/signInListHandoff.ts), which the button then makes.
-// Once the apex has refused that visit's account, the button gives way to
-// saying so. Hidden once the apex confirms.
+// On the page that visit returns to after the apex refused the account, the
+// button gives way to saying so. Hidden once the apex confirms.
 interface Props {
   style?: string;
   /** Off where the page hands the account to the apex itself (account setup). */

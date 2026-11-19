@@ -113,7 +113,7 @@ function normalizeSnapshot(snapshot: Partial<NidoAccountSnapshot> | null | undef
   };
 }
 
-function storageOrNull(): Storage | null {
+function storageOrNull(): StorageLike | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
@@ -463,9 +463,10 @@ export interface BridgeSyncResult {
 
 type OwnStatus = "pending" | "active";
 const confirmedKey = (contractId: string) => nidoKey(`bridge:confirmed:${contractId}`);
-/** Set when the apex's hand-off answered that it will not list this origin's
- *  account; removed by a bridge sync that reaches the apex's list. */
-const refusedKey = (contractId: string) => nidoKey(`bridge:refused:${contractId}`);
+/** The hand-off this page load returned from answered that the apex will not
+ *  list this origin's account. Never stored: the return parameter is anyone's
+ *  to forge, so it speaks for this page only. */
+let handoffRefused = false;
 
 /** This origin's own account, when this is an account origin under an apex. */
 export function ownAccount(location: Pick<Location, "host">): string | null {
@@ -507,11 +508,12 @@ export const SIGNIN_LIST_RETURN_PARAM = "nido-signin-list";
  * On a page the sign-in list hand-off returned to: drop its parameter from
  * the URL and, when the apex reports this origin's own active account
  * listed, record that as confirmed, which a separated bridge never can. When
- * the apex reports it will not list this origin's account, record that too:
- * the hand-off is not offered again while the bridge stays separated
- * ({@link signInListRefused}). Any site can link here with the parameter; the
- * most a forged one does is hide the "Not in your sign-in list yet" notice
- * for an account this origin already holds as active, or its "Add it" button.
+ * the apex reports it will not list this origin's account, this page stops
+ * offering the hand-off ({@link signInListRefused}); nothing is stored. Any
+ * site can link here with the parameter; the most a forged one does is hide
+ * the "Not in your sign-in list yet" notice for an account this origin
+ * already holds as active, or the notice's "Add it" button until the next
+ * page load.
  */
 export function takeSignInListReturn(
   win: Pick<Window, "location" | "history"> = window,
@@ -530,24 +532,20 @@ export function takeSignInListReturn(
     `${win.location.pathname}${win.location.search}${rest ? `#${rest}` : ""}`,
   );
   const own = ownAccount(win.location);
-  if (!own || !store) return;
-  if (result === "not-listed") store.setItem(refusedKey(own), "1");
-  else if (result === "listed" && ownStatus(localNidoSnapshot(store), own) === "active") {
+  if (!own) return;
+  if (result === "not-listed") handoffRefused = true;
+  else if (result === "listed" && store && ownStatus(localNidoSnapshot(store), own) === "active") {
     store.setItem(confirmedKey(own), "active");
   }
 }
 
 /**
- * Whether the apex's hand-off refused this origin's own account and no bridge
- * sync has reached the apex's list since. With a separated bridge, nothing
- * from this browser can add the account to the sign-in list.
+ * Whether the hand-off this page load returned from refused this origin's
+ * own account. With a separated bridge, nothing from this page can add the
+ * account to the sign-in list.
  */
-export function signInListRefused(
-  location: Pick<Location, "host"> = window.location,
-  store: Pick<Storage, "getItem"> | null = storageOrNull(),
-): boolean {
-  const own = ownAccount(location);
-  return !!own && !!store && store.getItem(refusedKey(own)) !== null;
+export function signInListRefused(): boolean {
+  return handoffRefused;
 }
 
 /**
@@ -556,8 +554,7 @@ export function signInListRefused(
  * the apex merges into its sign-in list, and merge back what it answers. The
  * iframe stays until the bridge answers or `timeoutMs` passes; on an answer,
  * this origin records what the answer shows the apex holding for its own
- * account, and forgets an earlier hand-off refusal. A `separated` answer is
- * neither merged nor recorded. Resolves
+ * account. A `separated` answer is neither merged nor recorded. Resolves
  * `{ answered: false }` on the apex itself, where there is nothing to sync.
  */
 export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): Promise<BridgeSyncResult> {
@@ -582,10 +579,7 @@ export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): P
       // send that still carried the account as pending.
       const confirmed = own ? ownStatus(normalizeSnapshot(data.snapshot), own) : null;
       const store = storageOrNull();
-      if (own && store) {
-        store.removeItem(refusedKey(own));
-        if (confirmed) store.setItem(confirmedKey(own), confirmed);
-      }
+      if (own && confirmed && store) store.setItem(confirmedKey(own), confirmed);
       return { answered: true, changed, separated: false };
     },
     timeoutMs,

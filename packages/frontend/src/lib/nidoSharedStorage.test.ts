@@ -372,27 +372,24 @@ describe("the sign-in list hand-off's return", () => {
     expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(false);
   });
 
-  it("records the refusal when the apex will not list it, and leaves the account unconfirmed", () => {
-    const { win, replaced } = page(`https://${b}.nido.fyi/account/#nido-signin-list=not-listed`);
+  it("stores nothing when the apex did not list it, and refuses only on the account's own page", () => {
     const store = active();
-    expect(signInListRefused({ host: `${b}.nido.fyi` }, store)).toBe(false);
-    takeSignInListReturn(win, store);
-    expect(replaced).toEqual(["/account/"]);
-    expect(signInListRefused({ host: `${b}.nido.fyi` }, store)).toBe(true);
-    expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(true);
-  });
+    const stored = () => JSON.stringify([...Array(store.length).keys()].map((i) => store.key(i)).sort());
+    const before = stored();
 
-  it("records nothing when the chain check did not pass, or for a refusal on another origin", () => {
-    const { win, replaced } = page(`https://${b}.nido.fyi/account/#nido-signin-list=unverified`);
-    const store = active();
-    takeSignInListReturn(win, store);
-    expect(replaced).toEqual(["/account/"]);
-    expect(signInListRefused({ host: `${b}.nido.fyi` }, store)).toBe(false);
-    expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(true);
-
-    const before = store.length;
+    const unverified = page(`https://${b}.nido.fyi/account/#nido-signin-list=unverified`);
+    takeSignInListReturn(unverified.win, store);
+    expect(unverified.replaced).toEqual(["/account/"]);
     takeSignInListReturn(page("https://alice.nido.fyi/account/#nido-signin-list=not-listed").win, store);
-    expect(store.length).toBe(before);
+    expect(signInListRefused()).toBe(false);
+
+    // Anyone can craft this link: it changes this page load and nothing else.
+    const { win, replaced } = page(`https://${b}.nido.fyi/account/#nido-signin-list=not-listed`);
+    takeSignInListReturn(win, store);
+    expect(replaced).toEqual(["/account/"]);
+    expect(signInListRefused()).toBe(true);
+    expect(stored()).toBe(before);
+    expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(true);
   });
 
   it("records nothing for an account this origin doesn't hold as active, or on another origin", () => {

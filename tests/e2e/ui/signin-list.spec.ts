@@ -378,7 +378,7 @@ test.describe('@fast sign-in list in a browser that keeps a framed page\'s stora
     expect(after['nido:mainnet:accounts:migrated:v1']).toBeTruthy();
   });
 
-  test('an account the apex never reserved is told so once, instead of offered "Add it" again', async ({
+  test('an account the apex never reserved is told so, instead of offered "Add it" again', async ({
     context,
     page,
   }) => {
@@ -400,13 +400,43 @@ test.describe('@fast sign-in list in a browser that keeps a framed page\'s stora
     });
     await expect(notice).toContainText('still works fully from its own address');
     await expect(add).toBeHidden();
-
-    // The next visit says the same, without another trip to the apex.
-    await page.reload();
-    await expect(notice).toContainText("can't be added to the main Nido site's list", { timeout: 30_000 });
-    await expect(add).toBeHidden();
     expect(chain.handoffLoads).toBe(1);
     expect(JSON.parse((await apexStorage(page))['nido:mainnet:accounts'] ?? '[]')).toEqual([]);
+  });
+
+  test('a crafted "not listed" link stores nothing and does not hide "Add it" on the next visit', async ({
+    context,
+    page,
+  }) => {
+    await emulateWebKitPartitioning(context);
+    const chain = await mockSetupChain(context, { deployed: [ACCOUNT] });
+    await seedActiveAccount(page);
+    // What this origin records about the apex's list (nidoSharedStorage.ts).
+    const stored = () =>
+      page.evaluate(() =>
+        Object.entries(localStorage)
+          .filter(([key]) => key.startsWith('nido:mainnet:bridge:'))
+          .sort(),
+      );
+
+    // A plain visit first, so what the page itself stores is already there.
+    await page.goto(`${accountOrigin(ACCOUNT)}/account/`);
+    const notice = page.locator('.signin-notice');
+    const add = notice.locator('button');
+    await expect(add).toHaveText('Add it', { timeout: 30_000 });
+    const before = await stored();
+
+    // Any site can link here with the hand-off's answer; the apex gave none.
+    await page.goto(`${accountOrigin(ACCOUNT)}/__blank`);
+    await page.goto(`${accountOrigin(ACCOUNT)}/account/#nido-signin-list=not-listed`);
+    await expect(notice).toContainText("can't be added to the main Nido site's list", { timeout: 30_000 });
+    expect(await stored()).toEqual(before);
+
+    await page.goto(`${accountOrigin(ACCOUNT)}/__blank`);
+    await page.goto(`${accountOrigin(ACCOUNT)}/account/`);
+    await expect(add).toHaveText('Add it', { timeout: 30_000 });
+    await expect(add).toBeVisible();
+    expect(chain.handoffLoads).toBe(0);
   });
 });
 
