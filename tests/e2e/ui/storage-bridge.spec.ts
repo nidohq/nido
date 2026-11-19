@@ -13,10 +13,13 @@ const C = StrKey.encodeContract(Buffer.alloc(32, 3));
 const origin = (id: string) => `https://${id.toLowerCase()}.${APEX}`;
 const BRIDGE = `https://${APEX}/nido-storage-bridge/`;
 
+/** The apex's own storage as its top-level pages leave it, first-party mark
+ *  included (a bridge that can't see the mark stores and shares nothing). */
 async function seedApex(page: Page) {
   await page.goto(BRIDGE);
   await page.evaluate(
     ({ a, b, c }) => {
+      localStorage.setItem('nido-first-party', '1');
       localStorage.setItem('nido:testnet:accounts', JSON.stringify([a]));
       localStorage.setItem(
         'nido:testnet:pending',

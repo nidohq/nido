@@ -37,6 +37,7 @@ Front end:
 
 ```bash
 just test-e2e                                              # UI tier, no chain
+PUBLIC_STELLAR_NETWORK=testnet \
 PUBLIC_RELAYER_URL=https://nido.fly.dev \
 PUBLIC_RELAYER_SIM_SOURCE=GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3 \
   npx astro build --root ./packages/frontend
@@ -57,7 +58,7 @@ signs), and the passkey is seeded into the
 account's origin); every recovery step still runs through the wallet:
 
 ```bash
-npx astro build --root ./packages/frontend
+PUBLIC_STELLAR_NETWORK=testnet npx astro build --root ./packages/frontend
 NIDO_E2E_DIRECT_DEPLOY=1 npx playwright test --project=testnet-chromium perch-recovery account-policy-doc-apply
 ```
 

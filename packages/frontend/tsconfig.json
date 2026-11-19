@@ -1,3 +1,6 @@
 {
-  "extends": "astro/tsconfigs/strict"
+  "extends": "astro/tsconfigs/strict",
+  // The e2e tier's extra builds (see justfile `test-e2e` and test.yml) are
+  // output, like dist.
+  "exclude": ["dist", "dist-perch", "dist-mainnet"]
 }

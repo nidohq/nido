@@ -30,8 +30,11 @@ import Toast from '../../components/Toast.astro';
 
       <div id="error-box" role="alert" class="alert danger" style="display:none"></div>
 
-      <section id="accounts-section">
+      <section id="accounts-section" aria-busy="true">
+        <p id="accounts-checking" class="note mut">Checking the accounts on this device…</p>
         <div id="accounts-list" class="picker"></div>
+        <div id="unfinished-list" class="picker unfinished"></div>
+        <p id="accounts-unchecked" class="note mut hidden"></p>
         <div id="no-accounts" class="empty hidden">
           <Icon name="wallet" size={26} stroke={1.7} color="var(--mut)" />
           <p>No accounts on this device. <a class="link" href="/">Create one first</a>, then come back.</p>
@@ -59,6 +62,8 @@ import Toast from '../../components/Toast.astro';
   }
 
   .picker { display: flex; flex-direction: column; gap: 10px; }
+  .picker.unfinished:not(:empty) { margin-top: 10px; }
+  .note { font-size: 13px; margin: 12px 0 0; }
 
   /* K-01/S-02: .alert and .empty now come from the shared nido.css components
      (was a local override with a different danger background). */
@@ -86,6 +91,12 @@ import Toast from '../../components/Toast.astro';
   .picker .account-name { font-size: 14.5px; font-weight: 700; color: var(--ink); }
   .picker .account-address { font-family: var(--mono); font-size: 12px; color: var(--mut); word-break: break-all; }
   .picker .account-row .chev { color: var(--mut); flex: 0 0 auto; }
+  /* A setup that didn't finish: listed, not selectable, with a way to finish it. */
+  .picker .account-row.is-unfinished { cursor: default; border-style: dashed; }
+  .picker .account-row.is-unfinished:hover { border-color: var(--line); box-shadow: none; }
+  .picker .account-row.is-unfinished:active { transform: none; }
+  .picker .account-status { font-size: 12px; color: var(--mut); }
+  .picker .finish-setup { flex: 0 0 auto; font-size: 13px; font-weight: 700; }
   /* #89: the account this dApp is currently connected to. */
   .picker .account-row.current { border-color: var(--acc); box-shadow: var(--sh-1); }
   .picker .account-current {
@@ -96,11 +107,23 @@ import Toast from '../../components/Toast.astro';
 </style>
 
 <script>
-  import { loadAccounts, loadAccountName, isContractId } from '@nidohq/passkey-sdk';
+  // First: this page reads wallet storage, which is namespaced by network.
+  import '../../lib/networkName';
+  import {
+    loadAccounts,
+    loadAccountName,
+    loadUnfinishedAccounts,
+    removePendingAccount,
+    isContractId,
+  } from '@nidohq/passkey-sdk';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
   import { validateDappReturn } from '../../lib/signing/signRequest';
   import { shortAddr } from '../../lib/address';
   import { avatarBackground } from '../../lib/avatarStyle';
+  import { nidoRowHref } from '../../lib/accountLinks';
+  import { runAccountMigration } from '../../lib/runAccountMigration';
+  import { dropUnfinishableSetups } from '../../lib/pendingCleanup';
+  import { accountDeployed } from '../../lib/newAccount/verifyNewAccount';
 
   // Deterministic identicon avatar using the shared avatarBackground formula
   // so picker rows built at runtime match the Nido avatar look.
@@ -124,7 +147,11 @@ import Toast from '../../components/Toast.astro';
   const previous = isContractId(previousRaw) ? previousRaw : null;
 
   const $err = document.getElementById('error-box')!;
+  const $section = document.getElementById('accounts-section')!;
+  const $checking = document.getElementById('accounts-checking')!;
   const $list = document.getElementById('accounts-list')!;
+  const $unfinished = document.getElementById('unfinished-list')!;
+  const $unchecked = document.getElementById('accounts-unchecked')!;
   const $none = document.getElementById('no-accounts')!;
 
   function showError(msg: string) {
@@ -163,33 +190,8 @@ import Toast from '../../components/Toast.astro';
     finish('?nido_connect=cancelled');
   });
 
-  // Render the device's accounts as pick buttons.
-  const accounts = loadAccounts().filter(isContractId);
-  if (accounts.length === 0) {
-    $none.classList.remove('hidden');
-  }
-
-  // Only treat `previous` as current if it's genuinely one of this device's
-  // accounts (a dApp could send any address).
-  const current = previous && accounts.includes(previous) ? previous : null;
-
-  // Single-account fast path: exactly one account on the device AND it's the
-  // one this dApp already uses → nothing to choose, finish immediately. The
-  // popup closes itself via postResultToOpener; the rendered list below is
-  // only ever visible if that handover fails. Multi-account devices always
-  // see the full picker — that's the #89 switch opportunity.
-  if (ret && current && accounts.length === 1) {
-    finish(`?nido_address=${current}`);
-  }
-
-  for (const cAddress of accounts) {
+  function accountInfo(cAddress: string): HTMLElement {
     const name = loadAccountName(cAddress);
-    const btn = document.createElement('button');
-    btn.className = 'account-row';
-    btn.type = 'button';
-
-    btn.appendChild(avatarEl(cAddress));
-
     const info = document.createElement('div');
     info.className = 'account-info';
     if (name) {
@@ -202,32 +204,127 @@ import Toast from '../../components/Toast.astro';
     addr.className = 'account-address';
     addr.textContent = name ? shortAddr(cAddress, 6, 6) : cAddress;
     info.appendChild(addr);
-    btn.appendChild(info);
+    return info;
+  }
 
-    // #89: highlight the account this dApp is currently connected to, so a
-    // reconnect reads as "keep this one or switch", never a silent re-bind.
-    if (cAddress === current) {
-      btn.classList.add('current');
-      const tag = document.createElement('span');
-      tag.className = 'account-current';
-      tag.textContent = 'Connected';
-      btn.appendChild(tag);
+  // A setup started on this device that didn't finish: shown, never offered
+  // to the dApp, with a link that resumes it in a new tab (this window stays
+  // the dApp's chooser, and lists the account once setup lands).
+  function unfinishedRow(cAddress: string, setupKey: string | undefined): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'account-row is-unfinished';
+    row.appendChild(avatarEl(cAddress));
+    const info = accountInfo(cAddress);
+    const state = document.createElement('div');
+    state.className = 'account-status';
+    state.textContent = 'Setup not finished';
+    info.appendChild(state);
+    row.appendChild(info);
+    const link = document.createElement('a');
+    link.className = 'link finish-setup';
+    link.href = nidoRowHref(window.location.host, {
+      contractId: cAddress,
+      name: null,
+      status: 'pending',
+      resumeKey: setupKey,
+    });
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = 'Finish setup';
+    row.appendChild(link);
+    return row;
+  }
+
+  // Render the device's accounts as pick buttons, then its unfinished setups.
+  // Returns the accounts offered.
+  function render(): string[] {
+    const accounts = loadAccounts().filter(isContractId);
+    const unfinished = loadUnfinishedAccounts().filter(
+      (p) => isContractId(p.contractId) && !accounts.includes(p.contractId),
+    );
+    $none.classList.toggle('hidden', accounts.length + unfinished.length > 0);
+
+    // Only treat `previous` as current if it's genuinely one of this device's
+    // accounts (a dApp could send any address).
+    const current = previous && accounts.includes(previous) ? previous : null;
+
+    $list.replaceChildren();
+    for (const cAddress of accounts) {
+      const btn = document.createElement('button');
+      btn.className = 'account-row';
+      btn.type = 'button';
+      btn.disabled = !ret; // validatedReturn already surfaced the error
+      btn.appendChild(avatarEl(cAddress));
+      btn.appendChild(accountInfo(cAddress));
+
+      // #89: highlight the account this dApp is currently connected to, so a
+      // reconnect reads as "keep this one or switch", never a silent re-bind.
+      if (cAddress === current) {
+        btn.classList.add('current');
+        const tag = document.createElement('span');
+        tag.className = 'account-current';
+        tag.textContent = 'Connected';
+        btn.appendChild(tag);
+      }
+
+      const chev = document.createElement('span');
+      chev.className = 'chev';
+      chev.innerHTML =
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+      btn.appendChild(chev);
+
+      btn.addEventListener('click', () => {
+        finish(`?nido_address=${cAddress}`);
+      });
+      $list.appendChild(btn);
     }
 
-    const chev = document.createElement('span');
-    chev.className = 'chev';
-    chev.innerHTML =
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
-    btn.appendChild(chev);
+    $unfinished.replaceChildren(...unfinished.map((p) => unfinishedRow(p.contractId, p.setupKey)));
+    return accounts;
+  }
 
-    btn.addEventListener('click', () => {
-      finish(`?nido_address=${cAddress}`);
+  // A setup that can never finish (its secret expired and its address holds
+  // no account) is dropped rather than offered as "Finish setup".
+  let rendered = false;
+  void dropUnfinishableSetups({
+    unfinished: loadUnfinishedAccounts,
+    deployed: accountDeployed,
+    remove: removePendingAccount,
+  }).then((dropped) => {
+    if (dropped && rendered) render();
+  });
+
+  // The list is shown once its one-time migration has run (it may drop
+  // entries; see lib/accountMigration.ts).
+  void runAccountMigration()
+    .catch(() => null)
+    .then((migration) => {
+      $checking.classList.add('hidden');
+      $section.removeAttribute('aria-busy');
+      const undecided = migration?.undecided.length ?? 0;
+      if (undecided > 0) {
+        $unchecked.textContent =
+          `${undecided === 1 ? 'One earlier account' : `${undecided} earlier accounts`} on this device ` +
+          `couldn't be checked just now. Reload this page to try again.`;
+        $unchecked.classList.remove('hidden');
+      }
+      const accounts = render();
+      rendered = true;
+
+      // Single-account fast path: exactly one account on the device AND it's
+      // the one this dApp already uses → nothing to choose, finish
+      // immediately. The popup closes itself via postResultToOpener; the
+      // rendered list is only ever visible if that handover fails.
+      // Multi-account devices always see the full picker — that's the #89
+      // switch opportunity.
+      if (ret && previous && accounts.length === 1 && accounts[0] === previous) {
+        finish(`?nido_address=${previous}`);
+      }
+
+      // A setup finished in another tab lands in this origin's storage (via
+      // the storage bridge); show it here without a reload.
+      window.addEventListener('storage', () => {
+        render();
+      });
     });
-    $list.appendChild(btn);
-  }
-
-  if (!ret) {
-    // validatedReturn already surfaced the error; disable interaction.
-    document.querySelectorAll<HTMLButtonElement>('.account-row').forEach((b) => (b.disabled = true));
-  }
 </script>

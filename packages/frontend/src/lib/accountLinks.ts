@@ -30,7 +30,11 @@ export function nidoRowHref(host: string, row: MyNidoRow): string {
   if (row.status === "pending") {
     // A2: resume key is the setup secret — carry it in the hash, not the query
     // (never sent to the server; kept out of worker/CDN logs + Referer).
-    return accountUrl(host, row.contractId, `/new-account/#salt=${encodeURIComponent(row.resumeKey ?? "")}`);
+    // A setup whose secret expired resumes without one: the setup page then
+    // finishes it only if the account was already created with this
+    // device's passkey.
+    const hash = row.resumeKey ? `#salt=${encodeURIComponent(row.resumeKey)}` : "";
+    return accountUrl(host, row.contractId, `/new-account/${hash}`);
   }
   return accountShareUrl(host, row.name ?? row.contractId);
 }

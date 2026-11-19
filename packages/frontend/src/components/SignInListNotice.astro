@@ -1,0 +1,89 @@
+---
+// Shown on an account origin while the apex's sign-in list (what apps offer
+// at nido.fyi/connect/) has not confirmed this account. Either the storage
+// bridge didn't answer in time, and the page keeps retrying in the background
+// (nidoSharedStorage.ts `requestBridgeSync`), or this browser keeps the
+// bridge's storage apart from the apex's, and only a top-level visit to the
+// apex can list it (lib/signInListHandoff.ts), which the button then makes.
+// On the page that visit returns to after the apex refused the account, the
+// button gives way to saying so. Hidden once the apex confirms.
+interface Props {
+  style?: string;
+  /** Off where the page hands the account to the apex itself (account setup). */
+  handoff?: boolean;
+}
+const { style, handoff = true } = Astro.props;
+---
+<div
+  class="signin-notice alert warn hidden"
+  role="status"
+  aria-live="polite"
+  style={style}
+  data-handoff={handoff ? "on" : "off"}
+>
+  <div class="signin-notice-text">
+    <div class="signin-notice-title">Not in your sign-in list yet</div>
+    <div class="mut signin-notice-body"></div>
+  </div>
+  <button type="button" class="btn soft sm signin-notice-retry">Try again</button>
+</div>
+
+<style>
+  .signin-notice { display: flex; align-items: center; gap: 12px; }
+  .signin-notice.hidden { display: none; }
+  .signin-notice-text { flex: 1; min-width: 0; }
+  .signin-notice-title { font-weight: 700; font-size: 14px; }
+  .signin-notice-body { font-size: 12.5px; line-height: 1.4; }
+  .signin-notice-retry { flex: 0 0 auto; }
+  .signin-notice-retry.hidden { display: none; }
+</style>
+
+<script>
+  import {
+    bridgeSeparated,
+    onBridgeSyncStatus,
+    requestBridgeSync,
+    signInListRefused,
+  } from "../lib/nidoSharedStorage";
+  import { canHandOffOwn, ownHandoffUrl } from "../lib/signInListHandoff";
+
+  const RETRYING = "Apps can't offer this Nido when you connect until it is. We'll keep trying while this page is open.";
+  const ADD = "Apps can't offer this Nido when you connect until it is. Adding it opens the Nido home page for a moment, then brings you back.";
+
+  const REFUSED = "This Nido can't be added to the main Nido site's list from this browser, so apps won't offer it when you connect. It still works fully from its own address.";
+
+  for (const notice of document.querySelectorAll<HTMLElement>(".signin-notice")) {
+    const title = notice.querySelector<HTMLElement>(".signin-notice-title")!;
+    const body = notice.querySelector<HTMLElement>(".signin-notice-body")!;
+    const retry = notice.querySelector<HTMLButtonElement>(".signin-notice-retry")!;
+    const viaHandoff = notice.dataset.handoff === "on";
+    // Where a separated bridge leaves this page: the apex refused the
+    // account, or the hand-off is still to be made.
+    const separatedState = () => {
+      if (!viaHandoff || !bridgeSeparated()) return { refused: false, viaApex: false };
+      const refused = signInListRefused();
+      return { refused, viaApex: !refused && canHandOffOwn(window.location) };
+    };
+    let shown = false;
+    onBridgeSyncStatus((status) => {
+      const { refused, viaApex } = separatedState();
+      // Appears on the first sync that didn't confirm and stays through the
+      // retries. A separated bridge with no way to the apex from here is the
+      // page's own business (account setup goes through the apex at its end).
+      shown =
+        (status === "unconfirmed" || (shown && status === "syncing")) &&
+        !(bridgeSeparated() && !viaApex && !refused);
+      notice.classList.toggle("hidden", !shown);
+      title.textContent = refused ? "Not in your sign-in list" : "Not in your sign-in list yet";
+      body.textContent = refused ? REFUSED : viaApex ? ADD : RETRYING;
+      retry.classList.toggle("hidden", refused);
+      retry.disabled = status === "syncing";
+      retry.textContent = viaApex ? "Add it" : status === "syncing" ? "Trying…" : "Try again";
+    });
+    retry.addEventListener("click", () => {
+      const url = separatedState().viaApex ? ownHandoffUrl(window.location) : null;
+      if (url) window.location.assign(url);
+      else void requestBridgeSync();
+    });
+  }
+</script>
