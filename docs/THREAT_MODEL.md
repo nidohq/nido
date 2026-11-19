@@ -255,6 +255,9 @@ and infrastructure bring.
     pending list, one this browser reserved there, once the chain shows the
     account `create_account` makes for the passkey key in the link, and it
     returns only to that account's own pages or a validated name's page.
+    The outcome comes back in the return link, which any link can also
+    imitate: the account's page acts on it only with the single-use nonce it
+    stored when it started the hand-off, and only a listed outcome is stored.
     A name-shaped label is indistinguishable from a registered
     name's wallet origin and the registry reserves no labels, so a service
     on one can read the account list and names, though no setup key. HSTS
