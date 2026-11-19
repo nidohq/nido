@@ -37,6 +37,7 @@ Front end:
 
 ```bash
 just test-e2e                                              # UI tier, no chain
+PUBLIC_STELLAR_NETWORK=testnet \
 PUBLIC_RELAYER_URL=https://nido.fly.dev \
 PUBLIC_RELAYER_SIM_SOURCE=GCYVFKNTVZA5AY3KJWPW4NU4247UDDFFOCT4C3WCOKUDQQABIZRZ46I3 \
   npx astro build --root ./packages/frontend
@@ -57,7 +58,7 @@ signs), and the passkey is seeded into the
 account's origin); every recovery step still runs through the wallet:
 
 ```bash
-npx astro build --root ./packages/frontend
+PUBLIC_STELLAR_NETWORK=testnet npx astro build --root ./packages/frontend
 NIDO_E2E_DIRECT_DEPLOY=1 npx playwright test --project=testnet-chromium perch-recovery account-policy-doc-apply
 ```
 
@@ -504,6 +505,9 @@ user starts a recovery.
 
 ### User support
 
+- **New device, no passkey on it:** if the passkey synced (iCloud Keychain,
+  Google Password Manager), open `/security/` on the account's address and
+  choose "New device? Use your synced passkey". No recovery is needed.
 - **Lost passkey:** from a new device, open `/security/recover/` on the
   account's address and follow it.
 - **A recovery the owner didn't start:** `Loss` owners cancel it on

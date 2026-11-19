@@ -41,10 +41,10 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("CURATED_LIST_URL", () => {
   afterEach(() => {
-    delete (import.meta.env as Record<string, string | undefined>).PUBLIC_STELLAR_NETWORK;
+    import.meta.env.PUBLIC_STELLAR_NETWORK = "testnet";
   });
 
-  it("uses Stellar Expert's testnet segment by default", () => {
+  it("uses Stellar Expert's testnet segment on a testnet build", () => {
     expect(CURATED_LIST_URL).toBe("https://api.stellar.expert/explorer/testnet/asset-list/top50");
   });
 

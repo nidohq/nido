@@ -5,6 +5,7 @@ import Nest from "../../components/Nest.astro";
 import Icon from "../../components/Icon.astro";
 import Toast from "../../components/Toast.astro";
 import PasskeySheet from "../../components/PasskeySheet.astro";
+import SignInListNotice from "../../components/SignInListNotice.astro";
 import { NETWORK_LABEL } from "../../lib/network";
 ---
 
@@ -29,6 +30,7 @@ import { NETWORK_LABEL } from "../../lib/network";
     </div>
 
     <div id="error-box" role="alert" class="alert danger" style="display:none; margin-bottom:18px;"></div>
+    <SignInListNotice style="margin-bottom:18px;" handoff={false} />
 
     <!-- ===================== STEP 1 · LOCK IT TO YOU ===================== -->
     <section id="passkey-section">
@@ -227,6 +229,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   import { Buffer } from "buffer";
   import {
     parseRegistration,
+    PasskeyRegistrationError,
     buf2hex,
     buf2base64url,
     hex2buf,
@@ -253,7 +256,8 @@ import { NETWORK_LABEL } from "../../lib/network";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
   import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL, NATIVE_SAC_ID } from "../../lib/network";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
-  import { syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
+  import { bridgeSyncNeeded, requestBridgeSync, type BridgeSyncResult } from "../../lib/nidoSharedStorage";
+  import { handoffUrl } from "../../lib/signInListHandoff";
   import { signAndSubmit } from "../../lib/primaryPasskeySigner";
 
   // --- State ---
@@ -321,6 +325,9 @@ import { NETWORK_LABEL } from "../../lib/network";
   // the run in flight (one at a time).
   const fundingProgress: FundingProgress = { hash: null };
   let finalizing: Promise<void> | null = null;
+  // The sign-in list handoff started when the account was activated; the
+  // hand-off to the wallet waits for its answer (bounded by its own budget).
+  let signInListHandoff: Promise<BridgeSyncResult> | null = null;
 
   // --- UI refs ---
 
@@ -413,7 +420,7 @@ import { NETWORK_LABEL } from "../../lib/network";
 
   // `Secure` keeps the setup salt — which decides who owns the derived address
   // — off plain-HTTP requests. Gated on `isSecureContext` so it is set on HTTPS
-  // and on localhost (both secure contexts) but omitted on a plain-HTTP dev
+  // and on nido.localhost (both secure contexts) but omitted on a plain-HTTP dev
   // origin, where a `Secure` cookie would silently fail to write.
   function setupCookieSecure(): string {
     return window.isSecureContext ? "; Secure" : "";
@@ -512,8 +519,14 @@ import { NETWORK_LABEL } from "../../lib/network";
     showError("That link looks off. Please start again from the home page.");
   }
 
-  if (!saltHex) {
-    showError("We're missing some setup data. Please start again from the home page.");
+  const missingSetupData = "We're missing some setup data. Please start again from the home page.";
+  // A resumed setup whose secret expired (30 minutes) can still be finished
+  // when its account already exists with this device's passkey (see
+  // takeOverIfDeployed at the end of this script); otherwise there is
+  // nothing left to resume from.
+  const resumingWithoutSecret = !saltHex && !!contractId && !isSetupReservation;
+  if (!saltHex && !resumingWithoutSecret) {
+    showError(missingSetupData);
   }
 
   if (isSetupReservation && saltHex) {
@@ -663,14 +676,20 @@ import { NETWORK_LABEL } from "../../lib/network";
   // account and finishes it, or refuses it. Resolves true when it took over
   // the page. An address that can't be read in a few seconds falls through
   // to the passkey step (the passkey prompt must not wait on a slow RPC);
-  // deploy() reads it again before submitting anything.
+  // deploy() reads it again before submitting anything. This needs no setup
+  // secret, so it also finishes a setup whose secret expired; there no
+  // passkey step follows, so the read is waited for, and one that fails
+  // rejects and is not remembered (finishWithoutSecret offers another try).
   let existingAccountCheck: Promise<boolean> | null = null;
   function takeOverIfDeployed(): Promise<boolean> {
     if (!existingAccountCheck) {
-      existingAccountCheck = (async (): Promise<boolean> => {
-        if (!contractId || !saltHex || isSetupReservation) return false;
-        const unread = sleep(4000).then(() => false);
-        if (!(await Promise.race([accountDeployed(contractId).catch(() => false), unread]))) return false;
+      const check = (async (): Promise<boolean> => {
+        if (!contractId || isSetupReservation) return false;
+        const read = accountDeployed(contractId);
+        const deployed = resumingWithoutSecret
+          ? await read
+          : await Promise.race([read.catch(() => false), sleep(4000).then(() => false)]);
+        if (!deployed) return false;
         const stored = loadCredential(contractId);
         if (!stored) {
           refuseSetup(newAccountRefusal("key").message);
@@ -683,8 +702,22 @@ import { NETWORK_LABEL } from "../../lib/network";
         proceedToDeploy();
         return true;
       })();
+      existingAccountCheck = check;
+      check.catch(() => {
+        existingAccountCheck = null;
+      });
     }
     return existingAccountCheck;
+  }
+
+  // A setup whose secret expired: finish the account if it exists, say so if
+  // it doesn't, and leave the button for another try if the chain can't be read.
+  async function finishWithoutSecret() {
+    try {
+      if (!(await takeOverIfDeployed())) showError(missingSetupData);
+    } catch {
+      showError("We couldn't check on your Nido. Check your connection, then tap the button to try again.");
+    }
   }
 
   async function reserveNidoAddress(): Promise<string> {
@@ -717,7 +750,7 @@ import { NETWORK_LABEL } from "../../lib/network";
     const cAddress = Address.fromScVal(sim.result.retval).toString();
     savePendingAccount(cAddress, saltHex!);
     saveSetupSaltCookie(cAddress, saltHex!);
-    await syncNidoStorageViaBridge();
+    void requestBridgeSync();
     return cAddress;
   }
 
@@ -796,13 +829,6 @@ import { NETWORK_LABEL } from "../../lib/network";
       return;
     }
 
-    // Refuse a hostname/salt-mismatched setup link BEFORE creating a passkey.
-    const mismatch = await checkSetupConsistency();
-    if (mismatch) {
-      showError(mismatch);
-      return;
-    }
-    if (await takeOverIfDeployed()) return;
     // A retry after a failed deploy keeps the passkey already registered for
     // this address: an earlier submission may still land with it, and a new
     // passkey would then never match the account.
@@ -810,6 +836,19 @@ import { NETWORK_LABEL } from "../../lib/network";
       proceedToDeploy();
       return;
     }
+
+    if (resumingWithoutSecret) {
+      await finishWithoutSecret();
+      return;
+    }
+
+    // Refuse a hostname/salt-mismatched setup link BEFORE creating a passkey.
+    const mismatch = await checkSetupConsistency();
+    if (mismatch) {
+      showError(mismatch);
+      return;
+    }
+    if (await takeOverIfDeployed()) return;
 
     try {
       $registerBtn.disabled = true;
@@ -837,7 +876,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   // button for a manual tap. No sheet here, so the fallback doesn't flicker; the
   // OS dialog is the prompt on browsers that allow it.
   async function attemptAutoPasskey() {
-    if (!contractId || !checkPasskeySupport().ok) return;
+    if (!contractId || resumingWithoutSecret || !checkPasskeySupport().ok) return;
     // Silently skip the auto-prompt on a mismatched setup link; the manual tap
     // surfaces the error. (Guard before any passkey is created.)
     if (await checkSetupConsistency()) return;
@@ -851,9 +890,11 @@ import { NETWORK_LABEL } from "../../lib/network";
     try {
       const credential = (await navigator.credentials.create(options)) as PublicKeyCredential;
       await completeRegistration(credential);
-    } catch {
+    } catch (err) {
       // Rejected (no user activation on iOS Safari), declined, or aborted by a
-      // manual tap — the ready button is already there for the user. Silent.
+      // manual tap — the ready button is already there for the user. Silent,
+      // unless the passkey was made but its key failed its checks.
+      if (err instanceof PasskeyRegistrationError) showError(`Couldn't set up your passkey: ${err.message}`);
     }
   }
 
@@ -918,14 +959,18 @@ import { NETWORK_LABEL } from "../../lib/network";
 
   async function deploy() {
     clearError();
-    if (!passkeyPublicKey || !saltHex) {
+    if (!passkeyPublicKey) {
       showError("Register a passkey first and ensure setup data is present.");
       return;
     }
 
     // Re-assert hostname/salt consistency before we submit, activate or fund —
     // never deploy one account (salt-derived) while funding another (hostname).
-    const mismatch = await checkSetupConsistency();
+    // Without the setup secret (it expired) nothing can be submitted, and only
+    // an account already created for this device's passkey is finished: the
+    // check after deployment below proves exactly that for the hostname's
+    // account.
+    const mismatch = saltHex ? await checkSetupConsistency() : null;
     if (mismatch) {
       showError(mismatch);
       return;
@@ -941,6 +986,8 @@ import { NETWORK_LABEL } from "../../lib/network";
       // check below tells which.
       if (await accountDeployed(contractId!)) {
         setCheckProgress(3, 3);
+      } else if (!saltHex) {
+        throw new Error("this setup expired before your Nido was created. Please start again from the home page.");
       } else {
         await submitCreateAccount(server, passkeyPublicKey);
       }
@@ -956,7 +1003,13 @@ import { NETWORK_LABEL } from "../../lib/network";
       activateAccount(contractId!);
       clearSetupSaltCookie(contractId!);
       saltHex = null;
-      await syncNidoStorageViaBridge();
+      // Hand the account to the apex's sign-in list. Setup goes on while the
+      // bridge answers (it can take seconds on a slow phone); an unanswered
+      // handoff is retried in the background, here and on every later page
+      // load of this account, and shown (SignInListNotice) until it lands.
+      // If it hasn't landed when setup is done, the way to the wallet goes
+      // through the apex, which lists it (see finalizeWallet).
+      signInListHandoff = requestBridgeSync();
 
       // Checked — 3 done, 4 · "Finalizing your wallet" begins. Funds the new
       // account directly from the relayer's `fund` treasury; must follow the
@@ -1038,8 +1091,26 @@ import { NETWORK_LABEL } from "../../lib/network";
     // F-02: auto-advance into the wallet after a brief "ready" beat — arriving
     // in the funded wallet is the payoff, and the deploy copy already promised
     // an automatic hand-off.
-    setTimeout(() => {
-      const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
+    setTimeout(async () => {
+      // Leaving the page would cut the sign-in list handoff short.
+      await signInListHandoff;
+      const then = new URLSearchParams(window.location.search).get("then");
+      // The bridge didn't get the account into the apex's sign-in list (in
+      // WebKit it never can): go to the wallet through the apex, which lists
+      // it from a top-level page (lib/signInListHandoff.ts).
+      const viaApex = bridgeSyncNeeded()
+        ? handoffUrl(window.location, {
+            contractId: contractId!,
+            publicKeyHex: buf2hex(passkeyPublicKey!),
+            next: setUpRecoveryAfter ? "recovery" : "account",
+            then,
+          })
+        : null;
+      if (viaApex) {
+        window.location.href = viaApex;
+        return;
+      }
+      const intent = parseReturnIntent(then);
       if (intent) {
         const apexHost = stripSubdomain(window.location.host);
         window.location.href = buildClaimReturnUrl({
@@ -1060,5 +1131,6 @@ import { NETWORK_LABEL } from "../../lib/network";
 
   // A resumed setup whose address already holds a contract is settled before
   // the passkey step is offered (see takeOverIfDeployed).
-  void takeOverIfDeployed();
+  if (resumingWithoutSecret) void finishWithoutSecret();
+  else void takeOverIfDeployed();
 </script>

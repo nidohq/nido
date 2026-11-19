@@ -361,7 +361,7 @@ test.describe('@testnet spending-limit session key: delegate-page install + rela
     // -----------------------------------------------------------------
     // PART A — create + deploy a fresh smart account (send-to-name pattern)
     // -----------------------------------------------------------------
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#get-started-hero').click();
     await expect(page.locator('[data-mynido]')).toHaveClass(/mynido-open/);
     await page.locator('.mn-create-btn').click();

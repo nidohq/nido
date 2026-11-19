@@ -3,7 +3,7 @@
  *
  * The module runs at the *dApp* origin, so — unlike the wallet's own pages —
  * it can't derive the Nido base domain from `window.location`. The base is
- * supplied as configuration (e.g. `nido.example.xyz` or `http://localhost:4321`)
+ * supplied as configuration (e.g. `nido.example.xyz` or `http://nido.localhost:4321`)
  * and these helpers turn it into the apex `/connect/` picker URL and the
  * per-account `<c-address>.<base>/sign/` ceremony URL.
  *
@@ -42,7 +42,7 @@ function splitPreview(host: string): [string | null, string] {
 
 /**
  * The apex origin for the Nido deployment, e.g. `https://nido.example.xyz`.
- * If `base` already carries a scheme (handy for `http://localhost:4321` in
+ * If `base` already carries a scheme (handy for `http://nido.localhost:4321` in
  * dev) it's preserved; otherwise `https` is assumed.
  */
 export function apexOrigin(base: string): string {

@@ -37,4 +37,8 @@ describe("nidoRowHref", () => {
     expect(href).toContain("/new-account/#salt=abc123");
     expect(href).not.toContain("/account/");
   });
+  it("pending row whose setup secret expired → resume without a secret", () => {
+    const row: MyNidoRow = { contractId: "CABCDEF", name: null, status: "pending" };
+    expect(nidoRowHref("nido.fyi", row)).toBe("//cabcdef.nido.fyi/new-account/");
+  });
 });

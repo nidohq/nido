@@ -1,0 +1,54 @@
+---
+// The apex's half of the sign-in list hand-off (lib/signInListHandoff.ts):
+// an account's page passes through here, top level, so the account is
+// recorded in the apex's own storage, then returns to the account's wallet.
+import NidoLayout from "../../../layouts/NidoLayout.astro";
+import Nest from "../../../components/Nest.astro";
+---
+
+<NidoLayout title="Nido — Adding your Nido" shell="focused">
+  <div class="col-scroll scroll-hide pad screen-in" style="text-align:center;">
+    <div style="display:grid; place-items:center; margin:40px 0 22px;">
+      <Nest size={96} />
+    </div>
+    <h1 id="handoff-title" class="disp" style="font-weight:800; font-size:24px; line-height:1.1;">
+      Adding your Nido to this device
+    </h1>
+    <p id="handoff-text" class="mut" style="font-size:14px; line-height:1.5; margin-top:10px;">
+      Taking you back in a moment.
+    </p>
+    <a id="handoff-home" class="btn soft sm hidden" href="/" style="margin-top:18px;">Go home</a>
+  </div>
+</NidoLayout>
+
+<script>
+  import { activateAccount, loadAccounts, loadUnfinishedAccounts } from "@nidohq/passkey-sdk";
+  import { verifyNewNidoAccount } from "../../../lib/newAccount/verifyNewAccount";
+  import { apexHostForHost } from "../../../lib/nidoSharedStorage";
+  import { completeHandoff, handoffReturnUrl, parseHandoff } from "../../../lib/signInListHandoff";
+
+  /** How long the chain check may take before the wallet is opened anyway. */
+  const VERIFY_BUDGET_MS = 15_000;
+
+  const handoff = parseHandoff(window.location.hash);
+  history.replaceState(null, "", window.location.pathname);
+
+  if (!handoff || apexHostForHost(window.location.host) !== window.location.host) {
+    document.getElementById("handoff-title")!.textContent = "That link looks off";
+    document.getElementById("handoff-text")!.textContent = "Open your Nido from the home page.";
+    document.getElementById("handoff-home")!.classList.remove("hidden");
+  } else {
+    void completeHandoff(handoff, {
+      accounts: loadAccounts,
+      unfinished: loadUnfinishedAccounts,
+      verify: (contractId, publicKey) =>
+        Promise.race([
+          verifyNewNidoAccount(contractId, publicKey, { attempts: 3 }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("chain check timed out")), VERIFY_BUDGET_MS),
+          ),
+        ]),
+      activate: activateAccount,
+    }).then((outcome) => window.location.replace(handoffReturnUrl(window.location, handoff, outcome)));
+  }
+</script>

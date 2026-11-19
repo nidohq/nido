@@ -124,11 +124,17 @@ their own Nido's subdomain, signing through their own account. The apex origin
 holds no passkey. A storage bridge (`/nido-storage-bridge/`,
 `packages/frontend/src/pages/nido-storage-bridge/`) shares the
 browser's account list, names, and the setup keys of accounts still being
-created across the apex and account origins.
+created across the apex and account origins. The apex also frames an account
+origin's copy of that page to ask whether this browser holds the account's
+passkey record ([THREAT_MODEL](docs/THREAT_MODEL.md) 15). WebKit gives a framed
+page storage apart from its origin's own, so a framed bridge that can't see the
+first-party mark the origin's top-level pages set stores nothing and says so;
+a new account then reaches the apex's list by passing once through the apex's
+top-level `/new-account/finish/` (`packages/frontend/src/lib/signInListHandoff.ts`).
 
 Hosts are read against a list of known apexes, never by counting labels:
 `splitHost` and `NIDO_APEXES` in `packages/passkey-sdk/src/url.ts` (`test.nido.fyi`
-and `nido.fyi`, longest first, plus `localhost`). An account, name or built-in
+and `nido.fyi`, longest first, plus local development's `nido.localhost`). An account, name or built-in
 dApp is exactly one label below its apex; a PR preview adds `--<N>` to that
 label, and `<N>.<apex>` is the preview root. An apex is never an account, so
 `test.nido.fyi` is the testnet apex and not a name `test` on `nido.fyi`, and the

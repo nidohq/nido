@@ -6,9 +6,14 @@ export type {
 
 export {
   extractPublicKey,
+  isOnP256Curve,
   parseAttestationObject,
+  parseAttestedCredential,
   parseRegistration,
+  publicKeyFromSpki,
+  PasskeyRegistrationError,
 } from "./webauthn.js";
+export type { AttestedCredential } from "./webauthn.js";
 
 export { derToCompact } from "./signature.js";
 
@@ -26,6 +31,8 @@ export {
 export type { AuthDigestScheme } from "./auth.js";
 
 export { identifyAssertionSigner } from "./assertionMatch.js";
+export { checkAssertionContext } from "./assertionVerify.js";
+export type { AssertionCheck, AssertionExpectation, AssertionFailure } from "./assertionVerify.js";
 
 export { buildAuthPayloadScVal, webAuthnSigDataBytes } from "./multiSigner.js";
 export type { SignerSignature, AuthPayloadSpec } from "./multiSigner.js";
@@ -73,7 +80,13 @@ export {
 } from "./relayer.js";
 export type { RelayerStatus, RelayerTxResponse } from "./relayer.js";
 
-export type { PendingAccount, SessionKeyMaterial, StorageNetwork, KeyValueStore } from "./storage.js";
+export type {
+  PendingAccount,
+  UnfinishedAccount,
+  SessionKeyMaterial,
+  StorageNetwork,
+  KeyValueStore,
+} from "./storage.js";
 
 export {
   nidoKey,
@@ -85,6 +98,7 @@ export {
   loadAccounts,
   savePendingAccount,
   loadPendingAccounts,
+  loadUnfinishedAccounts,
   removePendingAccount,
   activateAccount,
   saveAccountName,

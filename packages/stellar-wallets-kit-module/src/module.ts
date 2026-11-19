@@ -80,7 +80,7 @@ const NIDO_ICON =
 export interface NidoModuleParams {
   /**
    * The Nido deployment base domain, e.g. `nido.example.xyz`. May carry an
-   * explicit scheme for local dev (`http://localhost:4321`). Required: the
+   * explicit scheme for local dev (`http://nido.localhost:4321`). Required: the
    * module runs at the dApp origin and can't infer it.
    */
   base: string;

@@ -4,10 +4,11 @@
 // query is scoped to the root (no global IDs).
 import {
   loadAccounts,
-  loadPendingAccounts,
+  loadUnfinishedAccounts,
   loadAccountName,
   saveAccountName,
   activateAccount,
+  removePendingAccount,
   loadCredential,
   hex2buf,
   lookupName,
@@ -21,10 +22,12 @@ import { avatarBackground } from "./avatarStyle";
 import { shortAddr } from "./address";
 import { formatXlm } from "./money";
 import { createNido } from "./createNido";
-import { syncNidoStorageViaBridge } from "./nidoSharedStorage";
+import { requestBridgeSync } from "./nidoSharedStorage";
 import { RPC_URL, NETWORK_PASSPHRASE } from "./network";
 import { allowAccountCreation, INVITE_URL } from "./allowAccountCreation";
-import { verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
+import { runAccountMigration } from "./runAccountMigration";
+import { accountDeployed, verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
+import { dropUnfinishableSetups } from "./pendingCleanup";
 
 // Every "create a Nido" entry point this switcher offers (first-time setup
 // and "create another") shows a "Coming soon" state on hostnames
@@ -50,8 +53,11 @@ function rowHtml(row: MyNidoRow): string {
   const title = esc(row.name ?? "Your Nido");
   const href = esc(nidoRowHref(window.location.host, row));
   if (row.status === "pending") {
+    // Without its secret (expired) the setup is no longer in progress, but it
+    // can still be finished if the account was created with this passkey.
+    const meta = row.resumeKey ? "Finishing setup…" : "Setup not finished";
     return `<a class="mn-row mn-pending" role="menuitem" href="${href}">${av}
-      <span class="mn-main"><span class="mn-name">${title}</span><span class="mn-meta">Finishing setup…</span></span>
+      <span class="mn-main"><span class="mn-name">${title}</span><span class="mn-meta">${meta}</span></span>
       <span class="mn-chev">›</span></a>`;
   }
   return `<a class="mn-row" role="menuitem" href="${href}" data-balance-for="${esc(row.contractId)}">${av}
@@ -80,8 +86,7 @@ interface SwitcherInstance {
 const instances: SwitcherInstance[] = [];
 let globalListenersAttached = false;
 let panelIdSeq = 0;
-let sharedStorageSyncPromise: Promise<boolean> | null = null;
-let sharedStorageSynced = false;
+let sharedStorageSyncStarted = false;
 let verifiedPending = false;
 let pendingVerificationPromise: Promise<boolean> | null = null;
 let rerunPendingVerification = false;
@@ -95,11 +100,18 @@ function refreshOpenSwitchers() {
 // A contract at the address proves nothing by itself (anyone who has the setup
 // secret can deploy there first), and without the passkey there is nothing to check,
 // so such an account stays pending; resuming it on its own page settles it.
+// The setup secret isn't needed for this, so a setup whose secret expired is
+// promoted the same way. One whose secret expired and whose address holds no
+// account can never finish, and is dropped first (pendingCleanup.ts).
 async function verifyPendingAccounts(): Promise<boolean> {
-  const pending = loadPendingAccounts();
-  if (pending.length === 0) return false;
+  let changed = await dropUnfinishableSetups({
+    unfinished: loadUnfinishedAccounts,
+    deployed: accountDeployed,
+    remove: removePendingAccount,
+  });
+  const pending = loadUnfinishedAccounts();
+  if (pending.length === 0) return changed;
   const active = new Set(loadAccounts());
-  let changed = false;
   for (const { contractId } of pending) {
     if (active.has(contractId)) continue;
     const stored = loadCredential(contractId);
@@ -126,7 +138,7 @@ function queuePendingVerification(force = false) {
     .then((changed) => {
       if (!changed) return false;
       refreshOpenSwitchers();
-      void syncNidoStorageViaBridge();
+      void requestBridgeSync();
       return true;
     })
     .finally(() => {
@@ -138,20 +150,23 @@ function queuePendingVerification(force = false) {
     });
 }
 
+// Once per page: sync with the apex's list (requestBridgeSync keeps retrying
+// while the apex hasn't confirmed this origin's own account), and on the apex
+// itself run the list's one-time migration.
 function queueSharedStorageSync() {
-  if (sharedStorageSynced || sharedStorageSyncPromise) return;
-  sharedStorageSyncPromise = syncNidoStorageViaBridge()
-    .then((changed) => {
-      sharedStorageSynced = true;
-      if (changed) {
-        refreshOpenSwitchers();
-        queuePendingVerification(true);
-      }
-      return changed;
+  if (sharedStorageSyncStarted) return;
+  sharedStorageSyncStarted = true;
+  void requestBridgeSync().then(({ changed }) => {
+    if (changed) {
+      refreshOpenSwitchers();
+      queuePendingVerification(true);
+    }
+  });
+  void runAccountMigration()
+    .then(({ ran }) => {
+      if (ran) refreshOpenSwitchers();
     })
-    .finally(() => {
-      sharedStorageSyncPromise = null;
-    });
+    .catch(() => {});
 }
 
 function attachGlobalListeners() {
@@ -194,7 +209,7 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
 
   function render() {
     const accounts = loadAccounts();
-    const pending = loadPendingAccounts();
+    const pending = loadUnfinishedAccounts();
     const model = buildMyNidoModel(accounts, pending, loadAccountName);
 
     if (model.state === "empty") {

@@ -26,7 +26,7 @@ export type StorageNetwork = "testnet" | "mainnet";
 const LEGACY_NETWORK: StorageNetwork = "testnet";
 const NAMESPACED_RE = /^nido:(?:testnet|mainnet):/;
 
-let storageNetwork: StorageNetwork = "testnet";
+let storageNetwork: StorageNetwork | null = null;
 let keyIssued = false;
 let legacyMoved = false;
 
@@ -75,8 +75,16 @@ export function moveLegacyNidoKeys(store: KeyValueStore | null = defaultStore())
   return moved;
 }
 
-/** The storage key `nido:<network>:<rest>` for network-scoped wallet state. */
+/**
+ * The storage key `nido:<network>:<rest>` for network-scoped wallet state.
+ * Throws until {@link setStorageNetwork} has been called: there is no default
+ * network, so a page that forgets to say which network it is fails instead of
+ * reading or writing another network's state.
+ */
 export function nidoKey(rest: string): string {
+  if (storageNetwork === null) {
+    throw new Error("nidoKey: the storage network was never set; call setStorageNetwork first");
+  }
   if (!legacyMoved) {
     legacyMoved = true;
     try {
@@ -123,20 +131,40 @@ export interface PendingAccount {
   secretKey?: string;
 }
 
+/** A setup started in this browser that has not finished. `setupKey` is the
+ *  setup secret while it is still kept; after {@link PENDING_TTL_MS} only the
+ *  address remains. */
+export interface UnfinishedAccount {
+  contractId: string;
+  setupKey?: string;
+}
+
+/** A stored pending entry: a secret-less one is a setup whose secret expired. */
+type StoredPending = { contractId: string; setupKey?: string; secretKey?: string };
+
 const pendingKey = () => nidoKey("pending");
 /** Sidecar map (contractId -> creation epoch ms) recording when each pending
  * setup was started. Kept in its own key, not inside each `PendingAccount`, so
  * the wallet's cross-tab reconciler — which rewrites the pending list from a
  * normalized shape that has no timestamp field — cannot strip it. */
 const pendingTsKey = () => nidoKey("pending:ts");
-/** Setup window: a pending salt older than this is treated as abandoned and
- * purged. Matches the setup-salt cookie's `Max-Age` (1800s). */
-const PENDING_TTL_MS = 30 * 60 * 1000;
+/** Setup window: a pending setup's secret older than this is deleted. Matches
+ * the setup-salt cookie's `Max-Age` (1800s). The address stays listed. */
+export const PENDING_TTL_MS = 30 * 60 * 1000;
 
-function readPending(): PendingAccount[] {
+function secretOf(p: StoredPending): string | undefined {
+  return p.setupKey || p.secretKey || undefined;
+}
+
+function readPending(): StoredPending[] {
   try {
     const raw = JSON.parse(localStorage.getItem(pendingKey()) || "[]");
-    return Array.isArray(raw) ? (raw as PendingAccount[]) : [];
+    return Array.isArray(raw)
+      ? (raw as unknown[]).filter(
+          (p): p is StoredPending =>
+            !!p && typeof p === "object" && typeof (p as StoredPending).contractId === "string",
+        )
+      : [];
   } catch {
     return [];
   }
@@ -152,17 +180,23 @@ function readPendingTimestamps(): Record<string, number> {
 }
 
 /**
- * Drop pending entries whose setup window has elapsed, so an abandoned setup's
- * salt does not linger in storage indefinitely. A legacy entry with no recorded
- * timestamp is stamped on first sight so it, too, eventually expires rather
- * than persisting forever. Returns the surviving entries.
+ * Delete the setup secret of every pending entry whose setup window has
+ * elapsed, keeping its address, so an abandoned setup's secret does not linger
+ * in storage while the setup itself stays visible. A legacy entry with no
+ * recorded timestamp is stamped on first sight so it, too, eventually expires.
+ * Returns every pending entry, with or without its secret.
  */
-export function purgeExpiredPendingAccounts(now: number = Date.now()): PendingAccount[] {
+export function purgeExpiredPendingAccounts(now: number = Date.now()): UnfinishedAccount[] {
   const pending = readPending();
   const ts = readPendingTimestamps();
-  const kept: PendingAccount[] = [];
+  const kept: StoredPending[] = [];
   let changed = false;
   for (const p of pending) {
+    if (!secretOf(p)) {
+      if (p.setupKey !== undefined || p.secretKey !== undefined) changed = true;
+      kept.push({ contractId: p.contractId });
+      continue;
+    }
     let stamp = ts[p.contractId];
     if (typeof stamp !== "number") {
       stamp = now;
@@ -170,15 +204,15 @@ export function purgeExpiredPendingAccounts(now: number = Date.now()): PendingAc
       changed = true;
     }
     if (now - stamp > PENDING_TTL_MS) {
-      delete ts[p.contractId];
+      kept.push({ contractId: p.contractId });
       changed = true;
     } else {
       kept.push(p);
     }
   }
-  // Drop timestamps for contractIds that are no longer pending.
+  // Timestamps belong only to entries that still hold a secret.
   for (const id of Object.keys(ts)) {
-    if (!kept.some((p) => p.contractId === id)) {
+    if (!kept.some((p) => p.contractId === id && secretOf(p))) {
       delete ts[id];
       changed = true;
     }
@@ -187,7 +221,10 @@ export function purgeExpiredPendingAccounts(now: number = Date.now()): PendingAc
     localStorage.setItem(pendingKey(), JSON.stringify(kept));
     localStorage.setItem(pendingTsKey(), JSON.stringify(ts));
   }
-  return kept;
+  return kept.map((p) => {
+    const setupKey = secretOf(p);
+    return setupKey ? { contractId: p.contractId, setupKey } : { contractId: p.contractId };
+  });
 }
 
 export function savePendingAccount(contractId: string, setupKey: string): void {
@@ -205,9 +242,16 @@ export function savePendingAccount(contractId: string, setupKey: string): void {
   localStorage.setItem(pendingTsKey(), JSON.stringify(ts));
 }
 
+/** Pending setups that still hold their setup secret (expired ones excluded). */
 export function loadPendingAccounts(): PendingAccount[] {
-  const pending = purgeExpiredPendingAccounts();
-  return pending.map((p) => ({ ...p, setupKey: p.setupKey ?? p.secretKey ?? "" }));
+  return purgeExpiredPendingAccounts().flatMap((p) =>
+    p.setupKey ? [{ contractId: p.contractId, setupKey: p.setupKey }] : [],
+  );
+}
+
+/** Every unfinished setup, including those whose secret has expired. */
+export function loadUnfinishedAccounts(): UnfinishedAccount[] {
+  return purgeExpiredPendingAccounts();
 }
 
 export function removePendingAccount(contractId: string): void {

@@ -4,6 +4,7 @@
 // manifest and home-screen icons, and renders the prototype shell
 // (.stage / .appwrap / .col) around the page <slot/>.
 import Sidebar from "../components/Sidebar.astro";
+import StorageNetwork from "../components/StorageNetwork.astro";
 import { APP_NAME } from "../lib/network";
 
 interface Props {
@@ -34,6 +35,7 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <StorageNetwork />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#FFF8F0" />
     <meta name="color-scheme" content="light" />
@@ -193,7 +195,7 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
     // Replace the in-app copy with the secure-connection message.
     warning.innerHTML =
       "<p>Passkeys need a secure connection to work.</p>" +
-      "<p>Open Nido at its <strong>https://</strong> address (or on <strong>localhost</strong>) and you're all set.</p>";
+      "<p>Open Nido at its <strong>https://</strong> address (or, in local development, on <strong>nido.localhost</strong>) and you're all set.</p>";
     warning.style.display = "block";
   } else if (inAppBrowser || !support.ok) {
     // In-app browser, or a secure context that still can't do WebAuthn — the

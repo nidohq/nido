@@ -19,6 +19,7 @@ import { createShimPasskey, installPasskeyShim } from '../../support/passkeyShim
 // /sign/ to the one apply_doc it submits.
 //
 // Needs `packages/frontend/dist-perch`:
+//   PUBLIC_STELLAR_NETWORK=testnet \
 //   PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.json)" \
 //     npx astro build --root ./packages/frontend --outDir ./dist-perch
 
@@ -28,7 +29,7 @@ const GAME = contract(40);
 const XLM = contract(41);
 const ADMIN_KEY = '04' + 'ab'.repeat(64);
 const APP_KEY = '04' + 'cd'.repeat(64);
-const WALLET = `http://${ACCOUNT.toLowerCase()}.localhost:4397`;
+const WALLET = `http://${ACCOUNT.toLowerCase()}.nido.localhost:4397`;
 const DAPP = 'http://dapp.localhost:4397';
 
 /** An account's applied document: its admin passkey only. */

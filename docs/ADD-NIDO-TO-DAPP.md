@@ -64,7 +64,7 @@ prod differ without a code change:
 | Environment            | `base` value                       |
 | ---------------------- | ---------------------------------- |
 | Hosted testnet wallet  | `https://nido.fyi`                 |
-| Local wallet dev server| `http://localhost:4321`            |
+| Local wallet dev server| `http://nido.localhost:4321`       |
 | Custom deployment      | `https://your-nido-domain.example` |
 
 ```dotenv
@@ -166,7 +166,7 @@ class if you prefer `instanceof`.
 | Connect picker shows no accounts | Create a Nido account on that same device/browser profile first, then reconnect. |
 | Balances 404 / don't load | A C-address is **not** a classic Horizon account — `/accounts/<C…>` 404s. Read native XLM as a Stellar Asset Contract balance over RPC; only classic G-addresses go through Horizon. |
 | Classic tx fails to sign | Expected — build a Soroban transaction or auth entry. |
-| Local subdomains don't resolve | Use `*.localhost` URLs (e.g. `<c-address>.localhost:4321`) and set `PUBLIC_NIDO_BASE="http://localhost:4321"`. |
+| Local subdomains don't resolve | Run the wallet at `nido.localhost` (accounts at `<c-address>.nido.localhost:4321`) and set `PUBLIC_NIDO_BASE="http://nido.localhost:4321"`. Safari: see the README's "Local development". |
 
 ## Full working example
 

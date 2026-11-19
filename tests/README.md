@@ -8,7 +8,15 @@ Three tiers:
   chromium/firefox/webkit using the in-page shim. No chain. Builds the
   frontend first.
 - **Chromium CDP fidelity lane:** `just test-e2e-cdp` — real virtual
-  authenticator; `*.cdp.spec.ts`.
+  authenticator; `*.cdp.spec.ts` and `*.cdp.spec.mts`.
+
+Specs open Nido at `nido.localhost:<E2E_PORT>` and accounts at
+`<c-address>.nido.localhost:<E2E_PORT>`, the local development topology (README
+"Local development"); the test dApp at `dapp.localhost` is deliberately another
+site. Playwright turns storage partitioning off in Chromium and Firefox, which
+hides a storage bridge split across sites, so `*.partitioned.spec.ts` runs in
+the `chromium-partitioned` and `firefox-partitioned` projects that turn it back
+on (`playwright.config.ts`).
 
 The shim (`tests/support/auth/`) overrides `navigator.credentials` with a
 deterministic P-256 vault keyed by credentialId.

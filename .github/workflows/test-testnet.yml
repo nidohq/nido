@@ -27,6 +27,8 @@ jobs:
       - name: Build passkey-sdk
         run: npx tsc -p ./packages/passkey-sdk/tsconfig.json
       - name: Build frontend
+        env:
+          PUBLIC_STELLAR_NETWORK: testnet
         run: npx astro build --root ./packages/frontend
       - name: Testnet tier (chromium + webkit)
         run: npx playwright test --project=testnet-chromium --project=testnet-webkit
