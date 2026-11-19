@@ -7,7 +7,9 @@ import {
   FIRST_PARTY_KEY,
   onBridgeSyncStatus,
   requestBridgeSync,
+  signInListRefused,
   syncNidoStorageViaBridge,
+  takeSignInListReturn,
   type BridgeSyncStatus,
   type NidoStorageRequest,
 } from "./nidoSharedStorage.js";
@@ -111,6 +113,29 @@ describe("what an account origin records the apex has confirmed", () => {
 
     expect(JSON.parse(apexStore.getItem("nido:testnet:accounts")!)).toEqual([OWN]);
     expect(localStorage.getItem(`nido:testnet:bridge:confirmed:${OWN}`)).toBe("active");
+    expect(bridgeSyncNeeded()).toBe(false);
+  });
+});
+
+describe("a hand-off the apex refused", () => {
+  it("stays refused while the bridge is separated, and is forgotten once a sync reaches the apex", async () => {
+    localStorage.setItem("nido:testnet:accounts", JSON.stringify([OWN]));
+    window.location.hash = "#nido-signin-list=not-listed";
+    takeSignInListReturn();
+    expect(window.location.hash).toBe("");
+    expect(signInListRefused()).toBe(true);
+
+    const separated = startSync();
+    bridgeAnswers(separated.iframe, separated.sent[0]!, new MemoryStorage());
+    await expect(separated.result).resolves.toMatchObject({ answered: true, separated: true });
+    expect(signInListRefused()).toBe(true);
+
+    const reached = startSync();
+    const apexStore = apexStorage();
+    bridgeAnswers(reached.iframe, reached.sent[0]!, apexStore);
+    await expect(reached.result).resolves.toMatchObject({ answered: true, separated: false });
+    expect(JSON.parse(apexStore.getItem("nido:testnet:accounts")!)).toEqual([OWN]);
+    expect(signInListRefused()).toBe(false);
     expect(bridgeSyncNeeded()).toBe(false);
   });
 });

@@ -106,7 +106,7 @@ describe("what the apex lists", () => {
 
   it("never lists one the chain doesn't confirm, or one without a usable key", async () => {
     const refused = apex({ unfinished: [C], verifies: false });
-    await expect(completeHandoff(handoff(), refused.deps)).resolves.toBe("not-listed");
+    await expect(completeHandoff(handoff(), refused.deps)).resolves.toBe("unverified");
     expect(refused.accounts).toEqual([]);
 
     const keyless = apex({ unfinished: [C] });

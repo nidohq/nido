@@ -15,6 +15,7 @@ import {
   mergeNidoSnapshot,
   NIDO_STORAGE_REQUEST,
   snapshotForRequester,
+  signInListRefused,
   takeSignInListReturn,
 } from "./nidoSharedStorage.js";
 
@@ -371,12 +372,27 @@ describe("the sign-in list hand-off's return", () => {
     expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(false);
   });
 
-  it("records nothing when the apex did not list it", () => {
+  it("records the refusal when the apex will not list it, and leaves the account unconfirmed", () => {
     const { win, replaced } = page(`https://${b}.nido.fyi/account/#nido-signin-list=not-listed`);
+    const store = active();
+    expect(signInListRefused({ host: `${b}.nido.fyi` }, store)).toBe(false);
+    takeSignInListReturn(win, store);
+    expect(replaced).toEqual(["/account/"]);
+    expect(signInListRefused({ host: `${b}.nido.fyi` }, store)).toBe(true);
+    expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(true);
+  });
+
+  it("records nothing when the chain check did not pass, or for a refusal on another origin", () => {
+    const { win, replaced } = page(`https://${b}.nido.fyi/account/#nido-signin-list=unverified`);
     const store = active();
     takeSignInListReturn(win, store);
     expect(replaced).toEqual(["/account/"]);
+    expect(signInListRefused({ host: `${b}.nido.fyi` }, store)).toBe(false);
     expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(true);
+
+    const before = store.length;
+    takeSignInListReturn(page("https://alice.nido.fyi/account/#nido-signin-list=not-listed").win, store);
+    expect(store.length).toBe(before);
   });
 
   it("records nothing for an account this origin doesn't hold as active, or on another origin", () => {

@@ -5,7 +5,8 @@
 // (nidoSharedStorage.ts `requestBridgeSync`), or this browser keeps the
 // bridge's storage apart from the apex's, and only a top-level visit to the
 // apex can list it (lib/signInListHandoff.ts), which the button then makes.
-// Hidden once the apex confirms.
+// Once the apex has refused that visit's account, the button gives way to
+// saying so. Hidden once the apex confirms.
 interface Props {
   style?: string;
   /** Off where the page hands the account to the apex itself (account setup). */
@@ -34,34 +35,53 @@ const { style, handoff = true } = Astro.props;
   .signin-notice-title { font-weight: 700; font-size: 14px; }
   .signin-notice-body { font-size: 12.5px; line-height: 1.4; }
   .signin-notice-retry { flex: 0 0 auto; }
+  .signin-notice-retry.hidden { display: none; }
 </style>
 
 <script>
-  import { bridgeSeparated, onBridgeSyncStatus, requestBridgeSync } from "../lib/nidoSharedStorage";
+  import {
+    bridgeSeparated,
+    onBridgeSyncStatus,
+    requestBridgeSync,
+    signInListRefused,
+  } from "../lib/nidoSharedStorage";
   import { ownHandoffUrl } from "../lib/signInListHandoff";
 
   const RETRYING = "Apps can't offer this Nido when you connect until it is. We'll keep trying while this page is open.";
   const ADD = "Apps can't offer this Nido when you connect until it is. Adding it opens the Nido home page for a moment, then brings you back.";
 
+  const REFUSED = "This Nido can't be added to the main Nido site's list from this browser, so apps won't offer it when you connect. It still works fully from its own address.";
+
   for (const notice of document.querySelectorAll<HTMLElement>(".signin-notice")) {
+    const title = notice.querySelector<HTMLElement>(".signin-notice-title")!;
     const body = notice.querySelector<HTMLElement>(".signin-notice-body")!;
     const retry = notice.querySelector<HTMLButtonElement>(".signin-notice-retry")!;
-    const handoffUrl = () => (notice.dataset.handoff === "on" ? ownHandoffUrl(window.location) : null);
+    const viaHandoff = notice.dataset.handoff === "on";
+    // Where a separated bridge leaves this page: the apex refused the
+    // account, or the hand-off is still to be made, at this URL.
+    const separatedState = () => {
+      if (!viaHandoff || !bridgeSeparated()) return { refused: false, viaApex: null };
+      const refused = signInListRefused();
+      return { refused, viaApex: refused ? null : ownHandoffUrl(window.location) };
+    };
     let shown = false;
     onBridgeSyncStatus((status) => {
-      const viaApex = bridgeSeparated() ? handoffUrl() : null;
+      const { refused, viaApex } = separatedState();
       // Appears on the first sync that didn't confirm and stays through the
       // retries. A separated bridge with no way to the apex from here is the
       // page's own business (account setup goes through the apex at its end).
       shown =
-        (status === "unconfirmed" || (shown && status === "syncing")) && !(bridgeSeparated() && !viaApex);
+        (status === "unconfirmed" || (shown && status === "syncing")) &&
+        !(bridgeSeparated() && !viaApex && !refused);
       notice.classList.toggle("hidden", !shown);
-      body.textContent = viaApex ? ADD : RETRYING;
+      title.textContent = refused ? "Not in your sign-in list" : "Not in your sign-in list yet";
+      body.textContent = refused ? REFUSED : viaApex ? ADD : RETRYING;
+      retry.classList.toggle("hidden", refused);
       retry.disabled = status === "syncing";
       retry.textContent = viaApex ? "Add it" : status === "syncing" ? "Trying…" : "Try again";
     });
     retry.addEventListener("click", () => {
-      const viaApex = bridgeSeparated() ? handoffUrl() : null;
+      const { viaApex } = separatedState();
       if (viaApex) window.location.assign(viaApex);
       else void requestBridgeSync();
     });

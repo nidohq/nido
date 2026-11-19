@@ -94,6 +94,19 @@ async function apexStorage(page: Page): Promise<Record<string, string>> {
   return page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
 }
 
+/** This browser's own origin for ACCOUNT holds it as active, with its passkey. */
+async function seedActiveAccount(page: Page) {
+  await page.goto(`${accountOrigin(ACCOUNT)}/__blank`);
+  await page.evaluate(
+    ({ id, key }) => {
+      localStorage.setItem('nido:mainnet:accounts', JSON.stringify([id]));
+      localStorage.setItem(`passkey:${id}:credentialId`, 'Y3JlZA');
+      localStorage.setItem(`passkey:${id}:publicKey`, key);
+    },
+    { id: ACCOUNT, key: reads.ownerKey },
+  );
+}
+
 test.describe('@fast sign-in list after account setup (mainnet build)', () => {
   test.describe.configure({ timeout: 90_000 });
 
@@ -357,10 +370,94 @@ test.describe('@fast sign-in list in a browser that keeps a framed page\'s stora
     const rows = await chooserRows(page);
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(ACCOUNT);
-    // The framed account origin couldn't tell, so nothing was decided.
+    // The framed account origin answered that it can't tell, which it would
+    // on every load: the account is kept and the migration is done.
+    await expect(page.locator('#accounts-unchecked')).toBeHidden();
     const after = await apexStorage(page);
     expect(JSON.parse(after['nido:mainnet:accounts']!)).toEqual([ACCOUNT]);
-    expect(after['nido:mainnet:accounts:migrated:v1']).toBeUndefined();
+    expect(after['nido:mainnet:accounts:migrated:v1']).toBeTruthy();
+  });
+
+  test('an account the apex never reserved is told so once, instead of offered "Add it" again', async ({
+    context,
+    page,
+  }) => {
+    await emulateWebKitPartitioning(context);
+    const chain = await mockSetupChain(context, { deployed: [ACCOUNT] });
+    // The account is active on its own origin; the apex holds no row for it.
+    await seedActiveAccount(page);
+
+    await page.goto(`${accountOrigin(ACCOUNT)}/account/`);
+    const notice = page.locator('.signin-notice');
+    const add = notice.locator('button');
+    await expect(add).toHaveText('Add it', { timeout: 30_000 });
+    await add.click();
+    await page.waitForURL(`${accountOrigin(ACCOUNT)}/account/`, { timeout: 30_000 });
+    expect(chain.handoffLoads).toBe(1);
+
+    await expect(notice).toContainText("can't be added to the main Nido site's list from this browser", {
+      timeout: 30_000,
+    });
+    await expect(notice).toContainText('still works fully from its own address');
+    await expect(add).toBeHidden();
+
+    // The next visit says the same, without another trip to the apex.
+    await page.reload();
+    await expect(notice).toContainText("can't be added to the main Nido site's list", { timeout: 30_000 });
+    await expect(add).toBeHidden();
+    expect(chain.handoffLoads).toBe(1);
+    expect(JSON.parse((await apexStorage(page))['nido:mainnet:accounts'] ?? '[]')).toEqual([]);
+  });
+});
+
+test.describe('@fast sign-in list on an account page opened before the apex was ever visited', () => {
+  test.describe.configure({ timeout: 90_000 });
+
+  // No apex page has marked the apex's storage as its own yet, so its bridge
+  // answers as a separated one would, in a browser whose bridge is not.
+  test('an account the apex already lists is confirmed in one step', async ({ context, page }) => {
+    const chain = await mockSetupChain(context, { deployed: [ACCOUNT] });
+    await page.goto(`https://${APEX}/__blank`);
+    await page.evaluate((id) => localStorage.setItem('nido:mainnet:accounts', JSON.stringify([id])), ACCOUNT);
+    await seedActiveAccount(page);
+
+    await page.goto(`${accountOrigin(ACCOUNT)}/account/`);
+    const notice = page.locator('.signin-notice');
+    await notice.locator('button', { hasText: 'Add it' }).click({ timeout: 30_000 });
+    await page.waitForURL(`${accountOrigin(ACCOUNT)}/account/`, { timeout: 30_000 });
+    expect(chain.handoffLoads).toBe(1);
+    const confirmed = () =>
+      page.evaluate((id) => localStorage.getItem(`nido:mainnet:bridge:confirmed:${id}`), ACCOUNT);
+    await expect.poll(confirmed, { timeout: 30_000 }).toBe('active');
+    await expect(notice).toBeHidden();
+    await expect(notice).not.toContainText("can't be added");
+  });
+
+  test('an account the apex holds no row for is listed by the sync after the apex visit', async ({
+    context,
+    page,
+  }) => {
+    const chain = await mockSetupChain(context, { deployed: [ACCOUNT] });
+    await seedActiveAccount(page);
+
+    await page.goto(`${accountOrigin(ACCOUNT)}/account/`);
+    const notice = page.locator('.signin-notice');
+    await notice.locator('button', { hasText: 'Add it' }).click({ timeout: 30_000 });
+    await page.waitForURL(`${accountOrigin(ACCOUNT)}/account/`, { timeout: 30_000 });
+    expect(chain.handoffLoads).toBe(1);
+
+    // The apex refused the hand-off, but its bridge now sees its storage.
+    await expect
+      .poll(async () => page.evaluate((id) => localStorage.getItem(`nido:mainnet:bridge:confirmed:${id}`), ACCOUNT), {
+        timeout: 30_000,
+      })
+      .toBe('active');
+    await expect(notice).toBeHidden();
+    await expect(notice).not.toContainText("can't be added");
+
+    const rows = await chooserRows(page);
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(ACCOUNT);
   });
 });
 

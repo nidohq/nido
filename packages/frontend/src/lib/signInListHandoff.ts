@@ -36,7 +36,9 @@ export interface Handoff {
   claimName: string | null;
 }
 
-export type HandoffOutcome = "listed" | "not-listed";
+/** `not-listed`: the apex will not list this address, now or on another try.
+ *  `unverified`: it would, but the chain check did not pass this time. */
+export type HandoffOutcome = "listed" | "not-listed" | "unverified";
 
 const PUBLIC_KEY_HEX_RE = /^04[0-9a-f]{128}$/i;
 
@@ -109,7 +111,7 @@ export async function completeHandoff(h: Handoff, deps: HandoffDeps): Promise<Ha
   try {
     await deps.verify(h.contractId, h.publicKey);
   } catch {
-    return "not-listed";
+    return "unverified";
   }
   deps.activate(h.contractId);
   return "listed";

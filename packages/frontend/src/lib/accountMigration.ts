@@ -24,7 +24,11 @@
 //
 // The passkey record of an account lives on its own origin
 // (`passkey:<C>:*` at `<c>.<apex>`), so whether this browser holds one is
-// asked of that origin (`probeAccountOwnership`). An entry neither check could
+// asked of that origin (`probeAccountOwnership`). An origin that answers that
+// its frame can't see its own storage (`separated`: WebKit) will never answer
+// otherwise from this browser, so that is a decision: the entry is kept
+// rather than dropped on an answer that proves nothing (a legacy entry still
+// only if the chain places it on this network). An entry neither check could
 // decide (no answer, RPC unreachable) is left as it is, the migration is not
 // marked done, and the next page load tries again.
 
@@ -37,8 +41,9 @@ export interface AccountMigrationDeps {
   /** This build's network. */
   network: Network;
   store: MigrationStore;
-  /** Whether this browser holds `contractId`'s passkey record; null if unknown. */
-  hasPasskey(contractId: string): Promise<boolean | null>;
+  /** Whether this browser holds `contractId`'s passkey record; `separated` if
+   *  its origin answered that it can't tell; null if it did not answer. */
+  hasPasskey(contractId: string): Promise<boolean | "separated" | null>;
   /** Whether a contract is deployed at `contractId` on this build's network;
    *  null if unknown. Asked only of entries whose network the store doesn't
    *  say. */
@@ -82,7 +87,7 @@ async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Prom
   return out;
 }
 
-const safely = async (read: () => Promise<boolean | null>): Promise<boolean | null> => {
+const safely = async <T>(read: () => Promise<T | null>): Promise<T | null> => {
   try {
     return await read();
   } catch {
@@ -101,8 +106,8 @@ export async function migrateAccountList(deps: AccountMigrationDeps): Promise<Ac
 
   const verdicts = await mapLimited(candidates, PROBE_CONCURRENCY, async (contractId) => {
     const owned = await safely(() => deps.hasPasskey(contractId));
-    if (owned !== true || !legacy.includes(contractId)) return owned;
-    return safely(() => deps.deployedHere(contractId));
+    if (owned === false || owned === null) return owned;
+    return legacy.includes(contractId) ? safely(() => deps.deployedHere(contractId)) : true;
   });
 
   const kept = candidates.filter((_, i) => verdicts[i] === true);

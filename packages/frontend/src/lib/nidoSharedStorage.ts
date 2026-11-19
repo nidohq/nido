@@ -113,7 +113,7 @@ function normalizeSnapshot(snapshot: Partial<NidoAccountSnapshot> | null | undef
   };
 }
 
-function storageOrNull(): StorageLike | null {
+function storageOrNull(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
@@ -262,6 +262,17 @@ export type BridgeRequester = { kind: "account"; contractId: string } | { kind: 
 
 const ACCOUNT_LABEL_RE = /^c[a-z2-7]{55}$/;
 
+/** `origin` as a URL, when it is https (plain http only on a loopback dev host). */
+function secureOrigin(origin: string): URL | null {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return null;
+  }
+  return url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHttpHost(url.hostname)) ? url : null;
+}
+
 /**
  * Classify a bridge requester's origin, or refuse it (null). The origin must
  * be https (plain http only on a loopback dev host), sit one label below the
@@ -270,15 +281,8 @@ const ACCOUNT_LABEL_RE = /^c[a-z2-7]{55}$/;
  * built-in dApp or service host, a deeper subdomain, another site — is refused.
  */
 export function bridgeRequester(origin: string, bridgeHost: string): BridgeRequester | null {
-  let url: URL;
-  try {
-    url = new URL(origin);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackHttpHost(url.hostname))) {
-    return null;
-  }
+  const url = secureOrigin(origin);
+  if (!url) return null;
   const apex = apexHostForHost(bridgeHost);
   if (url.host === apex || apexHostForHost(url.host) !== apex) return null;
   // Reducing to the bridge's apex puts the requester exactly one label below
@@ -369,11 +373,9 @@ export function answerBridgeRequest(
   };
 }
 
-function bridgeTarget(location: Pick<Location, "protocol" | "host">): { origin: string; url: string } | null {
+function bridgeUrl(location: Pick<Location, "protocol" | "host">): string | null {
   const apexHost = apexHostForHost(location.host);
-  if (apexHost === location.host) return null;
-  const origin = `${location.protocol}//${apexHost}`;
-  return { origin, url: `${origin}/nido-storage-bridge/` };
+  return apexHost === location.host ? null : `${location.protocol}//${apexHost}/nido-storage-bridge/`;
 }
 
 /** How long a sync waits for the bridge to answer. The bridge page is small,
@@ -383,6 +385,62 @@ export const BRIDGE_ANSWER_BUDGET_MS = 10_000;
  *  interval until it answers, in case the first message arrived before the
  *  page was listening. The bridge answers repeats idempotently. */
 const BRIDGE_RESEND_MS = 1_000;
+
+/**
+ * Ask the page at `url`, loaded in a hidden iframe, and wait for its answer.
+ * `request(id)` builds the message: it is sent once the frame has loaded and
+ * again every {@link BRIDGE_RESEND_MS}. `read` turns a message from that frame
+ * carrying the same id into the answer, or returns undefined to keep waiting.
+ * Resolves null when no answer came within `timeoutMs`. The iframe stays
+ * until then.
+ */
+function askFramedPage<M extends { id: string }, T>(
+  url: string,
+  request: (id: string) => object,
+  read: (data: M) => T | undefined,
+  timeoutMs: number,
+): Promise<T | null> {
+  const origin = new URL(url).origin;
+  return new Promise((resolve) => {
+    const id = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement("iframe");
+    let settled = false;
+    let resend: number | undefined;
+
+    function finish(answer: T | null) {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      window.clearInterval(resend);
+      window.removeEventListener("message", onMessage);
+      iframe.remove();
+      resolve(answer);
+    }
+
+    function send() {
+      iframe.contentWindow?.postMessage(request(id), origin);
+    }
+
+    function onMessage(event: MessageEvent<M | null>) {
+      if (event.origin !== origin || event.source !== iframe.contentWindow) return;
+      const data = event.data;
+      if (data?.id !== id) return;
+      const answer = read(data);
+      if (answer !== undefined) finish(answer);
+    }
+
+    const timer = window.setTimeout(() => finish(null), timeoutMs);
+    iframe.hidden = true;
+    iframe.style.display = "none";
+    iframe.src = url;
+    iframe.addEventListener("load", () => {
+      send();
+      resend = window.setInterval(send, BRIDGE_RESEND_MS);
+    });
+    window.addEventListener("message", onMessage);
+    document.body.appendChild(iframe);
+  });
+}
 
 export interface BridgeSyncResult {
   /** The bridge answered, which it does only after storing what was sent,
@@ -405,6 +463,9 @@ export interface BridgeSyncResult {
 
 type OwnStatus = "pending" | "active";
 const confirmedKey = (contractId: string) => nidoKey(`bridge:confirmed:${contractId}`);
+/** Set when the apex's hand-off answered that it will not list this origin's
+ *  account; removed by a bridge sync that reaches the apex's list. */
+const refusedKey = (contractId: string) => nidoKey(`bridge:refused:${contractId}`);
 
 /** This origin's own account, when this is an account origin under an apex. */
 export function ownAccount(location: Pick<Location, "host">): string | null {
@@ -437,16 +498,20 @@ export function bridgeSyncNeeded(
 }
 
 /** The hash parameter the apex's sign-in list hand-off (signInListHandoff.ts)
- *  returns with: `listed` once the apex's own list holds the account. */
+ *  returns with: `listed` once the apex's own list holds the account,
+ *  `not-listed` when the apex will not list it (this browser did not reserve
+ *  the address there), `unverified` when the chain check did not pass. */
 export const SIGNIN_LIST_RETURN_PARAM = "nido-signin-list";
 
 /**
  * On a page the sign-in list hand-off returned to: drop its parameter from
  * the URL and, when the apex reports this origin's own active account
- * listed, record that as confirmed, which a separated bridge never can. Any
- * site can link here with the parameter; the most a forged one does is hide
- * the "Not in your sign-in list yet" notice for an account this origin
- * already holds as active.
+ * listed, record that as confirmed, which a separated bridge never can. When
+ * the apex reports it will not list this origin's account, record that too:
+ * the hand-off is not offered again while the bridge stays separated
+ * ({@link signInListRefused}). Any site can link here with the parameter; the
+ * most a forged one does is hide the "Not in your sign-in list yet" notice
+ * for an account this origin already holds as active, or its "Add it" button.
  */
 export function takeSignInListReturn(
   win: Pick<Window, "location" | "history"> = window,
@@ -465,8 +530,24 @@ export function takeSignInListReturn(
     `${win.location.pathname}${win.location.search}${rest ? `#${rest}` : ""}`,
   );
   const own = ownAccount(win.location);
-  if (result !== "listed" || !own || !store) return;
-  if (ownStatus(localNidoSnapshot(store), own) === "active") store.setItem(confirmedKey(own), "active");
+  if (!own || !store) return;
+  if (result === "not-listed") store.setItem(refusedKey(own), "1");
+  else if (result === "listed" && ownStatus(localNidoSnapshot(store), own) === "active") {
+    store.setItem(confirmedKey(own), "active");
+  }
+}
+
+/**
+ * Whether the apex's hand-off refused this origin's own account and no bridge
+ * sync has reached the apex's list since. With a separated bridge, nothing
+ * from this browser can add the account to the sign-in list.
+ */
+export function signInListRefused(
+  location: Pick<Location, "host"> = window.location,
+  store: Pick<Storage, "getItem"> | null = storageOrNull(),
+): boolean {
+  const own = ownAccount(location);
+  return !!own && !!store && store.getItem(refusedKey(own)) !== null;
 }
 
 /**
@@ -475,7 +556,8 @@ export function takeSignInListReturn(
  * the apex merges into its sign-in list, and merge back what it answers. The
  * iframe stays until the bridge answers or `timeoutMs` passes; on an answer,
  * this origin records what the answer shows the apex holding for its own
- * account. A `separated` answer is neither merged nor recorded. Resolves
+ * account, and forgets an earlier hand-off refusal. A `separated` answer is
+ * neither merged nor recorded. Resolves
  * `{ answered: false }` on the apex itself, where there is nothing to sync.
  */
 export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): Promise<BridgeSyncResult> {
@@ -484,63 +566,30 @@ export function syncNidoStorageViaBridge(timeoutMs = BRIDGE_ANSWER_BUDGET_MS): P
     return Promise.resolve(unanswered);
   }
 
-  const target = bridgeTarget(window.location);
-  if (!target) return Promise.resolve(unanswered);
-  const bridge = target;
+  const url = bridgeUrl(window.location);
+  if (!url) return Promise.resolve(unanswered);
+  const own = ownAccount(window.location);
 
-  return new Promise((resolve) => {
-    const id = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-    const iframe = document.createElement("iframe");
-    const own = ownAccount(window.location);
-    let settled = false;
-    let resend: number | undefined;
-
-    function finish(result: BridgeSyncResult) {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      window.clearInterval(resend);
-      window.removeEventListener("message", onMessage);
-      iframe.remove();
-      resolve(result);
-    }
-
-    function send() {
-      iframe.contentWindow?.postMessage(
-        { type: NIDO_STORAGE_REQUEST, id, snapshot: localNidoSnapshot() } satisfies NidoStorageRequest,
-        bridge.origin,
-      );
-    }
-
-    function onMessage(event: MessageEvent<NidoStorageResponse>) {
-      if (event.origin !== bridge.origin || event.source !== iframe.contentWindow) return;
-      const data = event.data;
-      if (data?.type !== NIDO_STORAGE_RESPONSE || data.id !== id) return;
-      if (data.separated === true) {
-        finish({ answered: true, changed: false, separated: true });
-        return;
-      }
+  return askFramedPage<NidoStorageResponse, BridgeSyncResult>(
+    url,
+    (id) => ({ type: NIDO_STORAGE_REQUEST, id, snapshot: localNidoSnapshot() }) satisfies NidoStorageRequest,
+    (data) => {
+      if (data.type !== NIDO_STORAGE_RESPONSE) return undefined;
+      if (data.separated === true) return { answered: true, changed: false, separated: true };
       const changed = mergeNidoSnapshot(data.snapshot);
       // Record what the answer shows the apex holding, not what this origin
       // sent last: resends share one id, so the answer can be to an earlier
       // send that still carried the account as pending.
       const confirmed = own ? ownStatus(normalizeSnapshot(data.snapshot), own) : null;
       const store = storageOrNull();
-      if (own && confirmed && store) store.setItem(confirmedKey(own), confirmed);
-      finish({ answered: true, changed, separated: false });
-    }
-
-    const timer = window.setTimeout(() => finish(unanswered), timeoutMs);
-    iframe.hidden = true;
-    iframe.style.display = "none";
-    iframe.src = bridge.url;
-    iframe.addEventListener("load", () => {
-      send();
-      resend = window.setInterval(send, BRIDGE_RESEND_MS);
-    });
-    window.addEventListener("message", onMessage);
-    document.body.appendChild(iframe);
-  });
+      if (own && store) {
+        store.removeItem(refusedKey(own));
+        if (confirmed) store.setItem(confirmedKey(own), confirmed);
+      }
+      return { answered: true, changed, separated: false };
+    },
+    timeoutMs,
+  ).then((result) => result ?? unanswered);
 }
 
 // --- Syncing until the apex confirms ------------------------------------------
@@ -669,16 +718,8 @@ export interface NidoOwnerResponse {
 /** Whether `origin` is the apex this account `host` belongs to, over https
  *  (plain http only on a loopback dev host). */
 function isOwnApex(origin: string, host: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(origin);
-  } catch {
-    return false;
-  }
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackHttpHost(url.hostname))) {
-    return false;
-  }
-  return url.host === apexHostForHost(host) && url.host !== host;
+  const url = secureOrigin(origin);
+  return !!url && url.host === apexHostForHost(host) && url.host !== host;
 }
 
 /**
@@ -734,56 +775,29 @@ export function answerBridgePageMessage(
   return apexHostForHost(host) === host ? answerBridgeRequest(message, host) : answerOwnerProbe(message, host);
 }
 
+/** What an account origin answered the ownership probe: it holds the passkey
+ *  record, it doesn't, or its frame can't see its own storage (`separated`),
+ *  which no later probe from this browser will answer differently. */
+export type OwnershipAnswer = boolean | "separated";
+
 /**
  * From the apex: whether this browser holds the passkey record for
  * `contractId` on that account's own origin. Resolves `null` when the account
- * origin can't tell (its frame doesn't see its own storage) or did not answer
- * within `timeoutMs`.
+ * origin did not answer within `timeoutMs`.
  */
 export function probeAccountOwnership(
   contractId: string,
   timeoutMs = BRIDGE_ANSWER_BUDGET_MS,
-): Promise<boolean | null> {
+): Promise<OwnershipAnswer | null> {
   if (typeof window === "undefined" || typeof document === "undefined") return Promise.resolve(null);
-  const url = `${window.location.protocol}${accountUrl(window.location.host, contractId, "/nido-storage-bridge/")}`;
-  const origin = new URL(url).origin;
-
-  return new Promise((resolve) => {
-    const id = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-    const iframe = document.createElement("iframe");
-    let settled = false;
-    let resend: number | undefined;
-
-    function finish(answer: boolean | null) {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      window.clearInterval(resend);
-      window.removeEventListener("message", onMessage);
-      iframe.remove();
-      resolve(answer);
-    }
-
-    function send() {
-      iframe.contentWindow?.postMessage({ type: NIDO_OWNER_REQUEST, id } satisfies NidoOwnerRequest, origin);
-    }
-
-    function onMessage(event: MessageEvent<NidoOwnerResponse>) {
-      if (event.origin !== origin || event.source !== iframe.contentWindow) return;
-      const data = event.data;
-      if (data?.type !== NIDO_OWNER_RESPONSE || data.id !== id || data.contractId !== contractId) return;
-      finish(typeof data.hasPasskey === "boolean" ? data.hasPasskey : null);
-    }
-
-    const timer = window.setTimeout(() => finish(null), timeoutMs);
-    iframe.hidden = true;
-    iframe.style.display = "none";
-    iframe.src = url;
-    iframe.addEventListener("load", () => {
-      send();
-      resend = window.setInterval(send, BRIDGE_RESEND_MS);
-    });
-    window.addEventListener("message", onMessage);
-    document.body.appendChild(iframe);
-  });
+  return askFramedPage<NidoOwnerResponse, OwnershipAnswer>(
+    `${window.location.protocol}${accountUrl(window.location.host, contractId, "/nido-storage-bridge/")}`,
+    (id) => ({ type: NIDO_OWNER_REQUEST, id }) satisfies NidoOwnerRequest,
+    (data) => {
+      if (data.type !== NIDO_OWNER_RESPONSE || data.contractId !== contractId) return undefined;
+      if (data.hasPasskey === null) return "separated";
+      return typeof data.hasPasskey === "boolean" ? data.hasPasskey : undefined;
+    },
+    timeoutMs,
+  );
 }
