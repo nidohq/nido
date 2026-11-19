@@ -130,11 +130,19 @@ export async function adoptPasskeyAction(account: string): Promise<{ ok: true } 
       sub: "Pick this Nido's passkey. It syncs from your other devices.",
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg === 'Passkey signing was cancelled.') return { ok: false, message: 'No passkey was picked.' };
-    return { ok: false, message: `Couldn't check your passkey: ${msg}` };
+    return { ok: false, message: adoptErrorMessage(e) };
   }
   return result.kind === 'adopted' ? { ok: true } : { ok: false, message: adoptFailureMessage(result) };
+}
+
+/** What to tell the user when the attempt threw. */
+export function adoptErrorMessage(e: unknown): string {
+  // The Stellar SDK rejects a failed JSON-RPC read with the plain
+  // `{ code, message }` object, not an Error.
+  const thrown = (e as { message?: unknown } | null)?.message;
+  const msg = typeof thrown === 'string' ? thrown : String(e);
+  if (msg === 'Passkey signing was cancelled.') return 'No passkey was picked.';
+  return `Couldn't check your passkey: ${msg}`;
 }
 
 /** What to tell the user for a result that adopted nothing. */

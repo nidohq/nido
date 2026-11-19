@@ -3,6 +3,7 @@ import { p256 } from '@noble/curves/nist.js';
 import { buf2base64url } from '@nidohq/passkey-sdk';
 import type { PasskeySignature } from '@nidohq/passkey-sdk';
 import {
+  adoptErrorMessage,
   adoptExistingPasskey,
   adoptFailureMessage,
   adoptPasskeyPlace,
@@ -135,5 +136,26 @@ describe('adoptPasskeyPlace', () => {
   it('offers nothing when the name resolved to no account', () => {
     expect(adoptPasskeyPlace('ALICE', at('alice.nido.fyi'))).toEqual({ kind: 'unavailable' });
     expect(adoptPasskeyPlace(null, at('nido.fyi'))).toEqual({ kind: 'unavailable' });
+  });
+});
+
+describe('adoptErrorMessage', () => {
+  it('says no passkey was picked when the prompt was cancelled', () => {
+    expect(adoptErrorMessage(new Error('Passkey signing was cancelled.'))).toBe('No passkey was picked.');
+  });
+
+  it("carries an Error's message", () => {
+    expect(adoptErrorMessage(new Error('network down'))).toBe("Couldn't check your passkey: network down");
+  });
+
+  // The Stellar SDK rejects a failed JSON-RPC read with the plain error object.
+  it('carries the message of a JSON-RPC error object', () => {
+    expect(adoptErrorMessage({ code: -32603, message: 'Internal error' })).toBe(
+      "Couldn't check your passkey: Internal error",
+    );
+  });
+
+  it('falls back to the thrown value when it has no message', () => {
+    expect(adoptErrorMessage('boom')).toBe("Couldn't check your passkey: boom");
   });
 });
