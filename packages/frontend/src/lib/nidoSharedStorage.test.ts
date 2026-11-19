@@ -6,6 +6,8 @@ import {
   answerOwnerProbe,
   apexHostForHost,
   bridgeSyncNeeded,
+  FIRST_PARTY_KEY,
+  markFirstPartyStorage,
   NIDO_OWNER_REQUEST,
   bridgeRequester,
   contributionFromRequester,
@@ -13,6 +15,7 @@ import {
   mergeNidoSnapshot,
   NIDO_STORAGE_REQUEST,
   snapshotForRequester,
+  takeSignInListReturn,
 } from "./nidoSharedStorage.js";
 
 const A = StrKey.encodeContract(Buffer.alloc(32, 1));
@@ -210,6 +213,7 @@ describe("answerBridgeRequest", () => {
   const request = (snapshot: unknown) => ({ type: NIDO_STORAGE_REQUEST, id: "r1", snapshot });
   const apexStore = () =>
     new MemoryStorage({
+      [FIRST_PARTY_KEY]: "1",
       "nido:testnet:accounts": JSON.stringify([A]),
       "nido:testnet:pending": JSON.stringify([{ contractId: B, setupKey: "salt-b" }]),
     });
@@ -284,6 +288,111 @@ describe("answerBridgeRequest", () => {
         apexStore(),
       ),
     ).toBeNull();
+  });
+});
+
+describe("a bridge that can't see the apex's own storage", () => {
+  // WebKit gives the framed bridge storage apart from the apex's: it starts
+  // empty, without the mark the apex's top-level pages set.
+  const request = { type: NIDO_STORAGE_REQUEST, id: "r1", snapshot: { accounts: [B], pending: [], names: {} } };
+  const fromB = { origin: `https://${b}.nido.fyi`, data: request, fromParent: true };
+
+  it("stores nothing and says it is separated", () => {
+    const store = new MemoryStorage();
+    expect(answerBridgeRequest(fromB, "nido.fyi", store)).toEqual({
+      type: "nido:storage:response:v1",
+      id: "r1",
+      snapshot: { accounts: [], pending: [], names: {} },
+      separated: true,
+    });
+    expect(store.length).toBe(0);
+  });
+
+  it("is separated even when that storage already holds an account list", () => {
+    // What an earlier bridge left in a WebKit frame's storage.
+    const store = new MemoryStorage({ "nido:testnet:accounts": JSON.stringify([A]) });
+    const res = answerBridgeRequest(fromB, "nido.fyi", store);
+    expect(res?.separated).toBe(true);
+    expect(res?.snapshot.accounts).toEqual([]);
+    expect(localNidoSnapshot(store).accounts).toEqual([A]);
+  });
+
+  it("merges as before once the apex's mark is there", () => {
+    const store = new MemoryStorage({ [FIRST_PARTY_KEY]: "1" });
+    const res = answerBridgeRequest(fromB, "nido.fyi", store);
+    expect(res?.separated).toBeUndefined();
+    expect(localNidoSnapshot(store).accounts).toEqual([B]);
+  });
+});
+
+describe("the first-party mark", () => {
+  const top = () => {
+    const win = {} as { top: unknown };
+    win.top = win;
+    return win as unknown as Window;
+  };
+
+  it("is set by a top-level page", () => {
+    const store = new MemoryStorage();
+    markFirstPartyStorage(top(), store);
+    expect(store.getItem(FIRST_PARTY_KEY)).toBe("1");
+  });
+
+  it("is never set by a framed page", () => {
+    const store = new MemoryStorage();
+    markFirstPartyStorage({ top: {} } as unknown as Window, store);
+    expect(store.length).toBe(0);
+  });
+});
+
+describe("the sign-in list hand-off's return", () => {
+  function page(url: string) {
+    const location = new URL(url);
+    const replaced: string[] = [];
+    return {
+      replaced,
+      win: {
+        location: location as unknown as Location,
+        history: {
+          state: null,
+          replaceState: (_: unknown, __: string, next: string) => replaced.push(next),
+        } as unknown as History,
+      },
+    };
+  }
+  const active = () => new MemoryStorage({ "nido:testnet:accounts": JSON.stringify([B]) });
+
+  it("records the account as confirmed when the apex listed it, and drops the parameter", () => {
+    const { win, replaced } = page(`https://${b}.nido.fyi/account/?x=1#nido-signin-list=listed&tab=send`);
+    const store = active();
+    takeSignInListReturn(win, store);
+    expect(replaced).toEqual(["/account/?x=1#tab=send"]);
+    expect(store.getItem(`nido:testnet:bridge:confirmed:${B}`)).toBe("active");
+    expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(false);
+  });
+
+  it("records nothing when the apex did not list it", () => {
+    const { win, replaced } = page(`https://${b}.nido.fyi/account/#nido-signin-list=not-listed`);
+    const store = active();
+    takeSignInListReturn(win, store);
+    expect(replaced).toEqual(["/account/"]);
+    expect(bridgeSyncNeeded({ host: `${b}.nido.fyi` }, store)).toBe(true);
+  });
+
+  it("records nothing for an account this origin doesn't hold as active, or on another origin", () => {
+    const pending = new MemoryStorage({ "nido:testnet:pending": JSON.stringify([{ contractId: B, setupKey: "s" }]) });
+    takeSignInListReturn(page(`https://${b}.nido.fyi/account/#nido-signin-list=listed`).win, pending);
+    expect(pending.getItem(`nido:testnet:bridge:confirmed:${B}`)).toBeNull();
+
+    const store = active();
+    takeSignInListReturn(page("https://alice.nido.fyi/account/#nido-signin-list=listed").win, store);
+    expect(store.getItem(`nido:testnet:bridge:confirmed:${B}`)).toBeNull();
+  });
+
+  it("leaves a page without the parameter alone", () => {
+    const { win, replaced } = page(`https://${b}.nido.fyi/account/#tab=send`);
+    takeSignInListReturn(win, active());
+    expect(replaced).toEqual([]);
   });
 });
 
@@ -376,6 +485,16 @@ describe("the ownership probe (apex asks an account origin)", () => {
     expect(ask(new MemoryStorage({ [`passkey:${A}:credentialId`]: "x", [`passkey:${A}:publicKey`]: "y" }))?.hasPasskey).toBe(
       false,
     );
+    expect(ask(new MemoryStorage({ [FIRST_PARTY_KEY]: "1" }))?.hasPasskey).toBe(false);
+  });
+
+  it("answers unknown, never no, when its frame can't see the origin's own storage", () => {
+    // WebKit's storage for a framed page starts empty and nothing framed
+    // writes to it: a missing record there says nothing.
+    const ask = (store: MemoryStorage | null) =>
+      answerOwnerProbe({ origin: "https://nido.fyi", data: probe, fromParent: true }, `${b}.nido.fyi`, store);
+    expect(ask(new MemoryStorage())).toEqual({ type: "nido:owner:response:v1", id: "p1", contractId: B, hasPasskey: null });
+    expect(ask(null)?.hasPasskey).toBeNull();
   });
 
   it("answers its own testnet apex and a loopback dev apex", () => {

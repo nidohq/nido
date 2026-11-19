@@ -1,20 +1,28 @@
 ---
 // Shown on an account origin while the apex's sign-in list (what apps offer
-// at nido.fyi/connect/) has not confirmed this account: the storage bridge
-// didn't answer in time. The page keeps retrying in the background
-// (nidoSharedStorage.ts `requestBridgeSync`); this says so instead of failing
-// silently, and offers a manual retry. Hidden once the apex confirms.
+// at nido.fyi/connect/) has not confirmed this account. Either the storage
+// bridge didn't answer in time, and the page keeps retrying in the background
+// (nidoSharedStorage.ts `requestBridgeSync`), or this browser keeps the
+// bridge's storage apart from the apex's, and only a top-level visit to the
+// apex can list it (lib/signInListHandoff.ts), which the button then makes.
+// Hidden once the apex confirms.
 interface Props {
   style?: string;
+  /** Off where the page hands the account to the apex itself (account setup). */
+  handoff?: boolean;
 }
-const { style } = Astro.props;
+const { style, handoff = true } = Astro.props;
 ---
-<div class="signin-notice alert warn hidden" role="status" aria-live="polite" style={style}>
+<div
+  class="signin-notice alert warn hidden"
+  role="status"
+  aria-live="polite"
+  style={style}
+  data-handoff={handoff ? "on" : "off"}
+>
   <div class="signin-notice-text">
     <div class="signin-notice-title">Not in your sign-in list yet</div>
-    <div class="mut signin-notice-body">
-      Apps can't offer this Nido when you connect until it is. We'll keep trying while this page is open.
-    </div>
+    <div class="mut signin-notice-body"></div>
   </div>
   <button type="button" class="btn soft sm signin-notice-retry">Try again</button>
 </div>
@@ -29,18 +37,33 @@ const { style } = Astro.props;
 </style>
 
 <script>
-  import { onBridgeSyncStatus, requestBridgeSync } from "../lib/nidoSharedStorage";
+  import { bridgeSeparated, onBridgeSyncStatus, requestBridgeSync } from "../lib/nidoSharedStorage";
+  import { ownHandoffUrl } from "../lib/signInListHandoff";
+
+  const RETRYING = "Apps can't offer this Nido when you connect until it is. We'll keep trying while this page is open.";
+  const ADD = "Apps can't offer this Nido when you connect until it is. Adding it opens the Nido home page for a moment, then brings you back.";
 
   for (const notice of document.querySelectorAll<HTMLElement>(".signin-notice")) {
+    const body = notice.querySelector<HTMLElement>(".signin-notice-body")!;
     const retry = notice.querySelector<HTMLButtonElement>(".signin-notice-retry")!;
+    const handoffUrl = () => (notice.dataset.handoff === "on" ? ownHandoffUrl(window.location) : null);
     let shown = false;
     onBridgeSyncStatus((status) => {
-      // Appears on the first unanswered sync and stays through the retries.
-      shown = status === "unconfirmed" || (shown && status === "syncing");
+      const viaApex = bridgeSeparated() ? handoffUrl() : null;
+      // Appears on the first sync that didn't confirm and stays through the
+      // retries. A separated bridge with no way to the apex from here is the
+      // page's own business (account setup goes through the apex at its end).
+      shown =
+        (status === "unconfirmed" || (shown && status === "syncing")) && !(bridgeSeparated() && !viaApex);
       notice.classList.toggle("hidden", !shown);
+      body.textContent = viaApex ? ADD : RETRYING;
       retry.disabled = status === "syncing";
-      retry.textContent = status === "syncing" ? "Trying…" : "Try again";
+      retry.textContent = viaApex ? "Add it" : status === "syncing" ? "Trying…" : "Try again";
     });
-    retry.addEventListener("click", () => void requestBridgeSync());
+    retry.addEventListener("click", () => {
+      const viaApex = bridgeSeparated() ? handoffUrl() : null;
+      if (viaApex) window.location.assign(viaApex);
+      else void requestBridgeSync();
+    });
   }
 </script>

@@ -126,7 +126,11 @@ holds no passkey. A storage bridge (`/nido-storage-bridge/`,
 browser's account list, names, and the setup keys of accounts still being
 created across the apex and account origins. The apex also frames an account
 origin's copy of that page to ask whether this browser holds the account's
-passkey record ([THREAT_MODEL](docs/THREAT_MODEL.md) 15).
+passkey record ([THREAT_MODEL](docs/THREAT_MODEL.md) 15). WebKit gives a framed
+page storage apart from its origin's own, so a framed bridge that can't see the
+first-party mark the origin's top-level pages set stores nothing and says so;
+a new account then reaches the apex's list by passing once through the apex's
+top-level `/new-account/finish/` (`packages/frontend/src/lib/signInListHandoff.ts`).
 
 Hosts are read against a list of known apexes, never by counting labels:
 `splitHost` and `NIDO_APEXES` in `packages/passkey-sdk/src/url.ts` (`test.nido.fyi`

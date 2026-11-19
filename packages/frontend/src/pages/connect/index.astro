@@ -109,13 +109,21 @@ import Toast from '../../components/Toast.astro';
 <script>
   // First: this page reads wallet storage, which is namespaced by network.
   import '../../lib/networkName';
-  import { loadAccounts, loadAccountName, loadUnfinishedAccounts, isContractId } from '@nidohq/passkey-sdk';
+  import {
+    loadAccounts,
+    loadAccountName,
+    loadUnfinishedAccounts,
+    removePendingAccount,
+    isContractId,
+  } from '@nidohq/passkey-sdk';
   import { postResultToOpener } from '@nidohq/stellar-wallets-kit-module';
   import { validateDappReturn } from '../../lib/signing/signRequest';
   import { shortAddr } from '../../lib/address';
   import { avatarBackground } from '../../lib/avatarStyle';
   import { nidoRowHref } from '../../lib/accountLinks';
   import { runAccountMigration } from '../../lib/runAccountMigration';
+  import { dropUnfinishableSetups } from '../../lib/pendingCleanup';
+  import { accountDeployed } from '../../lib/newAccount/verifyNewAccount';
 
   // Deterministic identicon avatar using the shared avatarBackground formula
   // so picker rows built at runtime match the Nido avatar look.
@@ -275,6 +283,17 @@ import Toast from '../../components/Toast.astro';
     return accounts;
   }
 
+  // A setup that can never finish (its secret expired and its address holds
+  // no account) is dropped rather than offered as "Finish setup".
+  let rendered = false;
+  void dropUnfinishableSetups({
+    unfinished: loadUnfinishedAccounts,
+    deployed: accountDeployed,
+    remove: removePendingAccount,
+  }).then((dropped) => {
+    if (dropped && rendered) render();
+  });
+
   // The list is shown once its one-time migration has run (it may drop
   // entries; see lib/accountMigration.ts).
   void runAccountMigration()
@@ -290,6 +309,7 @@ import Toast from '../../components/Toast.astro';
         $unchecked.classList.remove('hidden');
       }
       const accounts = render();
+      rendered = true;
 
       // Single-account fast path: exactly one account on the device AND it's
       // the one this dApp already uses → nothing to choose, finish

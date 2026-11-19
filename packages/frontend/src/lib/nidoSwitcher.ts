@@ -8,6 +8,7 @@ import {
   loadAccountName,
   saveAccountName,
   activateAccount,
+  removePendingAccount,
   loadCredential,
   hex2buf,
   lookupName,
@@ -25,7 +26,8 @@ import { requestBridgeSync } from "./nidoSharedStorage";
 import { RPC_URL, NETWORK_PASSPHRASE } from "./network";
 import { allowAccountCreation, INVITE_URL } from "./allowAccountCreation";
 import { runAccountMigration } from "./runAccountMigration";
-import { verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
+import { accountDeployed, verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
+import { dropUnfinishableSetups } from "./pendingCleanup";
 
 // Every "create a Nido" entry point this switcher offers (first-time setup
 // and "create another") shows a "Coming soon" state on hostnames
@@ -99,12 +101,17 @@ function refreshOpenSwitchers() {
 // secret can deploy there first), and without the passkey there is nothing to check,
 // so such an account stays pending; resuming it on its own page settles it.
 // The setup secret isn't needed for this, so a setup whose secret expired is
-// promoted the same way.
+// promoted the same way. One whose secret expired and whose address holds no
+// account can never finish, and is dropped first (pendingCleanup.ts).
 async function verifyPendingAccounts(): Promise<boolean> {
+  let changed = await dropUnfinishableSetups({
+    unfinished: loadUnfinishedAccounts,
+    deployed: accountDeployed,
+    remove: removePendingAccount,
+  });
   const pending = loadUnfinishedAccounts();
-  if (pending.length === 0) return false;
+  if (pending.length === 0) return changed;
   const active = new Set(loadAccounts());
-  let changed = false;
   for (const { contractId } of pending) {
     if (active.has(contractId)) continue;
     const stored = loadCredential(contractId);
