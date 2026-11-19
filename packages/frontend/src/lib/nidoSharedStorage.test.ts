@@ -584,7 +584,7 @@ describe("the ownership probe (apex asks an account origin)", () => {
       )?.hasPasskey,
     ).toBe(true);
     expect(
-      answerOwnerProbe({ origin: "http://localhost:4321", data: probe, fromParent: true }, `${b}.localhost:4321`, withPasskey())
+      answerOwnerProbe({ origin: "http://nido.localhost:4321", data: probe, fromParent: true }, `${b}.nido.localhost:4321`, withPasskey())
         ?.hasPasskey,
     ).toBe(true);
   });
