@@ -274,6 +274,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           <a id="adopt-passkey-link" class="btn acc hidden" style="margin-bottom:14px;">
             <Icon name="key" size={20} color="#fff" /> <span>Use your synced passkey</span>
           </a>
+          <p id="adopt-passkey-msg" role="alert" class="mut hidden" style="font-size:12.5px; line-height:1.5; margin:0 0 14px;"></p>
           <p class="mut" style="font-size:12.5px; line-height:1.5; margin:0;">
             Lost it? <a href="/security/recover/" class="link">Recover your Nido</a>
           </p>
@@ -785,9 +786,12 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         $adoptCopy.classList.add("hidden");
       }
     }
+    // A failure shows under the button, where the user is looking: the
+    // page's error box is above the fold from here.
+    const $adoptMsg = document.getElementById("adopt-passkey-msg")!;
     $adoptBtn.addEventListener("click", async () => {
       if (!contractId) return;
-      clearError();
+      $adoptMsg.classList.add("hidden");
       $adoptBtn.disabled = true;
       const result = await adoptPasskeyAction(contractId);
       $adoptBtn.disabled = false;
@@ -795,7 +799,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         $registerSection.classList.add("hidden");
         toast({ msg: "This device can now approve for your Nido", icon: "check" });
       } else {
-        showError(result.message);
+        $adoptMsg.textContent = result.message;
+        $adoptMsg.classList.remove("hidden");
       }
     });
 

@@ -7,12 +7,14 @@ import { accountViews, deployment, deploymentViews, mockPerchChain } from '../..
 // the app, so the authenticator holds it as a resident credential while the
 // page's storage knows nothing of it: the state a passkey synced from
 // another device leaves a new one in. The mocked chain's `configuration()`
-// lists (or doesn't list) its key.
+// lists (or doesn't list) its key. The account page's passkey card offers
+// the same thing.
 //
 // Needs `packages/frontend/dist-perch` (see guardian-consent.spec.mts).
 
 const ACCOUNT = StrKey.encodeContract(Buffer.alloc(32, 40));
 const SECURITY = `http://${ACCOUNT.toLowerCase()}.nido.localhost:4397/security/`;
+const ACCOUNT_PAGE = `http://${ACCOUNT.toLowerCase()}.nido.localhost:4397/account/`;
 
 /** A real virtual authenticator, as tests/support/cdp.ts installs (that
  *  module is CommonJS, which an .mts spec can't import by name). */
@@ -59,24 +61,28 @@ async function randomKeyHex(): Promise<string> {
 async function mockAccount(page: Page, keys: () => string[]): Promise<void> {
   const views = accountViews(ACCOUNT, {});
   const configuration = views[`${ACCOUNT}:configuration`] as Record<string, unknown>;
-  await mockPerchChain(page, {
-    ...deploymentViews(),
-    ...views,
-    [`${ACCOUNT}:configuration`]: () => ({
-      ...configuration,
-      rules: [
-        {
-          context_type: { tag: 'CallContract', values: [ACCOUNT] },
-          id: 0,
-          name: 'admin',
-          policies: [],
-          recovery: false,
-          signers: keys().map((k) => ({ tag: 'External', values: [deployment.webauthnVerifier, Buffer.from(k, 'hex')] })),
-          valid_until: undefined,
-        },
-      ],
-    }),
-  });
+  await mockPerchChain(
+    page,
+    {
+      ...deploymentViews(),
+      ...views,
+      [`${ACCOUNT}:configuration`]: () => ({
+        ...configuration,
+        rules: [
+          {
+            context_type: { tag: 'CallContract', values: [ACCOUNT] },
+            id: 0,
+            name: 'admin',
+            policies: [],
+            recovery: false,
+            signers: keys().map((k) => ({ tag: 'External', values: [deployment.webauthnVerifier, Buffer.from(k, 'hex')] })),
+            valid_until: undefined,
+          },
+        ],
+      }),
+    },
+    { deployedContracts: [ACCOUNT] },
+  );
 }
 
 const storedKey = (page: Page) =>
@@ -112,6 +118,27 @@ test.describe('security page: use a synced passkey', () => {
     await expect(page.locator('#adopt-passkey-msg')).toContainText("can't sign for this Nido");
     await expect(page.locator('#adopt-passkey-msg')).toContainText('recover');
     await expect(page.locator('#passkey-status-chip')).toHaveText('Not set up');
+    expect(await storedKey(page)).toBeNull();
+  });
+});
+
+test.describe('account page: use a synced passkey', () => {
+  test('refuses an unlisted passkey with a message under the button', async ({ page }) => {
+    await setupVirtualAuthenticator(page);
+    const other = await randomKeyHex();
+    await mockAccount(page, () => [other]);
+    await page.goto(ACCOUNT_PAGE);
+    await passkeyFromAnotherDevice(page);
+
+    const card = page.locator('#register-section');
+    await card.getByRole('button', { name: /Use your synced passkey/ }).click();
+
+    const msg = card.getByRole('alert');
+    await expect(msg).toContainText("can't sign for this Nido");
+    await expect(msg).toContainText('recover');
+    await expect(msg).toBeInViewport();
+    await expect(page.locator('#error-box')).toBeHidden();
+    await expect(card).toBeVisible();
     expect(await storedKey(page)).toBeNull();
   });
 });
