@@ -59,6 +59,8 @@ export interface SetupChain {
   bridgeLoads: number;
   /** While true, the apex's bridge page is never served (requests to it hang). */
   bridgeDown: boolean;
+  /** How many times the apex's sign-in list hand-off page was opened. */
+  handoffLoads: number;
 }
 
 function invocation(txXdr: string) {
@@ -107,7 +109,7 @@ function configurationFor(key: Buffer): string {
  * successful setup would see them.
  */
 export async function mockSetupChain(context: BrowserContext, opts: SetupChainOptions = {}): Promise<SetupChain> {
-  const state: SetupChain = { bridgeLoads: 0, bridgeDown: false };
+  const state: SetupChain = { bridgeLoads: 0, bridgeDown: false, handoffLoads: 0 };
   const deployed = new Set(opts.deployed ?? []);
   let firstChainReadDelayMs = opts.firstChainReadDelayMs ?? 0;
   const adminKeys = new Map<string, Buffer>();
@@ -119,6 +121,11 @@ export async function mockSetupChain(context: BrowserContext, opts: SetupChainOp
     state.bridgeLoads++;
     if (state.bridgeDown) return; // never answered: the request hangs
     if (opts.bridgeDelayMs) await new Promise((r) => setTimeout(r, opts.bridgeDelayMs));
+    await route.fallback();
+  });
+
+  await context.route(`https://${APEX}/new-account/finish/`, async (route: Route) => {
+    state.handoffLoads++;
     await route.fallback();
   });
 

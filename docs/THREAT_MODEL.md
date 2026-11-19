@@ -245,7 +245,20 @@ and infrastructure bring.
     asks) (`packages/frontend/src/lib/nidoSharedStorage.ts`,
     `public/_headers`, `frontend/worker-proxy-nido/index.js`;
     `tests/e2e/ui/storage-bridge.spec.ts` runs it under the production
-    headers). A name-shaped label is indistinguishable from a registered
+    headers). A framed bridge or probe that can't see its origin's
+    first-party mark, set only by that origin's top-level pages, is looking
+    at storage the browser keeps apart for frames (WebKit): it stores nothing
+    and answers that it is separated, or that it can't tell. There, a new
+    account reaches the apex's list through the apex's top-level hand-off
+    page (`/new-account/finish/`, `packages/frontend/src/lib/signInListHandoff.ts`),
+    which any link can open: it lists only an address in the apex's own
+    pending list, one this browser reserved there, once the chain shows the
+    account `create_account` makes for the passkey key in the link, and it
+    returns only to that account's own pages or a validated name's page.
+    The outcome comes back in the return link, which any link can also
+    imitate: the account's page acts on it only with the single-use nonce it
+    stored when it started the hand-off, and only a listed outcome is stored.
+    A name-shaped label is indistinguishable from a registered
     name's wallet origin and the registry reserves no labels, so a service
     on one can read the account list and names, though no setup key. HSTS
     protects only after a first https visit; the domain is not preloaded.

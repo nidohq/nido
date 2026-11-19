@@ -2,7 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   answerBridgeRequest,
+  bridgeSeparated,
   bridgeSyncNeeded,
+  FIRST_PARTY_KEY,
   onBridgeSyncStatus,
   requestBridgeSync,
   syncNidoStorageViaBridge,
@@ -37,6 +39,13 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string) {
     this.values.set(key, value);
   }
+}
+
+/** The apex's own storage, as its top-level pages leave it: marked first-party. */
+function apexStorage(): MemoryStorage {
+  const store = new MemoryStorage();
+  store.setItem(FIRST_PARTY_KEY, "1");
+  return store;
 }
 
 /** Start a sync and return the bridge iframe plus every request it was sent. */
@@ -83,7 +92,7 @@ describe("what an account origin records the apex has confirmed", () => {
     expect(sent).toHaveLength(2);
 
     // Only the first (pending) request reaches the apex before it answers.
-    const apexStore = new MemoryStorage();
+    const apexStore = apexStorage();
     bridgeAnswers(iframe, sent[0]!, apexStore);
     await expect(result).resolves.toMatchObject({ answered: true });
 
@@ -96,7 +105,7 @@ describe("what an account origin records the apex has confirmed", () => {
     localStorage.setItem("nido:testnet:accounts", JSON.stringify([OWN]));
     const { result, iframe, sent } = startSync();
 
-    const apexStore = new MemoryStorage();
+    const apexStore = apexStorage();
     bridgeAnswers(iframe, sent[0]!, apexStore);
     await expect(result).resolves.toMatchObject({ answered: true });
 
@@ -106,14 +115,64 @@ describe("what an account origin records the apex has confirmed", () => {
   });
 });
 
+/** Answer every bridge iframe the page opens within `ms`, from `apexStore`.
+ *  Returns the iframes answered. */
+async function answerEveryBridge(apexStore: Storage, ms: number): Promise<Set<HTMLIFrameElement>> {
+  const answered = new Set<HTMLIFrameElement>();
+  for (let elapsed = 0; elapsed < ms; elapsed += 100) {
+    const iframe = document.querySelector("iframe");
+    if (iframe && !answered.has(iframe)) {
+      answered.add(iframe);
+      const sent: NidoStorageRequest[] = [];
+      vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation((data: unknown) => {
+        sent.push(structuredClone(data) as NidoStorageRequest);
+      });
+      iframe.dispatchEvent(new Event("load"));
+      bridgeAnswers(iframe, sent[0]!, apexStore);
+    }
+    await vi.advanceTimersByTimeAsync(100);
+  }
+  return answered;
+}
+
+// These share the module's background-sync state, so each leaves no sync in
+// flight for the next.
 describe("background sync when the apex never holds the account", () => {
+  it("records nothing and stops syncing when the bridge can't see the apex's storage", async () => {
+    // WebKit: the framed bridge's storage is apart from the apex's, without
+    // its first-party mark. It once answered "stored" from there.
+    localStorage.setItem("nido:testnet:accounts", JSON.stringify([OWN]));
+    let status: BridgeSyncStatus | undefined;
+    const stopFollowing = onBridgeSyncStatus((next) => (status = next));
+
+    const separatedStore = new MemoryStorage();
+    void requestBridgeSync();
+    const answered = await answerEveryBridge(separatedStore, 70_000);
+    stopFollowing();
+
+    expect(answered.size).toBe(1);
+    expect(separatedStore.length).toBe(0);
+    expect(status).toBe("unconfirmed");
+    expect(bridgeSeparated()).toBe(true);
+    expect(localStorage.getItem(`nido:testnet:bridge:confirmed:${OWN}`)).toBeNull();
+    expect(bridgeSyncNeeded()).toBe(true);
+  });
+
   it("backs off instead of reloading the bridge in a loop", async () => {
     localStorage.setItem("nido:testnet:accounts", JSON.stringify([OWN]));
     let status: BridgeSyncStatus | undefined;
     const stopFollowing = onBridgeSyncStatus((next) => (status = next));
 
-    // The apex's bridge frame cannot use its storage: it stores nothing and
-    // answers every request with an empty snapshot.
+    // The apex's bridge sees the apex's storage but cannot write to it: it
+    // stores nothing and answers every request with an empty snapshot.
+    class ReadOnlyStorage extends MemoryStorage {
+      constructor() {
+        super();
+        super.setItem(FIRST_PARTY_KEY, "1");
+      }
+      setItem() {}
+    }
+    const readOnly = new ReadOnlyStorage();
     const answered = new Set<HTMLIFrameElement>();
     void requestBridgeSync();
     for (let elapsed = 0; elapsed < 5_000; elapsed += 100) {
@@ -125,7 +184,7 @@ describe("background sync when the apex never holds the account", () => {
           sent.push(structuredClone(data) as NidoStorageRequest);
         });
         iframe.dispatchEvent(new Event("load"));
-        bridgeAnswers(iframe, sent[0]!, null);
+        bridgeAnswers(iframe, sent[0]!, readOnly);
       }
       await vi.advanceTimersByTimeAsync(100);
     }
@@ -134,6 +193,7 @@ describe("background sync when the apex never holds the account", () => {
     expect(answered.size).toBeGreaterThanOrEqual(2);
     expect(answered.size).toBeLessThanOrEqual(4);
     expect(status).toBe("unconfirmed");
+    expect(bridgeSeparated()).toBe(false);
     expect(localStorage.getItem(`nido:testnet:bridge:confirmed:${OWN}`)).toBeNull();
   });
 });

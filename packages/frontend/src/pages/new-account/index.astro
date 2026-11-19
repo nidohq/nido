@@ -30,7 +30,7 @@ import { NETWORK_LABEL } from "../../lib/network";
     </div>
 
     <div id="error-box" role="alert" class="alert danger" style="display:none; margin-bottom:18px;"></div>
-    <SignInListNotice style="margin-bottom:18px;" />
+    <SignInListNotice style="margin-bottom:18px;" handoff={false} />
 
     <!-- ===================== STEP 1 · LOCK IT TO YOU ===================== -->
     <section id="passkey-section">
@@ -256,7 +256,8 @@ import { NETWORK_LABEL } from "../../lib/network";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
   import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL, NATIVE_SAC_ID } from "../../lib/network";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
-  import { requestBridgeSync, type BridgeSyncResult } from "../../lib/nidoSharedStorage";
+  import { bridgeSyncNeeded, requestBridgeSync, type BridgeSyncResult } from "../../lib/nidoSharedStorage";
+  import { handoffUrl } from "../../lib/signInListHandoff";
   import { signAndSubmit } from "../../lib/primaryPasskeySigner";
 
   // --- State ---
@@ -1006,6 +1007,8 @@ import { NETWORK_LABEL } from "../../lib/network";
       // bridge answers (it can take seconds on a slow phone); an unanswered
       // handoff is retried in the background, here and on every later page
       // load of this account, and shown (SignInListNotice) until it lands.
+      // If it hasn't landed when setup is done, the way to the wallet goes
+      // through the apex, which lists it (see finalizeWallet).
       signInListHandoff = requestBridgeSync();
 
       // Checked — 3 done, 4 · "Finalizing your wallet" begins. Funds the new
@@ -1091,7 +1094,23 @@ import { NETWORK_LABEL } from "../../lib/network";
     setTimeout(async () => {
       // Leaving the page would cut the sign-in list handoff short.
       await signInListHandoff;
-      const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
+      const then = new URLSearchParams(window.location.search).get("then");
+      // The bridge didn't get the account into the apex's sign-in list (in
+      // WebKit it never can): go to the wallet through the apex, which lists
+      // it from a top-level page (lib/signInListHandoff.ts).
+      const viaApex = bridgeSyncNeeded()
+        ? handoffUrl(window.location, {
+            contractId: contractId!,
+            publicKeyHex: buf2hex(passkeyPublicKey!),
+            next: setUpRecoveryAfter ? "recovery" : "account",
+            then,
+          })
+        : null;
+      if (viaApex) {
+        window.location.href = viaApex;
+        return;
+      }
+      const intent = parseReturnIntent(then);
       if (intent) {
         const apexHost = stripSubdomain(window.location.host);
         window.location.href = buildClaimReturnUrl({

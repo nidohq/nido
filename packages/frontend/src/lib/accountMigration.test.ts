@@ -36,7 +36,13 @@ class MemoryStore {
 }
 
 /** Passkey records this browser holds, and what mainnet has deployed. */
-function world(store: MemoryStore, owned: string[], onMainnet: string[], silent: string[] = []) {
+function world(
+  store: MemoryStore,
+  owned: string[],
+  onMainnet: string[],
+  silent: string[] = [],
+  separated: string[] = [],
+) {
   const probes: string[] = [];
   const chainReads: string[] = [];
   return {
@@ -47,6 +53,7 @@ function world(store: MemoryStore, owned: string[], onMainnet: string[], silent:
       store,
       hasPasskey: async (c: string) => {
         probes.push(c);
+        if (separated.includes(c)) return "separated" as const;
         return silent.includes(c) ? null : owned.includes(c);
       },
       deployedHere: async (c: string) => {
@@ -133,6 +140,29 @@ describe("the sign-in list's one-time migration (mainnet build)", () => {
     expect(second.kept.sort()).toEqual([MAIN, SLOW].sort());
     expect(second.dropped).toEqual([VISITED]);
     expect(JSON.parse(store.getItem("nido:mainnet:accounts")!)).toEqual([MAIN, SLOW]);
+    expect(store.getItem("nido:testnet:accounts")).toBeNull();
+  });
+
+  it("keeps an entry whose origin answers that it can't tell, and finishes", async () => {
+    // WebKit: the framed account origin sees storage apart from its own, on
+    // every load, so asking again would never decide it.
+    const store = new MemoryStore({ "nido:mainnet:accounts": [MAIN, VISITED] });
+    const first = world(store, [], [], [], [MAIN]);
+    expect(await migrateAccountList(first.deps)).toEqual({ ran: true, kept: [MAIN], dropped: [VISITED], undecided: [] });
+    expect(first.chainReads).toEqual([]);
+    expect(JSON.parse(store.getItem("nido:mainnet:accounts")!)).toEqual([MAIN]);
+    expect(store.getItem("nido:mainnet:accounts:migrated:v1")).not.toBeNull();
+
+    const again = world(store, [], [], [], [MAIN]);
+    expect((await migrateAccountList(again.deps)).ran).toBe(false);
+    expect(again.probes).toEqual([]);
+  });
+
+  it("carries over a mistaken-list entry whose origin can't tell only if mainnet holds it", async () => {
+    const store = new MemoryStore({ "nido:testnet:accounts": [MAIN, TESTNET] });
+    const result = await migrateAccountList(world(store, [], [MAIN], [], [MAIN, TESTNET]).deps);
+    expect(result).toEqual({ ran: true, kept: [MAIN], dropped: [TESTNET], undecided: [] });
+    expect(JSON.parse(store.getItem("nido:mainnet:accounts")!)).toEqual([MAIN]);
     expect(store.getItem("nido:testnet:accounts")).toBeNull();
   });
 
