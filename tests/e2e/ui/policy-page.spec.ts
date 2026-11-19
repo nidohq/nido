@@ -13,7 +13,7 @@ const DIST_DIR = join(process.cwd(), 'packages/frontend/dist');
 // Deterministic fake C-address (valid strkey) — the page derives the account
 // from the subdomain via contractIdFromHostname().
 const FAKE_CONTRACT_ID = 'CDLZFC2SYJYDZT7K7VJRL2CU7LQV6AFZ2K2QJLY7QV53KIGWXJOANPYY';
-const POLICY_URL = `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/account/policy/`;
+const POLICY_URL = `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/account/policy/`;
 
 const SIGNER_G = 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ';
 const TARGET = 'CCA7QAA6OD6LQJTU2MKN6EAS5I52QIFPAYMMQYSU7KHWTGT26AN6N2AL';
@@ -95,7 +95,7 @@ test.describe('delegate page (passkey grant, doc-only) — UI only (no chain) @f
 
   test('rejects an invalid session public key @fast', async ({ page }) => {
     await page.goto(
-      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate/` +
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/security/delegate/` +
         `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&pubkey=nope` +
         `&duration=24h&return=https%3A%2F%2Fdapp.example%2F`,
       { waitUntil: 'networkidle' },
@@ -106,7 +106,7 @@ test.describe('delegate page (passkey grant, doc-only) — UI only (no chain) @f
 
   test('renders a well-formed request but fails closed without the doc baseline @fast', async ({ page }) => {
     await page.goto(
-      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate/` +
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/security/delegate/` +
         `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&pubkey=${PUBKEY}` +
         `&duration=24h&return=https%3A%2F%2Fdapp.example%2Fpage`,
       { waitUntil: 'networkidle' },
@@ -123,7 +123,7 @@ test.describe('delegate page (passkey grant, doc-only) — UI only (no chain) @f
 test.describe('delegate-doc page — UI only (no chain) @fast', () => {
   test('rejects a request with a missing origin @fast', async ({ page }) => {
     await page.goto(
-      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate-doc/` +
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/security/delegate-doc/` +
         `?target=${TARGET}&signer=${SIGNER_G}&return=https%3A%2F%2Fdapp.example%2F`,
       { waitUntil: 'networkidle' },
     );
@@ -133,7 +133,7 @@ test.describe('delegate-doc page — UI only (no chain) @fast', () => {
 
   test('rejects a request with a malformed limit instead of dropping the cap @fast', async ({ page }) => {
     await page.goto(
-      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate-doc/` +
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/security/delegate-doc/` +
         `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&signer=${SIGNER_G}` +
         `&duration=24h&limit=lots&limit_period=day&return=https%3A%2F%2Fdapp.example%2Fpage`,
       { waitUntil: 'networkidle' },
@@ -144,7 +144,7 @@ test.describe('delegate-doc page — UI only (no chain) @fast', () => {
 
   test('renders a well-formed request but fails closed without the doc baseline @fast', async ({ page }) => {
     await page.goto(
-      `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/security/delegate-doc/` +
+      `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/security/delegate-doc/` +
         `?origin=https%3A%2F%2Fdapp.example&target=${TARGET}&signer=${SIGNER_G}` +
         `&functions=udpate_message&duration=24h&label=status-note-session` +
         `&return=https%3A%2F%2Fdapp.example%2Fpage`,

@@ -419,7 +419,7 @@ import { NETWORK_LABEL } from "../../lib/network";
 
   // `Secure` keeps the setup salt — which decides who owns the derived address
   // — off plain-HTTP requests. Gated on `isSecureContext` so it is set on HTTPS
-  // and on localhost (both secure contexts) but omitted on a plain-HTTP dev
+  // and on nido.localhost (both secure contexts) but omitted on a plain-HTTP dev
   // origin, where a `Secure` cookie would silently fail to write.
   function setupCookieSecure(): string {
     return window.isSecureContext ? "; Secure" : "";

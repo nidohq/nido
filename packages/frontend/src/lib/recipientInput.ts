@@ -7,7 +7,7 @@ import {
 // Cosmetic suffixes a user might append to a nido name. Longest first so
 // `alice.test.nido.fyi` strips the whole suffix, not just `.nido.fyi`. These are pure
 // UI convenience — the on-chain registry stores bare labels only.
-const KNOWN_SUFFIXES = ['.test.nido.fyi', '.nido.fyi', '.nido', '.localhost'];
+const KNOWN_SUFFIXES = ['.test.nido.fyi', '.nido.fyi', '.nido.localhost', '.nido'];
 
 /**
  * Normalize a typed recipient string for resolution. Strips a known cosmetic

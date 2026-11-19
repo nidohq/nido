@@ -9,9 +9,9 @@ const DAPP = `http://dapp.localhost:${PORT}`;
 
 test.describe('@fast dapp connect ceremony', () => {
   test('picker returns the chosen account via redirect', async ({ page }) => {
-    // Seed nido:testnet:accounts on the WALLET origin (localhost:PORT) before loading
+    // Seed nido:testnet:accounts on the WALLET origin (nido.localhost:PORT) before loading
     // the connect page, so loadAccounts() finds the account.
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'load' });
     await page.evaluate((acc) => {
       // Account-store format: key "nido:testnet:accounts", value = JSON array of C-address strings.
       localStorage.setItem('nido:testnet:accounts', JSON.stringify([acc]));
@@ -19,7 +19,7 @@ test.describe('@fast dapp connect ceremony', () => {
 
     const ret = `${DAPP}/cb`;
     await page.goto(
-      `http://localhost:${PORT}/connect/?dapp=${encodeURIComponent(DAPP)}&return=${encodeURIComponent(ret)}`,
+      `http://nido.localhost:${PORT}/connect/?dapp=${encodeURIComponent(DAPP)}&return=${encodeURIComponent(ret)}`,
       { waitUntil: 'load' },
     );
     await expect(page.locator('#accounts-list .account-row')).toHaveCount(1);
@@ -32,7 +32,7 @@ test.describe('@fast dapp connect ceremony', () => {
   test('cancel returns nido_connect=cancelled', async ({ page }) => {
     const ret = `${DAPP}/cb`;
     await page.goto(
-      `http://localhost:${PORT}/connect/?dapp=${encodeURIComponent(DAPP)}&return=${encodeURIComponent(ret)}`,
+      `http://nido.localhost:${PORT}/connect/?dapp=${encodeURIComponent(DAPP)}&return=${encodeURIComponent(ret)}`,
       { waitUntil: 'load' },
     );
     await page.locator('#cancel').click();
@@ -41,7 +41,7 @@ test.describe('@fast dapp connect ceremony', () => {
 
   // #89: reconnect with a previously connected account.
   test('previous= highlights the connected account but still shows the full list', async ({ page }) => {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'load' });
     await page.evaluate(
       ([a, b]) => localStorage.setItem('nido:testnet:accounts', JSON.stringify([a, b])),
       [FAKE_CONTRACT_ID, SECOND_CONTRACT_ID],
@@ -49,7 +49,7 @@ test.describe('@fast dapp connect ceremony', () => {
 
     const ret = `${DAPP}/cb`;
     await page.goto(
-      `http://localhost:${PORT}/connect/?dapp=${encodeURIComponent(DAPP)}&return=${encodeURIComponent(ret)}&previous=${FAKE_CONTRACT_ID}`,
+      `http://nido.localhost:${PORT}/connect/?dapp=${encodeURIComponent(DAPP)}&return=${encodeURIComponent(ret)}&previous=${FAKE_CONTRACT_ID}`,
       { waitUntil: 'load' },
     );
     // Both accounts listed — a reconnect is always a switch opportunity.
@@ -65,7 +65,7 @@ test.describe('@fast dapp connect ceremony', () => {
   });
 
   test('single-account device matching previous= auto-confirms without a click', async ({ page }) => {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'load' });
     await page.evaluate(
       (acc) => localStorage.setItem('nido:testnet:accounts', JSON.stringify([acc])),
       FAKE_CONTRACT_ID,
@@ -73,7 +73,7 @@ test.describe('@fast dapp connect ceremony', () => {
 
     const ret = `${DAPP}/cb`;
     await page.goto(
-      `http://localhost:${PORT}/connect/?dapp=${encodeURIComponent(DAPP)}&return=${encodeURIComponent(ret)}&previous=${FAKE_CONTRACT_ID}`,
+      `http://nido.localhost:${PORT}/connect/?dapp=${encodeURIComponent(DAPP)}&return=${encodeURIComponent(ret)}&previous=${FAKE_CONTRACT_ID}`,
       { waitUntil: 'load' },
     );
     // No interaction needed: the picker fast-paths straight back to the dApp.

@@ -155,13 +155,13 @@ describe("safeRouteUrl (F1 XSS / open-redirect guard)", () => {
   it("rejects http for a non-localhost host", () => {
     expect(safeRouteUrl("http://alice.nido.fyi/account/", ORIGIN)).toBeNull();
   });
-  it("allows http for localhost (dev)", () => {
-    expect(safeRouteUrl("http://localhost:4321/account/", "http://localhost:4321"))
-      .toBe("http://localhost:4321/account/");
+  it("allows http for nido.localhost (dev)", () => {
+    expect(safeRouteUrl("http://nido.localhost:4321/account/", "http://nido.localhost:4321"))
+      .toBe("http://nido.localhost:4321/account/");
   });
-  it("allows a dev subdomain hop to the localhost apex", () => {
-    expect(safeRouteUrl("http://localhost:4321/account/", "http://cabc.localhost:4321"))
-      .toBe("http://localhost:4321/account/");
+  it("allows a dev subdomain hop to the nido.localhost apex", () => {
+    expect(safeRouteUrl("http://nido.localhost:4321/account/", "http://cabc.nido.localhost:4321"))
+      .toBe("http://nido.localhost:4321/account/");
   });
   it("returns null for empty / nullish input", () => {
     expect(safeRouteUrl("", ORIGIN)).toBeNull();

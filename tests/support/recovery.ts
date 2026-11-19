@@ -25,7 +25,7 @@ function randomSaltHex(): string {
  *     `#preparing-section`; the old home-page `#create-btn`/`#c-address-result`/
  *     `#setup-link` surfaces were removed in the reskin, which is why the prior
  *     version of this helper timed out on `#create-btn`)
- *   → `#preparing-continue` → hard-redirect to `<cAddress>.localhost:PORT/
+ *   → `#preparing-continue` → hard-redirect to `<cAddress>.nido.localhost:PORT/
  *     new-account/?salt=…&autopass=1` (the account's own subdomain)
  *   → autopass auto-registers the passkey → `#recovery-enroll-section`
  *     (continue / set up recovery after) → deploy() → `#done-section`.
@@ -62,7 +62,7 @@ export async function createAndDeployAs(
   await useIdentity(page, identityLabel).catch(() => {});
 
   const salt = randomSaltHex();
-  await page.goto(`http://localhost:${PORT}/new-account/?salt=${salt}&setup=1`, {
+  await page.goto(`http://nido.localhost:${PORT}/new-account/?salt=${salt}&setup=1`, {
     waitUntil: 'domcontentloaded',
   });
 
@@ -71,10 +71,10 @@ export async function createAndDeployAs(
   await expect(page.locator('#preparing-continue')).toBeEnabled({ timeout: 90_000 });
   await page.locator('#preparing-continue').click();
 
-  // Land on `<cAddress>.localhost:PORT/new-account/…` and recover the C-address
+  // Land on `<cAddress>.nido.localhost:PORT/new-account/…` and recover the C-address
   // from the hostname (StrKey C-addresses are upper-case base32; the subdomain
   // is the lower-cased form).
-  await page.waitForURL(/\/\/c[a-z2-7]{55}\.localhost/i, { timeout: 90_000 });
+  await page.waitForURL(/\/\/c[a-z2-7]{55}\.nido\.localhost/i, { timeout: 90_000 });
   const host = new URL(page.url()).host;
   const cAddress = host.split('.')[0].toUpperCase();
   expect(cAddress).toMatch(/^C[A-Z2-7]{55}$/);
