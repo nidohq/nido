@@ -117,6 +117,8 @@ describe('adoptPasskeyPlace', () => {
   it("runs the ceremony on the account's own subdomain", () => {
     expect(adoptPasskeyPlace(C, at(`${C.toLowerCase()}.nido.fyi`))).toEqual({ kind: 'here' });
     expect(adoptPasskeyPlace(C, at(`${C.toLowerCase()}--10.mysoroban.xyz`))).toEqual({ kind: 'here' });
+    const local = `${C.toLowerCase()}.nido.localhost`;
+    expect(adoptPasskeyPlace(C, { protocol: 'http:', host: `${local}:4321`, hostname: local })).toEqual({ kind: 'here' });
   });
 
   it("links a name subdomain to the account's own subdomain instead", () => {
@@ -127,10 +129,6 @@ describe('adoptPasskeyPlace', () => {
     expect(adoptPasskeyPlace(C, at('alice--10.mysoroban.xyz'))).toEqual({
       kind: 'elsewhere',
       url: `https://${C.toLowerCase()}--10.mysoroban.xyz/account/`,
-    });
-    expect(adoptPasskeyPlace(C, { protocol: 'http:', host: 'alice.nido.localhost:4321', hostname: 'alice.nido.localhost' })).toEqual({
-      kind: 'elsewhere',
-      url: `http://${C.toLowerCase()}.nido.localhost:4321/account/`,
     });
   });
 
