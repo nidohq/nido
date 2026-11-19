@@ -12,7 +12,7 @@ import { accountViews, deployment, deploymentViews, mockPerchChain } from '../..
 // Needs `packages/frontend/dist-perch` (see guardian-consent.spec.mts).
 
 const ACCOUNT = StrKey.encodeContract(Buffer.alloc(32, 40));
-const SECURITY = `http://${ACCOUNT.toLowerCase()}.localhost:4397/security/`;
+const SECURITY = `http://${ACCOUNT.toLowerCase()}.nido.localhost:4397/security/`;
 
 /** A real virtual authenticator, as tests/support/cdp.ts installs (that
  *  module is CommonJS, which an .mts spec can't import by name). */
