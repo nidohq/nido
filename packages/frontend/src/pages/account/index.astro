@@ -260,10 +260,10 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       </section>
       </div>
 
-      <!-- ============ REGISTER (when no passkey) ============ -->
+      <!-- ============ PASSKEY (none on this device) ============ -->
       <div class="grid-cell home-panel">
       <section id="register-section" class="hidden pad" style="padding-top:18px;">
-        <span class="section-label" style="display:block; margin-bottom:12px;">Set up your passkey</span>
+        <span class="section-label" style="display:block; margin-bottom:12px;">Your passkey</span>
         <div class="card" style="padding:16px;">
           <p id="adopt-passkey-copy" class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
             New device? This Nido's passkey syncs with iCloud Keychain or Google Password Manager, so it may already be here.
@@ -274,15 +274,23 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           <a id="adopt-passkey-link" class="btn acc hidden" style="margin-bottom:14px;">
             <Icon name="key" size={20} color="#fff" /> <span>Use your synced passkey</span>
           </a>
-          <p id="register-copy" class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
-            Or create a passkey bound to this Nido. It's how you'll prove it's you — no seed phrase, no password.
-          </p>
-          <button id="register-btn" class="btn">
-            <Icon name="key" size={20} /> <span id="register-label">Set up your passkey</span>
-          </button>
-          <p class="mut" style="font-size:12.5px; line-height:1.5; margin:14px 0 0;">
+          <p class="mut" style="font-size:12.5px; line-height:1.5; margin:0;">
             Lost it? <a href="/security/recover/" class="link">Recover your Nido</a>
           </p>
+        </div>
+      </section>
+      </div>
+      <!-- No contract at this address: nothing to sign for, so no passkey card. -->
+      <div class="grid-cell home-panel">
+      <section id="no-nido-section" class="hidden pad" style="padding-top:18px;">
+        <div class="card" style="padding:16px;">
+          <p style="font-size:15px; font-weight:600; margin:0 0 6px;">There's no Nido at this address</p>
+          <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            Nothing has been set up here yet.
+          </p>
+          <button id="no-nido-create-btn" class="btn acc">
+            <Icon name="sparkle" size={18} color="#fff" /> Create a Nido
+          </button>
         </div>
       </section>
       </div>
@@ -342,6 +350,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
   import { adoptPasskeyAction, adoptPasskeyPlace } from "../../lib/adoptPasskey";
+  import { accountDeployed } from "../../lib/newAccount/verifyNewAccount";
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
   // round-trip was broken (bug #3); re-enabled now that the finalize flow signs
@@ -652,21 +661,13 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
     const cred = loadCredential();
     const $registerSection = document.getElementById("register-section")!;
-    const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
-    const $registerCopy = document.getElementById("register-copy");
-    const $registerLabel = document.getElementById("register-label");
 
     if (!cred && shouldRegisterNamePasskey && detectedName) {
       // ?namepasskey=1 + no cred + known name → takeover overlay.
       // #home-mode is already revealed so dismissing the overlay shows it immediately.
       // The register-section is NOT shown (the takeover replaces it for this path).
     } else if (!cred) {
-      $registerSection.classList.remove("hidden");
-      if (detectedName && $registerCopy) {
-        $registerCopy.textContent =
-          `Your Nido now opens at ${detectedName}. Browsers bind passkeys to each domain address, so register a passkey here before approving from this name.`;
-        if ($registerLabel) $registerLabel.textContent = `Register passkey for ${detectedName}`;
-      }
+      void showPasskeyCardOrNoNido();
     } else if (shouldRegisterNamePasskey) {
       clearNamePasskeyParam();
     }
@@ -714,7 +715,22 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       );
     }
 
-    // Register passkey (when none exists yet).
+    // The passkey card, or, when no contract is deployed at this address, a
+    // "no Nido here" state instead. A failed lookup counts as deployed, so an
+    // RPC hiccup never hides the card from a real account.
+    async function showPasskeyCardOrNoNido() {
+      const deployed = contractId ? await accountDeployed(contractId).catch(() => true) : false;
+      if (deployed) {
+        $registerSection.classList.remove("hidden");
+        return;
+      }
+      document.getElementById("no-nido-section")!.classList.remove("hidden");
+      document.getElementById("no-nido-create-btn")!.addEventListener("click", () => {
+        window.location.href = createNido(window.location.host);
+      });
+    }
+
+    // Register a passkey for a name address (the ?namepasskey=1 takeover).
     // Returns true on success, false on failure (errors are surfaced via showError).
     async function runPasskeyRegistration(options?: { namePasskey?: boolean }): Promise<boolean> {
       clearError();
@@ -725,8 +741,6 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
         return false;
       }
       try {
-        $registerBtn.disabled = true;
-
         await withPasskeySheet(
           () => registerPasskey(),
           {
@@ -749,14 +763,8 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           showError(`Couldn't set up your passkey: ${err.message}`);
         }
         return false;
-      } finally {
-        $registerBtn.disabled = false;
       }
     }
-
-    $registerBtn.addEventListener("click", () => {
-      void runPasskeyRegistration(shouldRegisterNamePasskey ? { namePasskey: true } : undefined);
-    });
 
     // "Use your synced passkey": find a passkey this Nido already has
     // (lib/adoptPasskey.ts) instead of creating one the account doesn't know.

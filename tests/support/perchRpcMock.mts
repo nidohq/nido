@@ -132,6 +132,31 @@ function classicAccountEntry(g: string): { key: string; xdr: string; lastModifie
   };
 }
 
+/** A deployed contract's instance entry, as `getLedgerEntries` returns it. */
+function contractInstanceEntry(contractId: string): { key: string; xdr: string; lastModifiedLedgerSeq: number } {
+  const contract = Address.fromString(contractId).toScAddress();
+  const key = xdr.ScVal.scvLedgerKeyContractInstance();
+  const durability = xdr.ContractDataDurability.persistent();
+  return {
+    key: xdr.LedgerKey.contractData(new xdr.LedgerKeyContractData({ contract, key, durability })).toXDR('base64'),
+    xdr: xdr.LedgerEntryData.contractData(
+      new xdr.ContractDataEntry({
+        ext: new xdr.ExtensionPoint(0),
+        contract,
+        key,
+        durability,
+        val: xdr.ScVal.scvContractInstance(
+          new xdr.ScContractInstance({
+            executable: xdr.ContractExecutable.contractExecutableWasm(Buffer.alloc(32)),
+            storage: null,
+          }),
+        ),
+      }),
+    ).toXDR('base64'),
+    lastModifiedLedgerSeq: 1,
+  };
+}
+
 /** What the mocked chain does beyond answering views, for a page that
  *  signs and submits a transaction. */
 export interface ChainOptions {
@@ -140,6 +165,8 @@ export interface ChainOptions {
   selfAuthorizing?: string[];
   /** Classic accounts `getAccount` finds (a transaction's submitter). */
   classicAccounts?: string[];
+  /** Contracts deployed on the chain: `getLedgerEntries` finds their instance. */
+  deployedContracts?: string[];
   /** Filled with the invocation of every transaction sent; each lands. */
   submitted?: Invocation[];
 }
@@ -168,7 +195,10 @@ export async function mockPerchChain(
       if (body.method === 'getLatestLedger') return reply({ id: 'mock', protocolVersion: 23, sequence: ledger });
       if (body.method === 'getLedgerEntries') {
         const keys = body.params.keys as string[];
-        const entries = (chain.classicAccounts ?? []).map(classicAccountEntry).filter((e) => keys.includes(e.key));
+        const entries = [
+          ...(chain.classicAccounts ?? []).map(classicAccountEntry),
+          ...(chain.deployedContracts ?? []).map(contractInstanceEntry),
+        ].filter((e) => keys.includes(e.key));
         return reply({ entries, latestLedger: ledger });
       }
       if (body.method === 'sendTransaction') {
