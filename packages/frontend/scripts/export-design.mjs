@@ -3,7 +3,7 @@
 // The result is a static, JS-free snapshot of the whole site's *design*, suitable
 // for pasting into a Claude.ai artifact or opening directly in a browser.
 //
-//   npm run build            # refresh dist/ first
+//   PUBLIC_STELLAR_NETWORK=testnet npm run build   # refresh dist/ first
 //   node scripts/export-design.mjs
 //
 // Output: design-export/<name>.html  (+ an index listing)
@@ -22,7 +22,7 @@ const dist = join(root, "dist");
 const outDir = join(root, "design-export");
 
 if (!existsSync(dist)) {
-  console.error("dist/ not found — run `npm run build` first.");
+  console.error("dist/ not found — run `PUBLIC_STELLAR_NETWORK=testnet npm run build` first.");
   process.exit(1);
 }
 mkdirSync(outDir, { recursive: true });
@@ -75,8 +75,9 @@ function exportPage(srcRel, outFile) {
   html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
   html = html.replace(/<script\b[^>]*\/?>/gi, "");
 
-  // 3. Drop the favicon link (404s when opened standalone).
-  html = html.replace(/<link rel="icon"[^>]*>/g, "");
+  // 3. Drop the favicon, manifest and home-screen icon links (404 when
+  //    opened standalone).
+  html = html.replace(/<link rel="(?:icon|manifest|apple-touch-icon)"[^>]*>/g, "");
 
   // 3b. Reveal this page's primary state container(s): strip the `hidden` class
   //     and attribute from the matching element so its design is visible.

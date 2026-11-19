@@ -11,7 +11,7 @@ import { join } from 'node:path';
 const PORT = Number(process.env.E2E_PORT || 4399);
 const DIST_DIR = join(process.cwd(), 'packages/frontend/dist');
 const FAKE_CONTRACT_ID = 'CDLZFC2SYJYDZT7K7VJRL2CU7LQV6AFZ2K2QJLY7QV53KIGWXJOANPYY';
-const host = `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}`;
+const host = `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}`;
 
 function collectFatal(page: import('@playwright/test').Page): string[] {
   const errors: string[] = [];
@@ -51,7 +51,7 @@ test.describe('recovery pages — UI only (no chain) @fast', () => {
   });
 
   test('the explainer describes friends, a kit, or both @fast', async ({ page }) => {
-    await page.goto(`http://localhost:${PORT}/how-recovery-works/`, { waitUntil: 'networkidle' });
+    await page.goto(`http://nido.localhost:${PORT}/how-recovery-works/`, { waitUntil: 'networkidle' });
     await expect(page.getByText('Friends never hold a key')).toBeVisible();
   });
 });

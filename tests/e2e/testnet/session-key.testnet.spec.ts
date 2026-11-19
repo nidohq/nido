@@ -145,7 +145,7 @@ async function getMessageOnChain(target: string, author: string): Promise<string
  * @testnet — real-chain end-to-end of the session-key delegation ceremony.
  *
  * A dApp wants the account to grant a scoped session key. It opens
- * `<caddr>.localhost/security/delegate/?origin&target&pubkey&duration&return`.
+ * `<caddr>.nido.localhost/security/delegate/?origin&target&pubkey&duration&return`.
  * The account owner approves; the page builds
  * `add_context_rule({ context_type: CallContract(target), name:'session-key',
  * signers:[External(verifier, sessionPubkey)] })` and signs it with the PRIMARY
@@ -175,7 +175,7 @@ test.describe('@testnet session-key delegation install (primary-passkey signed)'
     // -----------------------------------------------------------------
 
     // 1) Home → create account (friendbot fund + factory.get_c_address).
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#create-btn').click();
     await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
     const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
@@ -186,7 +186,7 @@ test.describe('@testnet session-key delegation install (primary-passkey signed)'
     expect(setupHref).toContain('/new-account/');
     expect(setupHref).toContain('key=');
     const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-    const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
+    const host = `${cAddress.toLowerCase()}.nido.localhost:${PORT}`;
     await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
       waitUntil: 'domcontentloaded',
     });
@@ -309,11 +309,11 @@ test.describe('@testnet session-key delegation install (primary-passkey signed)'
     // `CallContract(TARGET)`) is the rule the session signer lands on and the
     // rule the session sign targets.
 
-    // 1) Open the status-message dApp on the apex origin (localhost) — the same
+    // 1) Open the status-message dApp on the apex origin (nido.localhost) — the same
     //    origin Part A's account-create used, where seedBank already seeded the
     //    fee payer (sm:keypairSecret). `loadSessionKeyMaterial` reads localStorage
     //    on THIS origin, so we seed the session material here.
-    await page.goto(`http://localhost:${PORT}/status-message/`, {
+    await page.goto(`http://nido.localhost:${PORT}/status-message/`, {
       waitUntil: 'domcontentloaded',
     });
     await expect(page.locator('#contract-input')).toBeVisible({ timeout: 30_000 });

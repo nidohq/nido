@@ -103,8 +103,8 @@ describe("buildClaimHandoffUrl", () => {
   });
   it("honours a custom protocol (dev http)", () => {
     const url = buildClaimHandoffUrl({
-      apexHost: "localhost:4321",
-      fromHost: "alice.localhost:4321",
+      apexHost: "nido.localhost:4321",
+      fromHost: "alice.nido.localhost:4321",
       claimName: "alice",
       claimerContractId: C1,
       claimerName: null,

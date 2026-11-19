@@ -97,8 +97,9 @@ PUBLIC_NIDO_BASE="https://nido.fyi"
 cannot be signed by a Nido account (it's a contract), but the status-message call
 is a Soroban invocation, which is exactly what Nido signs.
 
-> Passkeys require a secure context. Serve the Nido deployment over HTTPS (or
-> `localhost`); an insecure `http://<hostname>` origin disables WebAuthn.
+> Passkeys require a secure context. Serve the Nido deployment over HTTPS (or,
+> locally, at `nido.localhost`); an insecure `http://<hostname>` origin disables
+> WebAuthn.
 
 ## Tests & checks
 

@@ -6,7 +6,7 @@ import Nest from "../components/Nest.astro";
 import Toast from "../components/Toast.astro";
 import MyNidoMenu from "../components/MyNidoMenu.astro";
 import TrustSection from "../components/TrustSection.astro";
-import { EXACT_HOSTNAMES, HOSTNAME_SUFFIXES } from "../lib/allowAccountCreation";
+import { EXACT_HOSTNAMES, HOSTNAME_SUFFIXES, INVITE_URL } from "../lib/allowAccountCreation";
 import { NETWORK_NAME } from "../lib/network";
 
 const githubRepository = import.meta.env.PUBLIC_GITHUB_REPOSITORY as string | undefined;
@@ -66,6 +66,7 @@ const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : 
               Get started <Icon name="arrow" size={18} color="#fff" />
             </button>
           </div>
+          <div data-creation-soon class="mut" style="font-size: 12.5px; font-weight: 600; margin-top: 12px;">Mainnet is invite-only for now — <a class="link" href={INVITE_URL} target="_blank" rel="noopener">reach out for an invitation</a>.</div>
           {NETWORK_NAME === "testnet" && (
             <div data-creation-open class="mut" style="font-size: 12.5px; font-weight: 600; margin-top: 12px; display:inline-flex; align-items:center; gap:7px;"><span class="dot acc" style="width:7px;height:7px;border-radius:50%;background:var(--acc);display:inline-block;"></span> Demo on Stellar testnet — no real funds.</div>
           )}
@@ -167,6 +168,7 @@ const githubUrl = githubRepository ? `https://github.com/${githubRepository}` : 
         <button id="get-started-band" data-creation-open class="btn acc" style="width: auto; padding: 0 28px; height: 54px; margin: 26px auto 0; position: relative;">
           Get started <Icon name="arrow" size={18} color="#fff" />
         </button>
+        <div data-creation-soon class="mut" style="font-size: 12.5px; font-weight: 600; margin-top: 12px; position: relative;">Mainnet is invite-only for now — <a class="link" href={INVITE_URL} target="_blank" rel="noopener">reach out for an invitation</a>.</div>
       </section>
 
       <footer class="lp-foot">

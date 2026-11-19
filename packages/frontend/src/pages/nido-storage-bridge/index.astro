@@ -10,12 +10,17 @@
   </head>
   <body>
     <script>
-      import { answerBridgeRequest } from "../../lib/nidoSharedStorage";
+      // Keep this page's imports small: it must answer within moments on a
+      // slow phone (nidoSharedStorage.ts says what it may import).
+      import "../../lib/networkName";
+      import { answerBridgePageMessage } from "../../lib/nidoSharedStorage";
 
-      // Served framed by account and name origins only (see the route's
-      // frame-ancestors header); a request must come from the embedding window.
+      // Served framed by the wallet's own hosts only (see the route's
+      // frame-ancestors header); a request must come from the embedding
+      // window. On the apex this is the storage bridge for account and name
+      // origins; on an account origin it answers the apex's ownership probe.
       window.addEventListener("message", (event: MessageEvent) => {
-        const response = answerBridgeRequest(
+        const response = answerBridgePageMessage(
           {
             origin: event.origin,
             data: event.data,

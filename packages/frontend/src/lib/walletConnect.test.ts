@@ -36,9 +36,9 @@ describe('deriveBase', () => {
     expect(deriveBase(loc('status-message--100.test.nido.fyi'))).toBe('https://100.test.nido.fyi');
   });
 
-  it('keeps the scheme and port for localhost dev', () => {
-    expect(deriveBase(loc('status-message.localhost', 'http:', '4321'))).toBe('http://localhost:4321');
-    expect(deriveBase(loc('localhost', 'http:', '4321'))).toBe('http://localhost:4321');
+  it('keeps the scheme and port for local development', () => {
+    expect(deriveBase(loc('status-message.nido.localhost', 'http:', '4321'))).toBe('http://nido.localhost:4321');
+    expect(deriveBase(loc('nido.localhost', 'http:', '4321'))).toBe('http://nido.localhost:4321');
   });
 });
 

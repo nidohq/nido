@@ -1,0 +1,46 @@
+---
+// Shown on an account origin while the apex's sign-in list (what apps offer
+// at nido.fyi/connect/) has not confirmed this account: the storage bridge
+// didn't answer in time. The page keeps retrying in the background
+// (nidoSharedStorage.ts `requestBridgeSync`); this says so instead of failing
+// silently, and offers a manual retry. Hidden once the apex confirms.
+interface Props {
+  style?: string;
+}
+const { style } = Astro.props;
+---
+<div class="signin-notice alert warn hidden" role="status" aria-live="polite" style={style}>
+  <div class="signin-notice-text">
+    <div class="signin-notice-title">Not in your sign-in list yet</div>
+    <div class="mut signin-notice-body">
+      Apps can't offer this Nido when you connect until it is. We'll keep trying while this page is open.
+    </div>
+  </div>
+  <button type="button" class="btn soft sm signin-notice-retry">Try again</button>
+</div>
+
+<style>
+  .signin-notice { display: flex; align-items: center; gap: 12px; }
+  .signin-notice.hidden { display: none; }
+  .signin-notice-text { flex: 1; min-width: 0; }
+  .signin-notice-title { font-weight: 700; font-size: 14px; }
+  .signin-notice-body { font-size: 12.5px; line-height: 1.4; }
+  .signin-notice-retry { flex: 0 0 auto; }
+</style>
+
+<script>
+  import { onBridgeSyncStatus, requestBridgeSync } from "../lib/nidoSharedStorage";
+
+  for (const notice of document.querySelectorAll<HTMLElement>(".signin-notice")) {
+    const retry = notice.querySelector<HTMLButtonElement>(".signin-notice-retry")!;
+    let shown = false;
+    onBridgeSyncStatus((status) => {
+      // Appears on the first unanswered sync and stays through the retries.
+      shown = status === "unconfirmed" || (shown && status === "syncing");
+      notice.classList.toggle("hidden", !shown);
+      retry.disabled = status === "syncing";
+      retry.textContent = status === "syncing" ? "Trying…" : "Try again";
+    });
+    retry.addEventListener("click", () => void requestBridgeSync());
+  }
+</script>

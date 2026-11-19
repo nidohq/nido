@@ -17,10 +17,10 @@ const DIST_DIR = join(process.cwd(), 'packages/frontend/dist');
 
 // Deterministic fake C-address (valid strkey). The account page derives the
 // contractId from the subdomain via contractIdFromHostname() and uppercases it,
-// so visiting `<lower>.localhost` yields exactly FAKE_CONTRACT_ID.
+// so visiting `<lower>.nido.localhost` yields exactly FAKE_CONTRACT_ID.
 const FAKE_CONTRACT_ID = 'CDLZFC2SYJYDZT7K7VJRL2CU7LQV6AFZ2K2QJLY7QV53KIGWXJOANPYY';
 const SECOND_CONTRACT_ID = `C${'B'.repeat(55)}`;
-const ACCOUNT_URL = `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/account/`;
+const ACCOUNT_URL = `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/account/`;
 
 test.describe('account page — UI only (no chain) @fast', () => {
   test('built HTML contains name section elements @fast', () => {
@@ -110,7 +110,7 @@ test.describe('transfer page — UI only (no chain) @fast', () => {
       { first, second },
     );
 
-    await page.goto(`http://${first.toLowerCase()}.localhost:${PORT}/account/`, { waitUntil: 'load' });
+    await page.goto(`http://${first.toLowerCase()}.nido.localhost:${PORT}/account/`, { waitUntil: 'load' });
     await page.locator('[data-mynido-trigger]:visible').first().click();
 
     const panel = page.locator('[data-mynido-panel]:visible').first();

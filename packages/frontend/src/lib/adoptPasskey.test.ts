@@ -128,9 +128,9 @@ describe('adoptPasskeyPlace', () => {
       kind: 'elsewhere',
       url: `https://${C.toLowerCase()}--10.mysoroban.xyz/account/`,
     });
-    expect(adoptPasskeyPlace(C, { protocol: 'http:', host: 'alice.localhost:4321', hostname: 'alice.localhost' })).toEqual({
+    expect(adoptPasskeyPlace(C, { protocol: 'http:', host: 'alice.nido.localhost:4321', hostname: 'alice.nido.localhost' })).toEqual({
       kind: 'elsewhere',
-      url: `http://${C.toLowerCase()}.localhost:4321/account/`,
+      url: `http://${C.toLowerCase()}.nido.localhost:4321/account/`,
     });
   });
 

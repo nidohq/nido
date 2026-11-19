@@ -51,9 +51,9 @@ function matches(pattern: string, path: string): boolean {
   return path === pattern;
 }
 
-export function productionHeaders(path: string): Record<string, string> {
+export function productionHeaders(path: string, distDir: string = DIST_DIR): Record<string, string> {
   const headers: Record<string, string> = {};
-  for (const rule of parseHeaders(readFileSync(join(DIST_DIR, '_headers'), 'utf8'))) {
+  for (const rule of parseHeaders(readFileSync(join(distDir, '_headers'), 'utf8'))) {
     if (!matches(rule.pattern, path)) continue;
     for (const name of rule.detach) delete headers[name];
     for (const [name, value] of rule.set) headers[name] = value;
@@ -63,11 +63,19 @@ export function productionHeaders(path: string): Record<string, string> {
 
 /**
  * Route every request in `context`: `https://*.<apex>` and the extra
- * `origins` are served from the built site with production headers (`/__blank`
- * is an empty page there, for tests that need a bare origin); anything else is
- * aborted, so the run never reaches the network.
+ * `origins` are served from the built site (`distDir`, by default the fast
+ * tier's `dist`) with production headers (`/__blank` is an empty page there,
+ * for tests that need a bare origin); anything else is aborted, so the run
+ * never reaches the network. Routes added to `context` afterwards take
+ * precedence.
  */
-export async function serveProduction(context: BrowserContext, apex: string, origins: string[] = []) {
+export async function serveProduction(
+  context: BrowserContext,
+  apex: string,
+  origins: string[] = [],
+  distDir: string = DIST_DIR,
+) {
+  const dist = resolve(distDir) + '/';
   await context.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     const ours =
@@ -77,13 +85,13 @@ export async function serveProduction(context: BrowserContext, apex: string, ori
     if (url.pathname === '/__blank') {
       return route.fulfill({
         status: 200,
-        headers: { ...productionHeaders(url.pathname), 'content-type': 'text/html' },
+        headers: { ...productionHeaders(url.pathname, dist), 'content-type': 'text/html' },
         body: '<!doctype html><title>blank</title>',
       });
     }
-    let file = join(DIST_DIR, url.pathname);
+    let file = join(dist, url.pathname);
     if (!extname(file)) file = join(file, 'index.html');
-    if (!file.startsWith(DIST_DIR)) return route.fulfill({ status: 404, body: '' });
+    if (!file.startsWith(dist)) return route.fulfill({ status: 404, body: '' });
     let body: Buffer;
     try {
       body = readFileSync(file);
@@ -93,7 +101,7 @@ export async function serveProduction(context: BrowserContext, apex: string, ori
     return route.fulfill({
       status: 200,
       headers: {
-        ...productionHeaders(url.pathname),
+        ...productionHeaders(url.pathname, dist),
         'content-type': TYPES[extname(file)] ?? 'application/octet-stream',
       },
       body,

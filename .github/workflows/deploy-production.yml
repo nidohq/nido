@@ -3,11 +3,6 @@ name: Deploy Production
 # nido.fyi. Manual only (workflow_dispatch) — unlike deploy-testnet.yml, this
 # is never a side effect of merging to main, since it's the domain real
 # visitors land on.
-# Today nido.fyi still serves a testnet-configured build
-# (account creation is "coming soon" there regardless, via
-# allowAccountCreation.ts) — that's deliberate until a mainnet Perch
-# deployment and mainnet relayer exist. When they do, this workflow's env
-# vars below are the only things that need to change for the real cutover.
 
 # WARNING — PUBLIC_STELLAR_NETWORK/PUBLIC_RELAYER_URL/PUBLIC_RELAYER_SIM_SOURCE
 # below are now real mainnet values, but vars.PUBLIC_PERCH_DEPLOYMENT_MAINNET is

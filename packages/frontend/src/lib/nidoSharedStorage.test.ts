@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { StrKey } from "@stellar/stellar-sdk";
 import {
+  answerBridgePageMessage,
   answerBridgeRequest,
+  answerOwnerProbe,
   apexHostForHost,
+  bridgeSyncNeeded,
+  NIDO_OWNER_REQUEST,
   bridgeRequester,
   contributionFromRequester,
   localNidoSnapshot,
@@ -14,6 +18,7 @@ import {
 const A = StrKey.encodeContract(Buffer.alloc(32, 1));
 const B = StrKey.encodeContract(Buffer.alloc(32, 2));
 const a = A.toLowerCase();
+const b = B.toLowerCase();
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>();
@@ -64,8 +69,15 @@ describe("apexHostForHost", () => {
     expect(apexHostForHost("alice--126.test.nido.fyi")).toBe("126.test.nido.fyi");
   });
 
-  it("maps localhost account subdomains to localhost", () => {
-    expect(apexHostForHost("alice.localhost:4399")).toBe("localhost:4399");
+  it("maps local development subdomains to nido.localhost", () => {
+    expect(apexHostForHost("alice.nido.localhost:4399")).toBe("nido.localhost:4399");
+    expect(apexHostForHost(`${a}.nido.localhost:4399`)).toBe("nido.localhost:4399");
+  });
+
+  it("gives bare-localhost subdomains no shared apex", () => {
+    // `localhost` has no registrable domain, so browsers partition a bridge on
+    // it from `<c>.localhost`; the dev apex is `nido.localhost` instead.
+    expect(apexHostForHost(`${a}.localhost:4399`)).toBe(`${a}.localhost:4399`);
   });
 
   it("preserves numeric PR preview roots", () => {
@@ -124,7 +136,7 @@ describe("bridgeRequester", () => {
   });
 
   it("accepts plain http only on a loopback dev host", () => {
-    expect(bridgeRequester(`http://${a}.localhost:4399`, "localhost:4399")).toEqual({
+    expect(bridgeRequester(`http://${a}.nido.localhost:4399`, "nido.localhost:4399")).toEqual({
       kind: "account",
       contractId: A,
     });
@@ -320,5 +332,90 @@ describe("Nido account snapshot storage", () => {
       pending: [],
       names: { [A]: "alpha", [B]: "beta" },
     });
+  });
+});
+
+describe("unfinished setups whose secret expired", () => {
+  it("keeps a secret-less pending entry as an address", () => {
+    const store = new MemoryStorage({
+      "nido:testnet:pending": JSON.stringify([{ contractId: B }, { contractId: A, setupKey: "salt-a" }]),
+    });
+    expect(localNidoSnapshot(store).pending).toEqual([{ contractId: B }, { contractId: A, setupKey: "salt-a" }]);
+  });
+
+  it("never takes back a secret this origin already dropped", () => {
+    const store = new MemoryStorage({ "nido:testnet:pending": JSON.stringify([{ contractId: B }]) });
+    mergeNidoSnapshot({ accounts: [], pending: [{ contractId: B, setupKey: "salt-b" }], names: {} }, store);
+    expect(localNidoSnapshot(store).pending).toEqual([{ contractId: B }]);
+  });
+});
+
+describe("what the apex has confirmed", () => {
+  const accountHost = { host: `${b}.nido.fyi` };
+
+  it("needs a sync while this origin's own account is unconfirmed", () => {
+    const store = new MemoryStorage({ "nido:testnet:accounts": JSON.stringify([B]) });
+    expect(bridgeSyncNeeded(accountHost, store)).toBe(true);
+    store.setItem(`nido:testnet:bridge:confirmed:${B}`, "pending");
+    expect(bridgeSyncNeeded(accountHost, store)).toBe(true);
+    store.setItem(`nido:testnet:bridge:confirmed:${B}`, "active");
+    expect(bridgeSyncNeeded(accountHost, store)).toBe(false);
+  });
+
+  it("needs nothing on the apex, on a name origin, or without an own account", () => {
+    const store = new MemoryStorage({ "nido:testnet:accounts": JSON.stringify([A, B]) });
+    expect(bridgeSyncNeeded({ host: "nido.fyi" }, store)).toBe(false);
+    expect(bridgeSyncNeeded({ host: "alice.nido.fyi" }, store)).toBe(false);
+    expect(bridgeSyncNeeded(accountHost, new MemoryStorage())).toBe(false);
+  });
+});
+
+describe("the ownership probe (apex asks an account origin)", () => {
+  const probe = { type: NIDO_OWNER_REQUEST, id: "p1" };
+  const withPasskey = () =>
+    new MemoryStorage({ [`passkey:${B}:credentialId`]: "cred", [`passkey:${B}:publicKey`]: "04ab" });
+
+  it("answers its own apex whether this origin holds the account's passkey record", () => {
+    const ask = (store: MemoryStorage) =>
+      answerOwnerProbe({ origin: "https://nido.fyi", data: probe, fromParent: true }, `${b}.nido.fyi`, store);
+    expect(ask(withPasskey())).toEqual({ type: "nido:owner:response:v1", id: "p1", contractId: B, hasPasskey: true });
+    expect(ask(new MemoryStorage({ [`passkey:${B}:credentialId`]: "cred" }))?.hasPasskey).toBe(false);
+    expect(ask(new MemoryStorage({ [`passkey:${A}:credentialId`]: "x", [`passkey:${A}:publicKey`]: "y" }))?.hasPasskey).toBe(
+      false,
+    );
+  });
+
+  it("answers its own testnet apex and a loopback dev apex", () => {
+    expect(
+      answerOwnerProbe(
+        { origin: "https://test.nido.fyi", data: probe, fromParent: true },
+        `${b}.test.nido.fyi`,
+        withPasskey(),
+      )?.hasPasskey,
+    ).toBe(true);
+    expect(
+      answerOwnerProbe({ origin: "http://nido.localhost:4321", data: probe, fromParent: true }, `${b}.nido.localhost:4321`, withPasskey())
+        ?.hasPasskey,
+    ).toBe(true);
+  });
+
+  it("answers no one else", () => {
+    const ask = (origin: string, host = `${b}.nido.fyi`, fromParent = true, data: unknown = probe) =>
+      answerOwnerProbe({ origin, data, fromParent }, host, withPasskey());
+    expect(ask("https://nido.fyi", `${b}.nido.fyi`, false)).toBeNull();
+    expect(ask("http://nido.fyi")).toBeNull();
+    expect(ask("https://test.nido.fyi")).toBeNull();
+    expect(ask(`https://${a}.nido.fyi`)).toBeNull();
+    expect(ask("https://evil.example")).toBeNull();
+    expect(ask("https://nido.fyi", "alice.nido.fyi")).toBeNull();
+    expect(ask("https://nido.fyi", "nido.fyi")).toBeNull();
+    expect(ask("https://nido.fyi", `${b}.nido.fyi`, true, { type: "nido:owner:request:v0", id: "p1" })).toBeNull();
+  });
+
+  it("the bridge page is the storage bridge on the apex and the probe elsewhere", () => {
+    const fromAccount = { origin: `https://${b}.nido.fyi`, data: probe, fromParent: true };
+    expect(answerBridgePageMessage(fromAccount, "nido.fyi")).toBeNull();
+    const fromApex = { origin: "https://nido.fyi", data: { type: NIDO_STORAGE_REQUEST, id: "r1", snapshot: null }, fromParent: true };
+    expect(answerBridgePageMessage(fromApex, `${b}.nido.fyi`)).toBeNull();
   });
 });

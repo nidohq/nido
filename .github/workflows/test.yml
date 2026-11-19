@@ -150,6 +150,13 @@ jobs:
       # the e2e job).
       - name: Frontend docs section
         run: npx vitest run --root packages/frontend src/lib/docs
+      # The sign-in list's storage: keys that refuse an unset network, setup
+      # expiry that keeps the address, the storage bridge and its ownership
+      # probe, and the list's one-time migration.
+      - name: Wallet storage and sign-in list
+        run: |
+          npx vitest run --root packages/passkey-sdk src/storage.test.ts
+          npx vitest run --root packages/frontend src/lib/nidoSharedStorage.test.ts src/lib/bridgeSyncConfirm.test.ts src/lib/accountMigration.test.ts src/lib/runAccountMigration.test.ts src/lib/storageNamespace.test.ts src/lib/accountLinks.test.ts
 
   e2e:
     name: E2E (fast UI + CDP)
@@ -181,14 +188,28 @@ jobs:
       # deployment and the recovery pages say so (recovery-pages.spec.ts).
       - name: Build frontend
         env:
+          PUBLIC_STELLAR_NETWORK: testnet
           PUBLIC_PERCH_DEPLOYMENT: none
         run: npx astro build --root ./packages/frontend
       # The same pages against a fixture deployment, for the specs that
       # drive a recovery page over a mocked chain (tests/support/perchRpcMock.mts).
       - name: Build frontend (fixture Perch deployment)
+        env:
+          PUBLIC_STELLAR_NETWORK: testnet
         run: |
           PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.json)" \
             npx astro build --root ./packages/frontend --outDir ./dist-perch
+      # Built for mainnet against a fixture deployment, with a relayer, for the
+      # specs that run account setup end to end over a mocked chain and
+      # relayer (tests/support/setupFlowMock.ts).
+      - name: Build frontend (mainnet, fixture Perch deployment)
+        env:
+          PUBLIC_STELLAR_NETWORK: mainnet
+          PUBLIC_RELAYER_URL: https://relayer.nido.test
+          PUBLIC_RELAYER_SIM_SOURCE: GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL
+        run: |
+          PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.mainnet.json)" \
+            npx astro build --root ./packages/frontend --outDir ./dist-mainnet
       - name: Fast UI e2e tier (shim — chromium/firefox/webkit)
         run: npx playwright test --grep @fast
       - name: Chromium CDP virtual-authenticator fidelity lane

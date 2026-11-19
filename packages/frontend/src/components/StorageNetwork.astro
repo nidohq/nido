@@ -1,0 +1,11 @@
+---
+// Sets the wallet's storage network (lib/networkName.ts) from the first script
+// on the page. Module scripts run in document order, and passkey-sdk `nidoKey`
+// throws until the network is set, so a component that reads storage (the
+// sidebar's account name) must not depend on a page script further down
+// having done it. NidoLayout renders this first in <head>.
+---
+
+<script>
+  import "../lib/networkName";
+</script>

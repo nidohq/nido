@@ -5,6 +5,7 @@ import Nest from "../../components/Nest.astro";
 import Icon from "../../components/Icon.astro";
 import Toast from "../../components/Toast.astro";
 import PasskeySheet from "../../components/PasskeySheet.astro";
+import SignInListNotice from "../../components/SignInListNotice.astro";
 import { NETWORK_LABEL } from "../../lib/network";
 ---
 
@@ -29,6 +30,7 @@ import { NETWORK_LABEL } from "../../lib/network";
     </div>
 
     <div id="error-box" role="alert" class="alert danger" style="display:none; margin-bottom:18px;"></div>
+    <SignInListNotice style="margin-bottom:18px;" />
 
     <!-- ===================== STEP 1 · LOCK IT TO YOU ===================== -->
     <section id="passkey-section">
@@ -142,6 +144,10 @@ import { NETWORK_LABEL } from "../../lib/network";
             <span class="check-text">Your Nido is ready</span>
           </div>
         </div>
+        <!-- Shown when "Finalizing your wallet" fails; resumes only that step. -->
+        <button id="finalize-retry" type="button" class="btn acc hidden" style="margin-top:22px; width:100%; max-width:340px;">
+          <span>Try again</span>
+        </button>
       </div>
     </section>
 
@@ -242,13 +248,15 @@ import { NETWORK_LABEL } from "../../lib/network";
   import { fetchFactoryAddress } from "../../lib/policyChainFetch.js";
   import { newAccountRefusal, setupAddressMismatch } from "../../lib/newAccount/deployGuard";
   import { accountDeployed, verifyNewNidoAccount } from "../../lib/newAccount/verifyNewAccount";
+  import { fundWallet, type FundingProgress, type FundWalletDeps } from "../../lib/newAccount/fundWallet";
+  import { simulateRead } from "../../lib/simulateRead";
   import { parseReturnIntent, buildClaimReturnUrl } from "../../lib/claimFlow";
   import { withPasskeySheet } from "../../lib/passkeySheet";
   import { shortAddr } from "../../lib/address";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
-  import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL } from "../../lib/network";
+  import { RELAYER_SIM_SOURCE, RELAYER_URL, NETWORK_PASSPHRASE, RPC_URL, NATIVE_SAC_ID } from "../../lib/network";
   import { extractFuncAndAuth, submitSorobanTransaction, waitForConfirmation } from "../../lib/relayerClient";
-  import { syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
+  import { requestBridgeSync, type BridgeSyncResult } from "../../lib/nidoSharedStorage";
   import { signAndSubmit } from "../../lib/primaryPasskeySigner";
 
   // --- State ---
@@ -310,6 +318,16 @@ import { NETWORK_LABEL } from "../../lib/network";
   // /security/recovery/ (its first apply_doc carries the recovery member).
   let setUpRecoveryAfter = false;
 
+  // --- Finalizing (funding) ---
+  //
+  // The top-up the finalize step has asked for, kept across its retries, and
+  // the run in flight (one at a time).
+  const fundingProgress: FundingProgress = { hash: null };
+  let finalizing: Promise<void> | null = null;
+  // The sign-in list handoff started when the account was activated; the
+  // hand-off to the wallet waits for its answer (bounded by its own budget).
+  let signInListHandoff: Promise<BridgeSyncResult> | null = null;
+
   // --- UI refs ---
 
   const $contractIdEl = document.getElementById("contract-id")!;
@@ -329,6 +347,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   const $deployNestSpinning = document.getElementById("deploy-nest-spinning")!;
   const $deployNestStatic = document.getElementById("deploy-nest-static")!;
   const $doneSection = document.getElementById("done-section")!;
+  const $finalizeRetry = document.getElementById("finalize-retry") as HTMLButtonElement;
   const $step1 = document.getElementById("step-1")!;
   const $step2 = document.getElementById("step-2")!;
 
@@ -346,7 +365,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   // Animated "Setting up your Nido" checklist — full-sized boxed checkbox cards.
   // Each step is one of: "pending" (dim box) · "active" (spinner) · "done" (teal
   // checkmark). "Finalizing your wallet" is backed by a relayer-funded treasury
-  // transfer (see fundAccount), run after deploy and never surfaced as a detail.
+  // transfer (see finalizeWallet / lib/newAccount/fundWallet.ts), run after deploy and never surfaced as a detail.
   const CHECK_LABELS = ["check-0", "check-1", "check-2", "check-3", "check-4", "check-5"];
 
   function renderCheck(i: number, state: "pending" | "active" | "done") {
@@ -375,7 +394,7 @@ import { NETWORK_LABEL } from "../../lib/network";
     }
   }
 
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
   function paramsFromHash(): URLSearchParams {
     return new URLSearchParams(window.location.hash.replace(/^#/, ""));
@@ -400,7 +419,7 @@ import { NETWORK_LABEL } from "../../lib/network";
 
   // `Secure` keeps the setup salt — which decides who owns the derived address
   // — off plain-HTTP requests. Gated on `isSecureContext` so it is set on HTTPS
-  // and on localhost (both secure contexts) but omitted on a plain-HTTP dev
+  // and on nido.localhost (both secure contexts) but omitted on a plain-HTTP dev
   // origin, where a `Secure` cookie would silently fail to write.
   function setupCookieSecure(): string {
     return window.isSecureContext ? "; Secure" : "";
@@ -439,43 +458,49 @@ import { NETWORK_LABEL } from "../../lib/network";
       : new Error("Funded setup account is not available yet.");
   }
 
-  async function fundAccount(server: rpc.Server, destination: string): Promise<void> {
-    if (!RELAYER_URL) {
-      throw new Error("Relayer is not configured for account funding.");
-    }
-    const resp = await fetch(`${RELAYER_URL}/fund`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ params: { destination } }),
-    });
-    const body = await resp.json().catch(() => null);
-    if (!resp.ok || !body?.success) {
-      // A slow plugin cold-start can blow the relayer's own plugin timeout
-      // (see docs/ISSUE_DRAFT_plugin_pool_orphaned_processes.md), which comes
-      // back with no JSON error and an empty statusText — fall back to the
-      // HTTP status itself rather than showing a bare "Funding failed:".
-      throw new Error(`Funding failed: ${body?.error || resp.statusText || `HTTP ${resp.status}`}`);
-    }
-    const sendHash = body.data?.hash as string | undefined;
-    if (!sendHash) {
-      throw new Error("Funding succeeded but returned no transaction hash");
-    }
-
-    // The funder plugin submits straight to Soroban RPC (bypassing the
-    // relayer's own transaction tracking, which has a sequence-number bug —
-    // see docs/ISSUE_DRAFT_sequence_number_precision_loss.md), so we poll
-    // the same RPC endpoint directly for confirmation rather than the
-    // relayer's own status API.
-    let got = await server.getTransaction(sendHash);
-    let attempts = 0;
-    while (got.status === "NOT_FOUND" && attempts < 20) {
-      await sleep(1000);
-      got = await server.getTransaction(sendHash);
-      attempts++;
-    }
-    if (got.status !== "SUCCESS") {
-      throw new Error(`Funding transaction did not complete: ${got.status}`);
-    }
+  // What "Finalizing your wallet" talks to: the relayer's /fund and the RPC.
+  function fundingDeps(server: rpc.Server): FundWalletDeps {
+    return {
+      async requestFunding(destination) {
+        if (!RELAYER_URL) {
+          throw new Error("Relayer is not configured for account funding.");
+        }
+        const resp = await fetch(`${RELAYER_URL}/fund`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ params: { destination } }),
+        });
+        const body = await resp.json().catch(() => null);
+        if (!resp.ok || !body?.success) {
+          // A slow plugin cold-start can blow the relayer's own plugin timeout
+          // (see docs/ISSUE_DRAFT_plugin_pool_orphaned_processes.md), which comes
+          // back with no JSON error and an empty statusText — fall back to the
+          // HTTP status itself rather than showing a bare "Funding failed:".
+          throw new Error(`Funding failed: ${body?.error || resp.statusText || `HTTP ${resp.status}`}`);
+        }
+        return {
+          hash: (body.data?.hash as string | null | undefined) ?? null,
+          status: body.data?.status,
+          alreadyFunded: body.data?.alreadyFunded === true,
+        };
+      },
+      // The funder plugin submits straight to Soroban RPC (bypassing the
+      // relayer's own transaction tracking, which has a sequence-number bug —
+      // see docs/ISSUE_DRAFT_sequence_number_precision_loss.md), so we poll
+      // the same RPC endpoint directly for confirmation rather than the
+      // relayer's own status API.
+      async topUpStatus(hash) {
+        return (await server.getTransaction(hash)).status;
+      },
+      async nativeBalance(destination) {
+        const raw = await simulateRead(server, NATIVE_SAC_ID, "balance", [
+          Address.fromString(destination).toScVal(),
+        ]);
+        if (typeof raw !== "bigint") throw new Error("Balance read failed");
+        return raw;
+      },
+      sleep,
+    };
   }
 
   // --- Init: surface the contract id ---
@@ -493,8 +518,14 @@ import { NETWORK_LABEL } from "../../lib/network";
     showError("That link looks off. Please start again from the home page.");
   }
 
-  if (!saltHex) {
-    showError("We're missing some setup data. Please start again from the home page.");
+  const missingSetupData = "We're missing some setup data. Please start again from the home page.";
+  // A resumed setup whose secret expired (30 minutes) can still be finished
+  // when its account already exists with this device's passkey (see
+  // takeOverIfDeployed at the end of this script); otherwise there is
+  // nothing left to resume from.
+  const resumingWithoutSecret = !saltHex && !!contractId && !isSetupReservation;
+  if (!saltHex && !resumingWithoutSecret) {
+    showError(missingSetupData);
   }
 
   if (isSetupReservation && saltHex) {
@@ -644,14 +675,20 @@ import { NETWORK_LABEL } from "../../lib/network";
   // account and finishes it, or refuses it. Resolves true when it took over
   // the page. An address that can't be read in a few seconds falls through
   // to the passkey step (the passkey prompt must not wait on a slow RPC);
-  // deploy() reads it again before submitting anything.
+  // deploy() reads it again before submitting anything. This needs no setup
+  // secret, so it also finishes a setup whose secret expired; there no
+  // passkey step follows, so the read is waited for, and one that fails
+  // rejects and is not remembered (finishWithoutSecret offers another try).
   let existingAccountCheck: Promise<boolean> | null = null;
   function takeOverIfDeployed(): Promise<boolean> {
     if (!existingAccountCheck) {
-      existingAccountCheck = (async (): Promise<boolean> => {
-        if (!contractId || !saltHex || isSetupReservation) return false;
-        const unread = sleep(4000).then(() => false);
-        if (!(await Promise.race([accountDeployed(contractId).catch(() => false), unread]))) return false;
+      const check = (async (): Promise<boolean> => {
+        if (!contractId || isSetupReservation) return false;
+        const read = accountDeployed(contractId);
+        const deployed = resumingWithoutSecret
+          ? await read
+          : await Promise.race([read.catch(() => false), sleep(4000).then(() => false)]);
+        if (!deployed) return false;
         const stored = loadCredential(contractId);
         if (!stored) {
           refuseSetup(newAccountRefusal("key").message);
@@ -664,8 +701,22 @@ import { NETWORK_LABEL } from "../../lib/network";
         proceedToDeploy();
         return true;
       })();
+      existingAccountCheck = check;
+      check.catch(() => {
+        existingAccountCheck = null;
+      });
     }
     return existingAccountCheck;
+  }
+
+  // A setup whose secret expired: finish the account if it exists, say so if
+  // it doesn't, and leave the button for another try if the chain can't be read.
+  async function finishWithoutSecret() {
+    try {
+      if (!(await takeOverIfDeployed())) showError(missingSetupData);
+    } catch {
+      showError("We couldn't check on your Nido. Check your connection, then tap the button to try again.");
+    }
   }
 
   async function reserveNidoAddress(): Promise<string> {
@@ -698,7 +749,7 @@ import { NETWORK_LABEL } from "../../lib/network";
     const cAddress = Address.fromScVal(sim.result.retval).toString();
     savePendingAccount(cAddress, saltHex!);
     saveSetupSaltCookie(cAddress, saltHex!);
-    await syncNidoStorageViaBridge();
+    void requestBridgeSync();
     return cAddress;
   }
 
@@ -777,13 +828,6 @@ import { NETWORK_LABEL } from "../../lib/network";
       return;
     }
 
-    // Refuse a hostname/salt-mismatched setup link BEFORE creating a passkey.
-    const mismatch = await checkSetupConsistency();
-    if (mismatch) {
-      showError(mismatch);
-      return;
-    }
-    if (await takeOverIfDeployed()) return;
     // A retry after a failed deploy keeps the passkey already registered for
     // this address: an earlier submission may still land with it, and a new
     // passkey would then never match the account.
@@ -791,6 +835,19 @@ import { NETWORK_LABEL } from "../../lib/network";
       proceedToDeploy();
       return;
     }
+
+    if (resumingWithoutSecret) {
+      await finishWithoutSecret();
+      return;
+    }
+
+    // Refuse a hostname/salt-mismatched setup link BEFORE creating a passkey.
+    const mismatch = await checkSetupConsistency();
+    if (mismatch) {
+      showError(mismatch);
+      return;
+    }
+    if (await takeOverIfDeployed()) return;
 
     try {
       $registerBtn.disabled = true;
@@ -818,7 +875,7 @@ import { NETWORK_LABEL } from "../../lib/network";
   // button for a manual tap. No sheet here, so the fallback doesn't flicker; the
   // OS dialog is the prompt on browsers that allow it.
   async function attemptAutoPasskey() {
-    if (!contractId || !checkPasskeySupport().ok) return;
+    if (!contractId || resumingWithoutSecret || !checkPasskeySupport().ok) return;
     // Silently skip the auto-prompt on a mismatched setup link; the manual tap
     // surfaces the error. (Guard before any passkey is created.)
     if (await checkSetupConsistency()) return;
@@ -901,14 +958,18 @@ import { NETWORK_LABEL } from "../../lib/network";
 
   async function deploy() {
     clearError();
-    if (!passkeyPublicKey || !saltHex) {
+    if (!passkeyPublicKey) {
       showError("Register a passkey first and ensure setup data is present.");
       return;
     }
 
     // Re-assert hostname/salt consistency before we submit, activate or fund —
     // never deploy one account (salt-derived) while funding another (hostname).
-    const mismatch = await checkSetupConsistency();
+    // Without the setup secret (it expired) nothing can be submitted, and only
+    // an account already created for this device's passkey is finished: the
+    // check after deployment below proves exactly that for the hostname's
+    // account.
+    const mismatch = saltHex ? await checkSetupConsistency() : null;
     if (mismatch) {
       showError(mismatch);
       return;
@@ -924,6 +985,8 @@ import { NETWORK_LABEL } from "../../lib/network";
       // check below tells which.
       if (await accountDeployed(contractId!)) {
         setCheckProgress(3, 3);
+      } else if (!saltHex) {
+        throw new Error("this setup expired before your Nido was created. Please start again from the home page.");
       } else {
         await submitCreateAccount(server, passkeyPublicKey);
       }
@@ -939,64 +1002,16 @@ import { NETWORK_LABEL } from "../../lib/network";
       activateAccount(contractId!);
       clearSetupSaltCookie(contractId!);
       saltHex = null;
-      await syncNidoStorageViaBridge();
+      // Hand the account to the apex's sign-in list. Setup goes on while the
+      // bridge answers (it can take seconds on a slow phone); an unanswered
+      // handoff is retried in the background, here and on every later page
+      // load of this account, and shown (SignInListNotice) until it lands.
+      signInListHandoff = requestBridgeSync();
 
       // Checked — 3 done, 4 · "Finalizing your wallet" begins. Funds the new
       // account directly from the relayer's `fund` treasury; must follow the
       // check above since the account contract is the destination.
-      setCheckProgress(4, 4);
-      try {
-        await fundAccount(server, contractId!);
-      } catch (fundingErr) {
-        console.warn("[nido] wallet finalize failed", fundingErr);
-        renderCheck(4, "pending");
-        renderCheck(5, "pending");
-        $deployNestSpinning.style.display = "none";
-        $deployNestStatic.style.display = "block";
-        showError(
-          fundingErr instanceof Error
-            ? `Couldn't finish setting up your wallet: ${fundingErr.message}`
-            : "Couldn't finish setting up your wallet."
-        );
-        return;
-      }
-
-      // Finalized — every card lands its checkmark, including "Your Nido is ready".
-      setCheckProgress(6, -1);
-      $deployNestSpinning.style.display = "none";
-      $deployNestStatic.style.display = "block";
-
-      // Wire up the done screen.
-      const protocol = window.location.protocol;
-      const host = window.location.host;
-      const accountUrl = setUpRecoveryAfter
-        ? `${protocol}//${host}/security/recovery/`
-        : `${protocol}//${host}/account/`;
-
-      // Brief beat so the final check lands before the reveal.
-      await new Promise((r) => setTimeout(r, 700));
-      $deploySection.classList.add("hidden");
-      $doneSection.classList.remove("hidden");
-      $step2.classList.remove("on");
-      $step2.classList.add("done");
-
-      // F-02: auto-advance into the wallet after a brief "ready" beat — arriving
-      // in the funded wallet is the payoff, and the deploy copy already promised
-      // an automatic hand-off.
-      setTimeout(() => {
-        const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
-        if (intent) {
-          const apexHost = stripSubdomain(window.location.host);
-          window.location.href = buildClaimReturnUrl({
-            apexHost,
-            name: intent.name,
-            contractId: contractId!,
-            protocol: window.location.protocol,
-          });
-        } else {
-          window.location.href = accountUrl;
-        }
-      }, 1500 + 2200);
+      await finalizeWallet();
     } catch (err: any) {
       if (err instanceof perch.NewAccountRefused) {
         const refusal = newAccountRefusal(err.problem);
@@ -1016,7 +1031,87 @@ import { NETWORK_LABEL } from "../../lib/network";
     }
   }
 
+  // 4 · "Finalizing your wallet", then the hand-off. A failure leaves the
+  // account deployed and activated, so the retry button resumes here instead
+  // of redeploying; fundWallet waits on a top-up already sent (fundingProgress)
+  // and then re-asks the relayer, whose once-per-destination record
+  // (infra/relayer/plugins/funder/fundOnce.ts) is what stops a second payment.
+  function finalizeWallet(): Promise<void> {
+    finalizing ??= runFinalizeWallet().finally(() => {
+      finalizing = null;
+    });
+    return finalizing;
+  }
+
+  async function runFinalizeWallet() {
+    clearError();
+    $finalizeRetry.classList.add("hidden");
+    $deployNestSpinning.style.display = "";
+    $deployNestStatic.style.display = "none";
+    setCheckProgress(4, 4);
+    try {
+      await fundWallet(contractId!, fundingProgress, fundingDeps(new rpc.Server(RPC_URL)));
+    } catch (fundingErr) {
+      console.warn("[nido] wallet finalize failed", fundingErr);
+      renderCheck(4, "pending");
+      renderCheck(5, "pending");
+      $deployNestSpinning.style.display = "none";
+      $deployNestStatic.style.display = "block";
+      $finalizeRetry.classList.remove("hidden");
+      showError(
+        fundingErr instanceof Error
+          ? `Couldn't finish setting up your wallet: ${fundingErr.message}`
+          : "Couldn't finish setting up your wallet."
+      );
+      return;
+    }
+
+    // Finalized — every card lands its checkmark, including "Your Nido is ready".
+    setCheckProgress(6, -1);
+    $deployNestSpinning.style.display = "none";
+    $deployNestStatic.style.display = "block";
+
+    // Wire up the done screen.
+    const protocol = window.location.protocol;
+    const host = window.location.host;
+    const accountUrl = setUpRecoveryAfter
+      ? `${protocol}//${host}/security/recovery/`
+      : `${protocol}//${host}/account/`;
+
+    // Brief beat so the final check lands before the reveal.
+    await new Promise((r) => setTimeout(r, 700));
+    $deploySection.classList.add("hidden");
+    $doneSection.classList.remove("hidden");
+    $step2.classList.remove("on");
+    $step2.classList.add("done");
+
+    // F-02: auto-advance into the wallet after a brief "ready" beat — arriving
+    // in the funded wallet is the payoff, and the deploy copy already promised
+    // an automatic hand-off.
+    setTimeout(async () => {
+      // Leaving the page would cut the sign-in list handoff short.
+      await signInListHandoff;
+      const intent = parseReturnIntent(new URLSearchParams(window.location.search).get("then"));
+      if (intent) {
+        const apexHost = stripSubdomain(window.location.host);
+        window.location.href = buildClaimReturnUrl({
+          apexHost,
+          name: intent.name,
+          contractId: contractId!,
+          protocol: window.location.protocol,
+        });
+      } else {
+        window.location.href = accountUrl;
+      }
+    }, 1500 + 2200);
+  }
+
+  $finalizeRetry.addEventListener("click", () => {
+    void finalizeWallet();
+  });
+
   // A resumed setup whose address already holds a contract is settled before
   // the passkey step is offered (see takeOverIfDeployed).
-  void takeOverIfDeployed();
+  if (resumingWithoutSecret) void finishWithoutSecret();
+  else void takeOverIfDeployed();
 </script>

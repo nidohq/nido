@@ -1,13 +1,11 @@
 ---
-// Nido "Warm Nest" layout — sibling to BaseLayout.astro (BaseLayout is left
-// untouched). Imports the Nido design system globally so `:root` tokens are
-// available everywhere, loads the brand fonts, and renders the prototype shell
+// Nido "Warm Nest" layout. Imports the Nido design system globally so `:root`
+// tokens are available everywhere, loads the brand fonts, links the web app
+// manifest and home-screen icons, and renders the prototype shell
 // (.stage / .appwrap / .col) around the page <slot/>.
-//
-// The PR-preview banner and in-app-WebView passkey-warning scripts are ported
-// from BaseLayout: the DETECTION LOGIC is byte-for-byte identical; only the
-// warning's COPY is reskinned to Nido voice.
 import Sidebar from "../components/Sidebar.astro";
+import StorageNetwork from "../components/StorageNetwork.astro";
+import { APP_NAME } from "../lib/network";
 
 interface Props {
   title: string;
@@ -37,11 +35,22 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <StorageNetwork />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#FFF8F0" />
     <meta name="color-scheme" content="light" />
     <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Installed app: manifest (pages/manifest.webmanifest.ts) for Android and
+         desktop, the apple-* tags for iOS, which takes its icon and title from
+         these rather than the manifest. Icons: scripts/generate-icons.mjs. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content={APP_NAME} />
     <title>{!title || title.includes('Nido') ? title || 'Nido' : `${title} · Nido`}</title>
     <meta name="description" content={description} />
 
@@ -155,7 +164,7 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
 </style>
 
 <script>
-  import { checkPasskeySupport } from "../lib/passkeySupport";
+  import { checkPasskeySupport, isInAppBrowser } from "../lib/passkeySupport";
 
   // Preview banner
   const sub = window.location.hostname.split(".")[0];
@@ -173,12 +182,11 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
   //  · insecure context (http over Tailscale/LAN): the browser disables
   //    passkeys; the fix is the https:// address, NOT "open in Safari".
   //  · in-app WebView (Twitter/Instagram/…): passkeys can't run; open the real
-  //    browser. Real Safari/SFSafariViewController include both "Safari" and
-  //    "Version/"; WKWebViews omit "Version/".
-  const ua = navigator.userAgent;
-  const isIOS = /iPhone|iPad|iPod/.test(ua);
-  const isInAppBrowser = (isIOS && (!/Safari/.test(ua) || !/Version\//.test(ua)))
-    || /Twitter|Instagram|FBAN|FBAV|Line\//.test(ua);
+  //    browser.
+  const inAppBrowser = isInAppBrowser(
+    navigator.userAgent,
+    (navigator as Navigator & { standalone?: boolean }).standalone === true,
+  );
 
   const support = checkPasskeySupport();
   const warning = document.getElementById("webview-warning")!;
@@ -187,9 +195,9 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
     // Replace the in-app copy with the secure-connection message.
     warning.innerHTML =
       "<p>Passkeys need a secure connection to work.</p>" +
-      "<p>Open Nido at its <strong>https://</strong> address (or on <strong>localhost</strong>) and you're all set.</p>";
+      "<p>Open Nido at its <strong>https://</strong> address (or, in local development, on <strong>nido.localhost</strong>) and you're all set.</p>";
     warning.style.display = "block";
-  } else if (isInAppBrowser || !support.ok) {
+  } else if (inAppBrowser || !support.ok) {
     // In-app browser, or a secure context that still can't do WebAuthn — the
     // default markup ("open in your browser") is the right advice.
     warning.style.display = "block";
