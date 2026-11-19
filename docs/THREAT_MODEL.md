@@ -222,7 +222,9 @@ and infrastructure bring.
     The verifier is NethermindEth's UltraHonk verifier, audited by
     OpenZeppelin for the non-ZK flavor only, plus Perch's delta for the ZK
     flavor: one new file and visibility-only changes, itemized in
-    AUDIT_SCOPE.md. A test checks that every other byte is upstream's.
+    AUDIT_SCOPE.md. A test checks that every other byte of the upstream
+    files is upstream's; `Cargo.toml` is pinned by hash but not compared
+    with upstream.
 
     **The trade-off.** **The delta is not audited**, and recovery's ZK factor
     rests on it: a bug in it could let a forged proof pass as the recovery
