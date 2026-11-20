@@ -6,9 +6,14 @@ export type {
 
 export {
   extractPublicKey,
+  isOnP256Curve,
   parseAttestationObject,
+  parseAttestedCredential,
   parseRegistration,
+  publicKeyFromSpki,
+  PasskeyRegistrationError,
 } from "./webauthn.js";
+export type { AttestedCredential } from "./webauthn.js";
 
 export { derToCompact } from "./signature.js";
 
