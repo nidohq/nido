@@ -10,7 +10,7 @@
 FROM docker.io/library/caddy:2.11.4-builder AS caddybuild
 RUN xcaddy build --with github.com/mholt/caddy-ratelimit@v0.1.0
 
-FROM docker.io/openzeppelin/openzeppelin-relayer:v1.5.0
+FROM docker.io/openzeppelin/openzeppelin-relayer:v1.9.0
 
 # Which config/*.json gets baked in as /app/config/config.json — config.json
 # (testnet, the default) or config.mainnet.json. fly.toml doesn't set this
@@ -27,12 +27,16 @@ ARG CONFIG_FILE=config.json
 USER root
 COPY --from=caddybuild /usr/bin/caddy /usr/bin/caddy
 
+# Since v1.6.0 the base image has /app/plugins/pnpm-workspace.yaml, so a plain
+# `pnpm install` here resolves to /app/plugins as the workspace root and aborts
+# (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY). --ignore-workspace keeps each
+# plugin a standalone project and leaves the image's own node_modules alone.
 COPY plugins/channels /app/plugins/channels
-RUN cd /app/plugins/channels && pnpm install --prod --frozen-lockfile \
+RUN cd /app/plugins/channels && pnpm install --prod --frozen-lockfile --ignore-workspace \
     && chown -R nonroot /app/plugins/channels
 
 COPY plugins/funder /app/plugins/funder
-RUN cd /app/plugins/funder && pnpm install --prod --frozen-lockfile \
+RUN cd /app/plugins/funder && pnpm install --prod --frozen-lockfile --ignore-workspace \
     && chown -R nonroot /app/plugins/funder
 
 COPY --chown=nonroot config/${CONFIG_FILE} /app/config/config.json
