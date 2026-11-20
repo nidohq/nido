@@ -4,7 +4,7 @@
 
 Stub Soroban RPC and Horizon servers on localhost stand in for the real
 endpoints; a fake Perch checkout (NIDO_PERCH_DIR) stands in for
-vendor/perch, its fetch script recording the rpc_url of each manifest it was
+Perch's source at Nido's pin, its fetch script recording the rpc_url of each manifest it was
 handed. Run: python3 scripts/test_rpc_fallback.py
 """
 

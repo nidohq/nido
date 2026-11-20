@@ -2,11 +2,12 @@
 # Re-pin Nido to a Perch commit and regenerate everything derived from the
 # pin, leaving the result as working-tree changes for review:
 #
-#   1. vendor/perch moves to <perch-commit>, refused unless that commit is on
-#      the branch .gitmodules declares and carries deployments/<network>.json,
-#      and the Perch git dependencies in Cargo.toml move to the same rev
-#      (Cargo.lock follows), so the crates Nido builds and the manifest it
-#      fetches by come from one Perch commit;
+#   1. the Perch git dependencies in Cargo.toml move to <perch-commit>
+#      (Cargo.lock follows), refused unless that commit is on the branch
+#      Cargo.toml's [workspace.metadata.perch] declares and carries
+#      deployments/<network>.json; Nido's scripts and tests read Perch's
+#      source at that rev (scripts/perch-src.sh), so the crates Nido builds
+#      and the manifest it fetches by come from one Perch commit;
 #   2. `just perch-infra` writes the factory's account pin
 #      (contracts/factory/wasm/perch-account.sha256) from the manifest and
 #      fetches the stack by the manifest's hashes and content addresses
@@ -16,9 +17,10 @@
 #   3. `just bindings-perch` regenerates packages/contract-bindings/perch-*;
 #   4. scripts/repin-perch-pins.mjs rewrites the SDK's Perch pins from the
 #      manifest (`perch.TESTNET`, except Nido's own factory, and the policyDoc
-#      registry/wasm-hash pins), and package-lock.json follows the submodule's
-#      npm workspaces;
-#   5. `just check-vendor-drift` checks the result against the manifest;
+#      registry/wasm-hash pins), and the SDK and frontend move to the
+#      @stellar-registry/perch-zk version the commit carries (from npm;
+#      package-lock.json follows);
+#   5. `just check-perch-drift` checks the result against the manifest;
 #   6. the SDK's validate-differential corpus is regenerated from the new
 #      perch_ir::validate (its generator is seeded, so an unchanged validator
 #      leaves it byte-identical); a changed verdict is for the SDK's
@@ -65,46 +67,52 @@ for tool in git jq just node npm cargo stellar; do
     command -v "$tool" >/dev/null || { echo "error: $tool not found" >&2; exit 1; }
 done
 export STELLAR_NETWORK="$network"
-manifest="vendor/perch/deployments/$network.json"
 
-[ "$(git submodule status vendor/perch | cut -c1)" != "-" ] || git submodule update --init vendor/perch
-old="$(git ls-tree HEAD vendor/perch | awk '{print $3}')"
+old="$(scripts/perch-src.sh --rev)"
+perch_git="$(scripts/perch-src.sh --git)"
+branch="$(scripts/perch-src.sh --branch)"
 old_manifest="$(mktemp)"
-trap 'rm -f "$old_manifest"' EXIT
-git -C vendor/perch show "$old:deployments/$network.json" >"$old_manifest" 2>/dev/null || echo '{}' >"$old_manifest"
+probe="$(mktemp -d)"
+trap 'rm -rf "$old_manifest" "$probe"' EXIT
+cp "$(scripts/perch-src.sh)/deployments/$network.json" "$old_manifest" 2>/dev/null || echo '{}' >"$old_manifest"
 
-# 1. Move the submodule, only to a commit on its declared branch.
-branch="$(git config -f .gitmodules submodule.vendor/perch.branch)"
-# A shallow checkout (CI's) can't answer ancestry without the history.
-deepen=()
-[ "$(git -C vendor/perch rev-parse --is-shallow-repository)" = true ] && deepen=(--unshallow)
-git -C vendor/perch fetch --quiet ${deepen[@]+"${deepen[@]}"} origin "$commit" "+refs/heads/$branch:refs/remotes/origin/$branch"
-git -C vendor/perch merge-base --is-ancestor "$commit" "origin/$branch" ||
-    { echo "error: Perch commit $commit is not on origin/$branch" >&2; exit 1; }
-git -C vendor/perch checkout --quiet --detach "$commit"
-git add vendor/perch
-[ -f "$manifest" ] || { echo "error: Perch $commit has no $manifest" >&2; exit 1; }
-# The Perch crates, at the submodule's commit. `cargo fetch` re-resolves only
-# the moved git source (and whatever its crates newly depend on) in Cargo.lock.
-perl -pi -e "s{(git = \"https://github\.com/stellar-registry/perch\", rev = \")[0-9a-f]{40}\"}{\${1}$commit\"}g" Cargo.toml
-grep -q "stellar-registry/perch\", rev = \"$commit\"" Cargo.toml ||
+# 1. Move the pin, only to a commit on the declared branch: the branch's
+# commits alone (no trees or blobs) answer ancestry.
+git init -q "$probe"
+git -C "$probe" remote add origin "$perch_git"
+git -C "$probe" fetch --quiet --filter=tree:0 origin "$commit" "+refs/heads/$branch:refs/remotes/origin/$branch"
+git -C "$probe" merge-base --is-ancestor "$commit" "origin/$branch" ||
+    { echo "error: Perch commit $commit is not on $perch_git $branch" >&2; exit 1; }
+# `cargo fetch` re-resolves only the moved git source (and whatever its
+# crates newly depend on) in Cargo.lock.
+perl -pi -e "s{(git = \"\Q$perch_git\E\", rev = \")[0-9a-f]{40}\"}{\${1}$commit\"}g" Cargo.toml
+[ "$(scripts/perch-src.sh --rev)" = "$commit" ] ||
     { echo "error: no Perch git dependency in Cargo.toml to move to $commit" >&2; exit 1; }
+perch="$(scripts/perch-src.sh)"
+manifest="$perch/deployments/$network.json"
+[ -f "$manifest" ] || { echo "error: Perch $commit has no deployments/$network.json" >&2; exit 1; }
 cargo fetch --quiet
-echo "vendor/perch: ${old:0:7} -> ${commit:0:7} ($manifest, deployed from $(jq -r .source.commit "$manifest" | cut -c1-7))" >&2
+echo "Perch: ${old:0:7} -> ${commit:0:7} (deployments/$network.json, deployed from $(jq -r .source.commit "$manifest" | cut -c1-7))" >&2
 
 # 2-3. The stack by hash, Nido's contracts around it, the Perch bindings.
 just perch-infra
 just build-contracts
 just bindings-perch
 
-# 4. The SDK pins and the npm workspace lock.
+# 4. The SDK pins, and perch-zk at the version the commit carries (which
+# npm must have published).
 node scripts/repin-perch-pins.mjs "$manifest"
+zk="$(jq -r .version "$perch/packages/perch-zk/package.json")"
+for consumer in packages/passkey-sdk packages/frontend; do
+    jq --arg v "$zk" '.dependencies["@stellar-registry/perch-zk"] |= $v' "$consumer/package.json" >"$probe/package.json"
+    mv "$probe/package.json" "$consumer/package.json"
+done
 npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
 # 5. The documentation links to the new pin, and everything consumed
 # matches the manifest.
 scripts/pin-perch-links.sh
-just check-vendor-drift
+just check-perch-drift
 
 # 6. perch_ir's verdicts on the SDK's differential corpus. A suite that no
 # longer builds is step 7's failure to report, not a failed re-pin.

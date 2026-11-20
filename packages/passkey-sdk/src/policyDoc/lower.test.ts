@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { StrKey } from '@stellar/stellar-sdk';
 import { lowerDoc, parsePolicyDoc, scopedSessionKeyDoc, validateProgram, buildPolicyDoc } from './index.js';
 import type { PolicyDoc } from './index.js';
+import { readPerch } from '../../../../tests/support/perchSrc.mts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const td = (n: string) => resolve(here, './testdata', n);
@@ -23,7 +24,7 @@ describe('lowerDoc: ci-publish fixture', () => {
 
   it("gives each rule Perch's rule hash (testdata/rule-hashes.json)", () => {
     const vectors = JSON.parse(
-      readFileSync(resolve(here, '../../../../vendor/perch/testdata/rule-hashes.json'), 'utf8'),
+      readPerch('testdata/rule-hashes.json'),
     ) as { fixtures: { fixture: string; doc_hash: string; rules: { name: string; rule_hash: string }[] }[] };
     const fixture = vectors.fixtures.find((f) => f.doc_hash === lowered.docHash)!;
     expect(lowered.rules.map((r) => [r.name, r.ruleHash])).toEqual(
@@ -310,7 +311,7 @@ describe('lowerDoc: threshold principals (perch 0.2.0)', () => {
 describe('program limits', () => {
   it("match perch-program's, which no Perch view reports", async () => {
     const { MAX_PROGRAM_LEN, MAX_STACK_DEPTH } = await import('./lower.js');
-    const src = readFileSync(resolve(here, '../../../../vendor/perch/crates/perch-program/src/lib.rs'), 'utf8');
+    const src = readPerch('crates/perch-program/src/lib.rs');
     const rust = (name: string) => Number(new RegExp(`pub const ${name}: u32 = ([0-9_]+);`).exec(src)![1]!.replace(/_/g, ''));
     expect(MAX_PROGRAM_LEN).toBe(rust('MAX_PROGRAM_LEN'));
     expect(MAX_STACK_DEPTH).toBe(rust('MAX_STACK_DEPTH'));

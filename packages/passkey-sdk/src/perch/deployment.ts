@@ -2,7 +2,7 @@
  * Where to find a Nido account's Perch stack on a network.
  *
  * Perch's release workstream (stellar-registry/perch#99 WS4) publishes one
- * deployment manifest per network (`vendor/perch/deployments/<network>.json`):
+ * deployment manifest per network (Perch's `deployments/<network>.json`):
  * the content-addressed doc compiler, interpreter, spending limit, and
  * WebAuthn verifier, the constructorless recovery controller, ZK pool, and ZK
  * adapter, and the account wasm hash. `fromPerchManifest` reads one;
@@ -40,8 +40,8 @@ export interface PerchDeployment {
   accountWasmHash: string;
 }
 
-/** Perch's testnet release (`vendor/perch/deployments/testnet.json`, at the
- *  submodule's pin) and Nido's factory, as its record (`factory.testnet.json`,
+/** Perch's testnet release (`deployments/testnet.json` at Nido's
+ *  Perch pin) and Nido's factory, as its record (`factory.testnet.json`,
  *  written by `scripts/deploy-factory.sh`) names it. */
 export const TESTNET: PerchDeployment = {
   network: 'Test SDF Network ; September 2015',
@@ -59,8 +59,8 @@ export const TESTNET: PerchDeployment = {
   accountWasmHash: '2c976bfd98678f3b6fcf5514420a81ef5e5b9fc1c5b6c60ec6f2dd64448479d5',
 };
 
-/** Perch's mainnet release (`vendor/perch/deployments/mainnet.json`, at the
- *  submodule's pin) and Nido's factory, as its record (`factory.mainnet.json`,
+/** Perch's mainnet release (`deployments/mainnet.json` at Nido's
+ *  Perch pin) and Nido's factory, as its record (`factory.mainnet.json`,
  *  written by `scripts/deploy-factory.sh`) names it. Built from the same
  *  source commit as `TESTNET` (`c135aca2`), so every pinned address differs
  *  only where mainnet's deploy is necessarily distinct (the factory and the

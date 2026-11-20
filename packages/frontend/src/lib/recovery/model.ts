@@ -4,7 +4,7 @@
  * recovering account hands its guardians. Pure: every chain read lives in
  * `chain.ts`, so this module is what the unit tests pin.
  *
- * Perch's spec (vendor/perch/docs/recovery/spec.md) is the authority for the
+ * Perch's spec (its docs/recovery/spec.md) is the authority for the
  * rules restated here:
  *
  * - `loss`: the owner alone reconfigures and may always veto a recovery.

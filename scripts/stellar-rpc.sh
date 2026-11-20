@@ -2,9 +2,11 @@
 # Nido's one source of the Soroban RPC endpoint choice and its fallback list,
 # sourced by every script that reads the chain (scripts/perch-infra.sh,
 # scripts/deploy-factory.sh). Same interface and variables as Perch's
-# scripts/stellar-rpc.sh: when vendor/perch carries that helper, it is sourced
-# and nothing below runs, so the two never disagree. Until the submodule is
-# re-pinned to a Perch commit that has it, the copy below runs: Perch's helper
+# scripts/stellar-rpc.sh: when Perch's source at Nido's pin carries that
+# helper, it is sourced and nothing below runs, so the two never disagree (the
+# source scripts/perch-src.sh fetched, which each caller does before sourcing
+# this; sourcing it fetches nothing). Until Nido is re-pinned to a Perch commit
+# that has it, the copy below runs: Perch's helper
 # as of 653fa7d (bitswell-hq/stellar-registry__perch#39), unchanged below the
 # divider. Delete the copy once the pin carries the helper.
 #
@@ -16,7 +18,8 @@
 #   PERCH_HORIZON_URL               freshness reference (default per network)
 #   PERCH_RPC_PROBE_ATTEMPTS, PERCH_RPC_CALL_ATTEMPTS, PERCH_RPC_TIMEOUT
 
-_nido_perch_rpc="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/vendor/perch/scripts/stellar-rpc.sh"
+_nido_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_nido_perch_rpc="${NIDO_PERCH_DIR:-$_nido_root/target/perch-src/$("$_nido_root/scripts/perch-src.sh" --rev 2>/dev/null || true)}/scripts/stellar-rpc.sh"
 if [ -f "$_nido_perch_rpc" ]; then
     # shellcheck source=/dev/null
     . "$_nido_perch_rpc"

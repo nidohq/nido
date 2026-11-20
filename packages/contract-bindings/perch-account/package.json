@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "name": "@nidohq/perch-account",
   "private": true,
-  "description": "Generated TypeScript client for Perch's perch-account contract, built from the pinned vendor/perch wasm. Replaced by Perch's published bindings once its release manifest lands.",
+  "description": "Generated TypeScript client for Perch's perch-account contract, built from the pinned Perch wasm. Replaced by Perch's published bindings once its release manifest lands.",
   "type": "module",
   "exports": "./dist/index.js",
   "typings": "dist/index.d.ts",

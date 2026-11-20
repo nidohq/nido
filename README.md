@@ -70,7 +70,7 @@ limited-scope signing.
 | Wallets Kit module | `packages/stellar-wallets-kit-module/` | `@creit.tech/stellar-wallets-kit` module for dApp wallet selectors |
 | Contract bindings | `packages/contract-bindings/` | Generated TypeScript clients for the Soroban contracts |
 | Smart contracts | `contracts/` | Factory, name registry, status message, and pre-Perch policy contracts |
-| Perch | `vendor/perch/` | Submodule: the account, WebAuthn verifier, recovery controller, ZK pool and adapter, doc compiler, and the testnet deployment manifest Nido builds on |
+| Perch | `Cargo.toml` (git dependencies at one rev) | [stellar-registry/perch](https://github.com/stellar-registry/perch) at the pinned rev: the account, WebAuthn verifier, recovery controller, ZK pool and adapter, doc compiler, and the testnet deployment manifest Nido builds on; scripts and tests read its source through `scripts/perch-src.sh` |
 | Integration tests | `crates/integration-tests/` | Cross-contract Rust tests with synthetic WebAuthn assertions |
 | End-to-end tests | `tests/` | Browser, support, and testnet test harnesses |
 | Example dApp | `examples/status-message-dapp/` | React/Vite dApp showing wallet selector integration |
@@ -83,9 +83,9 @@ limited-scope signing.
 | Name Registry | Human-readable account name registry |
 | Multisig, Spending Limit, Pre-auth Sweep policies | Pre-Perch OZ policies; a Perch document can't attach them |
 | Status Message | Small demo contract used by the example dApp |
-| Perch account (`vendor/perch`) | The user's account: one policy document, `apply_doc`, seven-day upgrades |
-| Perch WebAuthn verifier (`vendor/perch`) | P-256/WebAuthn verifier every passkey names; no admin |
-| Perch recovery, ZK pool, ZK adapter (`vendor/perch`) | Guardian, ZK, or combined recovery under the `Loss` or `Protected` profile |
+| Perch account | The user's account: one policy document, `apply_doc`, seven-day upgrades |
+| Perch WebAuthn verifier | P-256/WebAuthn verifier every passkey names; no admin |
+| Perch recovery, ZK pool, ZK adapter | Guardian, ZK, or combined recovery under the `Loss` or `Protected` profile |
 
 Accounts build on
 [OpenZeppelin Stellar Contracts](https://docs.openzeppelin.com/stellar-contracts/accounts/smart-account)
@@ -99,16 +99,16 @@ through Perch, and Soroban's native authorization model.
 - Rust and Cargo
 - [`just`](https://github.com/casey/just)
 - [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/cli/install-cli)
-  with `curl` and `jq` (for `just perch-infra`; it falls back to another
+  with `curl`, `git` and `jq` (for `just perch-infra`; it falls back to another
   testnet RPC while the manifest's is down, see
   [docs/RUNBOOKS.md](./docs/RUNBOOKS.md) "RPC endpoints")
 - `stellar-scaffold` for scaffold-based contract workflows
 
-Fetch the Perch submodule and its build inputs, then install dependencies from
-the repo root:
+Fetch Perch's build inputs (the first run also fetches Perch's source at the
+pinned rev into `target/perch-src/`), then install dependencies from the repo
+root:
 
 ```bash
-git submodule update --init
 just perch-infra
 npm install
 ```
@@ -195,7 +195,6 @@ For deeper implementation details, read [ARCHITECTURE.md](./ARCHITECTURE.md).
   [deferred work](./docs/DEFERRED.md), [supply chain](./docs/SUPPLY_CHAIN.md),
   [runbooks](./docs/RUNBOOKS.md), [mainnet readiness](./docs/MAINNET_READINESS.md)
 - [Perch recovery specification](https://github.com/stellar-registry/perch/blob/2258433aa340428d65676cd269c8e4240674deb1/docs/recovery/spec.md)
-  (`vendor/perch/docs/recovery/spec.md`)
 - [Status Message dApp guide](./examples/status-message-dapp/README.md)
 - [Wallets Kit module guide](./packages/stellar-wallets-kit-module/README.md)
 

@@ -1,6 +1,6 @@
 /**
  * Perch's recovery statement, credentials, and replacement sets
- * (`vendor/perch/docs/recovery/statement.md`) in the SDK's types. The byte
+ * (Perch's `docs/recovery/statement.md`) in the SDK's types. The byte
  * layouts are perch-js's (`@stellar-registry/perch`); this module maps the
  * SDK's shapes onto them and adds the canonical replacement order and the
  * configuration hash.

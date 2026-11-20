@@ -1,7 +1,7 @@
 /**
  * Doc-only: the ONE apply route — the SDK half of the Perch account's
  * `apply_doc(doc_json, approval_valid_until, expected_revision)`, the
- * account's sole policy write path (vendor/perch/crates/perch-smart-account).
+ * account's sole policy write path (Perch's crates/perch-smart-account).
  *
  * The account cross-calls Perch's stateless doc compiler to parse, validate,
  * and lower the document on chain, has its recovery controller classify any

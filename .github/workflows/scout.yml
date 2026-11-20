@@ -34,17 +34,17 @@ jobs:
           - spending-limit-policy
           - status-message
     steps:
-      # No submodules: the workspace takes Perch's crates as git dependencies,
-      # and Scout reads nothing else from vendor/perch.
+      # The workspace takes Perch's crates as git dependencies; Scout reads
+      # nothing else of Perch's.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      # The workspace resolves and fetches without vendor/perch. Run on its
+      # The workspace resolves and fetches from the lockfile alone. Run on its
       # own because Scout's step below tolerates build failures, which would
       # hide a resolution failure too. Installs the
       # rust-toolchain.toml toolchain.
-      - name: Fetch dependencies without the submodule
+      - name: Fetch dependencies
         run: cargo fetch --locked
 
       # The action builds a Docker image with the Scout toolchain, mounts the

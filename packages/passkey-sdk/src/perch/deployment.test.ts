@@ -1,13 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fromPerchManifest, MAINNET, TESTNET, type PerchManifest } from './deployment';
+import { readPerch } from '../../../../tests/support/perchSrc.mts';
 
-// The submodule's manifest is the source of truth; TESTNET is Nido's copy of
+// The manifest at Nido's Perch pin is the source of truth; TESTNET is Nido's copy of
 // it plus Nido's factory. A Perch redeploy (or a testnet reset) fails here
 // until TESTNET follows.
-const manifest = JSON.parse(
-  readFileSync(new URL('../../../../vendor/perch/deployments/testnet.json', import.meta.url), 'utf8'),
-) as PerchManifest;
+const manifest = JSON.parse(readPerch('deployments/testnet.json')) as PerchManifest;
 
 // What `scripts/deploy-factory.sh` read back from the factory it deployed.
 // `scripts/check-factory.sh` checks it against the chain.
@@ -45,9 +44,7 @@ describe("Nido's testnet factory", () => {
   });
 });
 
-const mainnetManifest = JSON.parse(
-  readFileSync(new URL('../../../../vendor/perch/deployments/mainnet.json', import.meta.url), 'utf8'),
-) as PerchManifest;
+const mainnetManifest = JSON.parse(readPerch('deployments/mainnet.json')) as PerchManifest;
 
 const mainnetFactory = JSON.parse(
   readFileSync(new URL('./factory.mainnet.json', import.meta.url), 'utf8'),
