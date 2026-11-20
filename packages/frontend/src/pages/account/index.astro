@@ -272,7 +272,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
             <Icon name="key" size={20} color="#fff" /> <span>Use your synced passkey</span>
           </button>
           <a id="adopt-passkey-link" class="btn acc hidden" style="margin-bottom:14px;">
-            <Icon name="key" size={20} color="#fff" /> <span>Use your synced passkey</span>
+            <Icon name="key" size={20} color="#fff" /> <span>Open this Nido's own address</span>
           </a>
           <p id="adopt-passkey-msg" role="alert" class="mut hidden" style="font-size:12.5px; line-height:1.5; margin:0 0 14px;"></p>
           <p class="mut" style="font-size:12.5px; line-height:1.5; margin:0;">
@@ -779,7 +779,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
       const $adoptCopy = document.getElementById("adopt-passkey-copy")!;
       if (adoptPlace.kind === "elsewhere") {
         $adoptCopy.textContent =
-          "New device? This Nido's passkey syncs with iCloud Keychain or Google Password Manager. It's bound to this Nido's own address, so use it from there.";
+          "Passkeys for this Nido are bound to its own address, so they are managed and used from there.";
         const $adoptLink = document.getElementById("adopt-passkey-link") as HTMLAnchorElement;
         $adoptLink.href = adoptPlace.url;
         $adoptLink.classList.remove("hidden");
