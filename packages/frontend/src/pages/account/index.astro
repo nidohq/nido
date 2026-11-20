@@ -20,13 +20,13 @@ import Toast from "../../components/Toast.astro";
 import PasskeySheet from "../../components/PasskeySheet.astro";
 import Avatar from "../../components/Avatar.astro";
 import Icon from "../../components/Icon.astro";
-import Qr from "../../components/Qr.astro";
 import Logo from "../../components/Logo.astro";
 import Nest from "../../components/Nest.astro";
 import { NETWORK_LABEL } from "../../lib/network";
 import RecentActivityCard from "../../components/RecentActivityCard.astro";
 import AssetsCard from "../../components/AssetsCard.astro";
 import MyNidoMenu from "../../components/MyNidoMenu.astro";
+
 ---
 
 <NidoLayout title="Your Nido">
@@ -224,7 +224,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
           Share your address or code so anyone can send to your Nido.
         </p>
         <div style="background:var(--paper-2); border:1px solid var(--line); border-radius:22px; padding:18px; display:inline-block; box-shadow:var(--sh-1);">
-          <Qr data="nido" size={188} />
+          <div id="receive-qr"></div>
         </div>
         <div class="card" style="padding:16px; margin-top:22px; text-align:left; display:flex; align-items:center; gap:12px;">
           <Avatar seed="nido" size={34} class="js-avatar" />
@@ -352,6 +352,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
   import { adoptPasskeyAction, adoptPasskeyPlace } from "../../lib/adoptPasskey";
   import { accountDeployed } from "../../lib/newAccount/verifyNewAccount";
+  import { qrSvg } from "../../lib/qrCode";
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
   // round-trip was broken (bug #3); re-enabled now that the finalize flow signs
@@ -895,6 +896,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
 
   // Show the real, full address in the Receive panel.
   document.getElementById("receive-address")!.textContent = contractId || "(unknown)";
+
+  if (contractId) {
+    const qrCode = await qrSvg(contractId);
+    document.getElementById("receive-qr")!.innerHTML = qrCode;
+  }
 
   // Fetch balance in background — REAL XLM, no fabricated fiat figure.
   const $balance = document.getElementById("xlm-balance")!;
