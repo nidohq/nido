@@ -15,7 +15,7 @@ test.describe('@testnet account lifecycle', () => {
     page.on('pageerror', (e) => errors.push(e.message));
 
     // 1) Home → create account (friendbot fund + factory.get_c_address).
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#create-btn').click();
     await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
     const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
@@ -26,7 +26,7 @@ test.describe('@testnet account lifecycle', () => {
     expect(setupHref).toContain('/new-account/');
     expect(setupHref).toContain('key=');
     const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-    const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
+    const host = `${cAddress.toLowerCase()}.nido.localhost:${PORT}`;
     await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
       waitUntil: 'domcontentloaded',
     });

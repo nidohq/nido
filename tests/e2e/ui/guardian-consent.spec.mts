@@ -72,7 +72,7 @@ async function openRequest(page: Page, recovery: unknown): Promise<{ calls: Invo
     ...accountViews(guardians[0]!, { rules: [guardianRule()] }),
   });
   const fragment = Buffer.from(JSON.stringify(request)).toString('base64url');
-  await page.goto(`http://${guardians[0]!.toLowerCase()}.localhost:4397/security/guardian/#${fragment}`);
+  await page.goto(`http://${guardians[0]!.toLowerCase()}.nido.localhost:4397/security/guardian/#${fragment}`);
   await expect(page.getByRole('button', { name: 'Approve' })).toBeVisible();
   return { calls, configHash };
 }

@@ -32,7 +32,7 @@ test.describe('@testnet status-message set-note (bug #1 regression)', () => {
     // ---------------------------------------------------------------
 
     // 1) Home → create account (friendbot fund + factory.get_c_address).
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#create-btn').click();
     await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
     const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
@@ -43,7 +43,7 @@ test.describe('@testnet status-message set-note (bug #1 regression)', () => {
     expect(setupHref).toContain('/new-account/');
     expect(setupHref).toContain('key=');
     const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-    const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
+    const host = `${cAddress.toLowerCase()}.nido.localhost:${PORT}`;
     await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
       waitUntil: 'domcontentloaded',
     });
@@ -65,11 +65,11 @@ test.describe('@testnet status-message set-note (bug #1 regression)', () => {
     // PART B — set a note via the status-message dApp
     // ---------------------------------------------------------------
 
-    // 4) Open the status-message dApp on the apex (localhost). It resolves the
+    // 4) Open the status-message dApp on the apex (nido.localhost). It resolves the
     //    status-message contract via the on-chain registry (hardcoded fallback
     //    exists), takes the ACCOUNT contract id in #contract-input, and uses
     //    sm:keypairSecret (seeded by seedBank) as the fee payer.
-    await page.goto(`http://localhost:${PORT}/status-message/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://nido.localhost:${PORT}/status-message/`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#contract-input')).toBeVisible({ timeout: 30_000 });
 
     await page.locator('#contract-input').fill(cAddress);

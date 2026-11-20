@@ -22,10 +22,8 @@ export function accountShareLabel(host: string, nameOrId: string): string {
  *  share-link caller). That is correct — `accountUrl` self-normalizes the apex
  *  (it drops the first label only when the host has >2 labels), so the row href
  *  is right both on the apex landing switcher (`nido.fyi` → `//bob.nido.fyi/`)
- *  and on account subdomains in production; stripping first would wrongly yield
- *  `//bob.fyi/` on the apex. The only shape it cannot self-normalize is a
- *  single-label-apex subdomain like `alice.localhost` in dev (mis-nests to
- *  `//bob.alice.localhost/`); production hosts are unaffected. */
+ *  and on account subdomains (`alice.nido.fyi`, `alice.nido.localhost` in dev);
+ *  stripping first would wrongly yield `//bob.fyi/` on the apex. */
 export function nidoRowHref(host: string, row: MyNidoRow): string {
   if (row.status === "pending") {
     // A2: resume key is the setup secret — carry it in the hash, not the query

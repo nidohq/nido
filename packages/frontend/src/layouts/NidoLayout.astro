@@ -193,7 +193,7 @@ const exampleDappUrl = import.meta.env.PUBLIC_EXAMPLE_DAPP_URL as string | undef
     // Replace the in-app copy with the secure-connection message.
     warning.innerHTML =
       "<p>Passkeys need a secure connection to work.</p>" +
-      "<p>Open Nido at its <strong>https://</strong> address (or on <strong>localhost</strong>) and you're all set.</p>";
+      "<p>Open Nido at its <strong>https://</strong> address (or, in local development, on <strong>nido.localhost</strong>) and you're all set.</p>";
     warning.style.display = "block";
   } else if (inAppBrowser || !support.ok) {
     // In-app browser, or a secure context that still can't do WebAuthn — the

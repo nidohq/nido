@@ -21,7 +21,8 @@ describe("createNido", () => {
   });
 
   it("keeps loopback dev hosts intact", () => {
-    expect(createNido("localhost:4321")).toMatch(/^\/\/localhost:4321\/new-account\//);
+    expect(createNido("nido.localhost:4321")).toMatch(/^\/\/nido\.localhost:4321\/new-account\//);
+    expect(createNido("cabc.nido.localhost:4321")).toMatch(/^\/\/nido\.localhost:4321\/new-account\//);
     expect(createNido("127.0.0.1:4321")).toMatch(/^\/\/127\.0\.0\.1:4321\/new-account\//);
   });
 

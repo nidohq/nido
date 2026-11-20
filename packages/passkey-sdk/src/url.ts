@@ -4,17 +4,18 @@ const PREVIEW_SEP = "--";
  * The apexes Nido is served under, longest first: a host is read against the
  * longest apex it ends with, so `alice.test.nido.fyi` is the name `alice` on
  * the testnet apex `test.nido.fyi`, and `test.nido.fyi` itself is an apex
- * rather than an account named `test` on `nido.fyi`. `localhost` is always an
- * apex too. A host under none of them falls back to "the last two labels are
- * the apex" (`cabc.mysoroban.xyz` → `mysoroban.xyz`); this codebase doesn't
- * deal with multi-segment TLDs like co.uk.
+ * rather than an account named `test` on `nido.fyi`. `nido.localhost`, local
+ * development's apex, is always an apex too. A host under none of them falls
+ * back to "the last two labels are the apex" (`cabc.mysoroban.xyz` →
+ * `mysoroban.xyz`); this codebase doesn't deal with multi-segment TLDs like
+ * co.uk.
  */
 export const NIDO_APEXES: readonly string[] = ["test.nido.fyi", "nido.fyi"];
 
 /**
  * A Nido host taken apart.
  *
- *   apex     the site apex, with any port: "nido.fyi", "test.nido.fyi", "localhost:4321"
+ *   apex     the site apex, with any port: "nido.fyi", "test.nido.fyi", "nido.localhost:4321"
  *   preview  the PR preview number, or null in production
  *   label    the one label below the apex (contract id, name, or reserved dApp),
  *            lowercased and without its `--<N>` preview suffix; null on the
@@ -32,7 +33,7 @@ const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 function apexOfHostname(hostname: string, apexes: readonly string[]): string {
   if (hostname.startsWith("[") || IPV4_RE.test(hostname)) return hostname;
-  const known = [...apexes, "localhost"].sort((a, b) => b.length - a.length);
+  const known = [...apexes, "nido.localhost"].sort((a, b) => b.length - a.length);
   for (const apex of known) {
     if (hostname === apex) return apex;
     // Exactly one label below a known apex. Anything deeper is not a Nido
@@ -55,7 +56,7 @@ function apexOfHostname(hostname: string, apexes: readonly string[]): string {
  *   splitHost("alice.test.nido.fyi")      → { apex: "test.nido.fyi", preview: null,  label: "alice" }
  *   splitHost("126.test.nido.fyi")        → { apex: "test.nido.fyi", preview: "126", label: null }
  *   splitHost("cabc--126.nido.fyi")       → { apex: "nido.fyi",      preview: "126", label: "cabc" }
- *   splitHost("cabc.localhost:4321")      → { apex: "localhost:4321", preview: null, label: "cabc" }
+ *   splitHost("cabc.nido.localhost:4321") → { apex: "nido.localhost:4321", preview: null, label: "cabc" }
  */
 export function splitHost(host: string, apexes: readonly string[] = NIDO_APEXES): HostParts {
   const portAt = host.startsWith("[") ? host.indexOf("]:") + 1 : host.lastIndexOf(":");
@@ -212,7 +213,7 @@ export function accountUrl(host: string, contractId: string, path: string = "/")
  *   "pr-10.mysoroban.xyz"               → "10.mysoroban.xyz"   (legacy → numeric)
  *   "alice.test.nido.fyi"               → "test.nido.fyi"
  *   "nido.fyi"                          → "nido.fyi"           (already an apex)
- *   "cabc1234.localhost:3000"           → "localhost:3000"
+ *   "cabc1234.nido.localhost:4321"      → "nido.localhost:4321"
  *
  * A bare preview root keeps its preview number: callers rebuild account URLs
  * from this base (`accountUrl(stripSubdomain(host), …)`), and dropping it would
