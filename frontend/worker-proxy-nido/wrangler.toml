@@ -2,7 +2,7 @@ name = "nido-proxy"
 main = "index.js"
 compatibility_date = "2024-01-01"
 
-# Production: today the testnet build on nido.fyi.
+# Production: the mainnet build on nido.fyi.
 routes = [
   { pattern = "*.nido.fyi/*", zone_name = "nido.fyi" }
 ]
@@ -18,7 +18,9 @@ PAGES = "nido-1am.pages.dev"
 # doesn't exist.
 PAGES_PROJECT_ROOT = "nido-1am.pages.dev"
 CSP_SITE_HOSTS = "https://*.nido.fyi"
-CSP_NETWORK_HOSTS = "https://nido.fly.dev https://soroban-testnet.stellar.org https://horizon-testnet.stellar.org https://friendbot.stellar.org"
+# Mainnet's relayer and RPC (deploy-production.yml's PUBLIC_RELAYER_URL,
+# lib/network.ts's RPC_URL). The mainnet build never calls Horizon or friendbot.
+CSP_NETWORK_HOSTS = "https://nido-mainnet.fly.dev https://mainnet.sorobanrpc.com"
 
 # Testnet on test.nido.fyi (`wrangler deploy --env testnet`, deployed
 # automatically by deploy-testnet.yml on every push to main), its own `test`
