@@ -56,7 +56,7 @@ const steps = [
     actor: "You · New device",
     icon: "key",
     tone: "var(--acc)",
-    body: "On a new device you create a fresh passkey for your Nido and open a recovery that says which passkey it replaces. Anyone can open one, and opening it changes nothing: your Nido keeps working and nothing is frozen until a recovery is approved.",
+    body: "If your passkey synced to the new device, you don't need any of this: use it from Security. Otherwise you create a fresh passkey for your Nido on the new device and open a recovery that says which passkey it replaces. Anyone can open one, and opening it changes nothing: your Nido keeps working and nothing is frozen until a recovery is approved.",
     dev: "begin_lost_key(account, replacements) is permissionless. The controller derives the target on-chain with the account's own compiler: the applied document with exactly the declared credential swapped (same signer slot, same kind, same verifier). Nobody supplies a target hash. A ZK mode must also declare a fresh kit, because completing spends the old one.",
   },
   {
@@ -127,7 +127,7 @@ const glossary = [
   { term: "Recovery kit", def: "A random secret you keep offline. Its fingerprint (commitment) is enrolled in a public pool; a zero-knowledge proof shows you hold it." },
   { term: "Nullifier", def: "A public one-time tag per kit. Proofs need it unspent; only a completed recovery spends it, and nothing ever un-spends it." },
   { term: "Statement", def: "The exact thing an approval covers: network, account, controller, configuration epoch and hash, timing, action, and its subject." },
-  { term: "UltraHonk", def: "The zero-knowledge proving system (Barretenberg, BN254). Perch verifies it on-chain with NethermindEth's audited verifier." },
+  { term: "UltraHonk", def: "The zero-knowledge proving system (Barretenberg, BN254). Perch verifies it on-chain with NethermindEth's audited verifier plus Perch's not-yet-audited zero-knowledge addition." },
   { term: "Baseline", def: "An optional saved policy a stolen-passkey recovery can restore, published on-chain at setup." },
 ];
 
@@ -144,7 +144,7 @@ const devDeep = [
   { title: "One state machine for every profile and mode", where: "perch: docs/recovery/spec.md", body: "Perch's spec defines attempts (collecting, authorized, completed, cancelled), the per-account epoch that kills stale evidence, evidence freshness, cancellation rules, nullifier ownership, revocation, and the upgrade delay, for Loss and Protected under GuardianOnly, ZkOnly, and Combined. Nido's integration suites run all six combinations end to end with real proofs." },
   { title: "Targets are derived, not supplied", where: "perch-doc-compiler: derive_target", body: "A lost-key target is the applied document with exactly the declared replacements; a compromise target is the published baseline's signers and rules with the current recovery member. Replacements keep the slot's kind and verifier. The completing apply_doc must submit exactly those bytes." },
   { title: "Completion is not reconfiguration", where: "perch-recovery: rcv_sync", body: "The controller's enforce leaves a marker for the same invocation's rcv_sync, bound to the attempt, the target hash, and the ledger. That is how the account tells a completion from an owner's policy change, so rotating a passkey never trips the reconfiguration rules." },
-  { title: "The ZK backend", where: "perch: circuits/, crates/perch-zk-*", body: "A Noir circuit proved with UltraHonk (bb 0.87.0, nargo 1.0.0-beta.9), an adapter with the audited verifier and VK compiled in, and a constructorless depth-32 pool that accounts insert into through apply_doc. Artifacts and proofs reproduce byte for byte from source." },
+  { title: "The ZK backend", where: "perch: circuits/, crates/perch-zk-*", body: "A Noir circuit proved with UltraHonk (bb 0.87.0, nargo 1.0.0-beta.9), an adapter with the audited verifier, Perch's not-yet-audited zero-knowledge addition, and the VK compiled in, and a constructorless depth-32 pool that accounts insert into through apply_doc. Artifacts reproduce byte for byte from source; zero-knowledge proofs are randomized, so they do not." },
   { title: "Reserved hook names", where: "perch-smart-account: check_auth", body: "The account never signs or executes install, uninstall, enforce, or any rcv_* name, so the controller's and pool's hooks are reachable only from the account's own apply_doc, cancel_recovery, and upgrade calls." },
 ];
 
