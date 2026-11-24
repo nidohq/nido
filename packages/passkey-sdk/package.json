@@ -10,6 +10,14 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "default": "./dist/storage.js"
+    },
+    "./url": {
+      "types": "./dist/url.d.ts",
+      "default": "./dist/url.js"
+    },
     "./perch-zk": {
       "types": "./dist/perch/zk.d.ts",
       "default": "./dist/perch/zk.js"

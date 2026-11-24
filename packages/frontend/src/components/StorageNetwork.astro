@@ -1,0 +1,18 @@
+---
+// The first script on every layout page. It sets the wallet's storage network
+// (lib/networkName.ts): module scripts run in document order, and passkey-sdk
+// `nidoKey` throws until the network is set, so a component that reads
+// storage (the sidebar's account name) must not depend on a page script
+// further down having done it. It then marks this origin's storage as its own
+// (a framed bridge checks for the mark) and takes the sign-in list
+// hand-off's return (nidoSharedStorage.ts). NidoLayout renders this first in
+// <head>.
+---
+
+<script>
+  import "../lib/networkName";
+  import { markFirstPartyStorage, takeSignInListReturn } from "../lib/nidoSharedStorage";
+
+  markFirstPartyStorage();
+  takeSignInListReturn();
+</script>

@@ -15,6 +15,7 @@ import {
 // before approving a reconfiguration is what the approval signs.
 //
 // Needs `packages/frontend/dist-perch`:
+//   PUBLIC_STELLAR_NETWORK=testnet \
 //   PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.json)" \
 //     npx astro build --root ./packages/frontend --outDir ./dist-perch
 

@@ -5,7 +5,7 @@ import {
 } from "./network.js";
 
 describe("network config", () => {
-  it("targets testnet by default", () => {
+  it("targets testnet on a testnet build", () => {
     expect(NETWORK_PASSPHRASE).toBe(Networks.TESTNET);
     expect(NETWORK_NAME).toBe("testnet");
     expect(NETWORK_LABEL).toBe("Testnet");
@@ -19,7 +19,7 @@ describe("network config", () => {
 
 describe("network config — PUBLIC_STELLAR_NETWORK switching", () => {
   afterEach(() => {
-    delete (import.meta.env as Record<string, string | undefined>).PUBLIC_STELLAR_NETWORK;
+    import.meta.env.PUBLIC_STELLAR_NETWORK = "testnet";
   });
 
   it("targets mainnet when PUBLIC_STELLAR_NETWORK=mainnet", async () => {
@@ -33,13 +33,21 @@ describe("network config — PUBLIC_STELLAR_NETWORK switching", () => {
     expect(mod.EXPLORER_BASE).toBe("https://stellar.expert/explorer/public");
   });
 
-  it("is case-insensitive and falls back to testnet for any other value", async () => {
-    for (const value of ["MAINNET", "Mainnet", "", "staging", "testnet"]) {
+  it("ignores case and surrounding whitespace", async () => {
+    for (const [value, expected] of [["MAINNET", "mainnet"], ["Mainnet", "mainnet"], [" mainnet\n", "mainnet"], ["TESTNET", "testnet"], ["testnet ", "testnet"]]) {
       import.meta.env.PUBLIC_STELLAR_NETWORK = value;
       vi.resetModules();
       const mod = await import("./network.js");
-      const expected = value.toLowerCase() === "mainnet" ? "mainnet" : "testnet";
       expect(mod.NETWORK_NAME).toBe(expected);
+    }
+  });
+
+  it("has no default: unset or unrecognised, the module refuses to load", async () => {
+    for (const value of [undefined, "", "  ", "staging", "main net", "testnet2"]) {
+      if (value === undefined) delete (import.meta.env as Record<string, string | undefined>).PUBLIC_STELLAR_NETWORK;
+      else import.meta.env.PUBLIC_STELLAR_NETWORK = value;
+      vi.resetModules();
+      await expect(import("./network.js")).rejects.toThrow(/PUBLIC_STELLAR_NETWORK must be "mainnet" or "testnet"/);
     }
   });
 });

@@ -33,7 +33,7 @@ import {
  *
  * RUN (quarantined testnet tier; needs NIDO_TEST_BANK_SECRET in tests/.env.testnet):
  *   1. Build the wallet:   npx tsc -p packages/passkey-sdk/tsconfig.json && \
- *                          npx astro build --root packages/frontend
+ *                          PUBLIC_STELLAR_NETWORK=testnet npx astro build --root packages/frontend
  *   2. Build the example for LOCAL (apex base, wallet → local server):
  *        cd examples/status-message-dapp && \
  *        PUBLIC_STELLAR_NETWORK=TESTNET \

@@ -26,7 +26,7 @@ import { NETWORK_LABEL } from "../../lib/network";
 import RecentActivityCard from "../../components/RecentActivityCard.astro";
 import AssetsCard from "../../components/AssetsCard.astro";
 import MyNidoMenu from "../../components/MyNidoMenu.astro";
-
+import SignInListNotice from "../../components/SignInListNotice.astro";
 ---
 
 <NidoLayout title="Your Nido">
@@ -45,6 +45,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     </div>
 
     <div id="error-box" role="alert" class="alert danger" style="display:none; margin:8px 22px;"></div>
+    <SignInListNotice style="margin:8px 22px;" />
 
     <!-- ============================================================= -->
     <!-- NAMEPASSKEY MODE — focused full-viewport passkey-registration  -->
@@ -338,7 +339,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     formatClaimerLabel,
     buildClaimHandoffUrl,
   } from "../../lib/claimFlow";
-  import { localNidoSnapshot, syncNidoStorageViaBridge } from "../../lib/nidoSharedStorage";
+  import { localNidoSnapshot, requestBridgeSync } from "../../lib/nidoSharedStorage";
   import { createNido } from "../../lib/createNido";
   import { markUsed, readLastUsed } from "../../lib/lastUsed";
   import { shouldShowBackupBanner, snoozeBackupPrompt } from "../../lib/recoveryBackupPrompt";
@@ -499,7 +500,7 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
     // Pull accounts from local storage, then refresh from the apex bridge if empty.
     let snapshot = localNidoSnapshot();
     if (snapshot.accounts.length === 0) {
-      await syncNidoStorageViaBridge();
+      await requestBridgeSync();
       snapshot = localNidoSnapshot();
     }
 
@@ -891,7 +892,11 @@ import MyNidoMenu from "../../components/MyNidoMenu.astro";
   // Home link is set unconditionally near the top of the script (before any
   // code that can throw), so it doesn't need setting here.
 
-  if (contractId) saveAccount(contractId);
+  if (contractId) {
+    saveAccount(contractId);
+    // Hand the account to the apex's sign-in list, retrying until it confirms.
+    void requestBridgeSync();
+  }
   initHomeMode();
 
   // Show the real, full address in the Receive panel.

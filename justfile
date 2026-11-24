@@ -99,13 +99,13 @@ check-astro:
     npx astro check --root ./packages/frontend
 
 build-astro:
-    npx astro build --root ./packages/frontend
+    PUBLIC_STELLAR_NETWORK=testnet npx astro build --root ./packages/frontend
 
 cloudflare-deploy: build-astro
     npx wrangler pages deploy packages/frontend/dist/ --project-name mysoroban --branch main
 
 dev: build-ts
-    (cd packages/frontend; npm run dev)
+    (cd packages/frontend; PUBLIC_STELLAR_NETWORK=testnet npm run dev)
 
 # Deploy Nido's factory around Perch's deployed account and pin Perch's
 # WebAuthn verifier, and write its record
@@ -170,13 +170,18 @@ test-support:
     npx vitest run --config vitest.support.config.ts
 
 # Fast UI e2e tier (shim) across all browsers; builds the frontend first
+# (and the mainnet build the account-setup specs run on, tests/support/setupFlowMock.ts)
 test-e2e:
-    PUBLIC_PERCH_DEPLOYMENT=none npx astro build --root ./packages/frontend
+    PUBLIC_STELLAR_NETWORK=testnet PUBLIC_PERCH_DEPLOYMENT=none npx astro build --root ./packages/frontend
+    PUBLIC_STELLAR_NETWORK=mainnet PUBLIC_RELAYER_URL=https://relayer.nido.test \
+      PUBLIC_RELAYER_SIM_SOURCE=GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL \
+      PUBLIC_PERCH_DEPLOYMENT="$(cat tests/support/perch-fixture-deployment.mainnet.json)" \
+      npx astro build --root ./packages/frontend --outDir ./dist-mainnet
     npx playwright test --grep @fast
 
 # Chromium CDP virtual-authenticator fidelity lane; builds the frontend first
 test-e2e-cdp:
-    PUBLIC_PERCH_DEPLOYMENT=none npx astro build --root ./packages/frontend
+    PUBLIC_STELLAR_NETWORK=testnet PUBLIC_PERCH_DEPLOYMENT=none npx astro build --root ./packages/frontend
     npx playwright test --project=chromium-cdp
 
 # Sources tests/.env.testnet if present (set NIDO_TEST_BANK_SECRET there to a
