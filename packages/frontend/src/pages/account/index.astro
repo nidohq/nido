@@ -20,7 +20,6 @@ import Toast from "../../components/Toast.astro";
 import PasskeySheet from "../../components/PasskeySheet.astro";
 import Avatar from "../../components/Avatar.astro";
 import Icon from "../../components/Icon.astro";
-import Qr from "../../components/Qr.astro";
 import Logo from "../../components/Logo.astro";
 import Nest from "../../components/Nest.astro";
 import { NETWORK_LABEL } from "../../lib/network";
@@ -226,7 +225,7 @@ import SignInListNotice from "../../components/SignInListNotice.astro";
           Share your address or code so anyone can send to your Nido.
         </p>
         <div style="background:var(--paper-2); border:1px solid var(--line); border-radius:22px; padding:18px; display:inline-block; box-shadow:var(--sh-1);">
-          <Qr data="nido" size={188} />
+          <div id="receive-qr"></div>
         </div>
         <div class="card" style="padding:16px; margin-top:22px; text-align:left; display:flex; align-items:center; gap:12px;">
           <Avatar seed="nido" size={34} class="js-avatar" />
@@ -262,16 +261,37 @@ import SignInListNotice from "../../components/SignInListNotice.astro";
       </section>
       </div>
 
-      <!-- ============ REGISTER (when no passkey) ============ -->
+      <!-- ============ PASSKEY (none on this device) ============ -->
       <div class="grid-cell home-panel">
       <section id="register-section" class="hidden pad" style="padding-top:18px;">
-        <span class="section-label" style="display:block; margin-bottom:12px;">Set up your passkey</span>
+        <span class="section-label" style="display:block; margin-bottom:12px;">Your passkey</span>
         <div class="card" style="padding:16px;">
-          <p id="register-copy" class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
-            Create a passkey bound to this Nido. It's how you'll prove it's you — no seed phrase, no password.
+          <p id="adopt-passkey-copy" class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            New device? This Nido's passkey syncs with iCloud Keychain or Google Password Manager, so it may already be here.
           </p>
-          <button id="register-btn" class="btn acc">
-            <Icon name="key" size={20} color="#fff" /> <span id="register-label">Set up your passkey</span>
+          <button id="adopt-passkey-btn" class="btn acc" style="margin-bottom:14px;">
+            <Icon name="key" size={20} color="#fff" /> <span>Use your synced passkey</span>
+          </button>
+          <a id="adopt-passkey-link" class="btn acc hidden" style="margin-bottom:14px;">
+            <Icon name="key" size={20} color="#fff" /> <span>Open this Nido's own address</span>
+          </a>
+          <p id="adopt-passkey-msg" role="alert" class="mut hidden" style="font-size:12.5px; line-height:1.5; margin:0 0 14px;"></p>
+          <p class="mut" style="font-size:12.5px; line-height:1.5; margin:0;">
+            Lost it? <a href="/security/recover/" class="link">Recover your Nido</a>
+          </p>
+        </div>
+      </section>
+      </div>
+      <!-- No contract at this address: nothing to sign for, so no passkey card. -->
+      <div class="grid-cell home-panel">
+      <section id="no-nido-section" class="hidden pad" style="padding-top:18px;">
+        <div class="card" style="padding:16px;">
+          <p style="font-size:15px; font-weight:600; margin:0 0 6px;">There's no Nido at this address</p>
+          <p class="mut" style="font-size:13.5px; line-height:1.5; margin:0 0 14px;">
+            Nothing has been set up here yet.
+          </p>
+          <button id="no-nido-create-btn" class="btn acc">
+            <Icon name="sparkle" size={18} color="#fff" /> Create a Nido
           </button>
         </div>
       </section>
@@ -331,6 +351,9 @@ import SignInListNotice from "../../components/SignInListNotice.astro";
   import { formatXlm } from "../../lib/money";
   import { fetchXlmBalance } from "../../lib/balance";
   import { checkPasskeySupport } from "../../lib/passkeySupport";
+  import { adoptPasskeyAction, adoptPasskeyPlace } from "../../lib/adoptPasskey";
+  import { accountDeployed } from "../../lib/newAccount/verifyNewAccount";
+  import { qrSvg } from "../../lib/qrCode";
 
   // The on-page "Your name" / "Claim a name" card. Was parked while the claim
   // round-trip was broken (bug #3); re-enabled now that the finalize flow signs
@@ -641,21 +664,13 @@ import SignInListNotice from "../../components/SignInListNotice.astro";
 
     const cred = loadCredential();
     const $registerSection = document.getElementById("register-section")!;
-    const $registerBtn = document.getElementById("register-btn") as HTMLButtonElement;
-    const $registerCopy = document.getElementById("register-copy");
-    const $registerLabel = document.getElementById("register-label");
 
     if (!cred && shouldRegisterNamePasskey && detectedName) {
       // ?namepasskey=1 + no cred + known name → takeover overlay.
       // #home-mode is already revealed so dismissing the overlay shows it immediately.
       // The register-section is NOT shown (the takeover replaces it for this path).
     } else if (!cred) {
-      $registerSection.classList.remove("hidden");
-      if (detectedName && $registerCopy) {
-        $registerCopy.textContent =
-          `Your Nido now opens at ${detectedName}. Browsers bind passkeys to each domain address, so register a passkey here before approving from this name.`;
-        if ($registerLabel) $registerLabel.textContent = `Register passkey for ${detectedName}`;
-      }
+      void showPasskeyCardOrNoNido();
     } else if (shouldRegisterNamePasskey) {
       clearNamePasskeyParam();
     }
@@ -703,7 +718,22 @@ import SignInListNotice from "../../components/SignInListNotice.astro";
       );
     }
 
-    // Register passkey (when none exists yet).
+    // The passkey card, or, when no contract is deployed at this address, a
+    // "no Nido here" state instead. A failed lookup counts as deployed, so an
+    // RPC hiccup never hides the card from a real account.
+    async function showPasskeyCardOrNoNido() {
+      const deployed = contractId ? await accountDeployed(contractId).catch(() => true) : false;
+      if (deployed) {
+        $registerSection.classList.remove("hidden");
+        return;
+      }
+      document.getElementById("no-nido-section")!.classList.remove("hidden");
+      document.getElementById("no-nido-create-btn")!.addEventListener("click", () => {
+        window.location.href = createNido(window.location.host);
+      });
+    }
+
+    // Register a passkey for a name address (the ?namepasskey=1 takeover).
     // Returns true on success, false on failure (errors are surfaced via showError).
     async function runPasskeyRegistration(options?: { namePasskey?: boolean }): Promise<boolean> {
       clearError();
@@ -714,8 +744,6 @@ import SignInListNotice from "../../components/SignInListNotice.astro";
         return false;
       }
       try {
-        $registerBtn.disabled = true;
-
         await withPasskeySheet(
           () => registerPasskey(),
           {
@@ -738,13 +766,44 @@ import SignInListNotice from "../../components/SignInListNotice.astro";
           showError(`Couldn't set up your passkey: ${err.message}`);
         }
         return false;
-      } finally {
-        $registerBtn.disabled = false;
       }
     }
 
-    $registerBtn.addEventListener("click", () => {
-      void runPasskeyRegistration(shouldRegisterNamePasskey ? { namePasskey: true } : undefined);
+    // "Use your synced passkey": find a passkey this Nido already has
+    // (lib/adoptPasskey.ts) instead of creating one the account doesn't know.
+    // The ceremony only finds the passkey on the account's own subdomain, so
+    // a name subdomain links there instead of prompting.
+    const $adoptBtn = document.getElementById("adopt-passkey-btn") as HTMLButtonElement;
+    const adoptPlace = adoptPasskeyPlace(contractId, window.location);
+    if (adoptPlace.kind !== "here") {
+      $adoptBtn.classList.add("hidden");
+      const $adoptCopy = document.getElementById("adopt-passkey-copy")!;
+      if (adoptPlace.kind === "elsewhere") {
+        $adoptCopy.textContent =
+          "Passkeys for this Nido are bound to its own address, so they are managed and used from there.";
+        const $adoptLink = document.getElementById("adopt-passkey-link") as HTMLAnchorElement;
+        $adoptLink.href = adoptPlace.url;
+        $adoptLink.classList.remove("hidden");
+      } else {
+        $adoptCopy.classList.add("hidden");
+      }
+    }
+    // A failure shows under the button, where the user is looking: the
+    // page's error box is above the fold from here.
+    const $adoptMsg = document.getElementById("adopt-passkey-msg")!;
+    $adoptBtn.addEventListener("click", async () => {
+      if (!contractId) return;
+      $adoptMsg.classList.add("hidden");
+      $adoptBtn.disabled = true;
+      const result = await adoptPasskeyAction(contractId);
+      $adoptBtn.disabled = false;
+      if (result.ok) {
+        $registerSection.classList.add("hidden");
+        toast({ msg: "This device can now approve for your Nido", icon: "check" });
+      } else {
+        $adoptMsg.textContent = result.message;
+        $adoptMsg.classList.remove("hidden");
+      }
     });
 
     // ?namepasskey=1 + no cred + known name → focused takeover overlay.
@@ -842,6 +901,11 @@ import SignInListNotice from "../../components/SignInListNotice.astro";
 
   // Show the real, full address in the Receive panel.
   document.getElementById("receive-address")!.textContent = contractId || "(unknown)";
+
+  if (contractId) {
+    const qrCode = await qrSvg(contractId);
+    document.getElementById("receive-qr")!.innerHTML = qrCode;
+  }
 
   // Fetch balance in background — REAL XLM, no fabricated fiat figure.
   const $balance = document.getElementById("xlm-balance")!;

@@ -8,7 +8,7 @@ Three tiers:
   chromium/firefox/webkit using the in-page shim. No chain. Builds the
   frontend first.
 - **Chromium CDP fidelity lane:** `just test-e2e-cdp` — real virtual
-  authenticator; `*.cdp.spec.ts`.
+  authenticator; `*.cdp.spec.ts` and `*.cdp.spec.mts`.
 
 The shim (`tests/support/auth/`) overrides `navigator.credentials` with a
 deterministic P-256 vault keyed by credentialId.

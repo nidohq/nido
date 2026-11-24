@@ -16,6 +16,7 @@
 import type { xdr } from '@stellar/stellar-sdk';
 import { loadCredential, parsePolicyDocJson, perch, type PolicyDoc } from '@nidohq/passkey-sdk';
 import { NETWORK_PASSPHRASE, RPC_URL, latestLedgerSequence } from '../network.js';
+import { NO_DEVICE_PASSKEY } from '../devicePasskey.js';
 import { adminBaseline } from '../policy/docDraft.js';
 import { fetchVerifierAddress } from '../policyChainFetch.js';
 import { applyDocWithPasskey, getSubmitter, signAndSubmit } from '../primaryPasskeySigner.js';
@@ -71,7 +72,7 @@ export async function currentOrFirstDoc(account: string): Promise<{ doc: PolicyD
   const { revision, canonical } = await recoveryClient().document(account);
   if (canonical) return { doc: parsePolicyDocJson(canonical), revision };
   const cred = loadCredential(account);
-  if (!cred) throw new Error('This browser has no passkey for this Nido.');
+  if (!cred) throw new Error(NO_DEVICE_PASSKEY);
   const doc = adminBaseline({ verifier: await fetchVerifierAddress(account), publicKeyHex: cred.publicKey }, NETWORK_PASSPHRASE);
   return { doc, revision };
 }
