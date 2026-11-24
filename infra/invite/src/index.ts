@@ -26,7 +26,7 @@ async function main() {
   app.use(requestLogger);
   app.use(express.json());
 
-  // The dApp (a static site on its own origin, e.g. nido.fyi or localhost:4321
+  // The dApp (a static site on its own origin, e.g. nido.fyi or nido.localhost:4321
   // in dev) calls the Checker directly from the browser. Wildcard is fine
   // here, same as infra/relayer/Caddyfile's own CORS block: there's no
   // cookie/session auth to leak cross-origin, and the x-api-key is a soft

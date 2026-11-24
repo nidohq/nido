@@ -59,7 +59,7 @@ async function fetchRegistryAddress(name: string): Promise<string> {
  * @testnet — real-chain end-to-end of the dApp tx-signing ceremony.
  *
  * Drives a Soroban `udpate_message` (sic — the status-message contract method
- * is literally misspelled) transaction through `<caddr>.localhost/sign/?kind=tx`.
+ * is literally misspelled) transaction through `<caddr>.nido.localhost/sign/?kind=tx`.
  * The dApp side (this Node test) builds an UNSIGNED tx XDR; `/sign/` strips the
  * auth, simulates on testnet, signs the smart account's auth entry with the
  * primary passkey (shim, via walletSign.signTransactionXdr → computeAuthDigest),
@@ -88,7 +88,7 @@ test.describe('@testnet dapp tx signing (udpate_message)', () => {
     // -----------------------------------------------------------------
 
     // 1) Home → create account (friendbot fund + factory.get_c_address).
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#create-btn').click();
     await expect(page.locator('#c-address-result')).not.toBeEmpty({ timeout: 60_000 });
     const cAddress = (await page.locator('#c-address-result').textContent())?.trim() ?? '';
@@ -99,7 +99,7 @@ test.describe('@testnet dapp tx signing (udpate_message)', () => {
     expect(setupHref).toContain('/new-account/');
     expect(setupHref).toContain('key=');
     const key = new URL(setupHref!, 'http://x').searchParams.get('key')!;
-    const host = `${cAddress.toLowerCase()}.localhost:${PORT}`;
+    const host = `${cAddress.toLowerCase()}.nido.localhost:${PORT}`;
     await page.goto(`http://${host}/new-account/?key=${encodeURIComponent(key)}`, {
       waitUntil: 'domcontentloaded',
     });

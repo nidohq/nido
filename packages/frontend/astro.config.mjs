@@ -1,4 +1,22 @@
 import { defineConfig } from "astro/config";
+import { devRedirectHost } from "./src/lib/devHost.ts";
+
+// Local development lives on `nido.localhost:<port>` (src/lib/devHost.ts says
+// why); the dev server sends a request for bare `localhost` or
+// `<c-address>.localhost` there. `astro preview` loads no plugin from this
+// file, so it does not redirect.
+const nidoLocalhost = {
+  name: "nido-localhost",
+  configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+      const host = req.headers.host && devRedirectHost(req.headers.host);
+      if (!host) return next();
+      res.statusCode = 307;
+      res.setHeader("Location", `http://${host}${req.url ?? "/"}`);
+      res.end();
+    });
+  },
+};
 
 export default defineConfig({
   // Canonical apex — used to build the absolute og:image URL in NidoLayout.
@@ -11,6 +29,7 @@ export default defineConfig({
     shikiConfig: { theme: "github-light" },
   },
   vite: {
+    plugins: [nidoLocalhost],
     worker: {
       // bb.js (the ZK prover, loaded lazily by the recovery pages) spawns
       // module workers. Vite/Rollup's code-splitting build for module

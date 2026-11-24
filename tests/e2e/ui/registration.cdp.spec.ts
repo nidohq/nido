@@ -17,7 +17,7 @@ const PORT = Number(process.env.E2E_PORT || 4399);
 // Dummy testnet secret for the `?key=` param. Registration persists the
 // credential to localStorage BEFORE the chain deploy(); we assert on that.
 const NEW_ACCOUNT_URL =
-  `http://${FAKE_CONTRACT_ID.toLowerCase()}.localhost:${PORT}/new-account/` +
+  `http://${FAKE_CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/new-account/` +
   `?key=SDTEST7777777777777777777777777777777777777777777777`;
 
 test.describe('passkey registration (real CDP virtual authenticator)', () => {

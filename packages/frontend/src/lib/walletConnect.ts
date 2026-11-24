@@ -218,7 +218,7 @@ export function restoreWith(
 export interface InitWalletKitParams {
   /**
    * The Nido deployment base (apex) origin, e.g. `https://nido.fyi` or
-   * `http://localhost:4321`. If omitted, derived from `window.location`.
+   * `http://nido.localhost:4321`. If omitted, derived from `window.location`.
    */
   base?: string;
   /** Network passphrase. Defaults to testnet. */
@@ -244,7 +244,7 @@ export function deriveBase(
   // production apex, so the kit module would build its WebAuthn ceremony origins
   // on production and the rpId would not match the preview credential.
   // apexHostForHost preserves the preview root (`<N>.<apex>`), keeps an apex
-  // (`nido.fyi`, `test.nido.fyi`) intact, and resolves localhost — exactly the
+  // (`nido.fyi`, `test.nido.fyi`, `nido.localhost`) intact — exactly the
   // base NidoModule expects.
   const { protocol, hostname, port } = loc;
   const apexHost = apexHostForHost(hostname);

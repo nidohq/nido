@@ -134,7 +134,7 @@ top-level `/new-account/finish/` (`packages/frontend/src/lib/signInListHandoff.t
 
 Hosts are read against a list of known apexes, never by counting labels:
 `splitHost` and `NIDO_APEXES` in `packages/passkey-sdk/src/url.ts` (`test.nido.fyi`
-and `nido.fyi`, longest first, plus `localhost`). An account, name or built-in
+and `nido.fyi`, longest first, plus local development's `nido.localhost`). An account, name or built-in
 dApp is exactly one label below its apex; a PR preview adds `--<N>` to that
 label, and `<N>.<apex>` is the preview root. An apex is never an account, so
 `test.nido.fyi` is the testnet apex and not a name `test` on `nido.fyi`, and the

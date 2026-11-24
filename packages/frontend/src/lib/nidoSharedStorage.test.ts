@@ -74,8 +74,15 @@ describe("apexHostForHost", () => {
     expect(apexHostForHost("alice--126.test.nido.fyi")).toBe("126.test.nido.fyi");
   });
 
-  it("maps localhost account subdomains to localhost", () => {
-    expect(apexHostForHost("alice.localhost:4399")).toBe("localhost:4399");
+  it("maps local development subdomains to nido.localhost", () => {
+    expect(apexHostForHost("alice.nido.localhost:4399")).toBe("nido.localhost:4399");
+    expect(apexHostForHost(`${a}.nido.localhost:4399`)).toBe("nido.localhost:4399");
+  });
+
+  it("gives bare-localhost subdomains no shared apex", () => {
+    // `localhost` has no registrable domain, so browsers partition a bridge on
+    // it from `<c>.localhost`; the dev apex is `nido.localhost` instead.
+    expect(apexHostForHost(`${a}.localhost:4399`)).toBe(`${a}.localhost:4399`);
   });
 
   it("preserves numeric PR preview roots", () => {
@@ -134,7 +141,7 @@ describe("bridgeRequester", () => {
   });
 
   it("accepts plain http only on a loopback dev host", () => {
-    expect(bridgeRequester(`http://${a}.localhost:4399`, "localhost:4399")).toEqual({
+    expect(bridgeRequester(`http://${a}.nido.localhost:4399`, "nido.localhost:4399")).toEqual({
       kind: "account",
       contractId: A,
     });

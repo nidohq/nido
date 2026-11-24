@@ -13,7 +13,7 @@ test.describe('@testnet send to a named nido', () => {
   // and return its C-address. The page host must be the C-address subdomain so
   // WebAuthn rpId matches the shim credential.
   async function createAccount(page: import('@playwright/test').Page) {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://nido.localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     // Account creation lives in the My Nido menu: "Get started" opens it, then
     // .mn-create-btn runs createNido (friendbot + factory) and navigates to the
     // new account's C-address subdomain at /new-account/?key=<secret>.
@@ -76,7 +76,7 @@ test.describe('@testnet send to a named nido', () => {
     // 5) Assert the recipient received it: balance on its name subdomain is > 0.
     //    (#xlm-balance is the hero balance element; it renders "…" until the
     //    on-chain read completes, so a digit is the durable signal.)
-    await page.goto(`http://${name}.localhost:${PORT}/account/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://${name}.nido.localhost:${PORT}/account/`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#xlm-balance')).toContainText(/\d/, { timeout: 60_000 });
   });
 });

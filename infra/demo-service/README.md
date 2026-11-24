@@ -105,7 +105,7 @@ all.
 | `PORT` | `4000` | This service's own HTTP port |
 | `INVITE_API_URL` | `http://localhost:8080` | Base URL of `infra/invite` |
 | `INVITE_API_KEY` | unset | Must match `infra/invite`'s `API_KEY` secret once that's set |
-| `FRONTEND_BASE_URL` | `https://nido.fyi` | Where the QR code points visitors |
+| `FRONTEND_BASE_URL` | `http://nido.localhost:4321` | Where the QR code points visitors |
 | `RECEIPT_POLL_INTERVAL_MS` | `5000` | How often ReceiptPoller checks for confirmed signups |
 | `PRINT_OUTPUT_DIR` | `./print-jobs` | Where `FilePrinter` writes its stand-in output |
 | `PRINTER_DRIVER` | unset (`FilePrinter`) | `cups` (macOS) or `usb` (other platforms) for real hardware |

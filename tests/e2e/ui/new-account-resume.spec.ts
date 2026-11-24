@@ -20,7 +20,7 @@ const claimed = JSON.parse(
 const CONTRACT_ID = claimed.account;
 const SALT = '5a'.repeat(32);
 const PORT = process.env.E2E_PORT || 4399;
-const URL_ = `http://${CONTRACT_ID.toLowerCase()}.localhost:${PORT}/new-account/#salt=${SALT}`;
+const URL_ = `http://${CONTRACT_ID.toLowerCase()}.nido.localhost:${PORT}/new-account/#salt=${SALT}`;
 
 test.describe('resuming a setup whose address is taken @fast', () => {
   test('stops before a passkey, activates nothing, and drops the salt @fast', async ({ page, context }) => {
