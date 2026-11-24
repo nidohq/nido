@@ -71,6 +71,28 @@ role moved to the new `channels-fee-payer` so the names match what each
 account actually does (see "Changing Relayers/Signers After Initial Bootstrap"
 below for how this kind of change gets applied).
 
+### Topping up a relayer account on testnet
+
+Use `scripts/friendbot-topup.sh` when a testnet relayer account (usually the
+fee payer or `fund`) runs low on XLM. Friendbot only funds accounts that don't
+exist yet, so the script can't call it on the relayer account directly: each
+round funds a throwaway account with Friendbot (~10,000 XLM), account-merges it
+into the target, and removes the throwaway key. It uses no relayer secrets and
+refuses any network but testnet.
+
+```bash
+infra/relayer/scripts/friendbot-topup.sh fee-payer 3   # ~+30,000 XLM
+infra/relayer/scripts/friendbot-topup.sh G...          # one round to any G-address
+```
+
+Roles are `fund`, `fee-payer`, `channel-001` and `channel-002`; the script's
+mapping must match the table above. This adds XLM only: the relayer's daily fee
+budget is a separate limit that Friendbot does not change.
+
+The `funder` plugin gives each new testnet account 500 XLM from `fund`
+(`FUNDER_TOPUP_STROOPS` in `fly.toml`), so one Friendbot round funds about 20
+accounts. Run `friendbot-topup.sh fund N` before an onboarding burst.
+
 If keys are rotated, update this table and update all frontend build env that
 uses `PUBLIC_RELAYER_SIM_SOURCE`.
 

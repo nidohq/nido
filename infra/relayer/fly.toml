@@ -37,11 +37,12 @@ primary_region = "iad"
   # request, so this is a single global budget (100 XLM/day), not per-user —
   # it bounds a drain to a recoverable daily cost instead of the whole fund.
   # Per-client fairness needs per-client keys forwarded through Caddy first.
-  FEE_LIMIT = "10000000000"
+  FEE_LIMIT = "1000000000000"
   FEE_RESET_PERIOD_SECONDS = "86400"
   # Fixed per-account topup from the `fund` treasury, read by the `funder` plugin
-  # This is not client-controlled.
-  FUNDER_TOPUP_STROOPS = "50000000"
+  # This is not client-controlled. 500 XLM; each Friendbot top-up of `fund`
+  # (scripts/friendbot-topup.sh fund) covers about 20 new accounts.
+  FUNDER_TOPUP_STROOPS = "5000000000"
 
 [http_service]
   internal_port = 8080
