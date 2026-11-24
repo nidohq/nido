@@ -40,19 +40,19 @@ export default defineConfig({
     {
       name: 'chromium',
       testDir: 'tests/e2e/ui',
-      testIgnore: [/\.cdp\.spec\.ts$/, PARTITIONED],
+      testIgnore: [/\.cdp\.spec\.m?ts$/, PARTITIONED],
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'firefox',
       testDir: 'tests/e2e/ui',
-      testIgnore: [/\.cdp\.spec\.ts$/, PARTITIONED],
+      testIgnore: [/\.cdp\.spec\.m?ts$/, PARTITIONED],
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',
       testDir: 'tests/e2e/ui',
-      testIgnore: [/\.cdp\.spec\.ts$/, PARTITIONED],
+      testIgnore: [/\.cdp\.spec\.m?ts$/, PARTITIONED],
       use: { ...devices['Desktop Safari'] },
     },
     {
