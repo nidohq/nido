@@ -1,0 +1,30 @@
+
+# type(scope): imperative summary, lower-case, no full stop (72 chars max)
+#   types:  feat fix perf refactor revert test docs build ci chore style
+#   scopes: frontend wallet passkey-sdk factory contracts relayer perch
+#           infra examples docs deps
+#   (CONTRIBUTING.md defines each; scope is optional)
+#
+# The same structure as the PR description, in miniature. Wrap at 72.
+# Every commit, whatever its type, has a body with a Why: paragraph; add
+# What changes: and Evidence: where they say something the subject does
+# not. A one-line Why: is enough for a small, obvious change. In a
+# chore(deps) bump, the Why: is where context such as a security
+# advisory goes.
+#
+# Why: the problem with the current code, and why this approach rather
+# than the obvious alternative. Numbers for any cost or size claim.
+#
+# What changes: what a user, dApp or integrator sees differently, and
+# what deliberately does not change.
+#
+# Evidence: `cargo test -p nido-integration-tests --test it` 88 passed;
+# what was not run, and why.
+#
+# Trailers, one per line, after a blank line:
+# Refs: #123
+# Security: F2, W3      (docs/SECURITY_INVARIANTS.md IDs, or "none")
+# BREAKING-CHANGE: what breaks and how to migrate (with "!" in the subject)
+#
+# Not here: review logs, agent prompts, "addressed review comments".
+# Use it: git config commit.template .gitmessage
