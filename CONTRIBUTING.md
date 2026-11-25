@@ -16,11 +16,38 @@ year, not for this week's reviewer.
 72 characters at most ([Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)).
 Add `!` before the colon for a breaking change.
 
-- **Types:** `feat`, `fix`, `perf`, `refactor`, `revert`, `test`, `docs`,
-  `build`, `ci`, `chore`, `style`.
-- **Scopes** (optional; comma-separate if a change truly spans two):
-  `frontend`, `passkey-sdk`, `factory`, `relayer`, `perch`, `infra`, `docs`,
-  `deps`.
+Types, by what the change does:
+
+| Type | Use it for |
+| --- | --- |
+| `feat` | Something new a user, dApp, or integrator can do: a wallet screen, an SDK call, a contract entry point |
+| `fix` | Wrong behaviour made right: a rejected signature, a wrong balance, a broken page |
+| `perf` | The same behaviour, faster or cheaper: fewer contract instructions, lower fees, a smaller bundle |
+| `refactor` | Code restructured with no change in behaviour |
+| `revert` | An earlier commit undone; name its SHA in the body |
+| `test` | Tests only: `crates/integration-tests`, unit tests, ZK fixtures that tests replay |
+| `docs` | Documentation only: `docs/`, READMEs, code comments |
+| `build` | How the code is built: the `justfile`, Cargo and npm manifests, wasm builds |
+| `ci` | GitHub Actions workflows and their scripts |
+| `chore` | Upkeep nobody sees, such as dependency bumps (`chore(deps)`) and Perch re-pins (`chore(perch)`) |
+| `style` | Formatting only (`cargo fmt`, Prettier); no code changes |
+
+Scopes, by the part of Nido the change is in. A scope is optional; separate
+two with a comma only when a change truly spans both:
+
+| Scope | Covers |
+| --- | --- |
+| `frontend` | The site in `packages/frontend`: pages, components, styling |
+| `wallet` | Wallet features a user works with (accounts, sending, signing, recovery, fees), wherever the code lives |
+| `passkey-sdk` | `packages/passkey-sdk`, the TypeScript SDK the frontend and dApps call |
+| `factory` | `contracts/factory`, which deploys Perch accounts |
+| `contracts` | Nido's other contracts under `contracts/`: policies, the name registry, status message |
+| `relayer` | `infra/relayer`, the relayer that pays transaction fees, and its channels plugin |
+| `perch` | The Perch stack as Nido uses it: the `vendor/perch` pin, Perch infra caches, policy docs |
+| `infra` | The other services under `infra/` (resolver, invite, demo service, Redis) and deployment config |
+| `examples` | `examples/`, the sample dApps |
+| `docs` | `docs/` and the top-level Markdown files |
+| `deps` | Dependency bumps, npm or Cargo, usually as `chore(deps)` |
 
 The scope list lives in [`.github/review-conventions.json`](./.github/review-conventions.json).
 Use a draft PR rather than "WIP" or "DO NOT MERGE" in the title.
@@ -74,7 +101,10 @@ git config commit.template .gitmessage
 [`.gitmessage`](./.gitmessage) gives the shape: a subject in the title's
 format, then a body with a `Why:` paragraph (every commit type; one line is
 enough for a small change), `What changes:` and `Evidence:` where they add
-something, then trailers:
+something, then trailers. In a `chore(deps)` bump, the `Why:` is where
+context such as a security advisory goes.
+
+Trailers:
 
 - `Refs: #123` for issues.
 - `Security: F2, W3` with [invariant IDs](./docs/SECURITY_INVARIANTS.md), or

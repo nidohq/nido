@@ -1,13 +1,16 @@
 
 # type(scope): imperative summary, lower-case, no full stop (72 chars max)
 #   types:  feat fix perf refactor revert test docs build ci chore style
-#   scopes: frontend passkey-sdk factory relayer perch infra docs deps
-#   (.github/review-conventions.json is the list; scope is optional)
+#   scopes: frontend wallet passkey-sdk factory contracts relayer perch
+#           infra examples docs deps
+#   (CONTRIBUTING.md defines each; scope is optional)
 #
 # The same structure as the PR description, in miniature. Wrap at 72.
 # Every commit, whatever its type, has a body with a Why: paragraph; add
 # What changes: and Evidence: where they say something the subject does
-# not. A one-line Why: is enough for a small, obvious change.
+# not. A one-line Why: is enough for a small, obvious change. In a
+# chore(deps) bump, the Why: is where context such as a security
+# advisory goes.
 #
 # Why: the problem with the current code, and why this approach rather
 # than the obvious alternative. Numbers for any cost or size claim.

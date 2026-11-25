@@ -3,11 +3,14 @@
   "header": {
     "scopes": [
       "frontend",
+      "wallet",
       "passkey-sdk",
       "factory",
+      "contracts",
       "relayer",
       "perch",
       "infra",
+      "examples",
       "docs",
       "deps"
     ]
