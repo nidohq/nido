@@ -28,6 +28,8 @@ import { allowAccountCreation, INVITE_URL } from "./allowAccountCreation";
 import { runAccountMigration } from "./runAccountMigration";
 import { accountDeployed, verifyNewNidoAccount } from "./newAccount/verifyNewAccount";
 import { dropUnfinishableSetups } from "./pendingCleanup";
+import { existingNidoTarget } from "./existingNido";
+
 
 // Every "create a Nido" entry point this switcher offers (first-time setup
 // and "create another") shows a "Coming soon" state on hostnames
@@ -64,6 +66,19 @@ function rowHtml(row: MyNidoRow): string {
     <span class="mn-main"><span class="mn-name">${title}</span><span class="mn-meta">${esc(shortAddr(row.contractId, 6, 6))}</span></span>
     <span class="mn-bal"><span class="skeleton">&nbsp;</span></span>
     <span class="mn-chev">›</span></a>`;
+}
+
+function existingNidoFormHtml(): string {
+  return `<div class="mn-div"></div>
+    <form class="mn-existing" novalidate>
+      <div class="mn-existing-label">Already have a Nido?</div>
+      <div class="mn-existing-row">
+        <input class="input mono mn-existing-input" name="address" aria-label="Your Nido's C… address"
+               placeholder="C… address" autocomplete="off" spellcheck="false" />
+        <button class="btn acc sm" type="submit">Open</button>
+      </div>
+      <div class="mn-existing-err" role="status" aria-live="polite"></div>
+    </form>`;
 }
 
 // Minimal inline Nest mark (matches Nest.astro: dashed coral + honey rings, teal dot).
@@ -166,7 +181,7 @@ function queueSharedStorageSync() {
     .then(({ ran }) => {
       if (ran) refreshOpenSwitchers();
     })
-    .catch(() => {});
+    .catch(() => { });
 }
 
 function attachGlobalListeners() {
@@ -212,44 +227,51 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
     const pending = loadUnfinishedAccounts();
     const model = buildMyNidoModel(accounts, pending, loadAccountName);
 
+    let content: string;
+
     if (model.state === "empty") {
       const pendingRows = model.rows.map(rowHtml).join("");
       const createBtn = creationOpen
         ? `<button class="btn acc cbtn mn-create-btn" type="button">Set up with your face</button>`
         : `<button class="btn acc cbtn mn-create-btn" type="button" disabled aria-disabled="true">Coming to Mainnet Soon!</button>
            <div class="s" style="margin:10px 0 0">Invite-only for now — <a class="link" href="${INVITE_URL}" target="_blank" rel="noopener">reach out for an invitation</a>.</div>`;
-      panel!.innerHTML = `<div class="mn-scroll"><div class="mn-create">
-          <div style="display:grid;place-items:center;"><span class="mn-nest"></span></div>
+      content = `<div class="mn-create">
+          <div style="display:grid;place-items:center;"><span class="mn-nest">${nestSvg(54)}</span></div>
           <div class="t">Create your Nido</div>
           <div class="s">A safe place for everything you own. Set up in seconds — just your face.</div>
           ${createBtn}
         </div>
         ${pendingRows ? `<div class="mn-div"></div><div class="mn-body">${pendingRows}</div>` : ""}
-        <div class="mn-err" style="display:none"></div></div>`;
-      (panel!.querySelector(".mn-nest") as HTMLElement).innerHTML = nestSvg(54);
-      wireCreate();
-      return;
-    }
-
-    const header =
-      model.state === "single"
-        ? `<div class="mn-head"><span class="lockchip">Only you</span><div class="hl">Welcome back</div><div class="hs">Your Nido is ready</div></div>`
-        : `<div class="mn-head"><div class="hl">Your Nidos</div><div class="hs">${model.rows.length} on this device</div></div>`;
-
-    const createAnotherBtn = creationOpen
-      ? `<button class="mn-foot mn-create-btn" type="button"><span class="pl">+</span> Create another Nido</button>`
-      : `<a class="mn-foot" href="${INVITE_URL}" target="_blank" rel="noopener"><span class="pl">+</span> Mainnet is invite-only — request an invitation</a>`;
-    panel!.innerHTML = `<div class="mn-scroll">${header}
+        `;
+    } else {
+      const header =
+        model.state === "single"
+          ? `<div class="mn-head"><span class="lockchip">Only you</span><div class="hl">Welcome back</div><div class="hs">Your Nido is ready</div></div>`
+          : `<div class="mn-head"><div class="hl">Your Nidos</div><div class="hs">${model.rows.length} on this device</div></div>`;
+      const createAnotherBtn = creationOpen
+        ? `<button class="mn-foot mn-create-btn" type="button"><span class="pl">+</span> Create another Nido</button>`
+        : `<a class="mn-foot" href="${INVITE_URL}" target="_blank" rel="noopener"><span class="pl">+</span> Mainnet is invite-only — request an invitation</a>`;
+      content = `${header}
       <div class="mn-body">
         ${model.rows.map(rowHtml).join("")}
         <div class="mn-div"></div>
         ${createAnotherBtn}
-      </div>
-      <div class="mn-err" style="display:none"></div></div>`;
+      </div>`;
+    }
+
+    panel!.innerHTML = `<div class="mn-scroll">
+        ${content}
+        ${existingNidoFormHtml()}
+        <div class="mn-err" style="display:none"></div>
+      </div>`;
     wireCreate();
-    loadBalances();
-    void resolveNames(model.rows);
+    wireExistingNidoForm();
+    if (model.state !== "empty") {
+      loadBalances();
+      void resolveNames(model.rows);
+    }
   }
+
 
   // After the synchronous render, reverse-look-up each nameless active account
   // via the name registry, patch the row's name + (bare) href in place, and
@@ -269,6 +291,24 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
     });
   }
 
+  function wireExistingNidoForm() {
+    const form = panel!.querySelector<HTMLFormElement>(".mn-existing");
+    if (!form) return;
+    const input = form.querySelector<HTMLInputElement>(".mn-existing-input")!;
+    const err = form.querySelector<HTMLElement>(".mn-existing-err")!;
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const target = existingNidoTarget(window.location.host, input.value);
+      if (!target) {
+        err.textContent = "That doesn't look like a Nido address (it starts with C and is 56 characters).";
+        return;
+      }
+      err.textContent = "";
+      window.location.href = target;
+    });
+  }
   function wireCreate() {
     const cbtn = panel!.querySelector<HTMLButtonElement>(".mn-create-btn");
     if (!cbtn || cbtn.disabled) return;
@@ -279,6 +319,7 @@ export function mountNidoSwitcher(root: HTMLElement, opts: MountOptions = {}): v
       window.location.href = createNido(window.location.host);
     });
   }
+
 
   async function loadBalances() {
     const rows = panel!.querySelectorAll<HTMLElement>("[data-balance-for]");
